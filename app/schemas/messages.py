@@ -22,3 +22,10 @@ class MessageResponse(BaseModel):
     metadata: dict | None = None
     created_at: datetime
     processed_at: datetime | None = None
+
+class ProcessMessageResponse(BaseModel):
+    content: MessageResponse
+    intent: str | None = None
+    response_text: str | None = None
+    requested_capabilities: str | None = None
+    status: str
