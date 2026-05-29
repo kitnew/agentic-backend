@@ -221,3 +221,6 @@ __marimo__/
 
 # VS Code
 .vscode/
+*.db
+*.zip
+*.pyc
