@@ -1,0 +1,14 @@
+tenant_id: demo_restaurant
+name: Demo Restaurant
+business_type: restaurant
+default_language: en
+timezone: Europe/Bratislava
+agent_profile: restaurant_assistant
+business_info:
+  opening_hours: "10:00 - 21:00 every day except Sunday"
+enabled_capabilities:
+  reservation.create_request: disabled
+  knowledge.search: disabled
+policies:
+  can_confirm_reservation: false
+  requires_human_confirmation: true

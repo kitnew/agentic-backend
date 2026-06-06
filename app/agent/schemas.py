@@ -1,5 +1,7 @@
 from pydantic import BaseModel
 
+from app.tenants.schemas import TenantContext
+
 class AgentInput(BaseModel):
     tenant_id: str
     conversation_id: str | None = None
@@ -7,6 +9,7 @@ class AgentInput(BaseModel):
     message_text: str
     channel: str | None = None
     metadata: dict | None = None
+    tenant_context: TenantContext
 
 class AgentOutput(BaseModel):
     intent: str

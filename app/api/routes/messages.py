@@ -8,6 +8,11 @@ from app.infrastructure.database import get_db
 from app.infrastructure.repositories.message_repository import MessageRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
 from app.agent.runtime import AgentRuntime
+from app.tenants.loader import (
+    TenantConfigInvalidError,
+    TenantConfigLoader,
+    TenantConfigNotFoundError,
+)
 
 router = APIRouter()
 
@@ -22,17 +27,21 @@ def get_agent_runtime() -> AgentRuntime:
         azure_endpoint="https://ct-val.cognitiveservices.azure.com/",
         azure_deployment="gpt-4o-mini",
         api_version="2025-01-01-preview",
-        api_key="[ENCRYPTION_KEY]",
+        api_key="1mrDubpfPwE2niMMIaKNRhNEX6o5jT9jOBXGl5rpPcEKhZzLyXzrJQQJ99CDACE1PydXJ3w3AAAAACOGNlJ4",
         temperature=0,
     )
 
     return AgentRuntime(llm)
+
+def get_tenant_config_loader() -> TenantConfigLoader:
+    return TenantConfigLoader()
 
 @router.post("", response_model=ProcessMessageResponse, status_code=status.HTTP_201_CREATED)
 def receive_message(
     request: CreateMessageRequest,
     repository: MessageRepository = Depends(get_message_repository),
     agent_runtime: AgentRuntime = Depends(get_agent_runtime),
+    tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
 ):
     """
     Receive, store, and process a new message from a client/channel.
@@ -40,8 +49,15 @@ def receive_message(
     use_case = ProcessIncomingMessage(
         message_repository=repository,
         agent_runtime=agent_runtime,
+        tenant_config_loader=tenant_config_loader,
     )
-    response = use_case.execute(request)
+    try:
+        response = use_case.execute(request)
+    except TenantConfigNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant config not found")
+    except TenantConfigInvalidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
     return response
 
 @router.get("/{message_id}", response_model=MessageResponse)

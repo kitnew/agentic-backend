@@ -9,3 +9,4 @@ class AgentState(TypedDict):
     response_text: str | None
     requested_capabilities: list[str]
     metadata: dict | None
+    tenant_context: dict

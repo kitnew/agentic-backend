@@ -7,16 +7,25 @@ from app.agent.schemas import AgentInput
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
 from app.domain.messages.entities import Message
 from app.domain.messages.enums import MessageStatus, MessageRole
+from app.tenants.loader import TenantConfigLoader
 
 class ProcessIncomingMessage:
     """
     Orchestration use-case class to handle incoming messages.
     """
-    def __init__(self, message_repository: MessageRepository, agent_runtime: AgentRuntime):
+    def __init__(
+        self,
+        message_repository: MessageRepository,
+        agent_runtime: AgentRuntime,
+        tenant_config_loader: TenantConfigLoader,
+    ):
         self.message_repository = message_repository
         self.agent_runtime = agent_runtime
+        self.tenant_config_loader = tenant_config_loader
 
     def execute(self, request: CreateMessageRequest) -> ProcessMessageResponse:
+        tenant_context = self.tenant_config_loader.load(request.tenant_id)
+
         # 1. Создать Message (role = user, status = received, intent = null)
         new_message = Message(
             id=str(uuid.uuid4()),
@@ -48,6 +57,7 @@ class ProcessIncomingMessage:
             message_text=new_message.content,
             channel=new_message.channel,
             metadata=new_message.metadata,
+            tenant_context=tenant_context,
         )
 
         try:
@@ -61,11 +71,6 @@ class ProcessIncomingMessage:
 
             # 7. Сохранить/обновить Message
             self.message_repository.save(new_message)
-
-            # Format capabilities list to string representation
-            requested_caps_str = None
-            if agent_result.requested_capabilities:
-                requested_caps_str = ", ".join(agent_result.requested_capabilities)
 
             # 8. Вернуть ProcessMessageResponse
             content_response = MessageResponse(
@@ -84,10 +89,10 @@ class ProcessIncomingMessage:
             )
 
             return ProcessMessageResponse(
-                content=content_response,
+                message=content_response,
                 intent=new_message.intent,
                 response_text=agent_result.response_text,
-                requested_capabilities=requested_caps_str,
+                requested_capabilities=agent_result.requested_capabilities,
                 status=new_message.status,
             )
 
@@ -124,7 +129,7 @@ class ProcessIncomingMessage:
             )
 
             return ProcessMessageResponse(
-                content=content_response,
+                message=content_response,
                 intent=None,
                 response_text="Failed to process the message due to an internal agent error.",
                 requested_capabilities=None,

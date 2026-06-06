@@ -24,8 +24,8 @@ class MessageResponse(BaseModel):
     processed_at: datetime | None = None
 
 class ProcessMessageResponse(BaseModel):
-    content: MessageResponse
+    message: MessageResponse
     intent: str | None = None
     response_text: str | None = None
-    requested_capabilities: str | None = None
+    requested_capabilities: list[str] | None = None
     status: str

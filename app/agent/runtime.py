@@ -24,6 +24,7 @@ class AgentRuntime:
             response_text=None,
             requested_capabilities=[],
             metadata=agent_input.metadata,
+            tenant_context=agent_input.tenant_context.model_dump(),
         )
 
         # Invoke the LangGraph agent execution
