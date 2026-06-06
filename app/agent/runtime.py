@@ -3,6 +3,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from app.agent.graph import build_agent
 from app.agent.state import AgentState
 from app.agent.schemas import AgentInput, AgentOutput
+from app.capabilities.schemas import CapabilityRequest
 
 class AgentRuntime:
     """
@@ -31,9 +32,18 @@ class AgentRuntime:
         result_state = self.agent.invoke(state)
 
         # Return validated AgentOutput Pydantic model
+        requested_capabilities = result_state.get("requested_capabilities") or []
+        if result_state.get("intent") == "reservation_request" and not requested_capabilities:
+            requested_capabilities = [
+                CapabilityRequest(
+                    name="reservation.create_request",
+                    input={"raw_message": agent_input.message_text},
+                )
+            ]
+
         return AgentOutput(
             intent=result_state.get("intent") or "unknown",
             response_text=result_state.get("response_text") or "",
-            requested_capabilities=result_state.get("requested_capabilities") or [],
+            requested_capabilities=requested_capabilities,
             metadata=result_state.get("metadata"),
         )

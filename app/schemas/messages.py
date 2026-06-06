@@ -1,6 +1,9 @@
 from pydantic import BaseModel
 from datetime import datetime
 
+from app.capabilities.schemas import CapabilityRequest, CapabilityResult
+from app.schemas.tool_calls import ToolCallResponse
+
 class CreateMessageRequest(BaseModel):
     tenant_id: str
     channel: str
@@ -27,5 +30,7 @@ class ProcessMessageResponse(BaseModel):
     message: MessageResponse
     intent: str | None = None
     response_text: str | None = None
-    requested_capabilities: list[str] | None = None
+    requested_capabilities: list[CapabilityRequest] | None = None
+    capability_results: list[CapabilityResult] | None = None
+    tool_calls: list[ToolCallResponse] | None = None
     status: str

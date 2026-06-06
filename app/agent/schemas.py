@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 
+from app.capabilities.schemas import CapabilityRequest
 from app.tenants.schemas import TenantContext
 
 class AgentInput(BaseModel):
@@ -14,10 +15,10 @@ class AgentInput(BaseModel):
 class AgentOutput(BaseModel):
     intent: str
     response_text: str
-    requested_capabilities: list[str]
+    requested_capabilities: list[CapabilityRequest]
     metadata: dict | None = None
 
 class IntentClassifierOutput(BaseModel):
     intent: str
     response_text: str
-    requested_capabilities: list[str]
+    requested_capabilities: list[CapabilityRequest]

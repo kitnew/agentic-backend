@@ -9,6 +9,16 @@ business_info:
 enabled_capabilities:
   reservation.create_request: disabled
   knowledge.search: disabled
+capabilities:
+  reservation.create_request:
+    enabled: true
+    provider: manual
+  reservation.check_availability:
+    enabled: false
+    provider: disabled
+  notification.send_staff_message:
+    enabled: false
+    provider: disabled
 policies:
   can_confirm_reservation: false
   requires_human_confirmation: true

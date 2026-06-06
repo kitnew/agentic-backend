@@ -7,14 +7,18 @@ from app.agent.schemas import IntentClassifierOutput
 
 SYSTEM_PROMPT = """
 You classify the intent of a user message.
-Return only a short intent name in snake_case.
+Return a structured result with intent, response_text, and requested_capabilities.
 Use simple labels like: reservation_request, opening_hours, menu_question, contact_request, complaint, human_handoff, unknown
 Use tenant context as the source of business facts such as opening hours.
+For reservation_request, request reservation.create_request with input.raw_message equal to the original user message.
 """.strip()
 
 
 def build_classify_intent_node(llm: BaseChatModel):
-    structured_llm = llm.with_structured_output(IntentClassifierOutput)
+    structured_llm = llm.with_structured_output(
+        IntentClassifierOutput,
+        method="function_calling",
+    )
 
     def classify_intent(state: AgentState) -> AgentState:
         tenant_context = state["tenant_context"]
@@ -27,7 +31,7 @@ Tenant context:
 - timezone: {tenant_context["timezone"]}
 - agent_profile: {tenant_context["agent_profile"]}
 - business_info: {tenant_context["business_info"]}
-- enabled_capabilities: {tenant_context["enabled_capabilities"]}
+- capabilities: {tenant_context["capabilities"]}
 - policies: {tenant_context["policies"]}
 """.strip()
 

@@ -4,9 +4,12 @@ from langchain_openai import AzureChatOpenAI
 
 from app.application.messages.get_message import get_message_by_id_service
 from app.application.messages.process_incoming_message import ProcessIncomingMessage
+from app.capabilities.router import CapabilityRouter
 from app.infrastructure.database import get_db
 from app.infrastructure.repositories.message_repository import MessageRepository
+from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
+from app.schemas.tool_calls import ToolCallResponse
 from app.agent.runtime import AgentRuntime
 from app.tenants.loader import (
     TenantConfigInvalidError,
@@ -20,6 +23,11 @@ def get_message_repository(
     db: Session = Depends(get_db),
 ) -> MessageRepository:
     return MessageRepository(db)
+
+def get_tool_call_repository(
+    db: Session = Depends(get_db),
+) -> ToolCallRepository:
+    return ToolCallRepository(db)
 
 def get_agent_runtime() -> AgentRuntime:
     # Use ChatOpenAI which will look for OPENAI_API_KEY from environment variables
@@ -36,12 +44,17 @@ def get_agent_runtime() -> AgentRuntime:
 def get_tenant_config_loader() -> TenantConfigLoader:
     return TenantConfigLoader()
 
+def get_capability_router() -> CapabilityRouter:
+    return CapabilityRouter()
+
 @router.post("", response_model=ProcessMessageResponse, status_code=status.HTTP_201_CREATED)
 def receive_message(
     request: CreateMessageRequest,
     repository: MessageRepository = Depends(get_message_repository),
     agent_runtime: AgentRuntime = Depends(get_agent_runtime),
     tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
+    capability_router: CapabilityRouter = Depends(get_capability_router),
+    tool_call_repository: ToolCallRepository = Depends(get_tool_call_repository),
 ):
     """
     Receive, store, and process a new message from a client/channel.
@@ -50,6 +63,8 @@ def receive_message(
         message_repository=repository,
         agent_runtime=agent_runtime,
         tenant_config_loader=tenant_config_loader,
+        capability_router=capability_router,
+        tool_call_repository=tool_call_repository,
     )
     try:
         response = use_case.execute(request)
@@ -74,3 +89,19 @@ def get_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
         
     return message
+
+@router.get("/{message_id}/tool-calls", response_model=list[ToolCallResponse])
+def list_message_tool_calls(
+    message_id: str,
+    repository: MessageRepository = Depends(get_message_repository),
+    tool_call_repository: ToolCallRepository = Depends(get_tool_call_repository),
+):
+    """
+    Retrieve capability executions associated with a message.
+    """
+    message = get_message_by_id_service(message_id, repository)
+
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+
+    return tool_call_repository.list_by_message_id(message_id)

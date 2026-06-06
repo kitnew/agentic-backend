@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field
 
 
+class TenantCapabilityConfig(BaseModel):
+    enabled: bool
+    provider: str
+
+
 class TenantContext(BaseModel):
     tenant_id: str
     name: str
@@ -10,4 +15,5 @@ class TenantContext(BaseModel):
     agent_profile: str
     business_info: dict[str, str] = Field(default_factory=dict)
     enabled_capabilities: dict[str, str]
+    capabilities: dict[str, TenantCapabilityConfig] = Field(default_factory=dict)
     policies: dict[str, bool]

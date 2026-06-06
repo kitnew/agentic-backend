@@ -7,6 +7,6 @@ class AgentState(TypedDict):
     message_text: str
     intent: str | None
     response_text: str | None
-    requested_capabilities: list[str]
+    requested_capabilities: list
     metadata: dict | None
     tenant_context: dict
