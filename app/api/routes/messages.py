@@ -3,9 +3,14 @@ from sqlalchemy.orm import Session
 from langchain_openai import AzureChatOpenAI
 
 from app.application.messages.get_message import get_message_by_id_service
-from app.application.messages.process_incoming_message import ProcessIncomingMessage
+from app.application.messages.process_incoming_message import (
+    ConversationNotFoundError,
+    ConversationTenantMismatchError,
+    ProcessIncomingMessage,
+)
 from app.capabilities.router import CapabilityRouter
 from app.infrastructure.database import get_db
+from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
 from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
@@ -28,6 +33,11 @@ def get_tool_call_repository(
     db: Session = Depends(get_db),
 ) -> ToolCallRepository:
     return ToolCallRepository(db)
+
+def get_conversation_repository(
+    db: Session = Depends(get_db),
+) -> ConversationRepository:
+    return ConversationRepository(db)
 
 def get_agent_runtime() -> AgentRuntime:
     # Use ChatOpenAI which will look for OPENAI_API_KEY from environment variables
@@ -55,6 +65,7 @@ def receive_message(
     tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
     capability_router: CapabilityRouter = Depends(get_capability_router),
     tool_call_repository: ToolCallRepository = Depends(get_tool_call_repository),
+    conversation_repository: ConversationRepository = Depends(get_conversation_repository),
 ):
     """
     Receive, store, and process a new message from a client/channel.
@@ -65,12 +76,17 @@ def receive_message(
         tenant_config_loader=tenant_config_loader,
         capability_router=capability_router,
         tool_call_repository=tool_call_repository,
+        conversation_repository=conversation_repository,
     )
     try:
         response = use_case.execute(request)
     except TenantConfigNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant config not found")
     except TenantConfigInvalidError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    except ConversationNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+    except ConversationTenantMismatchError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     return response

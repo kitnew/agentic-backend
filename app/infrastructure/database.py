@@ -31,7 +31,7 @@ def init_db() -> None:
     Initialize the database by creating all tables registered on the Base metadata.
     """
     # Import all models here to register them with the metadata
-    from app.infrastructure.models import MessageModel, ToolCallModel
+    from app.infrastructure.models import ConversationModel, MessageModel, ToolCallModel
     Base.metadata.create_all(bind=engine)
 
 def get_db() -> Generator[Session, None, None]:

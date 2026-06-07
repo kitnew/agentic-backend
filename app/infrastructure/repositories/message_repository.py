@@ -48,6 +48,18 @@ class MessageRepository:
         if not db_message:
             return None
             
+        return self._to_domain(db_message)
+
+    def list_by_conversation_id(self, conversation_id: str) -> list[Message]:
+        db_messages = (
+            self.db.query(MessageModel)
+            .filter(MessageModel.conversation_id == conversation_id)
+            .order_by(MessageModel.created_at.asc())
+            .all()
+        )
+        return [self._to_domain(db_message) for db_message in db_messages]
+
+    def _to_domain(self, db_message: MessageModel) -> Message:
         return Message(
             id=db_message.id,
             tenant_id=db_message.tenant_id,

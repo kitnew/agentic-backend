@@ -12,7 +12,10 @@ enabled_capabilities:
 capabilities:
   reservation.create_request:
     enabled: true
-    provider: manual
+    provider: google_sheets
+    config:
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "test"
   reservation.check_availability:
     enabled: false
     provider: disabled

@@ -1,6 +1,22 @@
 from sqlalchemy import Column, Integer, String, DateTime, JSON
 from app.infrastructure.database import Base
 
+
+class ConversationModel(Base):
+    """
+    SQLAlchemy model representing a conversation thread.
+    """
+    __tablename__ = "conversations"
+
+    id = Column(String, primary_key=True, index=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    channel = Column(String, nullable=False)
+    external_user_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
+
+
 class MessageModel(Base):
     """
     SQLAlchemy model representing the 'messages' table.

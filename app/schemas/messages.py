@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 
 from app.capabilities.schemas import CapabilityRequest, CapabilityResult
@@ -13,6 +13,8 @@ class CreateMessageRequest(BaseModel):
     metadata: dict | None = None
 
 class MessageResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     tenant_id: str
     conversation_id: str | None = None
@@ -27,7 +29,11 @@ class MessageResponse(BaseModel):
     processed_at: datetime | None = None
 
 class ProcessMessageResponse(BaseModel):
-    message: MessageResponse
+    model_config = ConfigDict(from_attributes=True)
+
+    conversation_id: str
+    user_message: MessageResponse
+    assistant_message: MessageResponse | None = None
     intent: str | None = None
     response_text: str | None = None
     requested_capabilities: list[CapabilityRequest] | None = None

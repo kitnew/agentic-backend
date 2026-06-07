@@ -1,9 +1,12 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class TenantCapabilityConfig(BaseModel):
     enabled: bool
     provider: str
+    config: dict[str, Any] = Field(default_factory=dict)
 
 
 class TenantContext(BaseModel):
