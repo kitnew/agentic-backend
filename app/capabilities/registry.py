@@ -28,3 +28,6 @@ class CapabilityRegistry:
 
     def get(self, provider_name: str) -> CapabilityProvider | None:
         return self.providers.get(provider_name)
+
+    def provider_names(self) -> set[str]:
+        return set(self.providers)

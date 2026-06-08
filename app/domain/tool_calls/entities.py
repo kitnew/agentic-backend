@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.domain.tool_calls.enums import ToolCallStatus
+
 
 class ToolCall(BaseModel):
     id: str
@@ -13,7 +15,7 @@ class ToolCall(BaseModel):
     provider: str
     input: dict[str, Any]
     output: dict[str, Any] | None = None
-    status: str
+    status: ToolCallStatus
     error: str | None = None
     latency_ms: int
     created_at: datetime

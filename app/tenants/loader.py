@@ -15,6 +15,13 @@ class TenantConfigInvalidError(Exception):
 
 
 class TenantConfigLoader:
+    known_capabilities = {
+        "knowledge.search",
+        "notification.send_staff_message",
+        "reservation.check_availability",
+        "reservation.create_request",
+    }
+
     def __init__(self, configs_dir: Path | None = None):
         self.configs_dir = configs_dir or Path(__file__).parent / "configs"
 
@@ -37,3 +44,42 @@ class TenantConfigLoader:
             )
 
         return tenant_context
+
+    def validate_all(self, provider_names: set[str]) -> list[TenantContext]:
+        tenant_contexts = []
+        for config_path in sorted(self.configs_dir.glob("*.yaml")):
+            tenant_context = self.load(config_path.stem)
+            self._validate_capabilities(tenant_context, provider_names)
+            tenant_contexts.append(tenant_context)
+
+        return tenant_contexts
+
+    def _validate_capabilities(
+        self,
+        tenant_context: TenantContext,
+        provider_names: set[str],
+    ) -> None:
+        for capability_name, capability_config in tenant_context.capabilities.items():
+            if capability_name not in self.known_capabilities:
+                raise TenantConfigInvalidError(
+                    f"Unknown capability in tenant config {tenant_context.tenant_id}: {capability_name}"
+                )
+
+            if capability_config.provider not in provider_names:
+                raise TenantConfigInvalidError(
+                    f"Unknown provider for {capability_name} in tenant config "
+                    f"{tenant_context.tenant_id}: {capability_config.provider}"
+                )
+
+            if (
+                capability_config.enabled
+                and capability_config.provider == "google_sheets"
+                and (
+                    not capability_config.config.get("spreadsheet_id")
+                    or not capability_config.config.get("sheet_name")
+                )
+            ):
+                raise TenantConfigInvalidError(
+                    f"google_sheets capability {capability_name} in tenant config "
+                    f"{tenant_context.tenant_id} requires spreadsheet_id and sheet_name"
+                )

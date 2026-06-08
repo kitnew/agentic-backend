@@ -6,10 +6,11 @@ from app.infrastructure.repositories.message_repository import MessageRepository
 from app.agent.runtime import AgentRuntime
 from app.agent.schemas import AgentInput
 from app.capabilities.router import CapabilityRouter
-from app.capabilities.schemas import CapabilityRequest
+from app.capabilities.schemas import CapabilityRequest, CapabilityStatus
 from app.domain.conversations.entities import Conversation
 from app.domain.conversations.enums import ConversationStatus
 from app.domain.tool_calls.entities import ToolCall
+from app.domain.tool_calls.enums import ToolCallStatus
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
@@ -106,7 +107,7 @@ class ProcessIncomingMessage:
                     provider=capability_result.provider,
                     input=execution_request.input,
                     output=capability_result.output,
-                    status=capability_result.status,
+                    status=ToolCallStatus(capability_result.status),
                     error=capability_result.error,
                     latency_ms=latency_ms,
                     created_at=datetime.now(),
@@ -119,10 +120,19 @@ class ProcessIncomingMessage:
                 if capability_result.user_message:
                     response_text = capability_result.user_message
                     break
+            has_capability_failure = any(
+                capability_result.status == CapabilityStatus.FAILED
+                for capability_result in capability_results
+            )
+            final_message_status = (
+                MessageStatus.FAILED
+                if has_capability_failure
+                else MessageStatus.PROCESSED
+            )
 
             # 6. Обновить Message (intent = agent_result.intent, status = processed, processed_at = now)
             user_message.intent = agent_result.intent
-            user_message.status = MessageStatus.PROCESSED
+            user_message.status = final_message_status
             user_message.processed_at = datetime.now()
 
             # 7. Сохранить/обновить Message
@@ -137,12 +147,14 @@ class ProcessIncomingMessage:
                 role=MessageRole.ASSISTANT,
                 content=response_text,
                 intent=agent_result.intent,
-                status=MessageStatus.PROCESSED,
+                status=final_message_status,
                 metadata=None,
                 created_at=datetime.now(),
                 processed_at=datetime.now(),
             )
             self.message_repository.save(assistant_message)
+            if has_capability_failure:
+                conversation.status = ConversationStatus.FAILED
             conversation.updated_at = datetime.now()
             self.conversation_repository.update(conversation)
 
