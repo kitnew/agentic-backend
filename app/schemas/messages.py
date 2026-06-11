@@ -1,8 +1,11 @@
-from pydantic import BaseModel, ConfigDict
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
 
 from app.capabilities.schemas import CapabilityRequest, CapabilityResult
 from app.schemas.tool_calls import ToolCallResponse
+
 
 class CreateMessageRequest(BaseModel):
     tenant_id: str
@@ -11,6 +14,7 @@ class CreateMessageRequest(BaseModel):
     conversation_id: str | None = None
     content: str
     metadata: dict | None = None
+
 
 class MessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -22,11 +26,11 @@ class MessageResponse(BaseModel):
     external_user_id: str | None = None
     role: str
     content: str
-    intent: str | None = None
     status: str
     metadata: dict | None = None
     created_at: datetime
     processed_at: datetime | None = None
+
 
 class ProcessMessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -34,9 +38,9 @@ class ProcessMessageResponse(BaseModel):
     conversation_id: str
     user_message: MessageResponse
     assistant_message: MessageResponse | None = None
-    intent: str | None = None
     response_text: str | None = None
     requested_capabilities: list[CapabilityRequest] | None = None
     capability_results: list[CapabilityResult] | None = None
     tool_calls: list[ToolCallResponse] | None = None
+    agent_trace: dict[str, Any] | None = None
     status: str

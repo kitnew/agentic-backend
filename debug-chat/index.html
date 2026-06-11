@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agentic Backend Debug Chat</title>
+  <style>
+    :root {
+      --border: #d0d7de;
+      --muted: #57606a;
+      --bg: #f6f8fa;
+      --panel: #ffffff;
+      --user: #0969da;
+      --assistant: #1a7f37;
+      --error: #cf222e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: #24292f;
+    }
+    header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    header h1 { font-size: 16px; margin: 0 8px 0 0; }
+    label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+    input, textarea, button, select {
+      font: inherit;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+    }
+    input, textarea { padding: 8px; }
+    button {
+      padding: 8px 12px;
+      cursor: pointer;
+      background: #24292f;
+      color: #fff;
+      border-color: #24292f;
+    }
+    button:disabled { cursor: not-allowed; opacity: 0.6; }
+    main {
+      display: grid;
+      grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+      gap: 12px;
+      padding: 12px;
+      height: calc(100vh - 82px);
+    }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .section-title {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      align-items: center;
+    }
+    .chat-log {
+      flex: 1;
+      overflow: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .message {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      white-space: pre-wrap;
+      line-height: 1.4;
+    }
+    .message.user { border-left: 4px solid var(--user); }
+    .message.assistant { border-left: 4px solid var(--assistant); }
+    .message.error { border-left: 4px solid var(--error); }
+    .message .meta {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    form {
+      border-top: 1px solid var(--border);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    pre {
+      margin: 0;
+      flex: 1;
+      overflow: auto;
+      padding: 12px;
+      font-size: 12px;
+      line-height: 1.45;
+      background: #0d1117;
+      color: #e6edf3;
+      border-radius: 0 0 8px 8px;
+    }
+    .row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+    .row label { flex: 1 1 160px; }
+    .wide { min-width: 300px; }
+    .status { color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; height: auto; }
+      section { min-height: 420px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Debug Chat</h1>
+    <label class="wide">Backend URL
+      <input id="backendUrl" value="http://127.0.0.1:8000">
+    </label>
+    <label>API path
+      <input id="apiPath" value="/api/v1/messages">
+    </label>
+    <span id="status" class="status">Idle</span>
+  </header>
+
+  <main>
+    <section>
+      <div class="section-title">
+        <span>Conversation</span>
+        <button id="clearChat" type="button">Clear</button>
+      </div>
+      <div id="chatLog" class="chat-log"></div>
+      <form id="messageForm">
+        <div class="row">
+          <label>Tenant ID
+            <input id="tenantId" value="demo_restaurant" required>
+          </label>
+          <label>Channel
+            <input id="channel" value="debug-chat" required>
+          </label>
+        </div>
+        <div class="row">
+          <label>External user ID
+            <input id="externalUserId" value="debug-user">
+          </label>
+          <label>Conversation ID
+            <input id="conversationId" placeholder="Empty means create/use new conversation">
+          </label>
+        </div>
+        <label>Metadata JSON (optional)
+          <input id="metadata" placeholder='{"source":"debug"}'>
+        </label>
+        <label>Message
+          <textarea id="content" placeholder="Type a message..." required></textarea>
+        </label>
+        <button id="sendButton" type="submit">Send</button>
+      </form>
+    </section>
+
+    <section>
+      <div class="section-title">
+        <span>Full API response</span>
+        <button id="copyResponse" type="button">Copy JSON</button>
+      </div>
+      <pre id="apiResponse">No requests yet.</pre>
+    </section>
+  </main>
+
+  <script>
+    const backendUrlInput = document.querySelector('#backendUrl');
+    const apiPathInput = document.querySelector('#apiPath');
+    const tenantIdInput = document.querySelector('#tenantId');
+    const channelInput = document.querySelector('#channel');
+    const externalUserIdInput = document.querySelector('#externalUserId');
+    const conversationIdInput = document.querySelector('#conversationId');
+    const metadataInput = document.querySelector('#metadata');
+    const contentInput = document.querySelector('#content');
+    const chatLog = document.querySelector('#chatLog');
+    const apiResponse = document.querySelector('#apiResponse');
+    const statusEl = document.querySelector('#status');
+    const sendButton = document.querySelector('#sendButton');
+
+    const saved = JSON.parse(localStorage.getItem('debug-chat-settings') || '{}');
+    for (const [id, value] of Object.entries(saved)) {
+      const element = document.querySelector(`#${id}`);
+      if (element && value !== undefined) element.value = value;
+    }
+
+    fetch('/config')
+      .then((response) => response.json())
+      .then((config) => {
+        if (!saved.backendUrl && config.backend_url) backendUrlInput.value = config.backend_url;
+        if (!saved.apiPath && config.api_path) apiPathInput.value = config.api_path;
+      })
+      .catch(() => {});
+
+    document.querySelector('#messageForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const content = contentInput.value.trim();
+      if (!content) return;
+
+      let metadata = null;
+      if (metadataInput.value.trim()) {
+        try {
+          metadata = JSON.parse(metadataInput.value);
+        } catch (error) {
+          appendMessage('error', 'UI', `Metadata JSON is invalid: ${error.message}`);
+          return;
+        }
+      }
+
+      const payload = compact({
+        tenant_id: tenantIdInput.value.trim(),
+        channel: channelInput.value.trim(),
+        external_user_id: externalUserIdInput.value.trim(),
+        conversation_id: conversationIdInput.value.trim(),
+        content,
+        metadata,
+      });
+
+      saveSettings();
+      appendMessage('user', 'You', content);
+      contentInput.value = '';
+      setBusy(true, 'Sending...');
+
+      try {
+        const response = await fetch('/debug/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            backend_url: backendUrlInput.value.trim(),
+            api_path: apiPathInput.value.trim(),
+            payload,
+          }),
+        });
+        const result = await response.json();
+        apiResponse.textContent = JSON.stringify(result, null, 2);
+
+        const backendResponse = result.response || {};
+        if (backendResponse.conversation_id) {
+          conversationIdInput.value = backendResponse.conversation_id;
+          saveSettings();
+        }
+
+        if (!response.ok || result.error) {
+          appendMessage('error', 'Proxy error', result.error || `HTTP ${response.status}`);
+        } else if (result.proxied_status >= 400) {
+          appendMessage('error', `Backend HTTP ${result.proxied_status}`, JSON.stringify(backendResponse, null, 2));
+        } else {
+          appendMessage('assistant', 'Assistant', backendResponse.response_text || backendResponse.assistant_message?.content || '(empty response)');
+        }
+      } catch (error) {
+        appendMessage('error', 'Request failed', error.message);
+        apiResponse.textContent = JSON.stringify({ error: error.message }, null, 2);
+      } finally {
+        setBusy(false, 'Idle');
+      }
+    });
+
+    document.querySelector('#clearChat').addEventListener('click', () => {
+      chatLog.innerHTML = '';
+      apiResponse.textContent = 'No requests yet.';
+    });
+
+    document.querySelector('#copyResponse').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(apiResponse.textContent);
+      statusEl.textContent = 'Copied response JSON';
+      setTimeout(() => statusEl.textContent = 'Idle', 1200);
+    });
+
+    function compact(value) {
+      return Object.fromEntries(
+        Object.entries(value).filter(([, item]) => item !== '' && item !== null && item !== undefined)
+      );
+    }
+
+    function appendMessage(kind, author, text) {
+      const message = document.createElement('div');
+      message.className = `message ${kind}`;
+      message.innerHTML = `<div class="meta"></div><div></div>`;
+      message.children[0].textContent = `${author} · ${new Date().toLocaleTimeString()}`;
+      message.children[1].textContent = text;
+      chatLog.append(message);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function setBusy(isBusy, text) {
+      sendButton.disabled = isBusy;
+      statusEl.textContent = text;
+    }
+
+    function saveSettings() {
+      localStorage.setItem('debug-chat-settings', JSON.stringify({
+        backendUrl: backendUrlInput.value,
+        apiPath: apiPathInput.value,
+        tenantId: tenantIdInput.value,
+        channel: channelInput.value,
+        externalUserId: externalUserIdInput.value,
+        conversationId: conversationIdInput.value,
+        metadata: metadataInput.value,
+      }));
+    }
+  </script>
+</body>
+</html>

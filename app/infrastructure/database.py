@@ -1,6 +1,6 @@
 import os
 from collections.abc import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 # Default to SQLite at start as requested: sqlite:///./test.db
@@ -33,6 +33,20 @@ def init_db() -> None:
     # Import all models here to register them with the metadata
     from app.infrastructure.models import ConversationModel, MessageModel, ToolCallModel
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_schema()
+
+
+def _ensure_sqlite_schema() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+
+    with engine.begin() as connection:
+        conversation_columns = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(conversations)")).fetchall()
+        }
+        if "metadata" not in conversation_columns:
+            connection.execute(text("ALTER TABLE conversations ADD COLUMN metadata JSON"))
 
 def get_db() -> Generator[Session, None, None]:
     """

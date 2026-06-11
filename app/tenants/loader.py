@@ -43,6 +43,12 @@ class TenantConfigLoader:
                 f"Tenant config id mismatch: expected {tenant_id}, got {tenant_context.tenant_id}"
             )
 
+        if tenant_context.agent_profile != tenant_context.agent.profile:
+            raise TenantConfigInvalidError(
+                f"Tenant config agent profile mismatch: agent_profile={tenant_context.agent_profile}, "
+                f"agent.profile={tenant_context.agent.profile}"
+            )
+
         return tenant_context
 
     def validate_all(self, provider_names: set[str]) -> list[TenantContext]:

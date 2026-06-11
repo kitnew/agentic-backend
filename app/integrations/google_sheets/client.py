@@ -31,7 +31,7 @@ class GoogleSheetsClient:
             .values()
             .append(
                 spreadsheetId=request.spreadsheet_id,
-                range=f"{request.sheet_name}!A:G",
+                range=f"{request.sheet_name}!A:L",
                 valueInputOption="RAW",
                 insertDataOption="INSERT_ROWS",
                 body={"values": [request.values]},

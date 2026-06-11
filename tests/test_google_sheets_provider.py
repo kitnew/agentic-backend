@@ -32,6 +32,13 @@ def test_google_sheets_provider_can_be_mocked():
                 "message_id": "message-1",
                 "conversation_id": "conversation-1",
                 "source_channel": "chat",
+                "reservation_frame": {
+                    "guest_name": "Patrik",
+                    "date": "zajtra",
+                    "time": "19:00",
+                    "party_size": 2,
+                    "phone": "+421 900 123 456",
+                },
             },
         ),
     )
@@ -40,3 +47,5 @@ def test_google_sheets_provider_can_be_mocked():
     assert result.provider == "google_sheets"
     assert result.output["row_appended"] is True
     assert client.requests[0].values[2] == "message-1"
+    assert client.requests[0].values[4] == "Patrik"
+    assert client.requests[0].values[5] == "zajtra"

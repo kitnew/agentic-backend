@@ -13,6 +13,7 @@ class ConversationResponse(BaseModel):
     channel: str
     external_user_id: str | None = None
     status: str
+    metadata: dict | None = None
     created_at: datetime
     updated_at: datetime
 

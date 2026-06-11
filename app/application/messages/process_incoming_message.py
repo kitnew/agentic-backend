@@ -1,22 +1,19 @@
 import uuid
 from datetime import datetime
-from time import perf_counter
 
-from app.infrastructure.repositories.message_repository import MessageRepository
+from app.agent.contracts.input import AgentInput
 from app.agent.runtime import AgentRuntime
-from app.agent.schemas import AgentInput
+from app.application.capabilities.executor import BackendCapabilityExecutor
 from app.capabilities.router import CapabilityRouter
-from app.capabilities.schemas import CapabilityRequest, CapabilityStatus
+from app.capabilities.schemas import CapabilityStatus
 from app.domain.conversations.entities import Conversation
 from app.domain.conversations.enums import ConversationStatus
-from app.domain.tool_calls.entities import ToolCall
-from app.domain.tool_calls.enums import ToolCallStatus
+from app.domain.messages.entities import Message
+from app.domain.messages.enums import MessageRole, MessageStatus
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
+from app.infrastructure.repositories.message_repository import MessageRepository
 from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
-from app.schemas.tool_calls import ToolCallResponse
-from app.domain.messages.entities import Message
-from app.domain.messages.enums import MessageStatus, MessageRole
 from app.tenants.loader import TenantConfigLoader
 
 
@@ -29,9 +26,8 @@ class ConversationTenantMismatchError(Exception):
 
 
 class ProcessIncomingMessage:
-    """
-    Orchestration use-case class to handle incoming messages.
-    """
+    """Orchestrates incoming chat messages and lets the agent graph execute capabilities."""
+
     def __init__(
         self,
         message_repository: MessageRepository,
@@ -51,8 +47,8 @@ class ProcessIncomingMessage:
     def execute(self, request: CreateMessageRequest) -> ProcessMessageResponse:
         tenant_context = self.tenant_config_loader.load(request.tenant_id)
         conversation = self._get_or_create_conversation(request)
+        chat_history = self._build_chat_history(conversation.id)
 
-        # 1. Создать Message (role = user, status = received, intent = null)
         user_message = Message(
             id=str(uuid.uuid4()),
             tenant_id=request.tenant_id,
@@ -61,81 +57,47 @@ class ProcessIncomingMessage:
             conversation_id=conversation.id,
             role=MessageRole.USER,
             content=request.content,
-            intent=None,
             status=MessageStatus.RECEIVED,
             metadata=request.metadata,
             created_at=datetime.now(),
             processed_at=None,
         )
-
-        # 2. Сохранить Message
         self.message_repository.save(user_message)
 
-        # 3. Обновить status = processing (and save)
         user_message.status = MessageStatus.PROCESSING
         self.message_repository.save(user_message)
 
-        # 4. Создать AgentInput из Message + request
         agent_input = AgentInput(
             tenant_id=user_message.tenant_id,
             conversation_id=user_message.conversation_id,
             message_id=user_message.id,
             message_text=user_message.content,
             channel=user_message.channel,
-            metadata=user_message.metadata,
             tenant_context=tenant_context,
+            chat_history=chat_history,
+        )
+        capability_executor = BackendCapabilityExecutor(
+            tenant_context=tenant_context,
+            message=user_message,
+            capability_router=self.capability_router,
+            tool_call_repository=self.tool_call_repository,
         )
 
         try:
-            # 5. Вызвать agent_runtime.run(agent_input)
-            agent_result = self.agent_runtime.run(agent_input)
-            capability_results = []
-            tool_calls = []
-            for capability_request in agent_result.requested_capabilities:
-                execution_request = self._with_execution_context(capability_request, user_message)
-                started_at = perf_counter()
-                capability_result = self.capability_router.execute(tenant_context, execution_request)
-                latency_ms = int((perf_counter() - started_at) * 1000)
-                capability_results.append(capability_result)
-
-                tool_call = ToolCall(
-                    id=str(uuid.uuid4()),
-                    tenant_id=user_message.tenant_id,
-                    message_id=user_message.id,
-                    conversation_id=user_message.conversation_id,
-                    capability_name=execution_request.name,
-                    provider=capability_result.provider,
-                    input=execution_request.input,
-                    output=capability_result.output,
-                    status=ToolCallStatus(capability_result.status),
-                    error=capability_result.error,
-                    latency_ms=latency_ms,
-                    created_at=datetime.now(),
-                )
-                self.tool_call_repository.create(tool_call)
-                tool_calls.append(tool_call)
-
-            response_text = agent_result.response_text
-            for capability_result in capability_results:
-                if capability_result.user_message:
-                    response_text = capability_result.user_message
-                    break
+            agent_result = self.agent_runtime.run(agent_input, capability_executor=capability_executor)
+            capability_results = agent_result.capability_results
+            tool_calls = agent_result.tool_calls
+            response_text = agent_result.response_text or ""
             has_capability_failure = any(
                 capability_result.status == CapabilityStatus.FAILED
                 for capability_result in capability_results
             )
             final_message_status = (
-                MessageStatus.FAILED
-                if has_capability_failure
-                else MessageStatus.PROCESSED
+                MessageStatus.FAILED if has_capability_failure else MessageStatus.PROCESSED
             )
 
-            # 6. Обновить Message (intent = agent_result.intent, status = processed, processed_at = now)
-            user_message.intent = agent_result.intent
             user_message.status = final_message_status
             user_message.processed_at = datetime.now()
-
-            # 7. Сохранить/обновить Message
             self.message_repository.save(user_message)
 
             assistant_message = Message(
@@ -146,46 +108,34 @@ class ProcessIncomingMessage:
                 external_user_id=user_message.external_user_id,
                 role=MessageRole.ASSISTANT,
                 content=response_text,
-                intent=agent_result.intent,
                 status=final_message_status,
                 metadata=None,
                 created_at=datetime.now(),
                 processed_at=datetime.now(),
             )
             self.message_repository.save(assistant_message)
+
             if has_capability_failure:
                 conversation.status = ConversationStatus.FAILED
             conversation.updated_at = datetime.now()
             self.conversation_repository.update(conversation)
 
-            # 8. Вернуть ProcessMessageResponse
             return ProcessMessageResponse(
                 conversation_id=conversation.id,
                 user_message=self._to_message_response(user_message),
                 assistant_message=self._to_message_response(assistant_message),
-                intent=user_message.intent,
                 response_text=response_text,
                 requested_capabilities=agent_result.requested_capabilities,
                 capability_results=capability_results,
-                tool_calls=[self._to_tool_call_response(tool_call) for tool_call in tool_calls],
+                tool_calls=tool_calls,
+                agent_trace=agent_result.trace,
                 status=user_message.status,
             )
 
-        except Exception as e:
-            # Если agent упал:
-            # - status = failed
-            # - processed_at = now
-            # - сохранить ошибку в metadata или error field later
-            # - вернуть ошибку или controlled response
+        except Exception as exc:
             user_message.status = MessageStatus.FAILED
             user_message.processed_at = datetime.now()
-
-            error_info = {"error": str(e)}
-            if user_message.metadata:
-                user_message.metadata = {**user_message.metadata, **error_info}
-            else:
-                user_message.metadata = error_info
-
+            user_message.metadata = {**(user_message.metadata or {}), "error": str(exc)}
             self.message_repository.save(user_message)
 
             failure_text = "Failed to process the message due to an internal agent error."
@@ -197,9 +147,8 @@ class ProcessIncomingMessage:
                 external_user_id=user_message.external_user_id,
                 role=MessageRole.ASSISTANT,
                 content=failure_text,
-                intent=None,
                 status=MessageStatus.FAILED,
-                metadata=error_info,
+                metadata={"error": str(exc)},
                 created_at=datetime.now(),
                 processed_at=datetime.now(),
             )
@@ -212,29 +161,13 @@ class ProcessIncomingMessage:
                 conversation_id=conversation.id,
                 user_message=self._to_message_response(user_message),
                 assistant_message=self._to_message_response(assistant_message),
-                intent=None,
                 response_text=failure_text,
-                requested_capabilities=None,
-                capability_results=None,
-                tool_calls=None,
+                requested_capabilities=[],
+                capability_results=[],
+                tool_calls=[],
+                agent_trace=None,
                 status=user_message.status,
             )
-
-    def _to_tool_call_response(self, tool_call: ToolCall) -> ToolCallResponse:
-        return ToolCallResponse(
-            id=tool_call.id,
-            tenant_id=tool_call.tenant_id,
-            message_id=tool_call.message_id,
-            conversation_id=tool_call.conversation_id,
-            capability_name=tool_call.capability_name,
-            provider=tool_call.provider,
-            input=tool_call.input,
-            output=tool_call.output,
-            status=tool_call.status,
-            error=tool_call.error,
-            latency_ms=tool_call.latency_ms,
-            created_at=tool_call.created_at,
-        )
 
     def _to_message_response(self, message: Message) -> MessageResponse:
         return MessageResponse(
@@ -245,26 +178,27 @@ class ProcessIncomingMessage:
             external_user_id=message.external_user_id,
             role=message.role,
             content=message.content,
-            intent=message.intent,
             status=message.status,
             metadata=message.metadata,
             created_at=message.created_at,
             processed_at=message.processed_at,
         )
 
-    def _with_execution_context(
+    def _build_chat_history(
         self,
-        capability_request: CapabilityRequest,
-        message: Message,
-    ) -> CapabilityRequest:
-        execution_input = {
-            **capability_request.input,
-            "tenant_id": message.tenant_id,
-            "message_id": message.id,
-            "conversation_id": message.conversation_id,
-            "source_channel": message.channel,
-        }
-        return capability_request.model_copy(update={"input": execution_input})
+        conversation_id: str,
+        limit: int = 20,
+    ) -> list[dict]:
+        messages = self.message_repository.list_by_conversation_id(conversation_id)
+        recent_messages = messages[-limit:]
+        return [
+            {
+                "role": message.role.value,
+                "content": message.content,
+                "created_at": message.created_at.isoformat(),
+            }
+            for message in recent_messages
+        ]
 
     def _get_or_create_conversation(self, request: CreateMessageRequest) -> Conversation:
         if request.conversation_id:
@@ -280,6 +214,16 @@ class ProcessIncomingMessage:
             conversation.updated_at = datetime.now()
             return self.conversation_repository.update(conversation)
 
+        if request.external_user_id:
+            conversation = self.conversation_repository.get_active_by_participant(
+                tenant_id=request.tenant_id,
+                channel=request.channel,
+                external_user_id=request.external_user_id,
+            )
+            if conversation:
+                conversation.updated_at = datetime.now()
+                return self.conversation_repository.update(conversation)
+
         now = datetime.now()
         conversation = Conversation(
             id=str(uuid.uuid4()),
@@ -287,6 +231,7 @@ class ProcessIncomingMessage:
             channel=request.channel,
             external_user_id=request.external_user_id,
             status=ConversationStatus.ACTIVE,
+            metadata=None,
             created_at=now,
             updated_at=now,
         )

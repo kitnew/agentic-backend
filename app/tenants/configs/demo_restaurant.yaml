@@ -4,11 +4,33 @@ business_type: restaurant
 default_language: en
 timezone: Europe/Bratislava
 agent_profile: restaurant_assistant
+agent:
+  profile: restaurant_assistant
+  display_name: "Sasha"
+  use_display_name: false
+  greeting_phrase: "Vitajte v našej reštaurácii."
+  tone: "friendly_professional"
+  language: "sk"
+  style_rules:
+    - "Keep answers short and clear."
+    - "Do not overpromise reservations."
+    - "If an action requires staff confirmation, say that clearly."
 business_info:
   opening_hours: "10:00 - 21:00 every day except Sunday"
-enabled_capabilities:
-  reservation.create_request: disabled
-  knowledge.search: disabled
+  parking: "Parking is available at the restaurant on the street"
+  address: "Demo ulica 12, Bratislava"
+  phone: "+421 900 000 000"
+  menu_summary: "Sezónne jedlá, denné menu a výber domácich dezertov."
+reservation:
+  required_fields:
+    - guest_name
+    - date
+    - time
+    - party_size
+    - phone
+  opening_hours:
+    - start: "10:00"
+      end: "21:00"
 capabilities:
   reservation.create_request:
     enabled: true

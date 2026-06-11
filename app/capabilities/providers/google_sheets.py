@@ -31,11 +31,17 @@ class GoogleSheetsReservationProvider:
             )
 
         reservation_status = "pending_manual_confirmation"
+        reservation_frame = capability_request.input.get("reservation_frame") or {}
         row = [
             datetime.now(timezone.utc).isoformat(),
             tenant_context.tenant_id,
             capability_request.input.get("message_id"),
             capability_request.input.get("conversation_id"),
+            reservation_frame.get("guest_name"),
+            reservation_frame.get("date"),
+            reservation_frame.get("time"),
+            reservation_frame.get("party_size"),
+            reservation_frame.get("phone"),
             capability_request.input.get("raw_message"),
             reservation_status,
             capability_request.input.get("source_channel"),
@@ -70,5 +76,6 @@ class GoogleSheetsReservationProvider:
                 "updated_range": append_result.updated_range,
                 "updated_rows": append_result.updated_rows,
                 "reservation_status": reservation_status,
+                "reservation_frame": reservation_frame,
             },
         )
