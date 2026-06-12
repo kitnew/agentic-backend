@@ -97,7 +97,7 @@ class FakeAgentRuntime:
         self.response_text = response_text
         self.inputs = []
 
-    def run(self, agent_input, capability_executor=None):
+    def run(self, agent_input, capability_executor=None, state_store=None):
         self.inputs.append(agent_input)
         request = CapabilityRequest(
             name="reservation.create_request",
@@ -137,7 +137,7 @@ class FakeOpeningHoursAgentRuntime:
     def __init__(self):
         self.inputs = []
 
-    def run(self, agent_input, capability_executor=None):
+    def run(self, agent_input, capability_executor=None, state_store=None):
         self.inputs.append(agent_input)
         return AgentResult(
             response_text="Máme otvorené: 10:00 - 21:00 every day except Sunday",

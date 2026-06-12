@@ -73,8 +73,7 @@ class ProcessIncomingMessage:
             message_id=user_message.id,
             message_text=user_message.content,
             channel=user_message.channel,
-            tenant_context=tenant_context,
-            chat_history=chat_history,
+            tenant_context=tenant_context
         )
         capability_executor = BackendCapabilityExecutor(
             tenant_context=tenant_context,

@@ -3,11 +3,14 @@ from app.agent.contracts.output import AgentResult
 from app.agent.contracts.state import (
     AgentDecision,
     ChatMemoryExtraction,
+    PersistentAgentState,
+    PersistentAgentTask,
     ResponseDraft,
     ResponseValidationResult,
     ReservationExtractionResult,
     TaskStateValidationResult,
 )
+from app.agent.contracts.enums import AgentTaskName, ReservationTaskStatus
 from app.agent.runtime import AgentRuntime
 from app.agent.runtime.capability_executor import CapabilityExecution
 from app.agent.runtime.graph import AgentGraph
@@ -57,6 +60,52 @@ class FakeCapabilityExecutor:
             ),
             tool_call={"provider": "fake", "input": capability_request.input},
         )
+
+
+class InMemoryAgentStateStore:
+    def __init__(self):
+        self.state = PersistentAgentState(
+            tenant_id="demo_restaurant",
+            conversation_id="conversation-1",
+        )
+        self.counter = 0
+
+    def load(self, *, tenant_id: str, conversation_id: str | None) -> PersistentAgentState:
+        self.state.tenant_id = tenant_id
+        self.state.conversation_id = conversation_id
+        return self.state.model_copy(deep=True)
+
+    def save_task_state(self, state):
+        if not state.active_task_id:
+            self.counter += 1
+            task = PersistentAgentTask(
+                id=f"task-{self.counter}",
+                type=AgentTaskName.RESERVATION_REQUEST,
+                status=state.memory.task_status,
+                frame=state.memory.frame,
+                missing_fields=state.memory.missing_fields,
+                validation_errors=state.memory.validation_errors,
+            )
+            self.state.tasks.append(task)
+            self.state.active_task_id = task.id
+            state.active_task_id = task.id
+            return
+
+        for task in self.state.tasks:
+            if task.id == state.active_task_id:
+                task.status = state.memory.task_status
+                task.frame = state.memory.frame
+                task.missing_fields = state.memory.missing_fields
+                task.validation_errors = state.memory.validation_errors
+                self.state.active_task_id = task.id
+                return
+
+    def mark_task_submitted(self, state, *, capability_call_id, tool_call_id):
+        for task in self.state.tasks:
+            if task.id == state.active_task_id:
+                task.status = ReservationTaskStatus.SUBMITTED
+                task.submitted_capability_call_id = capability_call_id or tool_call_id
+        self.state.active_task_id = None
 
 
 def build_agent_input(message_text: str, chat_history: list[dict] | None = None):
@@ -437,3 +486,101 @@ def test_agent_graph_is_real_langgraph_with_start_and_end():
     assert ("__start__", "load_context") in edge_pairs
     assert ("finalize", "__end__") in edge_pairs
     assert "execute_capability" in node_names
+
+
+def test_submitted_task_does_not_resubmit_on_unrelated_follow_up_but_new_reservation_can_execute():
+    state_store = InMemoryAgentStateStore()
+    executor = FakeCapabilityExecutor()
+    runtime = AgentRuntime(
+        FakeStateLlm(
+            [
+                ChatMemoryExtraction(
+                    active_task="reservation_request",
+                    task_status="collecting_info",
+                    starts_new_reservation=True,
+                    known_user_facts={"name": "Patrik"},
+                    reservation_frame={
+                        "guest_name": "Patrik",
+                        "date": "2026-06-14",
+                        "time": "14:00",
+                        "party_size": 3,
+                        "phone": "+421944015686",
+                    },
+                ),
+                reservation_decision(),
+                ReservationExtractionResult(active_task="reservation_request"),
+                TaskStateValidationResult(task_status="ready_to_submit"),
+                ResponseDraft(
+                    response_text="Vašu žiadosť o rezerváciu sme prijali. Personál ju potvrdí."
+                ),
+                ok_response_validation(),
+                ChatMemoryExtraction(
+                    active_task="reservation_request",
+                    task_status="ready_to_submit",
+                    starts_new_reservation=False,
+                    known_user_facts={"name": "Patrik"},
+                    reservation_frame={
+                        "guest_name": "Patrik",
+                        "date": "2026-06-14",
+                        "time": "14:00",
+                        "party_size": 3,
+                        "phone": "+421944015686",
+                    },
+                ),
+                AgentDecision(primary_intent="unknown", detected_intents=["unknown"]),
+                ResponseDraft(
+                    response_text=(
+                        "Viem, že sa voláš Patrik a už si poslal žiadosť o rezerváciu "
+                        "na 14. júna o 14:00 pre 3 osoby."
+                    )
+                ),
+                ok_response_validation(),
+                ChatMemoryExtraction(
+                    active_task="reservation_request",
+                    task_status="collecting_info",
+                    starts_new_reservation=True,
+                    known_user_facts={"name": "Patrik"},
+                    reservation_frame={
+                        "guest_name": "Patrik",
+                        "date": "2026-06-15",
+                        "time": "18:00",
+                        "party_size": 2,
+                        "phone": "+421944015686",
+                    },
+                ),
+                reservation_decision(),
+                ReservationExtractionResult(active_task="reservation_request"),
+                TaskStateValidationResult(task_status="ready_to_submit"),
+                ResponseDraft(
+                    response_text="Vašu ďalšiu žiadosť o rezerváciu sme prijali. Personál ju potvrdí."
+                ),
+                ok_response_validation(),
+            ]
+        )
+    )
+
+    first = runtime.run(
+        build_agent_input("Chcem rezerváciu na 14. júna o 14:00 pre 3 osoby."),
+        executor,
+        state_store=state_store,
+    )
+    follow_up = runtime.run(
+        build_agent_input("Co uz vies o mne?"),
+        executor,
+        state_store=state_store,
+    )
+    second_reservation = runtime.run(
+        build_agent_input("Chcem ešte jednu rezerváciu 15. júna o 18:00 pre dvoch."),
+        executor,
+        state_store=state_store,
+    )
+
+    assert first.requested_capabilities[0].name == "reservation.create_request"
+    assert follow_up.requested_capabilities == []
+    assert "Patrik" in follow_up.response_text
+    assert len(executor.requests) == 2
+    assert second_reservation.requested_capabilities[0].name == "reservation.create_request"
+    assert [task.status for task in state_store.state.tasks] == [
+        ReservationTaskStatus.SUBMITTED,
+        ReservationTaskStatus.SUBMITTED,
+    ]

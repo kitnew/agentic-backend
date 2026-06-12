@@ -2,9 +2,11 @@ import uuid
 from datetime import datetime
 from time import perf_counter
 
+from app.agent.contracts.enums import CapabilityCallStatus
+from app.agent.runtime.capability_ledger import CapabilityLedger, MissingCapabilityLedger
 from app.agent.runtime.capability_executor import CapabilityExecution
 from app.capabilities.router import CapabilityRouter
-from app.capabilities.schemas import CapabilityRequest
+from app.capabilities.schemas import CapabilityRequest, CapabilityResult, CapabilityStatus
 from app.domain.messages.entities import Message
 from app.domain.tool_calls.entities import ToolCall
 from app.domain.tool_calls.enums import ToolCallStatus
@@ -21,14 +23,37 @@ class BackendCapabilityExecutor:
         message: Message,
         capability_router: CapabilityRouter,
         tool_call_repository: ToolCallRepository,
+        capability_ledger: CapabilityLedger | None = None,
     ):
         self.tenant_context = tenant_context
         self.message = message
         self.capability_router = capability_router
         self.tool_call_repository = tool_call_repository
+        self.capability_ledger = capability_ledger or MissingCapabilityLedger()
 
     def execute(self, capability_request: CapabilityRequest) -> CapabilityExecution:
-        execution_request = self._with_execution_context(capability_request)
+        idempotency_key = (capability_request.metadata or {}).get("idempotency_key")
+        existing_call = (
+            self.capability_ledger.get_by_idempotency_key(idempotency_key)
+            if idempotency_key
+            else None
+        )
+        if existing_call and existing_call.status == CapabilityCallStatus.SUCCESS:
+            return self._existing_success_execution(capability_request, existing_call)
+
+        reserved_call = None
+        if idempotency_key:
+            reserved_call = self.capability_ledger.reserve(
+                idempotency_key=idempotency_key,
+                tenant_id=self.message.tenant_id,
+                conversation_id=self.message.conversation_id,
+                task_id=(capability_request.metadata or {}).get("task_id"),
+                capability_name=capability_request.name,
+                input_hash=(capability_request.metadata or {}).get("input_hash") or "",
+                metadata=capability_request.metadata,
+            )
+
+        execution_request = self._with_execution_context(capability_request, reserved_call_id=reserved_call.id if reserved_call else None)
         started_at = perf_counter()
         capability_result = self.capability_router.execute(self.tenant_context, execution_request)
         latency_ms = int((perf_counter() - started_at) * 1000)
@@ -48,13 +73,25 @@ class BackendCapabilityExecutor:
             created_at=datetime.now(),
         )
         self.tool_call_repository.create(tool_call)
+        if reserved_call:
+            self.capability_ledger.mark_finished(
+                capability_call_id=reserved_call.id,
+                status=CapabilityCallStatus(capability_result.status.value),
+                result=capability_result,
+                tool_call_id=tool_call.id,
+            )
         return CapabilityExecution(
             request=execution_request,
             result=capability_result,
             tool_call=self._to_tool_call_response(tool_call),
         )
 
-    def _with_execution_context(self, capability_request: CapabilityRequest) -> CapabilityRequest:
+    def _with_execution_context(
+        self,
+        capability_request: CapabilityRequest,
+        *,
+        reserved_call_id: str | None,
+    ) -> CapabilityRequest:
         execution_input = {
             **capability_request.input,
             "tenant_id": self.message.tenant_id,
@@ -62,7 +99,38 @@ class BackendCapabilityExecutor:
             "conversation_id": self.message.conversation_id,
             "source_channel": self.message.channel,
         }
-        return capability_request.model_copy(update={"input": execution_input})
+        if reserved_call_id:
+            execution_input["capability_call_id"] = reserved_call_id
+        metadata = {**(capability_request.metadata or {})}
+        if reserved_call_id:
+            metadata["capability_call_id"] = reserved_call_id
+        return capability_request.model_copy(update={"input": execution_input, "metadata": metadata})
+
+    def _existing_success_execution(
+        self,
+        capability_request: CapabilityRequest,
+        existing_call,
+    ) -> CapabilityExecution:
+        result = (
+            CapabilityResult.model_validate(existing_call.result)
+            if existing_call.result
+            else CapabilityResult(
+                name=capability_request.name,
+                status=CapabilityStatus.SKIPPED,
+                provider="capability_ledger",
+                user_message="Táto požiadavka už bola spracovaná.",
+            )
+        )
+        request = capability_request.model_copy(
+            update={
+                "metadata": {
+                    **(capability_request.metadata or {}),
+                    "capability_call_id": existing_call.id,
+                    "idempotency_reused": True,
+                }
+            }
+        )
+        return CapabilityExecution(request=request, result=result, tool_call=None)
 
     def _to_tool_call_response(self, tool_call: ToolCall) -> ToolCallResponse:
         return ToolCallResponse(
