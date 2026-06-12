@@ -120,6 +120,12 @@ def test_message_creates_conversation_and_uses_agent_input_output_contract():
     assert agent_runtime.contexts[0]["agent_profile"] == "restaurant_assistant"
     assert agent_runtime.contexts[0]["locale"] == "sk-SK"
     assert agent_runtime.contexts[0]["timezone"] == "Europe/Bratislava"
+    assert "opening_hours_text" in agent_runtime.contexts[0]["business_info"]
+    assert "request_only" in agent_runtime.contexts[0]["reservation_policy"]
+    assert "submitted requests waiting for staff confirmation" in agent_runtime.contexts[0]["reservation_policy"]
+    assert "guest_name: name for the reservation" in agent_runtime.contexts[0]["required_reservation_fields"]
+    assert "sunday: closed" in agent_runtime.contexts[0]["schedule_summary"]
+    assert agent_runtime.contexts[0]["enabled_capabilities"] == ["reservation.create_request"]
     assert response.agent_trace["context"]["tenant_id"] == "demo_restaurant"
 
 

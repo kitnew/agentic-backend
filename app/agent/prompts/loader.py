@@ -26,22 +26,14 @@ class PromptLoader:
             self.load_system_prompt(),
             self.load_profile_prompt(context.get("agent_profile")),
             self._build_temporal_context(context),
+            self._build_agent_style_rules(context),
+            self._build_tenant_instructions(context),
+            self._build_business_info(context),
+            self._build_reservation_policy(context),
+            self._build_required_reservation_fields(context),
+            self._build_schedule_summary(context),
+            self._build_enabled_capabilities(context),
         ]
-
-        tenant_prompt = context.get("tenant_prompt")
-        if tenant_prompt:
-            prompt_parts.append(f"Tenant instructions:\n{tenant_prompt}")
-
-        business_profile = context.get("business_profile")
-        if business_profile:
-            prompt_parts.append(f"Business profile:\n{business_profile}")
-
-        available_capabilities = context.get("available_capabilities") or []
-        if available_capabilities:
-            prompt_parts.append(
-                "Available capabilities:\n"
-                + "\n".join(f"- {name}" for name in available_capabilities)
-            )
 
         return "\n\n".join(part for part in prompt_parts if part)
 
@@ -54,6 +46,54 @@ class PromptLoader:
             f"date: {context['date']}\n"
             f"time: {context['time']}\n"
             f"timezone: {context['timezone']}"
+        )
+
+    def _build_agent_style_rules(self, context: AgentContext) -> str:
+        style_rules = context.get("agent_style_rules") or []
+        if not style_rules:
+            return ""
+        return "Agent style rules:\n" + "\n".join(f"- {rule}" for rule in style_rules)
+
+    def _build_tenant_instructions(self, context: AgentContext) -> str:
+        tenant_instructions = context.get("tenant_instructions")
+        if not tenant_instructions:
+            return ""
+        return f"Tenant instructions:\n{tenant_instructions}"
+
+    def _build_business_info(self, context: AgentContext) -> str:
+        business_info = context.get("business_info") or {}
+        if not business_info:
+            return ""
+        return "Business information:\n" + "\n".join(
+            f"{key}: {value}" for key, value in business_info.items()
+        )
+
+    def _build_reservation_policy(self, context: AgentContext) -> str:
+        reservation_policy = context.get("reservation_policy")
+        if not reservation_policy:
+            return ""
+        return f"Reservation policy:\n{reservation_policy}"
+
+    def _build_required_reservation_fields(self, context: AgentContext) -> str:
+        required_fields = context.get("required_reservation_fields") or []
+        if not required_fields:
+            return ""
+        return "Required reservation fields:\n" + "\n".join(
+            f"- {field}" for field in required_fields
+        )
+
+    def _build_schedule_summary(self, context: AgentContext) -> str:
+        schedule_summary = context.get("schedule_summary")
+        if not schedule_summary:
+            return ""
+        return f"Reservation schedule:\n{schedule_summary}"
+
+    def _build_enabled_capabilities(self, context: AgentContext) -> str:
+        enabled_capabilities = context.get("enabled_capabilities") or []
+        if not enabled_capabilities:
+            return ""
+        return "Enabled capabilities:\n" + "\n".join(
+            f"- {name}" for name in enabled_capabilities
         )
 
     def _read_prompt(self, path: Path) -> str:

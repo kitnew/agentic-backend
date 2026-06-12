@@ -19,16 +19,44 @@ class TenantAgentConfig(BaseModel):
     style_rules: list[str] = Field(default_factory=list)
 
 
-class TenantTimeRange(BaseModel):
+class TenantPromptConfig(BaseModel):
+    tenant_instructions: str = ""
+
+
+class TenantBusinessInfoConfig(BaseModel):
+    opening_hours_text: str | None = None
+    parking: str | None = None
+    address: str | None = None
+    phone: str | None = None
+    menu_summary: str | None = None
+
+
+class TenantReservationFieldConfig(BaseModel):
+    required: bool = True
+    label: str
+
+
+class TenantScheduleInterval(BaseModel):
     start: str
     end: str
 
 
+class TenantWeeklyScheduleDay(BaseModel):
+    open: bool
+    intervals: list[TenantScheduleInterval] = Field(default_factory=list)
+
+
+class TenantReservationScheduleConfig(BaseModel):
+    weekly: dict[str, TenantWeeklyScheduleDay] = Field(default_factory=dict)
+
+
 class TenantReservationConfig(BaseModel):
-    required_fields: list[str] = Field(
-        default_factory=lambda: ["guest_name", "date", "time", "party_size", "phone"]
-    )
-    opening_hours: list[TenantTimeRange] = Field(default_factory=list)
+    enabled: bool = True
+    mode: str = "request_only"
+    requires_human_confirmation: bool = True
+    can_confirm_reservation: bool = False
+    required_fields: dict[str, TenantReservationFieldConfig] = Field(default_factory=dict)
+    schedule: TenantReservationScheduleConfig = Field(default_factory=TenantReservationScheduleConfig)
 
 
 class TenantContext(BaseModel):
@@ -38,17 +66,8 @@ class TenantContext(BaseModel):
     default_language: str
     locale: str | None = None
     timezone: str
-    agent_profile: str
-    agent: TenantAgentConfig | None = None
-    business_info: dict[str, str] = Field(default_factory=dict)
+    agent: TenantAgentConfig
+    prompt: TenantPromptConfig = Field(default_factory=TenantPromptConfig)
+    business_info: TenantBusinessInfoConfig = Field(default_factory=TenantBusinessInfoConfig)
     reservation: TenantReservationConfig = Field(default_factory=TenantReservationConfig)
-    enabled_capabilities: dict[str, str] = Field(default_factory=dict)
     capabilities: dict[str, TenantCapabilityConfig] = Field(default_factory=dict)
-    policies: dict[str, bool] = Field(default_factory=dict)
-
-    def model_post_init(self, __context: Any) -> None:
-        if self.agent is None:
-            self.agent = TenantAgentConfig(
-                profile=self.agent_profile,
-                language=self.default_language,
-            )

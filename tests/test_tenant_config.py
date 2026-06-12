@@ -18,16 +18,28 @@ tenant_id: broken
 name: Broken
 business_type: restaurant
 default_language: en
+locale: en-US
 timezone: Europe/Bratislava
-agent_profile: restaurant_assistant
-enabled_capabilities: {}
+agent:
+  profile: restaurant_assistant
+prompt:
+  tenant_instructions: "Test"
+business_info:
+  opening_hours_text: "10:00 - 21:00"
+reservation:
+  mode: request_only
+  requires_human_confirmation: true
+  can_confirm_reservation: false
+  required_fields:
+    guest_name:
+      required: true
+      label: "name"
+  schedule:
+    weekly: {}
 capabilities:
   reservation.create_request:
     enabled: true
     provider: missing_provider
-policies:
-  can_confirm_reservation: false
-  requires_human_confirmation: true
 """.strip(),
         encoding="utf-8",
     )

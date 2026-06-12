@@ -148,43 +148,85 @@ class ProcessIncomingMessage:
         tenant_context: TenantContext,
         conversation_id: str,
     ) -> AgentContext:
-        available_capabilities = [
+        enabled_capabilities = [
             name
             for name, capability in tenant_context.capabilities.items()
             if capability.enabled
         ]
         tenant_now = datetime.now(ZoneInfo(tenant_context.timezone))
-        business_profile = "\n".join(
-            f"{key}: {value}" for key, value in tenant_context.business_info.items()
-        )
-        tenant_prompt_parts = [
-            f"Tenant: {tenant_context.name}",
-            f"Business type: {tenant_context.business_type}",
-            f"Default language: {tenant_context.default_language}",
-        ]
-        if tenant_context.agent:
-            if tenant_context.agent.language:
-                tenant_prompt_parts.append(f"Agent language: {tenant_context.agent.language}")
-            if tenant_context.agent.tone:
-                tenant_prompt_parts.append(f"Tone: {tenant_context.agent.tone}")
-            tenant_prompt_parts.extend(tenant_context.agent.style_rules)
 
         return {
             "tenant_id": tenant_context.tenant_id,
             "conversation_id": conversation_id,
-            "agent_profile": (
-                tenant_context.agent.profile if tenant_context.agent else tenant_context.agent_profile
-            ),
-            "tenant_prompt": "\n".join(tenant_prompt_parts),
+            "agent_profile": tenant_context.agent.profile,
             "now": tenant_now.isoformat(),
             "datetime": tenant_now.isoformat(),
             "locale": tenant_context.locale or tenant_context.default_language,
             "date": tenant_now.date().isoformat(),
             "time": tenant_now.time().isoformat(timespec="seconds"),
             "timezone": tenant_context.timezone,
-            "business_profile": business_profile,
-            "available_capabilities": available_capabilities,
+            "agent_style_rules": tenant_context.agent.style_rules,
+            "tenant_instructions": tenant_context.prompt.tenant_instructions,
+            "business_info": self._build_prompt_business_info(tenant_context),
+            "reservation_policy": self._build_reservation_policy(tenant_context),
+            "required_reservation_fields": self._build_required_reservation_fields(tenant_context),
+            "schedule_summary": self._build_schedule_summary(tenant_context),
+            "enabled_capabilities": enabled_capabilities,
         }
+
+    def _build_prompt_business_info(self, tenant_context: TenantContext) -> dict[str, str]:
+        raw_info = tenant_context.business_info.model_dump(exclude_none=True)
+        return {key: str(value) for key, value in raw_info.items()}
+
+    def _build_reservation_policy(self, tenant_context: TenantContext) -> str:
+        reservation = tenant_context.reservation
+        policy_parts = [
+            f"enabled: {reservation.enabled}",
+            f"mode: {reservation.mode}",
+            f"requires_human_confirmation: {reservation.requires_human_confirmation}",
+            f"can_confirm_reservation: {reservation.can_confirm_reservation}",
+        ]
+        if reservation.mode == "request_only" or not reservation.can_confirm_reservation:
+            policy_parts.append(
+                "Describe reservations as submitted requests waiting for staff confirmation. "
+                "Do not describe them as confirmed reservations."
+            )
+        return "\n".join(policy_parts)
+
+    def _build_required_reservation_fields(self, tenant_context: TenantContext) -> list[str]:
+        fields = []
+        for field_name, field_config in tenant_context.reservation.required_fields.items():
+            if field_config.required:
+                fields.append(f"{field_name}: {field_config.label}")
+        return fields
+
+    def _build_schedule_summary(self, tenant_context: TenantContext) -> str:
+        day_order = [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]
+        weekly_schedule = tenant_context.reservation.schedule.weekly
+        summaries = []
+
+        for day in day_order:
+            day_config = weekly_schedule.get(day)
+            if not day_config:
+                continue
+            if not day_config.open:
+                summaries.append(f"{day}: closed")
+                continue
+
+            intervals = ", ".join(
+                f"{interval.start}-{interval.end}" for interval in day_config.intervals
+            )
+            summaries.append(f"{day}: {intervals or 'open'}")
+
+        return "\n".join(summaries)
 
     def _build_chat_history(
         self,
