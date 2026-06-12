@@ -95,6 +95,34 @@ reservation:
         open: false
         intervals: []
 
+voice:
+  enabled: true
+
+  stt:
+    provider: elevenlabs
+    model: scribe_v2
+    language: slk
+    keyterms:
+      - rezervácia
+      - parkovanie
+      - terasa
+      - alergény
+      - telefónne číslo
+      - dátum
+      - čas
+      - osoby
+
+  tts:
+    provider: elevenlabs
+    model: eleven_flash_v2_5
+    voice_id: 9Nd358gE1qQp0pDh8FgP
+    output_format: mp3_44100_128
+    language: sk
+
+  fallback:
+    send_text_if_tts_fails: true
+    continue_if_stt_metadata_missing: true
+
 capabilities:
   reservation.create_request:
     enabled: true

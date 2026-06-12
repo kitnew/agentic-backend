@@ -59,6 +59,51 @@ class TenantReservationConfig(BaseModel):
     schedule: TenantReservationScheduleConfig = Field(default_factory=TenantReservationScheduleConfig)
 
 
+class TenantVoiceSTTConfig(BaseModel):
+    provider: str = "elevenlabs"
+    model: str = "scribe_v2"
+    language: str | None = None
+    keyterms: list[str] = Field(default_factory=list)
+
+
+class TenantVoiceTTSConfig(BaseModel):
+    provider: str = "elevenlabs"
+    model: str = "eleven_flash_v2_5"
+    voice_id: str | None = None
+    output_format: str = "mp3_44100_128"
+    language: str | None = None
+
+
+class TenantVoiceFallbackConfig(BaseModel):
+    send_text_if_tts_fails: bool = True
+    continue_if_stt_metadata_missing: bool = True
+
+
+class TenantVoiceConfig(BaseModel):
+    enabled: bool = False
+    max_file_size_bytes: int = 25 * 1024 * 1024
+    supported_content_types: list[str] = Field(
+        default_factory=lambda: [
+            "audio/aac",
+            "audio/flac",
+            "audio/m4a",
+            "audio/mp4",
+            "audio/mpeg",
+            "audio/mp3",
+            "audio/ogg",
+            "audio/wav",
+            "audio/webm",
+            "audio/x-m4a",
+            "audio/x-wav",
+            "video/mp4",
+            "video/webm",
+        ]
+    )
+    stt: TenantVoiceSTTConfig = Field(default_factory=TenantVoiceSTTConfig)
+    tts: TenantVoiceTTSConfig = Field(default_factory=TenantVoiceTTSConfig)
+    fallback: TenantVoiceFallbackConfig = Field(default_factory=TenantVoiceFallbackConfig)
+
+
 class TenantContext(BaseModel):
     tenant_id: str
     name: str
@@ -71,3 +116,4 @@ class TenantContext(BaseModel):
     business_info: TenantBusinessInfoConfig = Field(default_factory=TenantBusinessInfoConfig)
     reservation: TenantReservationConfig = Field(default_factory=TenantReservationConfig)
     capabilities: dict[str, TenantCapabilityConfig] = Field(default_factory=dict)
+    voice: TenantVoiceConfig = Field(default_factory=TenantVoiceConfig)
