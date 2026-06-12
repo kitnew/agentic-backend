@@ -68,11 +68,9 @@ def test_agent_modules_export_node_and_tool_classes():
     assert [node.__name__ for node in CONDITIONAL_NODE_CLASSES] == ["ShouldContinueNode"]
     assert [tool.__name__ for tool in TOOL_CLASSES] == [
         "CreateReservationTool",
-        "GetBusinessInfoTool",
     ]
     assert [tool.name for tool in create_langchain_tools()] == [
         "create_reservation",
-        "get_business_info",
     ]
 
 
@@ -108,8 +106,14 @@ def test_runtime_runs_tool_path_inside_langgraph():
                     content="",
                     tool_calls=[
                         {
-                            "name": "get_business_info",
-                            "args": {},
+                            "name": "create_reservation",
+                            "args": {
+                                "guest_name": "Patrik",
+                                "date": "zajtra",
+                                "time": "19:00",
+                                "party_size": 2,
+                                "phone": "+421900123456",
+                            },
                             "id": "call_1",
                             "type": "tool_call",
                         }

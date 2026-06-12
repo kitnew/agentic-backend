@@ -9,17 +9,17 @@ from app.agent.schemas.output import AgentOutput
 
 class AgentRuntime:
     def __init__(self, llm, *, graph=None, tools=None, prompt_loader=None):
-        self.graph = graph or create_agent_graph(
-            llm=llm,
-            tools=tools,
-            prompt_loader=prompt_loader,
-        )
+        self.llm = llm
+        self.graph = graph
+        self.tools = tools
+        self.prompt_loader = prompt_loader
 
     def run(
         self,
         agent_input: AgentInput,
         *,
         context: AgentContext,
+        tools=None,
     ) -> AgentOutput:
         trace = {
             "input": serialize_event(agent_input),
@@ -27,7 +27,8 @@ class AgentRuntime:
             "events": [],
         }
         graph_input = self._to_graph_input(agent_input)
-        final_output = self._run_graph(graph_input, context=context, trace=trace)
+        graph = self._get_graph(tools=tools)
+        final_output = self._run_graph(graph, graph_input, context=context, trace=trace)
         response_text = final_output.get("response_text", "")
         response = final_output.get("response") or message_to_dict(AIMessage(content=response_text))
 
@@ -42,6 +43,7 @@ class AgentRuntime:
 
     def _run_graph(
         self,
+        graph,
         agent_input: AgentInput,
         *,
         context: AgentContext,
@@ -49,7 +51,7 @@ class AgentRuntime:
     ) -> dict:
         final_output: dict = {}
 
-        for event in self.graph.stream(agent_input, context=context, stream_mode="updates"):
+        for event in graph.stream(agent_input, context=context, stream_mode="updates"):
             trace["events"].append(serialize_event(event))
             if "finalize" in event:
                 final_output = event["finalize"]
@@ -64,3 +66,18 @@ class AgentRuntime:
                 HumanMessage(content=agent_input["message_text"]),
             ],
         }
+
+    def _get_graph(self, *, tools=None):
+        if tools is not None:
+            return create_agent_graph(
+                llm=self.llm,
+                tools=tools,
+                prompt_loader=self.prompt_loader,
+            )
+        if self.graph is None:
+            self.graph = create_agent_graph(
+                llm=self.llm,
+                tools=self.tools,
+                prompt_loader=self.prompt_loader,
+            )
+        return self.graph

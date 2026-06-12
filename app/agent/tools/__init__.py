@@ -1,25 +1,23 @@
 from app.agent.tools.base import BaseAgentTool
 from app.agent.tools.create_reservation import CreateReservationTool
-from app.agent.tools.get_business_info import GetBusinessInfoTool
 
 TOOL_CLASSES = (
     CreateReservationTool,
-    GetBusinessInfoTool,
 )
 
 
-def create_agent_tools() -> list[BaseAgentTool]:
-    return [tool_class() for tool_class in TOOL_CLASSES]
+def create_agent_tools(**kwargs) -> list[BaseAgentTool]:
+    return [tool_class(**kwargs) for tool_class in TOOL_CLASSES]
 
 
-def create_langchain_tools():
-    return [tool.as_langchain_tool() for tool in create_agent_tools()]
+def create_langchain_tools(agent_tools: list[BaseAgentTool] | None = None, **kwargs):
+    tools = agent_tools or create_agent_tools(**kwargs)
+    return [tool.as_langchain_tool() for tool in tools]
 
 
 __all__ = [
     "BaseAgentTool",
     "CreateReservationTool",
-    "GetBusinessInfoTool",
     "TOOL_CLASSES",
     "create_agent_tools",
     "create_langchain_tools",

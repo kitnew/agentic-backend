@@ -10,6 +10,7 @@ from app.application.messages.process_incoming_message import (
     ConversationTenantMismatchError,
     ProcessIncomingMessage,
 )
+from app.capabilities.router import CapabilityRouter
 from app.infrastructure.database import get_db
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
@@ -62,12 +63,17 @@ def get_agent_runtime() -> AgentRuntime:
 def get_tenant_config_loader() -> TenantConfigLoader:
     return TenantConfigLoader()
 
+def get_capability_router() -> CapabilityRouter:
+    return CapabilityRouter()
+
 @router.post("", response_model=ProcessMessageResponse, status_code=status.HTTP_201_CREATED)
 def receive_message(
     request: CreateMessageRequest,
     repository: MessageRepository = Depends(get_message_repository),
     agent_runtime: AgentRuntime = Depends(get_agent_runtime),
     tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
+    capability_router: CapabilityRouter = Depends(get_capability_router),
+    tool_call_repository: ToolCallRepository = Depends(get_tool_call_repository),
     conversation_repository: ConversationRepository = Depends(get_conversation_repository),
 ):
     """
@@ -77,6 +83,8 @@ def receive_message(
         message_repository=repository,
         agent_runtime=agent_runtime,
         tenant_config_loader=tenant_config_loader,
+        capability_router=capability_router,
+        tool_call_repository=tool_call_repository,
         conversation_repository=conversation_repository,
     )
     try:

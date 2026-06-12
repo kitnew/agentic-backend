@@ -7,12 +7,17 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from app.agent.runtime import AgentRuntime
 from app.agent.schemas.context import AgentContext
 from app.agent.schemas.input import AgentInput
+from app.agent.tools import create_agent_tools, create_langchain_tools
+from app.application.capabilities.executor import BackendCapabilityExecutor, CapabilityExecution
+from app.capabilities.router import CapabilityRouter
+from app.capabilities.schemas import CapabilityStatus
 from app.domain.conversations.entities import Conversation
 from app.domain.conversations.enums import ConversationStatus
 from app.domain.messages.entities import Message
 from app.domain.messages.enums import MessageRole, MessageStatus
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
+from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
 from app.tenants.loader import TenantConfigLoader
 from app.tenants.schemas import TenantContext
@@ -34,11 +39,15 @@ class ProcessIncomingMessage:
         message_repository: MessageRepository,
         agent_runtime: AgentRuntime,
         tenant_config_loader: TenantConfigLoader,
+        capability_router: CapabilityRouter,
+        tool_call_repository: ToolCallRepository,
         conversation_repository: ConversationRepository,
     ):
         self.message_repository = message_repository
         self.agent_runtime = agent_runtime
         self.tenant_config_loader = tenant_config_loader
+        self.capability_router = capability_router
+        self.tool_call_repository = tool_call_repository
         self.conversation_repository = conversation_repository
 
     def execute(self, request: CreateMessageRequest) -> ProcessMessageResponse:
@@ -66,13 +75,40 @@ class ProcessIncomingMessage:
                 message_text=user_message.content,
                 chat_history=chat_history,
             )
+            capability_executor = BackendCapabilityExecutor(
+                tenant_context=tenant_context,
+                message=user_message,
+                capability_router=self.capability_router,
+                tool_call_repository=self.tool_call_repository,
+            )
+            agent_tools = create_agent_tools(
+                capability_executor=capability_executor,
+                raw_message=user_message.content,
+            )
             agent_output = self.agent_runtime.run(
                 agent_input,
                 context=self._build_agent_context(tenant_context, conversation.id),
+                tools=create_langchain_tools(agent_tools),
             )
-            response_text = agent_output["response_text"]
+            capability_executions = self._collect_capability_executions(agent_tools)
+            capability_results = [execution.result for execution in capability_executions]
+            tool_calls = [
+                execution.tool_call
+                for execution in capability_executions
+                if execution.tool_call is not None
+            ]
+            response_text = agent_output["response_text"] or self._fallback_capability_message(
+                capability_executions
+            )
+            has_capability_failure = any(
+                capability_result.status == CapabilityStatus.FAILED
+                for capability_result in capability_results
+            )
+            final_message_status = (
+                MessageStatus.FAILED if has_capability_failure else MessageStatus.PROCESSED
+            )
 
-            user_message.status = MessageStatus.PROCESSED
+            user_message.status = final_message_status
             user_message.processed_at = datetime.now()
             self.message_repository.save(user_message)
 
@@ -84,13 +120,15 @@ class ProcessIncomingMessage:
                 external_user_id=user_message.external_user_id,
                 role=MessageRole.ASSISTANT,
                 content=response_text,
-                status=MessageStatus.PROCESSED,
+                status=final_message_status,
                 metadata={"agent_response": agent_output["response"]},
                 created_at=datetime.now(),
                 processed_at=datetime.now(),
             )
             self.message_repository.save(assistant_message)
 
+            if has_capability_failure:
+                conversation.status = ConversationStatus.FAILED
             conversation.updated_at = datetime.now()
             self.conversation_repository.update(conversation)
 
@@ -99,9 +137,11 @@ class ProcessIncomingMessage:
                 user_message=self._to_message_response(user_message),
                 assistant_message=self._to_message_response(assistant_message),
                 response_text=response_text,
-                requested_capabilities=[],
-                capability_results=[],
-                tool_calls=[],
+                requested_capabilities=[
+                    execution.request for execution in capability_executions
+                ],
+                capability_results=capability_results,
+                tool_calls=tool_calls,
                 agent_trace=agent_output["agent_trace"],
                 status=user_message.status,
             )
@@ -142,6 +182,21 @@ class ProcessIncomingMessage:
                 agent_trace={"error": str(exc), "type": exc.__class__.__name__},
                 status=user_message.status,
             )
+
+    def _collect_capability_executions(self, agent_tools) -> list[CapabilityExecution]:
+        executions: list[CapabilityExecution] = []
+        for tool in agent_tools:
+            executions.extend(getattr(tool, "executions", []))
+        return executions
+
+    def _fallback_capability_message(
+        self,
+        capability_executions: list[CapabilityExecution],
+    ) -> str:
+        for execution in reversed(capability_executions):
+            if execution.result.user_message:
+                return execution.result.user_message
+        return ""
 
     def _build_agent_context(
         self,
