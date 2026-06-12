@@ -1,6 +1,7 @@
-from typing import TypedDict, Dict, Any
-from langchain_core.messages import AIMessage
+from typing import Any, TypedDict
+
 
 class AgentOutput(TypedDict):
-    response: AIMessage
-    agent_trace: Dict[str, Any]
+    response_text: str
+    response: dict[str, Any]
+    agent_trace: dict[str, Any]

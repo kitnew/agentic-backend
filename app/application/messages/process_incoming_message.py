@@ -1,20 +1,21 @@
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
-from app.agent.contracts.input import AgentInput
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+
 from app.agent.runtime import AgentRuntime
-from app.application.capabilities.executor import BackendCapabilityExecutor
-from app.capabilities.router import CapabilityRouter
-from app.capabilities.schemas import CapabilityStatus
+from app.agent.schemas.context import AgentContext
+from app.agent.schemas.input import AgentInput
 from app.domain.conversations.entities import Conversation
 from app.domain.conversations.enums import ConversationStatus
 from app.domain.messages.entities import Message
 from app.domain.messages.enums import MessageRole, MessageStatus
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
-from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
 from app.tenants.loader import TenantConfigLoader
+from app.tenants.schemas import TenantContext
 
 
 class ConversationNotFoundError(Exception):
@@ -26,22 +27,18 @@ class ConversationTenantMismatchError(Exception):
 
 
 class ProcessIncomingMessage:
-    """Orchestrates incoming chat messages and lets the agent graph execute capabilities."""
+    """Stores an incoming message and runs the prototype LangGraph agent flow."""
 
     def __init__(
         self,
         message_repository: MessageRepository,
         agent_runtime: AgentRuntime,
         tenant_config_loader: TenantConfigLoader,
-        capability_router: CapabilityRouter,
-        tool_call_repository: ToolCallRepository,
         conversation_repository: ConversationRepository,
     ):
         self.message_repository = message_repository
         self.agent_runtime = agent_runtime
         self.tenant_config_loader = tenant_config_loader
-        self.capability_router = capability_router
-        self.tool_call_repository = tool_call_repository
         self.conversation_repository = conversation_repository
 
     def execute(self, request: CreateMessageRequest) -> ProcessMessageResponse:
@@ -57,45 +54,25 @@ class ProcessIncomingMessage:
             conversation_id=conversation.id,
             role=MessageRole.USER,
             content=request.content,
-            status=MessageStatus.RECEIVED,
+            status=MessageStatus.PROCESSING,
             metadata=request.metadata,
             created_at=datetime.now(),
             processed_at=None,
         )
         self.message_repository.save(user_message)
 
-        user_message.status = MessageStatus.PROCESSING
-        self.message_repository.save(user_message)
-
-        agent_input = AgentInput(
-            tenant_id=user_message.tenant_id,
-            conversation_id=user_message.conversation_id,
-            message_id=user_message.id,
-            message_text=user_message.content,
-            channel=user_message.channel,
-            tenant_context=tenant_context
-        )
-        capability_executor = BackendCapabilityExecutor(
-            tenant_context=tenant_context,
-            message=user_message,
-            capability_router=self.capability_router,
-            tool_call_repository=self.tool_call_repository,
-        )
-
         try:
-            agent_result = self.agent_runtime.run(agent_input, capability_executor=capability_executor)
-            capability_results = agent_result.capability_results
-            tool_calls = agent_result.tool_calls
-            response_text = agent_result.response_text or ""
-            has_capability_failure = any(
-                capability_result.status == CapabilityStatus.FAILED
-                for capability_result in capability_results
+            agent_input = AgentInput(
+                message_text=user_message.content,
+                chat_history=chat_history,
             )
-            final_message_status = (
-                MessageStatus.FAILED if has_capability_failure else MessageStatus.PROCESSED
+            agent_output = self.agent_runtime.run(
+                agent_input,
+                context=self._build_agent_context(tenant_context, conversation.id),
             )
+            response_text = agent_output["response_text"]
 
-            user_message.status = final_message_status
+            user_message.status = MessageStatus.PROCESSED
             user_message.processed_at = datetime.now()
             self.message_repository.save(user_message)
 
@@ -107,15 +84,13 @@ class ProcessIncomingMessage:
                 external_user_id=user_message.external_user_id,
                 role=MessageRole.ASSISTANT,
                 content=response_text,
-                status=final_message_status,
-                metadata=None,
+                status=MessageStatus.PROCESSED,
+                metadata={"agent_response": agent_output["response"]},
                 created_at=datetime.now(),
                 processed_at=datetime.now(),
             )
             self.message_repository.save(assistant_message)
 
-            if has_capability_failure:
-                conversation.status = ConversationStatus.FAILED
             conversation.updated_at = datetime.now()
             self.conversation_repository.update(conversation)
 
@@ -124,10 +99,10 @@ class ProcessIncomingMessage:
                 user_message=self._to_message_response(user_message),
                 assistant_message=self._to_message_response(assistant_message),
                 response_text=response_text,
-                requested_capabilities=agent_result.requested_capabilities,
-                capability_results=capability_results,
-                tool_calls=tool_calls,
-                agent_trace=agent_result.trace,
+                requested_capabilities=[],
+                capability_results=[],
+                tool_calls=[],
+                agent_trace=agent_output["agent_trace"],
                 status=user_message.status,
             )
 
@@ -164,9 +139,69 @@ class ProcessIncomingMessage:
                 requested_capabilities=[],
                 capability_results=[],
                 tool_calls=[],
-                agent_trace=None,
+                agent_trace={"error": str(exc), "type": exc.__class__.__name__},
                 status=user_message.status,
             )
+
+    def _build_agent_context(
+        self,
+        tenant_context: TenantContext,
+        conversation_id: str,
+    ) -> AgentContext:
+        available_capabilities = [
+            name
+            for name, capability in tenant_context.capabilities.items()
+            if capability.enabled
+        ]
+        tenant_now = datetime.now(ZoneInfo(tenant_context.timezone))
+        business_profile = "\n".join(
+            f"{key}: {value}" for key, value in tenant_context.business_info.items()
+        )
+        tenant_prompt_parts = [
+            f"Tenant: {tenant_context.name}",
+            f"Business type: {tenant_context.business_type}",
+            f"Default language: {tenant_context.default_language}",
+        ]
+        if tenant_context.agent:
+            if tenant_context.agent.language:
+                tenant_prompt_parts.append(f"Agent language: {tenant_context.agent.language}")
+            if tenant_context.agent.tone:
+                tenant_prompt_parts.append(f"Tone: {tenant_context.agent.tone}")
+            tenant_prompt_parts.extend(tenant_context.agent.style_rules)
+
+        return {
+            "tenant_id": tenant_context.tenant_id,
+            "conversation_id": conversation_id,
+            "agent_profile": (
+                tenant_context.agent.profile if tenant_context.agent else tenant_context.agent_profile
+            ),
+            "tenant_prompt": "\n".join(tenant_prompt_parts),
+            "now": tenant_now.isoformat(),
+            "datetime": tenant_now.isoformat(),
+            "locale": tenant_context.locale or tenant_context.default_language,
+            "date": tenant_now.date().isoformat(),
+            "time": tenant_now.time().isoformat(timespec="seconds"),
+            "timezone": tenant_context.timezone,
+            "business_profile": business_profile,
+            "available_capabilities": available_capabilities,
+        }
+
+    def _build_chat_history(
+        self,
+        conversation_id: str,
+        limit: int = 20,
+    ) -> list[BaseMessage]:
+        messages = self.message_repository.list_by_conversation_id(conversation_id)
+        recent_messages = messages[-limit:]
+        chat_history: list[BaseMessage] = []
+
+        for message in recent_messages:
+            if message.role == MessageRole.USER:
+                chat_history.append(HumanMessage(content=message.content))
+            elif message.role == MessageRole.ASSISTANT:
+                chat_history.append(AIMessage(content=message.content))
+
+        return chat_history
 
     def _to_message_response(self, message: Message) -> MessageResponse:
         return MessageResponse(
@@ -182,22 +217,6 @@ class ProcessIncomingMessage:
             created_at=message.created_at,
             processed_at=message.processed_at,
         )
-
-    def _build_chat_history(
-        self,
-        conversation_id: str,
-        limit: int = 20,
-    ) -> list[dict]:
-        messages = self.message_repository.list_by_conversation_id(conversation_id)
-        recent_messages = messages[-limit:]
-        return [
-            {
-                "role": message.role.value,
-                "content": message.content,
-                "created_at": message.created_at.isoformat(),
-            }
-            for message in recent_messages
-        ]
 
     def _get_or_create_conversation(self, request: CreateMessageRequest) -> Conversation:
         if request.conversation_id:

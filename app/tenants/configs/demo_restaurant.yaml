@@ -1,8 +1,9 @@
 tenant_id: demo_restaurant
 name: Demo Restaurant
 business_type: restaurant
-default_language: en
+default_language: sk
 timezone: Europe/Bratislava
+locale: sk-SK
 agent_profile: restaurant_assistant
 agent:
   profile: restaurant_assistant

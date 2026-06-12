@@ -1,7 +1,11 @@
-from typing import TypedDict, Annotated, Sequence, List, Dict, NotRequired, Union
-from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
+from typing import Annotated, Any, NotRequired, Sequence, TypedDict
+
+from langchain_core.messages import BaseMessage
 from langgraph.graph.message import add_messages
 
+
 class AgentState(TypedDict):
-    message_history: Annotated[Sequence[BaseMessage], add_messages]
-    tool_trace: NotRequired[List[Union[ToolCall, ToolMessage]]]
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+    response_text: NotRequired[str]
+    response: NotRequired[dict[str, Any]]
+    agent_trace: NotRequired[dict[str, Any]]

@@ -1,5 +1,9 @@
-from langchain_core.tools import tool
+from app.agent.tools.base import BaseAgentTool
 
-@tool
-def create_reservation():
-    return "reservation created"
+
+class CreateReservationTool(BaseAgentTool):
+    name = "create_reservation"
+    description = "Create a prototype reservation request for the current conversation."
+
+    def execute(self):
+        return "reservation created"

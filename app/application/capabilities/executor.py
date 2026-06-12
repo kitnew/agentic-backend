@@ -1,10 +1,9 @@
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
+from typing import Any
 
-from app.agent.contracts.enums import CapabilityCallStatus
-from app.agent.runtime.capability_ledger import CapabilityLedger, MissingCapabilityLedger
-from app.agent.runtime.capability_executor import CapabilityExecution
 from app.capabilities.router import CapabilityRouter
 from app.capabilities.schemas import CapabilityRequest, CapabilityResult, CapabilityStatus
 from app.domain.messages.entities import Message
@@ -13,6 +12,27 @@ from app.domain.tool_calls.enums import ToolCallStatus
 from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.tool_calls import ToolCallResponse
 from app.tenants.schemas import TenantContext
+
+
+@dataclass
+class CapabilityExecution:
+    request: CapabilityRequest
+    result: CapabilityResult
+    tool_call: ToolCallResponse | None
+
+
+class MissingCapabilityLedger:
+    def get_by_idempotency_key(self, idempotency_key: str):
+        return None
+
+    def reserve(self, **kwargs):
+        return None
+
+    def mark_finished(self, **kwargs) -> None:
+        return None
+
+
+CapabilityLedger = Any
 
 
 class BackendCapabilityExecutor:
@@ -38,7 +58,7 @@ class BackendCapabilityExecutor:
             if idempotency_key
             else None
         )
-        if existing_call and existing_call.status == CapabilityCallStatus.SUCCESS:
+        if existing_call and existing_call.status == CapabilityStatus.SUCCESS.value:
             return self._existing_success_execution(capability_request, existing_call)
 
         reserved_call = None
@@ -76,7 +96,7 @@ class BackendCapabilityExecutor:
         if reserved_call:
             self.capability_ledger.mark_finished(
                 capability_call_id=reserved_call.id,
-                status=CapabilityCallStatus(capability_result.status.value),
+                status=capability_result.status.value,
                 result=capability_result,
                 tool_call_id=tool_call.id,
             )

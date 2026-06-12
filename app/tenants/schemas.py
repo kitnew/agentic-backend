@@ -36,6 +36,7 @@ class TenantContext(BaseModel):
     name: str
     business_type: str
     default_language: str
+    locale: str | None = None
     timezone: str
     agent_profile: str
     agent: TenantAgentConfig | None = None
