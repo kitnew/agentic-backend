@@ -45,4 +45,5 @@ class VoiceMessageResponse(BaseModel):
     audio_base64: str | None = None
     transcript_result: TranscriptResult
     audio: SynthesizedAudioResult | None = None
+    agent_trace: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

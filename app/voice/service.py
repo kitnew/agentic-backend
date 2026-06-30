@@ -1,6 +1,12 @@
 from collections.abc import Callable
 
 from app.application.messages.process_incoming_message import ProcessIncomingMessage
+from app.core.timing import (
+    finish_timing_trace,
+    new_timing_trace,
+    record_component_timing,
+    start_timer,
+)
 from app.domain.messages.enums import MessageStatus
 from app.schemas.messages import CreateMessageRequest, ProcessMessageResponse
 from app.tenants.loader import TenantConfigLoader
@@ -50,15 +56,36 @@ class VoiceMessageService:
         self.audio_storage = audio_storage or LocalVoiceAudioStorage()
 
     def process(self, request: VoiceMessageRequest) -> VoiceMessageResponse:
+        total_timer = start_timer()
+        timings = new_timing_trace()
+        component_timer = start_timer()
         tenant_context = self.tenant_config_loader.load(request.tenant_id)
+        record_component_timing(timings, "tenant_config_load", component_timer)
         voice_config = tenant_context.voice
 
         if not voice_config.enabled:
             raise VoiceDisabledError("Voice mode is disabled for this tenant")
 
+        component_timer = start_timer()
         audio = validate_audio_input(request.audio, config=voice_config)
+        record_component_timing(
+            timings,
+            "audio_validation",
+            component_timer,
+            content_type=audio.content_type,
+            size_bytes=audio.size_bytes,
+        )
         stt_provider = self._get_stt_provider(voice_config.stt.provider)
+        component_timer = start_timer()
         transcript_result = stt_provider.transcribe(audio, config=voice_config.stt)
+        record_component_timing(
+            timings,
+            "stt",
+            component_timer,
+            provider=transcript_result.provider,
+            model=voice_config.stt.model,
+            language=transcript_result.language or voice_config.stt.language,
+        )
         transcript = transcript_result.text.strip()
 
         if not transcript:
@@ -70,11 +97,18 @@ class VoiceMessageService:
                 raise VoiceSTTProviderError("STT metadata is missing")
             warnings.append("STT metadata missing; continuing with transcript only")
 
+        component_timer = start_timer()
         message_response = self._process_transcript(
             request=request,
             audio=audio,
             transcript=transcript,
             transcript_provider=transcript_result.provider,
+        )
+        record_component_timing(
+            timings,
+            "agent_pipeline",
+            component_timer,
+            status=message_response.status,
         )
         response_text = (message_response.response_text or "").strip()
         if not response_text:
@@ -87,6 +121,7 @@ class VoiceMessageService:
         ):
             raise VoiceAgentProcessingError("Agent failed to process the transcript")
 
+        component_timer = start_timer()
         audio_result = self._try_synthesize_response(
             response_text=response_text,
             conversation_id=message_response.conversation_id,
@@ -94,6 +129,21 @@ class VoiceMessageService:
             voice_config=voice_config,
             warnings=warnings,
         )
+        record_component_timing(
+            timings,
+            "tts",
+            component_timer,
+            provider=voice_config.tts.provider,
+            model=voice_config.tts.model,
+            output_format=voice_config.tts.output_format,
+            fallback_used=audio_result is None,
+        )
+        finished_timings = finish_timing_trace(timings, total_timer)
+        agent_trace = {
+            "input_mode": "voice",
+            "voice_pipeline_timings": finished_timings,
+            "text_agent_trace": message_response.agent_trace,
+        }
 
         return VoiceMessageResponse(
             conversation_id=message_response.conversation_id,
@@ -103,6 +153,7 @@ class VoiceMessageService:
             audio_base64=audio_result.audio_base64 if audio_result else None,
             transcript_result=transcript_result,
             audio=audio_result,
+            agent_trace=agent_trace,
             metadata={
                 "stt_provider": transcript_result.provider,
                 "tts_provider": voice_config.tts.provider,
@@ -118,6 +169,7 @@ class VoiceMessageService:
                     else None
                 ),
                 "warnings": warnings,
+                "timings": finished_timings,
             },
         )
 

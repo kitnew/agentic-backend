@@ -255,6 +255,13 @@ def test_stt_transcript_enters_existing_message_pipeline_and_tts_returns_audio()
     assert response.transcript == "Chcem rezervaciu dnes vecer"
     assert response.response_text == "Mate rezervaciu?"
     assert response.audio_url == "/voice/audio/conversation-1.mp3"
+    assert response.metadata["timings"]["unit"] == "seconds"
+    assert response.metadata["timings"]["total_seconds"] >= 0
+    assert "stt" in response.metadata["timings"]["components"]
+    assert "agent_pipeline" in response.metadata["timings"]["components"]
+    assert "tts" in response.metadata["timings"]["components"]
+    assert response.agent_trace["voice_pipeline_timings"] == response.metadata["timings"]
+    assert response.agent_trace["text_agent_trace"] == {}
     assert text_request.channel == "voice"
     assert text_request.content == "Chcem rezervaciu dnes vecer"
     assert text_request.metadata["input_mode"] == "voice"
