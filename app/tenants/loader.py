@@ -21,6 +21,7 @@ class TenantConfigLoader:
         "reservation.check_availability",
         "reservation.create_request",
     }
+    known_voice_providers = {"elevenlabs"}
 
     def __init__(self, configs_dir: Path | None = None):
         self.configs_dir = configs_dir or Path(__file__).parent / "configs"
@@ -50,6 +51,7 @@ class TenantConfigLoader:
         for config_path in sorted(self.configs_dir.glob("*.yaml")):
             tenant_context = self.load(config_path.stem)
             self._validate_capabilities(tenant_context, provider_names)
+            self._validate_voice(tenant_context)
             tenant_contexts.append(tenant_context)
 
         return tenant_contexts
@@ -83,3 +85,19 @@ class TenantConfigLoader:
                     f"google_sheets capability {capability_name} in tenant config "
                     f"{tenant_context.tenant_id} requires spreadsheet_id and sheet_name"
                 )
+
+    def _validate_voice(self, tenant_context: TenantContext) -> None:
+        if not tenant_context.voice.enabled:
+            return
+
+        if tenant_context.voice.stt.provider not in self.known_voice_providers:
+            raise TenantConfigInvalidError(
+                f"Unknown STT provider in tenant config {tenant_context.tenant_id}: "
+                f"{tenant_context.voice.stt.provider}"
+            )
+
+        if tenant_context.voice.tts.provider not in self.known_voice_providers:
+            raise TenantConfigInvalidError(
+                f"Unknown TTS provider in tenant config {tenant_context.tenant_id}: "
+                f"{tenant_context.voice.tts.provider}"
+            )

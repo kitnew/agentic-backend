@@ -8,6 +8,29 @@ def test_tenant_config_validate_all_accepts_demo_restaurant():
     loaded = TenantConfigLoader().validate_all(CapabilityRegistry().provider_names())
 
     assert [tenant.tenant_id for tenant in loaded] == ["demo_restaurant"]
+    assert loaded[0].voice.stt.provider == "elevenlabs"
+
+
+def test_tenant_config_defaults_voice_disabled_when_omitted(tmp_path: Path):
+    config = tmp_path / "no_voice.yaml"
+    config.write_text(
+        """
+tenant_id: no_voice
+name: No Voice
+business_type: restaurant
+default_language: en
+locale: en-US
+timezone: Europe/Bratislava
+agent:
+  profile: restaurant_assistant
+capabilities: {}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    loaded = TenantConfigLoader(tmp_path).validate_all(CapabilityRegistry().provider_names())
+
+    assert loaded[0].voice.enabled is False
 
 
 def test_tenant_config_rejects_unknown_provider(tmp_path: Path):

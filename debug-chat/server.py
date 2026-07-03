@@ -11,7 +11,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
@@ -53,16 +53,22 @@ class DebugChatHandler(BaseHTTPRequestHandler):
         self._send_headers(404, "application/json; charset=utf-8", 0)
 
     def do_POST(self) -> None:  # noqa: N802 - stdlib API
-        if self.path != "/debug/message":
-            self._send_json(404, {"error": "Not found"})
+        parsed_path = urlparse(self.path)
+        if parsed_path.path == "/debug/message":
+            self._handle_debug_message()
             return
 
+        if parsed_path.path == "/debug/voice-message":
+            self._handle_debug_voice_message(parsed_path.query)
+            return
+
+        self._send_json(404, {"error": "Not found"})
+
+    def _handle_debug_message(self) -> None:
         try:
             request_body = self._read_json()
             backend_url = str(request_body.get("backend_url") or DEFAULT_BACKEND_URL).rstrip("/")
-            api_path = str(request_body.get("api_path") or DEFAULT_API_PATH)
-            if not api_path.startswith("/"):
-                api_path = f"/{api_path}"
+            api_path = self._normalize_api_path(str(request_body.get("api_path") or DEFAULT_API_PATH))
 
             payload = request_body["payload"]
             status_code, response_body = self._post_json(f"{backend_url}{api_path}", payload)
@@ -91,15 +97,66 @@ class DebugChatHandler(BaseHTTPRequestHandler):
         except URLError as exc:
             self._send_json(502, {"error": f"Backend request failed: {exc.reason}"})
 
+    def _handle_debug_voice_message(self, query: str) -> None:
+        try:
+            params = parse_qs(query)
+            backend_url = str(
+                self._first_query_value(params, "backend_url") or DEFAULT_BACKEND_URL
+            ).rstrip("/")
+            api_path = self._normalize_api_path(
+                self._first_query_value(params, "api_path") or "/api/v1/voice/messages"
+            )
+            content_type = self.headers.get("Content-Type", "")
+            if not content_type.startswith("multipart/form-data"):
+                raise ValueError("Voice debug proxy expects multipart/form-data")
+
+            request_body = self._read_raw_body()
+            status_code, response_body = self._post_multipart(
+                f"{backend_url}{api_path}",
+                request_body,
+                content_type,
+            )
+            self._send_json(
+                200,
+                {
+                    "proxied_status": status_code,
+                    "backend_url": backend_url,
+                    "api_path": api_path,
+                    "response": response_body,
+                },
+            )
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+        except HTTPError as exc:
+            self._send_json(
+                200,
+                {
+                    "proxied_status": exc.code,
+                    "response": self._decode_response(exc.read()),
+                },
+            )
+        except URLError as exc:
+            self._send_json(502, {"error": f"Backend request failed: {exc.reason}"})
+
+    def _first_query_value(self, params: dict[str, list[str]], name: str) -> str | None:
+        values = params.get(name)
+        if not values:
+            return None
+        return values[0]
+
+    def _normalize_api_path(self, api_path: str) -> str:
+        if not api_path.startswith("/"):
+            return f"/{api_path}"
+        return api_path
+
     def log_message(self, format: str, *args: object) -> None:
         print(f"{self.address_string()} - {format % args}")
 
     def _read_json(self) -> dict:
-        content_length = int(self.headers.get("Content-Length", "0"))
-        if content_length <= 0:
+        raw_body = self._read_raw_body()
+        if not raw_body:
             raise ValueError("Request body is empty")
 
-        raw_body = self.rfile.read(content_length)
         try:
             body = json.loads(raw_body.decode("utf-8"))
         except json.JSONDecodeError as exc:
@@ -108,6 +165,13 @@ class DebugChatHandler(BaseHTTPRequestHandler):
         if not isinstance(body, dict):
             raise ValueError("Request body must be a JSON object")
         return body
+
+    def _read_raw_body(self) -> bytes:
+        content_length = int(self.headers.get("Content-Length", "0"))
+        if content_length <= 0:
+            raise ValueError("Request body is empty")
+
+        return self.rfile.read(content_length)
 
     def _post_json(self, url: str, payload: dict) -> tuple[int, object]:
         parsed = urlparse(url)
@@ -121,6 +185,25 @@ class DebugChatHandler(BaseHTTPRequestHandler):
             method="POST",
         )
         with urlopen(request, timeout=120) as response:  # noqa: S310 - local debug proxy
+            return response.status, self._decode_response(response.read())
+
+    def _post_multipart(
+        self,
+        url: str,
+        body: bytes,
+        content_type: str,
+    ) -> tuple[int, object]:
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"Invalid backend URL: {url}")
+
+        request = Request(
+            url,
+            data=body,
+            headers={"Content-Type": content_type, "Accept": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=180) as response:  # noqa: S310 - local debug proxy
             return response.status, self._decode_response(response.read())
 
     def _decode_response(self, data: bytes) -> object:

@@ -116,6 +116,92 @@
     .row label { flex: 1 1 160px; }
     .wide { min-width: 300px; }
     .status { color: var(--muted); font-size: 12px; }
+    .title-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .mode-switch {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: #fff;
+    }
+    .mode-switch button {
+      border: 0;
+      border-radius: 0;
+      background: #fff;
+      color: #24292f;
+      padding: 6px 10px;
+    }
+    .mode-switch button.active {
+      background: #24292f;
+      color: #fff;
+    }
+    .text-input-panel[hidden],
+    .voice-panel[hidden] {
+      display: none;
+    }
+    .voice-panel {
+      border-top: 1px solid var(--border);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+      background: #fff;
+    }
+    .voice-panel h2 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .voice-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .voice-controls button.secondary {
+      background: #fff;
+      color: #24292f;
+      border-color: var(--border);
+    }
+    .voice-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      display: inline-block;
+    }
+    .voice-indicator.active { background: var(--error); }
+    .voice-timer {
+      font-variant-numeric: tabular-nums;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .voice-results {
+      display: grid;
+      gap: 8px;
+    }
+    .voice-results textarea {
+      min-height: 56px;
+      resize: vertical;
+      background: #f6f8fa;
+    }
+    .voice-warning {
+      color: #9a6700;
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    .voice-error {
+      color: var(--error);
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    #assistantAudio {
+      width: 100%;
+      min-height: 36px;
+    }
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; height: auto; }
       section { min-height: 420px; }
@@ -138,7 +224,13 @@
     <section>
       <div class="section-title">
         <span>Conversation</span>
-        <button id="clearChat" type="button">Clear</button>
+        <div class="title-actions">
+          <div class="mode-switch" aria-label="Input mode">
+            <button id="textModeButton" class="active" type="button">Text</button>
+            <button id="voiceModeButton" type="button">Voice</button>
+          </div>
+          <button id="clearChat" type="button">Clear</button>
+        </div>
       </div>
       <div id="chatLog" class="chat-log"></div>
       <form id="messageForm">
@@ -158,14 +250,40 @@
             <input id="conversationId" placeholder="Empty means create/use new conversation">
           </label>
         </div>
-        <label>Metadata JSON (optional)
-          <input id="metadata" placeholder='{"source":"debug"}'>
-        </label>
-        <label>Message
-          <textarea id="content" placeholder="Type a message..." required></textarea>
-        </label>
-        <button id="sendButton" type="submit">Send</button>
+        <div id="textInputPanel" class="text-input-panel">
+          <label>Metadata JSON (optional)
+            <input id="metadata" placeholder='{"source":"debug"}'>
+          </label>
+          <label>Message
+            <textarea id="content" placeholder="Type a message..."></textarea>
+          </label>
+          <button id="sendButton" type="submit">Send</button>
+        </div>
       </form>
+      <div id="voicePanel" class="voice-panel" hidden>
+        <div class="row">
+          <h2>Voice message</h2>
+          <span id="voiceStatus" class="status">Idle</span>
+        </div>
+        <div class="voice-controls">
+          <button id="startRecording" type="button">Start recording</button>
+          <button id="stopRecording" type="button" disabled>Stop recording</button>
+          <button id="resetVoiceConversation" class="secondary" type="button">Reset voice conversation</button>
+          <span id="voiceIndicator" class="voice-indicator" aria-hidden="true"></span>
+          <span id="recordingTimer" class="voice-timer">00:00</span>
+        </div>
+        <div class="voice-results">
+          <label>Transcript
+            <textarea id="voiceTranscript" readonly placeholder="No voice transcript yet."></textarea>
+          </label>
+          <label>Assistant response
+            <textarea id="voiceAssistantResponse" readonly placeholder="No voice response yet."></textarea>
+          </label>
+          <div id="voiceWarnings" class="voice-warning"></div>
+          <div id="voiceError" class="voice-error"></div>
+          <audio id="assistantAudio" controls></audio>
+        </div>
+      </div>
     </section>
 
     <section>
@@ -190,12 +308,48 @@
     const apiResponse = document.querySelector('#apiResponse');
     const statusEl = document.querySelector('#status');
     const sendButton = document.querySelector('#sendButton');
+    const textModeButton = document.querySelector('#textModeButton');
+    const voiceModeButton = document.querySelector('#voiceModeButton');
+    const textInputPanel = document.querySelector('#textInputPanel');
+    const voicePanel = document.querySelector('#voicePanel');
+    const startRecordingButton = document.querySelector('#startRecording');
+    const stopRecordingButton = document.querySelector('#stopRecording');
+    const resetVoiceConversationButton = document.querySelector('#resetVoiceConversation');
+    const voiceStatusEl = document.querySelector('#voiceStatus');
+    const voiceIndicator = document.querySelector('#voiceIndicator');
+    const recordingTimer = document.querySelector('#recordingTimer');
+    const voiceTranscript = document.querySelector('#voiceTranscript');
+    const voiceAssistantResponse = document.querySelector('#voiceAssistantResponse');
+    const voiceWarnings = document.querySelector('#voiceWarnings');
+    const voiceError = document.querySelector('#voiceError');
+    const assistantAudio = document.querySelector('#assistantAudio');
+
+    const VOICE_API_PATH = '/api/v1/voice/messages';
+    const MAX_RECORDING_MS = 30000;
+    const PREFERRED_AUDIO_TYPES = [
+      'audio/webm;codecs=opus',
+      'audio/ogg;codecs=opus',
+      'audio/webm',
+      'audio/ogg',
+    ];
+
+    let mediaRecorder = null;
+    let mediaStream = null;
+    let recordedChunks = [];
+    let selectedMimeType = '';
+    let recordingStartedAt = 0;
+    let recordingTimerInterval = null;
+    let maxRecordingTimeout = null;
+    let inputMode = 'text';
+    let voiceBusy = false;
 
     const saved = JSON.parse(localStorage.getItem('debug-chat-settings') || '{}');
     for (const [id, value] of Object.entries(saved)) {
       const element = document.querySelector(`#${id}`);
       if (element && value !== undefined) element.value = value;
     }
+    inputMode = saved.inputMode === 'voice' ? 'voice' : 'text';
+    applyInputMode(inputMode);
 
     fetch('/config')
       .then((response) => response.json())
@@ -273,6 +427,17 @@
       apiResponse.textContent = 'No requests yet.';
     });
 
+    textModeButton.addEventListener('click', () => switchInputMode('text'));
+    voiceModeButton.addEventListener('click', () => switchInputMode('voice'));
+    startRecordingButton.addEventListener('click', startVoiceRecording);
+    stopRecordingButton.addEventListener('click', stopVoiceRecording);
+    resetVoiceConversationButton.addEventListener('click', () => {
+      conversationIdInput.value = '';
+      saveSettings();
+      voiceStatusEl.textContent = 'Voice conversation reset';
+      setTimeout(() => voiceStatusEl.textContent = 'Idle', 1200);
+    });
+
     document.querySelector('#copyResponse').addEventListener('click', async () => {
       await navigator.clipboard.writeText(apiResponse.textContent);
       statusEl.textContent = 'Copied response JSON';
@@ -300,6 +465,324 @@
       statusEl.textContent = text;
     }
 
+    function switchInputMode(nextMode) {
+      if (nextMode === inputMode) return;
+      if (voiceBusy) {
+        voiceStatusEl.textContent = 'Finish the current voice message before switching modes';
+        return;
+      }
+
+      inputMode = nextMode;
+      applyInputMode(inputMode);
+      saveSettings();
+    }
+
+    function applyInputMode(nextMode) {
+      const isVoice = nextMode === 'voice';
+      textInputPanel.hidden = isVoice;
+      voicePanel.hidden = !isVoice;
+      textModeButton.classList.toggle('active', !isVoice);
+      voiceModeButton.classList.toggle('active', isVoice);
+      contentInput.required = !isVoice;
+      if (isVoice) {
+        statusEl.textContent = 'Voice input mode';
+      } else {
+        statusEl.textContent = 'Text input mode';
+      }
+      updateVoiceControlAvailability();
+    }
+
+    async function startVoiceRecording() {
+      clearVoiceMessages();
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showVoiceError('This browser does not support microphone capture.');
+        return;
+      }
+      if (!window.MediaRecorder) {
+        showVoiceError('This browser does not support MediaRecorder.');
+        return;
+      }
+
+      selectedMimeType = selectRecordingMimeType();
+      recordedChunks = [];
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(
+          mediaStream,
+          selectedMimeType ? { mimeType: selectedMimeType } : undefined
+        );
+      } catch (error) {
+        cleanupMediaStream();
+        showVoiceError(`Microphone recording could not start: ${error.message}`);
+        return;
+      }
+
+      mediaRecorder.addEventListener('dataavailable', (event) => {
+        if (event.data && event.data.size > 0) recordedChunks.push(event.data);
+      });
+
+      mediaRecorder.addEventListener('error', (event) => {
+        cleanupRecordingTimers();
+        cleanupMediaStream();
+        setVoiceState('idle');
+        showVoiceError(`Recording failed: ${event.error?.message || 'unknown MediaRecorder error'}`);
+      });
+
+      mediaRecorder.addEventListener('stop', () => {
+        handleRecordingStopped().catch((error) => {
+          setVoiceState('idle');
+          showVoiceError(error.message);
+        });
+      });
+
+      recordingStartedAt = Date.now();
+      updateRecordingTimer();
+      recordingTimerInterval = setInterval(updateRecordingTimer, 250);
+      maxRecordingTimeout = setTimeout(() => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') stopVoiceRecording();
+      }, MAX_RECORDING_MS);
+
+      mediaRecorder.start();
+      setVoiceState('recording');
+    }
+
+    function stopVoiceRecording() {
+      if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
+      setVoiceState('stopping');
+      mediaRecorder.stop();
+    }
+
+    async function handleRecordingStopped() {
+      cleanupRecordingTimers();
+      cleanupMediaStream();
+
+      const blobType = selectedMimeType || recordedChunks[0]?.type || 'audio/webm';
+      const audioBlob = new Blob(recordedChunks, { type: blobType });
+      if (!audioBlob.size) {
+        setVoiceState('idle');
+        showVoiceError('Recording was empty.');
+        return;
+      }
+
+      await sendVoiceRecording(audioBlob, blobType);
+    }
+
+    async function sendVoiceRecording(audioBlob, mimeType) {
+      setVoiceState('processing');
+      saveSettings();
+
+      const tenantId = tenantIdInput.value.trim() || 'demo_restaurant';
+      const externalUserId = externalUserIdInput.value.trim() || 'debug-browser-user';
+      const conversationId = conversationIdInput.value.trim();
+      const metadata = {
+        source: 'debug_ui',
+        input: 'browser_microphone',
+        mime_type: mimeType,
+      };
+
+      const formData = new FormData();
+      formData.append('tenant_id', tenantId);
+      formData.append('channel', 'browser_debug');
+      formData.append('external_user_id', externalUserId);
+      if (conversationId) formData.append('conversation_id', conversationId);
+      formData.append('metadata', JSON.stringify(metadata));
+      formData.append(
+        'audio_file',
+        new File([audioBlob], `debug-recording-${Date.now()}.${extensionForMimeType(mimeType)}`, {
+          type: mimeType,
+        })
+      );
+
+      let responseSnapshotUpdated = false;
+      try {
+        const response = await fetch(buildVoiceProxyUrl(), {
+          method: 'POST',
+          body: formData,
+        });
+        const result = await response.json();
+        apiResponse.textContent = JSON.stringify(result, null, 2);
+        responseSnapshotUpdated = true;
+
+        const backendResponse = result.response || {};
+        if (!response.ok || result.error) {
+          throw new Error(result.error || `Voice proxy HTTP ${response.status}`);
+        }
+        if (result.proxied_status >= 400) {
+          throw new Error(readBackendError(backendResponse, `Backend HTTP ${result.proxied_status}`));
+        }
+
+        if (backendResponse.conversation_id) {
+          conversationIdInput.value = backendResponse.conversation_id;
+          saveSettings();
+        }
+
+        voiceTranscript.value = backendResponse.transcript || '';
+        voiceAssistantResponse.value = backendResponse.response_text || '';
+        showVoiceWarnings(collectVoiceWarnings(backendResponse));
+
+        if (backendResponse.transcript) appendMessage('user', 'Voice transcript', backendResponse.transcript);
+        if (backendResponse.response_text) {
+          appendMessage('assistant', 'Assistant', backendResponse.response_text);
+        }
+
+        await playAssistantAudio(backendResponse.audio_url);
+        setVoiceState('idle', 'Voice message processed');
+      } catch (error) {
+        setVoiceState('idle', 'Voice message failed');
+        showVoiceError(error.message);
+        appendMessage('error', 'Voice error', error.message);
+        if (!responseSnapshotUpdated) {
+          apiResponse.textContent = JSON.stringify({ error: error.message }, null, 2);
+        }
+      }
+    }
+
+    function selectRecordingMimeType() {
+      for (const mimeType of PREFERRED_AUDIO_TYPES) {
+        if (MediaRecorder.isTypeSupported(mimeType)) return mimeType;
+      }
+      return '';
+    }
+
+    function extensionForMimeType(mimeType) {
+      if (mimeType.includes('ogg')) return 'ogg';
+      return 'webm';
+    }
+
+    function buildVoiceProxyUrl() {
+      const params = new URLSearchParams({
+        backend_url: getBackendBaseUrl(),
+        api_path: VOICE_API_PATH,
+      });
+      return `/debug/voice-message?${params.toString()}`;
+    }
+
+    function getBackendBaseUrl() {
+      return (backendUrlInput.value.trim() || window.location.origin).replace(/\/+$/, '');
+    }
+
+    function resolveBackendAssetUrl(url) {
+      return new URL(url, `${getBackendBaseUrl()}/`).href;
+    }
+
+    async function playAssistantAudio(audioUrl) {
+      assistantAudio.pause();
+      assistantAudio.removeAttribute('src');
+      assistantAudio.load();
+
+      if (!audioUrl) {
+        showVoiceWarnings(['Backend response did not include audio_url.']);
+        return;
+      }
+
+      assistantAudio.src = resolveBackendAssetUrl(audioUrl);
+      assistantAudio.load();
+      try {
+        await assistantAudio.play();
+      } catch (error) {
+        showVoiceWarnings([
+          ...collectVisibleWarnings(),
+          'Click play to listen to the response.',
+        ]);
+      }
+    }
+
+    function collectVoiceWarnings(backendResponse) {
+      const warnings = [];
+      const metadataWarnings = backendResponse.metadata?.warnings;
+      if (Array.isArray(metadataWarnings)) warnings.push(...metadataWarnings);
+      if (!backendResponse.audio_url) warnings.push('Backend response did not include audio_url.');
+      return warnings.filter(Boolean);
+    }
+
+    function collectVisibleWarnings() {
+      return voiceWarnings.textContent
+        .split('\n')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+
+    function showVoiceWarnings(warnings) {
+      voiceWarnings.textContent = warnings.length ? warnings.join('\n') : '';
+    }
+
+    function showVoiceError(text) {
+      voiceError.textContent = text;
+      voiceStatusEl.textContent = 'Error';
+    }
+
+    function clearVoiceMessages() {
+      voiceError.textContent = '';
+      voiceWarnings.textContent = '';
+    }
+
+    function readBackendError(value, fallback) {
+      if (!value) return fallback;
+      if (typeof value === 'string') return value;
+      if (typeof value.detail === 'string') return value.detail;
+      if (value.detail) return JSON.stringify(value.detail);
+      if (value.error) return String(value.error);
+      return JSON.stringify(value, null, 2);
+    }
+
+    function setVoiceState(state, text) {
+      const isRecording = state === 'recording';
+      voiceBusy = isRecording || state === 'stopping' || state === 'processing';
+      updateVoiceControlAvailability(isRecording);
+      voiceIndicator.classList.toggle('active', isRecording);
+
+      if (text) {
+        voiceStatusEl.textContent = text;
+      } else if (state === 'recording') {
+        voiceStatusEl.textContent = 'Recording...';
+      } else if (state === 'stopping') {
+        voiceStatusEl.textContent = 'Stopping recording...';
+      } else if (state === 'processing') {
+        voiceStatusEl.textContent = 'Processing voice message...';
+      } else {
+        voiceStatusEl.textContent = 'Idle';
+      }
+    }
+
+    function updateVoiceControlAvailability(isRecording = false) {
+      const voiceModeActive = inputMode === 'voice';
+      startRecordingButton.disabled = !voiceModeActive || voiceBusy;
+      stopRecordingButton.disabled = !voiceModeActive || !isRecording;
+      resetVoiceConversationButton.disabled = !voiceModeActive || voiceBusy;
+      textModeButton.disabled = voiceBusy;
+      voiceModeButton.disabled = voiceBusy;
+    }
+
+    function updateRecordingTimer() {
+      const elapsedMs = recordingStartedAt ? Date.now() - recordingStartedAt : 0;
+      recordingTimer.textContent = formatDuration(elapsedMs);
+    }
+
+    function formatDuration(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+      const seconds = String(totalSeconds % 60).padStart(2, '0');
+      return `${minutes}:${seconds}`;
+    }
+
+    function cleanupRecordingTimers() {
+      if (recordingTimerInterval) clearInterval(recordingTimerInterval);
+      if (maxRecordingTimeout) clearTimeout(maxRecordingTimeout);
+      recordingTimerInterval = null;
+      maxRecordingTimeout = null;
+      updateRecordingTimer();
+    }
+
+    function cleanupMediaStream() {
+      if (mediaStream) {
+        for (const track of mediaStream.getTracks()) track.stop();
+      }
+      mediaStream = null;
+      mediaRecorder = null;
+    }
+
     function saveSettings() {
       localStorage.setItem('debug-chat-settings', JSON.stringify({
         backendUrl: backendUrlInput.value,
@@ -309,6 +792,7 @@
         externalUserId: externalUserIdInput.value,
         conversationId: conversationIdInput.value,
         metadata: metadataInput.value,
+        inputMode,
       }));
     }
   </script>

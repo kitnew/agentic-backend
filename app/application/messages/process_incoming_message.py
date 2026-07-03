@@ -11,6 +11,12 @@ from app.agent.tools import create_agent_tools, create_langchain_tools
 from app.application.capabilities.executor import BackendCapabilityExecutor, CapabilityExecution
 from app.capabilities.router import CapabilityRouter
 from app.capabilities.schemas import CapabilityStatus
+from app.core.timing import (
+    finish_timing_trace,
+    new_timing_trace,
+    record_component_timing,
+    start_timer,
+)
 from app.domain.conversations.entities import Conversation
 from app.domain.conversations.enums import ConversationStatus
 from app.domain.messages.entities import Message
@@ -51,9 +57,27 @@ class ProcessIncomingMessage:
         self.conversation_repository = conversation_repository
 
     def execute(self, request: CreateMessageRequest) -> ProcessMessageResponse:
+        total_timer = start_timer()
+        pipeline_timings = new_timing_trace()
+        component_timer = start_timer()
         tenant_context = self.tenant_config_loader.load(request.tenant_id)
+        record_component_timing(pipeline_timings, "tenant_config_load", component_timer)
+        component_timer = start_timer()
         conversation = self._get_or_create_conversation(request)
+        record_component_timing(
+            pipeline_timings,
+            "conversation_get_or_create",
+            component_timer,
+            conversation_id=conversation.id,
+        )
+        component_timer = start_timer()
         chat_history = self._build_chat_history(conversation.id)
+        record_component_timing(
+            pipeline_timings,
+            "chat_history_load",
+            component_timer,
+            message_count=len(chat_history),
+        )
 
         user_message = Message(
             id=str(uuid.uuid4()),
@@ -68,7 +92,14 @@ class ProcessIncomingMessage:
             created_at=datetime.now(),
             processed_at=None,
         )
+        component_timer = start_timer()
         self.message_repository.save(user_message)
+        record_component_timing(
+            pipeline_timings,
+            "user_message_save",
+            component_timer,
+            message_id=user_message.id,
+        )
 
         try:
             agent_input = AgentInput(
@@ -85,11 +116,14 @@ class ProcessIncomingMessage:
                 capability_executor=capability_executor,
                 raw_message=user_message.content,
             )
+            component_timer = start_timer()
             agent_output = self.agent_runtime.run(
                 agent_input,
                 context=self._build_agent_context(tenant_context, conversation.id),
                 tools=create_langchain_tools(agent_tools),
             )
+            record_component_timing(pipeline_timings, "agent_runtime", component_timer)
+            component_timer = start_timer()
             capability_executions = self._collect_capability_executions(agent_tools)
             capability_results = [execution.result for execution in capability_executions]
             tool_calls = [
@@ -97,6 +131,13 @@ class ProcessIncomingMessage:
                 for execution in capability_executions
                 if execution.tool_call is not None
             ]
+            record_component_timing(
+                pipeline_timings,
+                "capability_collection",
+                component_timer,
+                capability_execution_count=len(capability_executions),
+                tool_call_count=len(tool_calls),
+            )
             response_text = agent_output["response_text"] or self._fallback_capability_message(
                 capability_executions
             )
@@ -108,6 +149,7 @@ class ProcessIncomingMessage:
                 MessageStatus.FAILED if has_capability_failure else MessageStatus.PROCESSED
             )
 
+            component_timer = start_timer()
             user_message.status = final_message_status
             user_message.processed_at = datetime.now()
             self.message_repository.save(user_message)
@@ -131,6 +173,12 @@ class ProcessIncomingMessage:
                 conversation.status = ConversationStatus.FAILED
             conversation.updated_at = datetime.now()
             self.conversation_repository.update(conversation)
+            record_component_timing(pipeline_timings, "message_persistence", component_timer)
+            agent_trace = dict(agent_output["agent_trace"] or {})
+            agent_trace["message_pipeline_timings"] = finish_timing_trace(
+                pipeline_timings,
+                total_timer,
+            )
 
             return ProcessMessageResponse(
                 conversation_id=conversation.id,
@@ -142,11 +190,12 @@ class ProcessIncomingMessage:
                 ],
                 capability_results=capability_results,
                 tool_calls=tool_calls,
-                agent_trace=agent_output["agent_trace"],
+                agent_trace=agent_trace,
                 status=user_message.status,
             )
 
         except Exception as exc:
+            component_timer = start_timer()
             user_message.status = MessageStatus.FAILED
             user_message.processed_at = datetime.now()
             user_message.metadata = {**(user_message.metadata or {}), "error": str(exc)}
@@ -170,6 +219,15 @@ class ProcessIncomingMessage:
             conversation.status = ConversationStatus.FAILED
             conversation.updated_at = datetime.now()
             self.conversation_repository.update(conversation)
+            record_component_timing(pipeline_timings, "failure_persistence", component_timer)
+            agent_trace = {
+                "error": str(exc),
+                "type": exc.__class__.__name__,
+                "message_pipeline_timings": finish_timing_trace(
+                    pipeline_timings,
+                    total_timer,
+                ),
+            }
 
             return ProcessMessageResponse(
                 conversation_id=conversation.id,
@@ -179,7 +237,7 @@ class ProcessIncomingMessage:
                 requested_capabilities=[],
                 capability_results=[],
                 tool_calls=[],
-                agent_trace={"error": str(exc), "type": exc.__class__.__name__},
+                agent_trace=agent_trace,
                 status=user_message.status,
             )
 

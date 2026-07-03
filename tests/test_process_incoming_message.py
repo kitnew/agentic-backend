@@ -203,6 +203,9 @@ def test_message_creates_conversation_and_uses_agent_input_output_contract():
     assert "sunday: closed" in agent_runtime.contexts[0]["schedule_summary"]
     assert agent_runtime.contexts[0]["enabled_capabilities"] == ["reservation.create_request"]
     assert response.agent_trace["context"]["tenant_id"] == "demo_restaurant"
+    assert response.agent_trace["message_pipeline_timings"]["unit"] == "seconds"
+    assert response.agent_trace["message_pipeline_timings"]["total_seconds"] >= 0
+    assert "agent_runtime" in response.agent_trace["message_pipeline_timings"]["components"]
 
 
 def test_next_message_continues_existing_conversation_with_chat_history():
