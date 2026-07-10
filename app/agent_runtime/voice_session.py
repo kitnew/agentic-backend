@@ -1,4 +1,5 @@
 import base64
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -29,6 +30,7 @@ class VoiceSession:
     audio_bytes_received: int = 0
     client_event_count: int = 0
     processing: bool = False
+    processing_task: asyncio.Task | None = field(default=None, repr=False)
     cancelled: bool = False
     closed: bool = False
 
@@ -73,6 +75,8 @@ class VoiceSession:
             return self._event("pong")
 
         if event_type == "audio_chunk":
+            if self.processing:
+                raise VoiceSessionPayloadError("Voice turn is already processing")
             audio_base64 = payload.get("audio_base64")
             if not isinstance(audio_base64, str):
                 raise VoiceSessionPayloadError("audio_base64 is required")
@@ -141,6 +145,7 @@ class VoiceSession:
 
     def finish_processing(self) -> None:
         self.processing = False
+        self.processing_task = None
 
     def session_ended_event(self, *, reason: str) -> dict[str, Any]:
         self.close(cancelled=reason == "cancelled")
@@ -154,6 +159,8 @@ class VoiceSession:
 
     def close(self, *, cancelled: bool = False) -> None:
         self.cancelled = self.cancelled or cancelled
+        if cancelled:
+            self.finish_processing()
         self.closed = True
 
     def error_event(self, message: str, *, code: str = "bad_request") -> dict[str, Any]:

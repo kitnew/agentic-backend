@@ -106,6 +106,15 @@ Manual smoke test:
 ```bash
 uvicorn app.main:app --reload
 .venv/bin/python scripts/voice_ws_smoke.py
+.venv/bin/python scripts/voice_ws_concurrency_smoke.py
+```
+
+Batch-turn processing runs the existing synchronous voice pipeline through a
+bounded in-process executor. Tune it with:
+
+```bash
+export VOICE_WS_PROCESSING_MAX_WORKERS=4
+export VOICE_WS_PROCESSING_TIMEOUT_SECONDS=120
 ```
 
 ### Curl Example

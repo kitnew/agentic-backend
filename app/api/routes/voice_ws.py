@@ -1,13 +1,17 @@
+import asyncio
 import json
 import logging
-import time
-from typing import Any
+from contextlib import suppress
+from typing import Any, Awaitable, Callable
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from starlette.websockets import WebSocketState
 
+from app.agent_runtime.voice_processing_executor import (
+    VoiceProcessingExecutor,
+    VoiceProcessingTimeoutError,
+)
 from app.agent_runtime.voice_session import VoiceSession, VoiceSessionPayloadError
-from app.agent_runtime.voice_turn_processor import VoiceTurnProcessor
 from app.core.context import build_voice_runtime_context
 from app.voice.errors import VoiceServiceError
 from app.voice.schemas import VoiceMessageResponse
@@ -17,6 +21,7 @@ from app.tenants.loader import TenantConfigInvalidError, TenantConfigLoader, Ten
 logger = logging.getLogger(__name__)
 router = APIRouter()
 DEFAULT_AUDIO_CONTENT_TYPE = "audio/webm"
+SendEvent = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 @router.websocket("/stream")
@@ -63,11 +68,17 @@ async def stream_voice(
     await websocket.accept()
     logger.info("Voice WebSocket session started", extra=log_context)
     await websocket.send_json(session.session_started_event())
+    processing_task: asyncio.Task | None = None
+    voice_processing_executor = _get_voice_processing_executor(websocket)
 
     async def send_event(event: dict[str, Any]) -> None:
         logger.info(
             "Voice WebSocket event",
-            extra={**log_context, "event_type": event["type"]},
+            extra={
+                **log_context,
+                "conversation_id": session.conversation_id,
+                "event_type": event["type"],
+            },
         )
         await websocket.send_json(event)
 
@@ -80,12 +91,14 @@ async def stream_voice(
             events = await _handle_message(
                 session,
                 message,
-                turn_processor=VoiceTurnProcessor(),
+                voice_processing_executor=voice_processing_executor,
                 default_audio_content_type=default_audio_content_type,
                 send_event=send_event,
             )
             for event in events:
                 await send_event(event)
+            if session.processing_task is not None:
+                processing_task = session.processing_task
 
             if any(event["type"] == "session_ended" for event in events):
                 await websocket.close()
@@ -99,20 +112,33 @@ async def stream_voice(
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         return
     finally:
+        if processing_task is not None and not processing_task.done():
+            processing_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await processing_task
         if not session.closed:
             session.close()
-        logger.info("Voice WebSocket session closed", extra=log_context)
+        logger.info(
+            "Voice WebSocket session closed",
+            extra={
+                **log_context,
+                "conversation_id": session.conversation_id,
+                "event_type": "session_closed",
+            },
+        )
 
 
 async def _handle_message(
     session: VoiceSession,
     message: dict[str, Any],
     *,
-    turn_processor: VoiceTurnProcessor | None = None,
+    voice_processing_executor: VoiceProcessingExecutor | None = None,
     default_audio_content_type: str = DEFAULT_AUDIO_CONTENT_TYPE,
-    send_event=None,
+    send_event: SendEvent | None = None,
 ) -> list[dict[str, Any]]:
     if "bytes" in message and message["bytes"] is not None:
+        if session.processing:
+            return [session.error_event("Voice turn is already processing", code="processing_busy")]
         return [session.handle_audio_chunk(message["bytes"], source="binary")]
 
     if "text" not in message or message["text"] is None:
@@ -134,10 +160,13 @@ async def _handle_message(
         return await _process_input_audio_commit(
             session,
             payload,
-            turn_processor=turn_processor or VoiceTurnProcessor(),
+            voice_processing_executor=voice_processing_executor or VoiceProcessingExecutor(),
             default_audio_content_type=default_audio_content_type,
             send_event=send_event,
         )
+
+    if event_type == "audio_chunk" and session.processing:
+        return [session.error_event("Voice turn is already processing", code="processing_busy")]
 
     try:
         return [session.handle_client_event(payload)]
@@ -149,10 +178,13 @@ async def _process_input_audio_commit(
     session: VoiceSession,
     payload: dict[str, Any],
     *,
-    turn_processor: VoiceTurnProcessor,
+    voice_processing_executor: VoiceProcessingExecutor,
     default_audio_content_type: str,
-    send_event=None,
+    send_event: SendEvent | None = None,
 ) -> list[dict[str, Any]]:
+    if session.processing:
+        return [session.error_event("Voice turn is already processing", code="processing_busy")]
+
     content_type = _normalize_payload_text(payload.get("content_type"), "content_type")
     filename = _normalize_payload_text(payload.get("filename"), "filename")
     if isinstance(content_type, dict):
@@ -174,21 +206,97 @@ async def _process_input_audio_commit(
         return [session.error_event(str(exc))]
 
     started_event = session.processing_started_event()
-    if send_event is not None:
-        await send_event(started_event)
+    if send_event is None:
+        return [
+            started_event,
+            *await _run_committed_turn(
+                session,
+                voice_processing_executor=voice_processing_executor,
+                request=request,
+            ),
+        ]
 
-    started_at = time.perf_counter()
+    session.processing_task = asyncio.create_task(
+        _run_committed_turn_and_send(
+            session,
+            voice_processing_executor=voice_processing_executor,
+            request=request,
+            send_event=send_event,
+        )
+    )
+    return [started_event]
+
+
+async def _run_committed_turn_and_send(
+    session: VoiceSession,
+    *,
+    voice_processing_executor: VoiceProcessingExecutor,
+    request,
+    send_event: SendEvent,
+) -> None:
+    events = await _run_committed_turn(
+        session,
+        voice_processing_executor=voice_processing_executor,
+        request=request,
+    )
+    if session.closed:
+        return
+    for event in events:
+        try:
+            await send_event(event)
+        except Exception:
+            logger.exception(
+                "Voice WebSocket send failed",
+                extra={
+                    "tenant_id": session.tenant_id,
+                    "call_session_id": session.call_session_id,
+                    "conversation_id": session.conversation_id,
+                    "event_type": event["type"],
+                    "outcome": "send_failed",
+                },
+            )
+            session.close(cancelled=True)
+            return
+
+
+async def _run_committed_turn(
+    session: VoiceSession,
+    *,
+    voice_processing_executor: VoiceProcessingExecutor,
+    request,
+) -> list[dict[str, Any]]:
     try:
-        response = turn_processor.process(request)
+        result = await voice_processing_executor.process(request)
+    except asyncio.CancelledError:
+        session.finish_processing()
+        raise
+    except VoiceProcessingTimeoutError as exc:
+        session.finish_processing()
+        logger.warning(
+            "Voice WebSocket turn timed out",
+            extra={
+                "tenant_id": session.tenant_id,
+                "call_session_id": session.call_session_id,
+                "conversation_id": session.conversation_id,
+                "event_type": "input_audio_commit",
+                "processing_duration_ms": voice_processing_executor.timeout_seconds * 1000,
+                "outcome": "timeout",
+            },
+        )
+        return [session.error_event(str(exc), code="processing_timeout")]
     except VoiceServiceError as exc:
         session.finish_processing()
-        error = session.error_event(
-            exc.public_message,
-            code=exc.__class__.__name__,
+        logger.warning(
+            "Voice WebSocket turn failed",
+            extra={
+                "tenant_id": session.tenant_id,
+                "call_session_id": session.call_session_id,
+                "conversation_id": session.conversation_id,
+                "event_type": "input_audio_commit",
+                "outcome": "voice_service_error",
+            },
         )
-        if send_event is not None:
-            return [error]
-        return [started_event, error]
+        return [session.error_event(exc.public_message, code=exc.__class__.__name__)]
     except Exception:
         session.finish_processing()
         logger.exception(
@@ -196,22 +304,36 @@ async def _process_input_audio_commit(
             extra={
                 "tenant_id": session.tenant_id,
                 "call_session_id": session.call_session_id,
+                "conversation_id": session.conversation_id,
                 "event_type": "input_audio_commit",
+                "outcome": "processing_failed",
             },
         )
-        error = session.error_event("Voice turn processing failed", code="processing_failed")
-        if send_event is not None:
-            return [error]
-        return [started_event, error]
+        return [session.error_event("Voice turn processing failed", code="processing_failed")]
 
-    duration_ms = int((time.perf_counter() - started_at) * 1000)
-    session.conversation_id = response.conversation_id
+    if session.closed:
+        session.finish_processing()
+        return []
+
+    session.conversation_id = result.response.conversation_id
     session.clear_audio_buffer()
     session.finish_processing()
-    events = _events_from_voice_response(session, response, processing_duration_ms=duration_ms)
-    if send_event is not None:
-        return events
-    return [started_event, *events]
+    logger.info(
+        "Voice WebSocket turn completed",
+        extra={
+            "tenant_id": session.tenant_id,
+            "call_session_id": session.call_session_id,
+            "conversation_id": session.conversation_id,
+            "event_type": "turn_completed",
+            "processing_duration_ms": result.processing_duration_ms,
+            "outcome": "success",
+        },
+    )
+    return _events_from_voice_response(
+        session,
+        result.response,
+        processing_duration_ms=result.processing_duration_ms,
+    )
 
 
 def _events_from_voice_response(
@@ -271,3 +393,11 @@ def _normalize_payload_text(value: Any, field_name: str) -> str | dict[str, str]
     if not isinstance(value, str):
         return {"message": f"{field_name} must be a string"}
     return _normalize_optional_text(value)
+
+
+def _get_voice_processing_executor(websocket: WebSocket) -> VoiceProcessingExecutor:
+    executor = getattr(websocket.app.state, "voice_processing_executor", None)
+    if executor is None:
+        executor = VoiceProcessingExecutor()
+        websocket.app.state.voice_processing_executor = executor
+    return executor
