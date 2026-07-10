@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from langchain_openai import AzureChatOpenAI
 
 from app.application.messages.get_message import get_message_by_id_service
+from app.application.capabilities.boundary import CapabilityExecutor, InProcessCapabilityExecutor
 from app.application.messages.process_incoming_message import (
     ConversationNotFoundError,
     ConversationTenantMismatchError,
@@ -66,6 +67,15 @@ def get_tenant_config_loader() -> TenantConfigLoader:
 def get_capability_router() -> CapabilityRouter:
     return CapabilityRouter()
 
+def get_capability_executor(
+    tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
+    capability_router: CapabilityRouter = Depends(get_capability_router),
+) -> CapabilityExecutor:
+    return InProcessCapabilityExecutor(
+        tenant_config_loader=tenant_config_loader,
+        capability_router=capability_router,
+    )
+
 @router.post("", response_model=ProcessMessageResponse, status_code=status.HTTP_201_CREATED)
 def receive_message(
     request: CreateMessageRequest,
@@ -73,6 +83,7 @@ def receive_message(
     agent_runtime: AgentRuntime = Depends(get_agent_runtime),
     tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
     capability_router: CapabilityRouter = Depends(get_capability_router),
+    capability_executor: CapabilityExecutor = Depends(get_capability_executor),
     tool_call_repository: ToolCallRepository = Depends(get_tool_call_repository),
     conversation_repository: ConversationRepository = Depends(get_conversation_repository),
 ):
@@ -86,6 +97,7 @@ def receive_message(
         capability_router=capability_router,
         tool_call_repository=tool_call_repository,
         conversation_repository=conversation_repository,
+        capability_executor=capability_executor,
     )
     try:
         response = use_case.execute(request)

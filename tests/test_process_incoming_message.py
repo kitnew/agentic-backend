@@ -3,7 +3,12 @@ from langchain_core.messages import AIMessage
 from app.agent.runtime import AgentRuntime
 from app.api.routes.conversations import list_conversation_messages
 from app.application.messages.process_incoming_message import ProcessIncomingMessage
-from app.capabilities.schemas import CapabilityResult, CapabilityStatus
+from app.capabilities.schemas import (
+    CapabilityExecutionResult,
+    CapabilityExecutionStatus,
+    CapabilityResult,
+    CapabilityStatus,
+)
 from app.domain.conversations.entities import Conversation
 from app.domain.conversations.enums import ConversationStatus
 from app.domain.messages.entities import Message
@@ -102,6 +107,35 @@ class FakeCapabilityRouter:
             },
             user_message="Vašu žiadosť o rezerváciu sme prijali. Personál ju potvrdí.",
             error="provider failed" if self.status == CapabilityStatus.FAILED else None,
+        )
+
+
+class FailingCapabilityRouter:
+    def execute(self, tenant_context, capability_request):
+        raise AssertionError("capability router should not be called directly")
+
+
+class FakeCapabilityExecutor:
+    def __init__(self):
+        self.commands = []
+
+    async def execute(self, command):
+        self.commands.append(command)
+        return CapabilityExecutionResult(
+            command_id=command.command_id,
+            status=CapabilityExecutionStatus.SUCCESS,
+            result={
+                "row_appended": True,
+                "reservation_frame": command.payload.get("reservation_frame"),
+            },
+            execution_duration_ms=1,
+            metadata={
+                **command.metadata,
+                "capability_name": "reservation.create_request",
+                "provider": "fake",
+                "legacy_status": "success",
+                "user_message": "Vašu žiadosť o rezerváciu sme prijali. Personál ju potvrdí.",
+            },
         )
 
 
@@ -266,14 +300,15 @@ def test_agent_tool_executes_reservation_capability_and_saves_tool_call():
     conversation_repository = InMemoryConversationRepository()
     message_repository = InMemoryMessageRepository()
     tool_call_repository = InMemoryToolCallRepository()
-    capability_router = FakeCapabilityRouter()
+    capability_executor = FakeCapabilityExecutor()
     use_case = ProcessIncomingMessage(
         message_repository=message_repository,
         agent_runtime=AgentRuntime(FakeToolCallingLlm()),
         tenant_config_loader=TenantConfigLoader(),
-        capability_router=capability_router,
+        capability_router=FailingCapabilityRouter(),
         tool_call_repository=tool_call_repository,
         conversation_repository=conversation_repository,
+        capability_executor=capability_executor,
     )
 
     response = use_case.execute(
@@ -288,7 +323,9 @@ def test_agent_tool_executes_reservation_capability_and_saves_tool_call():
     assert response.requested_capabilities[0].name == "reservation.create_request"
     assert response.capability_results[0].status == "success"
     assert response.tool_calls[0].id == tool_calls[0].id
-    assert capability_router.requests[0].input["reservation_frame"]["guest_name"] == "Patrik"
+    assert capability_executor.commands[0].payload["reservation_frame"]["guest_name"] == "Patrik"
+    assert capability_executor.commands[0].capability == "reservation"
+    assert capability_executor.commands[0].action == "create_request"
     assert tool_calls[0].capability_name == "reservation.create_request"
     assert tool_calls[0].provider == "fake"
     assert response.response_text == "Vašu žiadosť o rezerváciu sme prijali. Personál ju potvrdí."

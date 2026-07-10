@@ -8,6 +8,7 @@ from app.agent.runtime import AgentRuntime
 from app.agent.schemas.context import AgentContext
 from app.agent.schemas.input import AgentInput
 from app.agent.tools import create_agent_tools, create_langchain_tools
+from app.application.capabilities.boundary import CapabilityExecutor
 from app.application.capabilities.executor import BackendCapabilityExecutor, CapabilityExecution
 from app.capabilities.router import CapabilityRouter
 from app.capabilities.schemas import CapabilityStatus
@@ -48,6 +49,7 @@ class ProcessIncomingMessage:
         capability_router: CapabilityRouter,
         tool_call_repository: ToolCallRepository,
         conversation_repository: ConversationRepository,
+        capability_executor: CapabilityExecutor | None = None,
     ):
         self.message_repository = message_repository
         self.agent_runtime = agent_runtime
@@ -55,6 +57,7 @@ class ProcessIncomingMessage:
         self.capability_router = capability_router
         self.tool_call_repository = tool_call_repository
         self.conversation_repository = conversation_repository
+        self.capability_executor = capability_executor
 
     def execute(self, request: CreateMessageRequest) -> ProcessMessageResponse:
         total_timer = start_timer()
@@ -111,6 +114,7 @@ class ProcessIncomingMessage:
                 message=user_message,
                 capability_router=self.capability_router,
                 tool_call_repository=self.tool_call_repository,
+                capability_executor=self.capability_executor,
             )
             agent_tools = create_agent_tools(
                 capability_executor=capability_executor,
