@@ -1,0 +1,56 @@
+x-application: &application
+  build: .
+  image: agentic-backend:local
+  environment:
+    DATABASE_URL: ${DATABASE_URL:-sqlite:///./test.db}
+    CAPABILITY_EXECUTION_MODE: redis
+    REDIS_URL: redis://redis:6379/0
+    CAPABILITY_COMMAND_STREAM: ${CAPABILITY_COMMAND_STREAM:-capability:commands}
+    CAPABILITY_CONSUMER_GROUP: ${CAPABILITY_CONSUMER_GROUP:-capability-workers}
+    CAPABILITY_DEAD_LETTER_STREAM: ${CAPABILITY_DEAD_LETTER_STREAM:-capability:commands:dead-letter}
+    CAPABILITY_RESULT_TIMEOUT_SECONDS: ${CAPABILITY_RESULT_TIMEOUT_SECONDS:-30}
+    CAPABILITY_RESULT_TTL_SECONDS: ${CAPABILITY_RESULT_TTL_SECONDS:-300}
+    CAPABILITY_IDEMPOTENCY_TTL_SECONDS: ${CAPABILITY_IDEMPOTENCY_TTL_SECONDS:-86400}
+    CAPABILITY_MAX_RETRIES: ${CAPABILITY_MAX_RETRIES:-3}
+    CAPABILITY_PENDING_IDLE_SECONDS: ${CAPABILITY_PENDING_IDLE_SECONDS:-60}
+    CAPABILITY_WORKER_CONCURRENCY: ${CAPABILITY_WORKER_CONCURRENCY:-4}
+    AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+    AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+    AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
+    AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
+    ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+    ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+  depends_on:
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *application
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  worker:
+    <<: *application
+    command: ["python", "-m", "app.workers.capability_worker"]
+    volumes:
+      - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
+      - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
+    stop_grace_period: 2m
+
+  redis:
+    image: redis:8.8.0-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  redis-data:

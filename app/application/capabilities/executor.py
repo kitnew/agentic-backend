@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
@@ -65,6 +66,7 @@ class BackendCapabilityExecutor:
         self.capability_ledger = capability_ledger or MissingCapabilityLedger()
 
     def execute(self, capability_request: CapabilityRequest) -> CapabilityExecution:
+        capability_request = self._with_message_metadata(capability_request)
         idempotency_key = (capability_request.metadata or {}).get("idempotency_key")
         existing_call = (
             self.capability_ledger.get_by_idempotency_key(idempotency_key)
@@ -126,6 +128,7 @@ class BackendCapabilityExecutor:
         )
 
     async def execute_async(self, capability_request: CapabilityRequest) -> CapabilityExecution:
+        capability_request = self._with_message_metadata(capability_request)
         idempotency_key = (capability_request.metadata or {}).get("idempotency_key")
         existing_call = (
             self.capability_ledger.get_by_idempotency_key(idempotency_key)
@@ -194,7 +197,11 @@ class BackendCapabilityExecutor:
             asyncio.get_running_loop()
         except RuntimeError:
             return asyncio.run(self.capability_executor.execute(command))
-        raise RuntimeError("Synchronous capability execution cannot run inside an active event loop")
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(
+                asyncio.run,
+                self.capability_executor.execute(command),
+            ).result()
 
     def _to_command(
         self,
@@ -261,6 +268,19 @@ class BackendCapabilityExecutor:
         if reserved_call_id:
             metadata["capability_call_id"] = reserved_call_id
         return capability_request.model_copy(update={"input": execution_input, "metadata": metadata})
+
+    def _with_message_metadata(
+        self,
+        capability_request: CapabilityRequest,
+    ) -> CapabilityRequest:
+        return capability_request.model_copy(
+            update={
+                "metadata": {
+                    **(self.message.metadata or {}),
+                    **(capability_request.metadata or {}),
+                }
+            }
+        )
 
     def _existing_success_execution(
         self,

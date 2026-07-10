@@ -1,5 +1,85 @@
 # agentic-backend
 
+## Setup and capability execution
+
+The application defaults to in-process capability execution, so Redis is not
+required for local development or tests.
+
+```bash
+uv sync --frozen
+uv run pytest -q
+uv run uvicorn app.main:app --reload
+```
+
+To use Redis Streams, start Redis and run the API and worker with the same
+configuration:
+
+```bash
+export CAPABILITY_EXECUTION_MODE=redis
+export REDIS_URL=redis://localhost:6379/0
+uv run python -m app.workers.capability_worker
+uv run uvicorn app.main:app --reload
+```
+
+Copy `.env.example` when local credentials or overrides are needed. Existing
+`DATABASE_URL` behavior is unchanged.
+
+### Docker Compose
+
+The Compose stack uses one application image for the API and worker. Redis is
+internal-only; only API port `8000` is published.
+
+```bash
+docker compose build
+docker compose up -d
+curl --fail http://localhost:8000/health
+docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
+docker compose logs worker
+docker compose exec -T api python scripts/capability_compose_smoke.py
+```
+
+The smoke command uses two checked-in manual-provider tenants. It exercises the
+Redis executor, worker, existing router, correlated results, idempotency reuse,
+and concurrent tenant/session isolation without an external write.
+
+Verify that a restarted worker rejoins the group, inspect its logs, then stop
+the stack:
+
+```bash
+docker compose restart worker
+docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
+docker compose logs --since=5m worker
+docker compose down
+```
+
+For a standalone image build:
+
+```bash
+docker build -t agentic-backend:local .
+```
+
+The production image installs only the frozen runtime environment with
+`uv sync --frozen --no-dev` and runs as a non-root user.
+
+### Redis protocol and settings
+
+Defaults are shown in `.env.example`. The command stream is
+`capability:commands`, consumer group is `capability-workers`, and dead-letter
+stream is `capability:commands:dead-letter`. Results, completion records,
+idempotency records, locks, and attempt counters use the same command-stream
+prefix.
+
+`CAPABILITY_MAX_RETRIES=3` means one initial execution plus three retries with
+1, 2, and 4 second backoffs. Idle pending entries are reclaimed with
+`XAUTOCLAIM`; terminal result publication, cache writes, dead-lettering when
+needed, acknowledgment, stream deletion, and retry-counter deletion are one
+Redis transaction.
+
+Delivery is at-least-once. A worker crash or ambiguous provider response after
+an external side effect but before Redis records success can repeat that side
+effect. A caller-supplied idempotency key narrows this window but cannot provide
+provider-level exactly-once execution.
+
 ## Voice Message Mode
 
 Voice mode is a universal, channel-independent request path for:

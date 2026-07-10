@@ -6,12 +6,14 @@ from langchain_openai import AzureChatOpenAI
 
 from app.application.messages.get_message import get_message_by_id_service
 from app.application.capabilities.boundary import CapabilityExecutor, InProcessCapabilityExecutor
+from app.application.capabilities.redis_executor import RedisCapabilityExecutor
 from app.application.messages.process_incoming_message import (
     ConversationNotFoundError,
     ConversationTenantMismatchError,
     ProcessIncomingMessage,
 )
 from app.capabilities.router import CapabilityRouter
+from app.core.config import CapabilitySettings
 from app.infrastructure.database import get_db
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
@@ -71,6 +73,9 @@ def get_capability_executor(
     tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
     capability_router: CapabilityRouter = Depends(get_capability_router),
 ) -> CapabilityExecutor:
+    settings = CapabilitySettings.from_env()
+    if settings.execution_mode == "redis":
+        return RedisCapabilityExecutor(settings=settings)
     return InProcessCapabilityExecutor(
         tenant_config_loader=tenant_config_loader,
         capability_router=capability_router,
