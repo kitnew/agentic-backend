@@ -22,17 +22,19 @@ uv run uvicorn app.main:app --reload
 uv run uvicorn app.agent_runtime.main:app --port 8001 --reload
 ```
 
-Copy `.env.example` when local credentials or overrides are needed. Existing
-`DATABASE_URL` behavior is unchanged.
+Copy `.env.example` to the ignored `app/.env`. Outside Compose the database
+still defaults to SQLite; Compose overrides it with PostgreSQL.
 
 ### Docker Compose
 
 The Compose stack uses one application image for the API, agent runtime, and
-capability worker. Redis is internal-only; API `8000` and runtime `8001` are published.
+capability worker. Redis and PostgreSQL are internal-only; API `8000` and runtime
+`8001` are published. Set a nonblank `POSTGRES_PASSWORD` and a unique
+`VOICE_SESSION_TOKEN_SECRET` of at least 32 bytes in `app/.env`, then run:
 
 ```bash
-docker compose build
-docker compose up -d
+docker compose --env-file app/.env build
+docker compose --env-file app/.env up -d
 curl --fail http://localhost:8000/health
 curl --fail http://localhost:8001/health
 docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
@@ -53,7 +55,7 @@ the stack:
 docker compose restart capability-worker
 docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
 docker compose logs --since=5m capability-worker
-docker compose down
+docker compose --env-file app/.env down
 ```
 
 For a standalone image build:
@@ -64,6 +66,11 @@ docker build -t agentic-backend:local .
 
 The production image installs only the frozen runtime environment with
 `uv sync --frozen --no-dev` and runs as a non-root user.
+
+PostgreSQL 18 stores its cluster in the `postgres-data` volume. API and agent
+runtime share only generated audio through `voice-audio-data`; the worker gets
+the same `DATABASE_URL` but does not currently open a SQL session. Startup keeps
+`Base.metadata.create_all` and serializes it with a PostgreSQL advisory lock.
 
 ### Redis protocol and settings
 
@@ -199,6 +206,11 @@ uvicorn app.agent_runtime.main:app --port 8001 --reload
 .venv/bin/python scripts/voice_ws_smoke.py
 .venv/bin/python scripts/voice_ws_concurrency_smoke.py
 ```
+
+The dependency-free browser debug page at `http://127.0.0.1:8080` can issue a
+signed session through its local proxy and send repeated MediaRecorder batches
+over one WebSocket. It keeps the token only in memory and uses the
+`voice-session` subprotocol.
 
 Batch-turn processing runs the existing synchronous voice pipeline through a
 bounded in-process executor. Tune it with:

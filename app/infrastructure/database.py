@@ -1,10 +1,10 @@
-import os
 from collections.abc import Generator
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from app.core.config import DatabaseSettings
 
-# Default to SQLite at start as requested: sqlite:///./test.db
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+settings = DatabaseSettings.from_env()
+DATABASE_URL = settings.url
 
 # SQLite-specific connection arguments (allow multi-threaded access)
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
@@ -12,7 +12,7 @@ connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite")
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
-    echo=os.getenv("DB_ECHO", "false").lower() == "true",
+    echo=settings.echo,
 )
 
 # Session factory for database sessions
@@ -32,8 +32,13 @@ def init_db() -> None:
     """
     # Import all models here to register them with the metadata
     from app.infrastructure.models import ConversationModel, MessageModel, ToolCallModel
-    Base.metadata.create_all(bind=engine)
-    _ensure_sqlite_schema()
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as connection:
+            connection.execute(text("SELECT pg_advisory_xact_lock(773144916)"))
+            Base.metadata.create_all(bind=connection)
+    else:
+        Base.metadata.create_all(bind=engine)
+        _ensure_sqlite_schema()
 
 
 def _ensure_sqlite_schema() -> None:

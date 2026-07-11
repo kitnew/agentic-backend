@@ -5,6 +5,25 @@ from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
+class DatabaseSettings:
+    url: str = "sqlite:///./test.db"
+    echo: bool = False
+
+    @classmethod
+    def from_env(cls) -> "DatabaseSettings":
+        settings = cls(
+            url=_text("DATABASE_URL", cls.url),
+            echo=_text("DB_ECHO", "false").lower() == "true",
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        if not self.url.startswith(("sqlite:", "postgresql+psycopg://")):
+            raise ValueError("DATABASE_URL must use sqlite or postgresql+psycopg")
+
+
+@dataclass(frozen=True)
 class CapabilitySettings:
     execution_mode: str = "in_process"
     redis_url: str = "redis://localhost:6379/0"

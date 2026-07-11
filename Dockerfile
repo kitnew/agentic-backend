@@ -8,7 +8,7 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.14.6-slim AS runtime
 
-RUN useradd --uid 10001 --create-home appuser && mkdir /data && chown appuser:appuser /data
+RUN useradd --uid 10001 --create-home appuser && mkdir -p /data/voice-audio && chown -R appuser:appuser /data
 WORKDIR /app
 RUN chown appuser:appuser /app
 COPY --from=build --chown=appuser:appuser /app/.venv /app/.venv
