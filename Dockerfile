@@ -8,7 +8,7 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.14.6-slim AS runtime
 
-RUN useradd --uid 10001 --create-home appuser
+RUN useradd --uid 10001 --create-home appuser && mkdir /data && chown appuser:appuser /data
 WORKDIR /app
 RUN chown appuser:appuser /app
 COPY --from=build --chown=appuser:appuser /app/.venv /app/.venv
@@ -19,5 +19,5 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 USER appuser
-EXPOSE 8000
+EXPOSE 8000 8001
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

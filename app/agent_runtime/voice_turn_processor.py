@@ -43,6 +43,9 @@ def build_voice_message_service(
 
 
 class VoiceTurnProcessor:
+    def __init__(self, capability_executor: CapabilityExecutor | None = None):
+        self.capability_executor = capability_executor
+
     def process(self, request: VoiceMessageRequest) -> VoiceMessageResponse:
         db = SessionLocal()
         try:
@@ -54,9 +57,8 @@ class VoiceTurnProcessor:
                 capability_router=capability_router,
                 tool_call_repository=ToolCallRepository(db),
                 conversation_repository=ConversationRepository(db),
-                capability_executor=get_capability_executor(
-                    tenant_config_loader,
-                    capability_router,
+                capability_executor=self.capability_executor or get_capability_executor(
+                    tenant_config_loader, capability_router
                 ),
             )
             return service.process(request)

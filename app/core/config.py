@@ -1,6 +1,7 @@
 import os
 from math import isfinite
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,40 @@ class CapabilitySettings:
 
     def attempt_key(self, stream_id: str) -> str:
         return f"{self.command_stream}:attempt:{stream_id}"
+
+
+@dataclass(frozen=True)
+class AgentRuntimeSettings:
+    public_ws_url: str
+    session_token_secret: str
+    session_token_ttl_seconds: int = 120
+    host: str = "0.0.0.0"
+    port: int = 8001
+
+    @classmethod
+    def from_env(cls) -> "AgentRuntimeSettings":
+        settings = cls(
+            public_ws_url=_text("AGENT_RUNTIME_PUBLIC_WS_URL", ""),
+            session_token_secret=os.getenv("VOICE_SESSION_TOKEN_SECRET", ""),
+            session_token_ttl_seconds=_number("VOICE_SESSION_TOKEN_TTL_SECONDS", 120, int),
+            host=_text("AGENT_RUNTIME_HOST", "0.0.0.0"),
+            port=_number("AGENT_RUNTIME_PORT", 8001, int),
+        )
+        settings.validate()
+        return settings
+
+    def validate(self) -> None:
+        parsed = urlparse(self.public_ws_url)
+        if parsed.scheme not in {"ws", "wss"} or not parsed.netloc or parsed.username or parsed.password:
+            raise ValueError("AGENT_RUNTIME_PUBLIC_WS_URL must be an absolute ws:// or wss:// URL")
+        if len(self.session_token_secret.encode()) < 32 or not self.session_token_secret.strip():
+            raise ValueError("VOICE_SESSION_TOKEN_SECRET must contain at least 32 bytes")
+        if self.session_token_ttl_seconds <= 0:
+            raise ValueError("VOICE_SESSION_TOKEN_TTL_SECONDS must be positive")
+        if not self.host:
+            raise ValueError("AGENT_RUNTIME_HOST must not be empty")
+        if not 1 <= self.port <= 65535:
+            raise ValueError("AGENT_RUNTIME_PORT must be between 1 and 65535")
 
 
 def _text(name: str, default: str) -> str:

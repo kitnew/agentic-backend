@@ -2,7 +2,13 @@ x-application: &application
   build: .
   image: agentic-backend:local
   environment:
-    DATABASE_URL: ${DATABASE_URL:-sqlite:///./test.db}
+    DATABASE_URL: ${DATABASE_URL:-sqlite:////data/agentic.db}
+    VOICE_AUDIO_STORAGE_DIR: ${VOICE_AUDIO_STORAGE_DIR:-/data/voice-audio}
+    AGENT_RUNTIME_PUBLIC_WS_URL: ${AGENT_RUNTIME_PUBLIC_WS_URL:-ws://localhost:8001/api/v1/voice/stream}
+    VOICE_SESSION_TOKEN_SECRET: ${VOICE_SESSION_TOKEN_SECRET:?set VOICE_SESSION_TOKEN_SECRET in app/.env}
+    VOICE_SESSION_TOKEN_TTL_SECONDS: ${VOICE_SESSION_TOKEN_TTL_SECONDS:-120}
+    AGENT_RUNTIME_HOST: ${AGENT_RUNTIME_HOST:-0.0.0.0}
+    AGENT_RUNTIME_PORT: ${AGENT_RUNTIME_PORT:-8001}
     CAPABILITY_EXECUTION_MODE: redis
     REDIS_URL: redis://redis:6379/0
     CAPABILITY_COMMAND_STREAM: ${CAPABILITY_COMMAND_STREAM:-capability:commands}
@@ -31,8 +37,32 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
+    volumes:
+      - application-data:/data
+      - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
+      - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
-  worker:
+  agent-runtime:
+    <<: *application
+    command: ["uvicorn", "app.agent_runtime.main:app", "--host", "${AGENT_RUNTIME_HOST:-0.0.0.0}", "--port", "${AGENT_RUNTIME_PORT:-8001}"]
+    ports:
+      - "8001:8001"
+    volumes:
+      - application-data:/data
+      - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
+      - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  capability-worker:
     <<: *application
     command: ["python", "-m", "app.workers.capability_worker"]
     volumes:
@@ -54,3 +84,4 @@ services:
 
 volumes:
   redis-data:
+  application-data:

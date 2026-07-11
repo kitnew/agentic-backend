@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from app.agent_runtime.voice_processing_executor import VoiceProcessingExecutor
 from app.api.router import router as api_router
 from app.capabilities.registry import CapabilityRegistry
+from app.core.config import AgentRuntimeSettings
 from app.infrastructure.database import init_db
 from app.tenants.loader import TenantConfigLoader
 from app.voice.audio.storage import get_voice_audio_storage_dir
@@ -11,12 +11,9 @@ from app.voice.audio.storage import get_voice_audio_storage_dir
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     TenantConfigLoader().validate_all(CapabilityRegistry().provider_names())
+    AgentRuntimeSettings.from_env()
     init_db()
-    app.state.voice_processing_executor = VoiceProcessingExecutor()
-    try:
-        yield
-    finally:
-        app.state.voice_processing_executor.shutdown()
+    yield
 
 app = FastAPI(lifespan=lifespan)
 voice_audio_dir = get_voice_audio_storage_dir()

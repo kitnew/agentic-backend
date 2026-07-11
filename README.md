@@ -11,7 +11,7 @@ uv run pytest -q
 uv run uvicorn app.main:app --reload
 ```
 
-To use Redis Streams, start Redis and run the API and worker with the same
+To use Redis Streams, start Redis and run the API, agent runtime, and worker with the same
 configuration:
 
 ```bash
@@ -19,6 +19,7 @@ export CAPABILITY_EXECUTION_MODE=redis
 export REDIS_URL=redis://localhost:6379/0
 uv run python -m app.workers.capability_worker
 uv run uvicorn app.main:app --reload
+uv run uvicorn app.agent_runtime.main:app --port 8001 --reload
 ```
 
 Copy `.env.example` when local credentials or overrides are needed. Existing
@@ -26,16 +27,19 @@ Copy `.env.example` when local credentials or overrides are needed. Existing
 
 ### Docker Compose
 
-The Compose stack uses one application image for the API and worker. Redis is
-internal-only; only API port `8000` is published.
+The Compose stack uses one application image for the API, agent runtime, and
+capability worker. Redis is internal-only; API `8000` and runtime `8001` are published.
 
 ```bash
 docker compose build
 docker compose up -d
 curl --fail http://localhost:8000/health
+curl --fail http://localhost:8001/health
 docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
-docker compose logs worker
+docker compose logs capability-worker
 docker compose exec -T api python scripts/capability_compose_smoke.py
+# Or run the host-side voice, capability, health, and restart smoke:
+.venv/bin/python scripts/compose_smoke.py
 ```
 
 The smoke command uses two checked-in manual-provider tenants. It exercises the
@@ -46,9 +50,9 @@ Verify that a restarted worker rejoins the group, inspect its logs, then stop
 the stack:
 
 ```bash
-docker compose restart worker
+docker compose restart capability-worker
 docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
-docker compose logs --since=5m worker
+docker compose logs --since=5m capability-worker
 docker compose down
 ```
 
@@ -160,10 +164,12 @@ complete voice turn through the existing synchronous voice pipeline when the
 client commits the input audio. True streaming STT/TTS is intentionally not
 wired here yet.
 
-Connect with a tenant query parameter:
+First issue a short-lived session through the API, then connect directly to the
+returned runtime URL using WebSocket subprotocols `voice-session` and the token:
 
 ```text
-ws://localhost:8000/api/v1/voice/stream?tenant_id=demo_restaurant
+POST http://localhost:8000/api/v1/voice/sessions
+Sec-WebSocket-Protocol: voice-session, <session_token>
 ```
 
 On connect, the server sends a `session_started` event containing a unique
@@ -184,7 +190,12 @@ pipeline remains unchanged.
 Manual smoke test:
 
 ```bash
+VOICE_SESSION_TOKEN_SECRET="replace-with-at-least-32-bytes" \
+AGENT_RUNTIME_PUBLIC_WS_URL="ws://localhost:8001/api/v1/voice/stream" \
 uvicorn app.main:app --reload
+VOICE_SESSION_TOKEN_SECRET="replace-with-at-least-32-bytes" \
+AGENT_RUNTIME_PUBLIC_WS_URL="ws://localhost:8001/api/v1/voice/stream" \
+uvicorn app.agent_runtime.main:app --port 8001 --reload
 .venv/bin/python scripts/voice_ws_smoke.py
 .venv/bin/python scripts/voice_ws_concurrency_smoke.py
 ```
