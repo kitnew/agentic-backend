@@ -82,11 +82,14 @@ class DebugChatHandler(BaseHTTPRequestHandler):
             body = self._read_json()
             tenant_id = body.get("tenant_id")
             conversation_id = body.get("conversation_id")
+            mode = body.get("mode", "manual")
             if not isinstance(tenant_id, str) or not tenant_id.strip():
                 raise ValueError("tenant_id must be a non-empty string")
             if conversation_id is not None and not isinstance(conversation_id, str):
                 raise ValueError("conversation_id must be a string")
-            payload = {"tenant_id": tenant_id.strip()}
+            if mode not in {"manual", "call"}:
+                raise ValueError("mode must be 'manual' or 'call'")
+            payload = {"tenant_id": tenant_id.strip(), "mode": mode}
             if conversation_id:
                 payload["conversation_id"] = conversation_id
             status, response = self._post_json(

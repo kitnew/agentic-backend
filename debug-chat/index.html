@@ -266,8 +266,10 @@
           <span id="voiceStatus" class="status">Idle</span>
         </div>
         <div class="voice-controls">
-          <button id="connectVoice" type="button">Connect</button>
-          <button id="disconnectVoice" class="secondary" type="button" disabled>Disconnect</button>
+          <label>Mode <select id="voiceInteractionMode"><option value="call" selected>Call</option><option value="manual">Manual</option></select></label>
+          <button id="connectVoice" type="button">Start Call</button>
+          <button id="disconnectVoice" class="secondary" type="button" disabled>End Call</button>
+          <button id="muteVoice" class="secondary" type="button" disabled>Mute</button>
           <button id="reconnectVoice" class="secondary" type="button" disabled>Reconnect</button>
           <button id="startRecording" type="button">Start recording</button>
           <button id="stopRecording" type="button" disabled>Stop recording</button>
@@ -332,6 +334,8 @@
     const disconnectVoiceButton = document.querySelector('#disconnectVoice');
     const reconnectVoiceButton = document.querySelector('#reconnectVoice');
     const callSessionId = document.querySelector('#callSessionId');
+    const voiceInteractionMode = document.querySelector('#voiceInteractionMode');
+    const muteVoiceButton = document.querySelector('#muteVoice');
 
     const VOICE_API_PATH = '/api/v1/voice/messages';
     const MAX_RECORDING_MS = 30000;
@@ -355,6 +359,11 @@
     let sessionToken = null;
     let voiceState = { connection: 'disconnected', processing: false };
     let audioObjectUrl = null;
+    let audioContext = null;
+    let workletNode = null;
+    let streamingFrames = [];
+    let streamingReady = false;
+    let voiceMuted = false;
 
     const saved = JSON.parse(localStorage.getItem('debug-chat-settings') || '{}');
     for (const [id, value] of Object.entries(saved)) {
@@ -442,6 +451,11 @@
 
     textModeButton.addEventListener('click', () => switchInputMode('text'));
     voiceModeButton.addEventListener('click', () => switchInputMode('voice'));
+    muteVoiceButton.addEventListener('click', () => {
+      voiceMuted = !voiceMuted;
+      for (const track of mediaStream?.getAudioTracks() || []) track.enabled = !voiceMuted;
+      muteVoiceButton.textContent = voiceMuted ? 'Unmute' : 'Mute';
+    });
     startRecordingButton.addEventListener('click', startVoiceRecording);
     stopRecordingButton.addEventListener('click', stopVoiceRecording);
     connectVoiceButton.addEventListener('click', connectVoice);
@@ -520,6 +534,10 @@
         showVoiceError('This browser does not support microphone capture.');
         return;
       }
+      if (voiceState.sttMode === 'streaming') {
+        await startStreamingRecording();
+        return;
+      }
       if (!window.MediaRecorder) {
         showVoiceError('This browser does not support MediaRecorder.');
         return;
@@ -541,7 +559,10 @@
       }
 
       mediaRecorder.addEventListener('dataavailable', (event) => {
-        if (event.data && event.data.size > 0) recordedChunks.push(event.data);
+        if (event.data && event.data.size > 0) {
+          recordedChunks.push(event.data);
+          if (voiceSocket?.readyState === WebSocket.OPEN) voiceSocket.send(event.data);
+        }
       });
 
       mediaRecorder.addEventListener('error', (event) => {
@@ -565,11 +586,12 @@
         if (mediaRecorder && mediaRecorder.state === 'recording') stopVoiceRecording();
       }, MAX_RECORDING_MS);
 
-      mediaRecorder.start();
+      mediaRecorder.start(100);
       setVoiceState('recording');
     }
 
     function stopVoiceRecording() {
+      if (voiceState.sttMode === 'streaming') { stopStreamingRecording(); return; }
       if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
       setVoiceState('stopping');
       mediaRecorder.stop();
@@ -595,8 +617,55 @@
       saveSettings();
       if (!voiceSocket || voiceSocket.readyState !== WebSocket.OPEN) throw new Error('Connect voice first.');
       const filename = `debug-recording-${Date.now()}.${extensionForMimeType(mimeType)}`;
-      voiceSocket.send(audioBlob);
       voiceSocket.send(JSON.stringify({ type: 'input_audio_commit', content_type: mimeType, filename }));
+    }
+
+    async function startStreamingRecording() {
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: {
+          channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
+        } });
+        audioContext = new AudioContext();
+        const source = `class PCM extends AudioWorkletProcessor {
+          constructor(){super();this.b=[];this.phase=0;this.port.onmessage=()=>this.flush()}
+          process(inputs){const c=inputs[0];if(!c.length)return true;const n=c[0].length;
+            for(let i=0;i<n;i++){let v=0;for(const ch of c)v+=ch[i]/c.length;this.phase+=16000/sampleRate;
+              if(this.phase>=1){this.phase-=1;this.b.push(Math.max(-1,Math.min(1,v)))}
+              if(this.b.length===1600){const a=new ArrayBuffer(3200),d=new DataView(a);this.b.forEach((x,j)=>d.setInt16(j*2,x<0?x*32768:x*32767,true));this.port.postMessage(a,[a]);this.b=[]}}
+            return true}
+          flush(){if(this.b.length){const a=new ArrayBuffer(this.b.length*2),d=new DataView(a);this.b.forEach((x,j)=>d.setInt16(j*2,x<0?x*32768:x*32767,true));this.port.postMessage(a,[a]);this.b=[]}}
+        } registerProcessor('pcm16',PCM)`;
+        const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+        await audioContext.audioWorklet.addModule(url); URL.revokeObjectURL(url);
+        workletNode = new AudioWorkletNode(audioContext, 'pcm16');
+        workletNode.port.onmessage = ({ data }) => streamingReady ? voiceSocket.send(data) : streamingFrames.push(data);
+        audioContext.createMediaStreamSource(mediaStream).connect(workletNode);
+        streamingFrames = []; streamingReady = false;
+        startNextStreamingTurn();
+        recordingStartedAt = Date.now(); recordingTimerInterval = setInterval(updateRecordingTimer, 250);
+        if (voiceInteractionMode.value !== 'call') maxRecordingTimeout = setTimeout(stopVoiceRecording, MAX_RECORDING_MS);
+        setVoiceState('starting', 'Starting realtime STT...');
+      } catch (error) { cleanupMediaStream(); showVoiceError(error.message); updateVoiceControlAvailability(); }
+    }
+
+    function startNextStreamingTurn() {
+      streamingReady = false;
+      const call = voiceInteractionMode.value === 'call';
+      voiceSocket.send(JSON.stringify({ type: 'input_audio_start', mode: call ? 'call' : 'manual',
+        commit_strategy: call ? 'vad' : 'manual', content_type: 'audio/pcm', sample_rate: 16000, channels: 1 }));
+      setVoiceState('starting', call ? 'Listening...' : 'Starting realtime STT...');
+    }
+
+    async function stopStreamingRecording() {
+      if (!workletNode || !voiceState.turnId) return;
+      setVoiceState('stopping', 'Finalizing transcript...');
+      workletNode.port.postMessage('flush');
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      for (const frame of streamingFrames.splice(0)) voiceSocket.send(frame);
+      voiceSocket.send(JSON.stringify({ type: 'input_audio_commit', turn_id: voiceState.turnId }));
+      workletNode.disconnect(); workletNode = null;
+      if (audioContext) await audioContext.close(); audioContext = null;
+      cleanupRecordingTimers(); cleanupMediaStream();
     }
 
     async function connectVoice() {
@@ -604,7 +673,7 @@
       try {
         const response = await fetch('/debug/voice-session', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(compact({ tenant_id: tenantIdInput.value.trim(), conversation_id: conversationIdInput.value.trim() })),
+          body: JSON.stringify(compact({ tenant_id: tenantIdInput.value.trim(), conversation_id: conversationIdInput.value.trim(), mode: voiceInteractionMode.value })),
         });
         if (!response.ok) throw new Error(readBackendError(await response.json(), `Session HTTP ${response.status}`));
         const session = VoiceProtocol.parseSession(await response.json());
@@ -615,15 +684,27 @@
           sessionToken = null;
           if (voiceSocket.protocol !== 'voice-session') { voiceSocket.close(); showVoiceError('Server did not select voice-session protocol.'); return; }
           voiceStatusEl.textContent = 'Connected'; updateVoiceControlAvailability();
+          if (voiceInteractionMode.value === 'call') startStreamingRecording();
         };
         voiceSocket.onmessage = ({ data }) => { if (typeof data === 'string') handleVoiceEvent(JSON.parse(data)); };
         voiceSocket.onerror = () => showVoiceError('WebSocket connection failed.');
-        voiceSocket.onclose = () => { voiceSocket = null; voiceState.connection = 'disconnected'; setVoiceState('idle', 'Disconnected'); revokeAudioUrl(); updateVoiceControlAvailability(); };
+        voiceSocket.onclose = () => {
+          voiceSocket = null; streamingReady = false; voiceState.connection = 'disconnected';
+          if (workletNode) workletNode.disconnect(); workletNode = null;
+          if (audioContext) audioContext.close(); audioContext = null;
+          cleanupRecordingTimers(); cleanupMediaStream(); revokeAudioUrl();
+          setVoiceState('idle', 'Disconnected'); updateVoiceControlAvailability();
+        };
         updateVoiceControlAvailability();
       } catch (error) { sessionToken = null; showVoiceError(error.message); }
     }
 
     function disconnectVoice() {
+      streamingReady = false;
+      if (voiceSocket?.readyState === WebSocket.OPEN) voiceSocket.send(JSON.stringify({ type: 'session_end' }));
+      if (workletNode) workletNode.disconnect(); workletNode = null;
+      if (audioContext) audioContext.close(); audioContext = null;
+      cleanupMediaStream();
       if (voiceSocket) voiceSocket.close();
       voiceSocket = null; sessionToken = null; revokeAudioUrl(); updateVoiceControlAvailability();
     }
@@ -633,17 +714,30 @@
       apiResponse.textContent = JSON.stringify(event, null, 2);
       if (event.conversation_id) { conversationIdInput.value = event.conversation_id; saveSettings(); }
       if (event.type === 'audio_chunk_received') voiceStatusEl.textContent = 'Audio buffered';
+      if (event.type === 'input_audio_started') {
+        streamingReady = true;
+        for (const frame of streamingFrames.splice(0)) voiceSocket.send(frame);
+        setVoiceState('recording');
+      }
+      if (event.type === 'listening_started' || event.type === 'listening_resumed') {
+        streamingReady = true; voiceState.hasAssistantAudio = false; setVoiceState('recording', 'Listening...');
+      }
+      if (event.type === 'speech_started') setVoiceState('recording', 'Speaking...');
+      if (event.type === 'speech_ended') { streamingReady = false; setVoiceState('stopping', 'Finalizing transcript...'); }
+      if (event.type === 'transcript_partial') voiceTranscript.value = event.text || '';
       if (event.type === 'processing_started' || event.code === 'processing_busy') setVoiceState('processing');
-      if (event.type === 'transcript' || event.type === 'transcript_completed') { voiceTranscript.value = event.transcript || event.text || ''; appendMessage('user', 'Voice transcript', voiceTranscript.value); }
+      if (event.type === 'transcript' || event.type === 'transcript_completed') { voiceTranscript.value = event.text || event.transcript || ''; appendMessage('user', 'Voice transcript', voiceTranscript.value); }
       if (event.type === 'assistant_response') { voiceAssistantResponse.value = event.text || ''; appendMessage('assistant', 'Assistant', voiceAssistantResponse.value); }
-      if (event.type === 'assistant_audio') playAssistantEventAudio(event);
+      if (event.type === 'assistant_audio') { voiceState.hasAssistantAudio = true; playAssistantEventAudio(event, voiceInteractionMode.value === 'call'); }
       if (event.type === 'error') showVoiceError(event.message || event.code || event.type);
       if (event.type === 'session_ended') disconnectVoice();
-      if (!voiceState.processing && event.type === 'turn_completed') setVoiceState('idle', 'Voice turn completed');
+      if (!voiceState.processing && event.type === 'turn_completed' && voiceInteractionMode.value !== 'call') setVoiceState('idle', 'Voice turn completed');
+      else if (event.type === 'turn_completed' && voiceInteractionMode.value === 'call' && !voiceState.hasAssistantAudio) startNextStreamingTurn();
+      else if (event.type === 'turn_ignored' && voiceInteractionMode.value === 'call') startNextStreamingTurn();
       else updateVoiceControlAvailability();
     }
 
-    function playAssistantEventAudio(event) {
+    function playAssistantEventAudio(event, resumeCall = false) {
       revokeAudioUrl();
       if (event.audio_base64) {
         const bytes = Uint8Array.from(atob(event.audio_base64), (c) => c.charCodeAt(0));
@@ -651,7 +745,11 @@
         assistantAudio.src = audioObjectUrl;
       } else if (event.audio_url) assistantAudio.src = resolveBackendAssetUrl(event.audio_url);
       assistantAudio.load();
-      assistantAudio.play().catch(() => showVoiceWarnings(['Click play to listen to the response.']));
+      if (resumeCall) setVoiceState('processing', 'Assistant speaking...');
+      const playbackWatchdog = setTimeout(() => { assistantAudio.pause(); resume(); }, 120000);
+      const resume = () => { clearTimeout(playbackWatchdog); assistantAudio.onended = assistantAudio.onerror = null; if (resumeCall && voiceSocket) startNextStreamingTurn(); };
+      assistantAudio.onended = resume; assistantAudio.onerror = resume;
+      assistantAudio.play().catch(() => { showVoiceWarnings(['Playback failed; listening resumed.']); resume(); });
     }
 
     function revokeAudioUrl() { if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl); audioObjectUrl = null; }
@@ -746,7 +844,7 @@
 
     function setVoiceState(state, text) {
       const isRecording = state === 'recording';
-      voiceBusy = isRecording || state === 'stopping' || state === 'processing';
+      voiceBusy = isRecording || state === 'starting' || state === 'stopping' || state === 'processing';
       updateVoiceControlAvailability(isRecording);
       voiceIndicator.classList.toggle('active', isRecording);
 
@@ -773,6 +871,7 @@
       voiceModeButton.disabled = voiceBusy;
       connectVoiceButton.disabled = !voiceModeActive || !!voiceSocket;
       disconnectVoiceButton.disabled = !voiceSocket;
+      muteVoiceButton.disabled = !connected || voiceInteractionMode.value !== 'call';
       reconnectVoiceButton.disabled = !voiceModeActive || voiceBusy;
     }
 
