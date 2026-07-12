@@ -12,7 +12,7 @@ from app.infrastructure.repositories.conversation_repository import Conversation
 from app.infrastructure.repositories.message_repository import MessageRepository
 from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.tenants.loader import TenantConfigLoader
-from app.voice.schemas import VoiceMessageRequest, VoiceMessageResponse
+from app.voice.schemas import FinalizedTranscriptRequest, VoiceMessageRequest, VoiceMessageResponse
 from app.voice.service import VoiceMessageService
 
 
@@ -47,6 +47,12 @@ class VoiceTurnProcessor:
         self.capability_executor = capability_executor
 
     def process(self, request: VoiceMessageRequest) -> VoiceMessageResponse:
+        return self._process(request, "process")
+
+    def process_transcript(self, request: FinalizedTranscriptRequest) -> VoiceMessageResponse:
+        return self._process(request, "process_transcript")
+
+    def _process(self, request, method: str) -> VoiceMessageResponse:
         db = SessionLocal()
         try:
             tenant_config_loader = get_tenant_config_loader()
@@ -61,6 +67,6 @@ class VoiceTurnProcessor:
                     tenant_config_loader, capability_router
                 ),
             )
-            return service.process(request)
+            return getattr(service, method)(request)
         finally:
             db.close()

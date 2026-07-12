@@ -1,5 +1,6 @@
 import base64
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
@@ -14,6 +15,22 @@ class VoiceSessionClosedError(Exception):
 
 class VoiceSessionPayloadError(Exception):
     pass
+
+
+@dataclass
+class ActiveStreamingTurn:
+    turn_id: str
+    provider_session: Any
+    started_at: float = field(default_factory=time.monotonic)
+    chunk_count: int = 0
+    audio_bytes: int = 0
+    partial_sequence: int = 0
+    committed: bool = False
+    phase: str = "listening"
+    agent_started: bool = False
+    speech_started_at: float | None = None
+    committed_at: float | None = None
+    timeout_task: asyncio.Task | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -33,6 +50,9 @@ class VoiceSession:
     processing_task: asyncio.Task | None = field(default=None, repr=False)
     cancelled: bool = False
     closed: bool = False
+    stt_mode: str = "batch"
+    active_turn: ActiveStreamingTurn | None = field(default=None, repr=False)
+    mode: str = "manual"
 
     @property
     def language(self) -> str | None:
@@ -50,6 +70,11 @@ class VoiceSession:
             channel=self.channel,
             language=self.language,
             timezone=self.timezone,
+            stt_mode=self.stt_mode,
+            streaming_audio_format={
+                "content_type": "audio/pcm", "sample_rate": 16000,
+                "channels": 1, "encoding": "pcm_s16le", "chunk_duration_ms": 100,
+            } if self.stt_mode == "streaming" else None,
         )
 
     def handle_audio_chunk(self, data: bytes, *, source: str) -> dict[str, Any]:
@@ -174,5 +199,6 @@ class VoiceSession:
         return {
             "type": event_type,
             "call_session_id": self.call_session_id,
+            "turn_id": self.active_turn.turn_id if self.active_turn else None,
             **payload,
         }

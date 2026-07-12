@@ -4,7 +4,7 @@ from app.schemas.messages import MessageResponse, ProcessMessageResponse
 from app.tenants.schemas import TenantContext
 from app.voice.audio.validation import validate_audio_input
 from app.voice.errors import VoiceDisabledError, VoiceTTSProviderError, VoiceValidationError
-from app.voice.schemas import AudioInput, SynthesizedAudioResult, TranscriptResult, VoiceMessageRequest
+from app.voice.schemas import AudioInput, FinalizedTranscriptRequest, SynthesizedAudioResult, TranscriptResult, VoiceMessageRequest
 from app.voice.service import VoiceMessageService
 
 
@@ -186,6 +186,28 @@ def build_service(
         tts_providers={"fake_tts": tts_provider or FakeTTSProvider()},
         audio_storage=audio_storage or FakeAudioStorage(),
     )
+
+
+def test_finalized_transcript_bypasses_batch_stt_and_keeps_agent_tts_pipeline():
+    stt = FakeSTTProvider()
+    tts = FakeTTSProvider()
+    processor = FakeMessageProcessor()
+    service = build_service(
+        build_tenant_context(), stt_provider=stt, tts_provider=tts, message_processor=processor
+    )
+
+    response = service.process_transcript(FinalizedTranscriptRequest(
+        tenant_id="tenant-1", conversation_id="conversation-existing",
+        transcript="Streaming transcript", provider="elevenlabs",
+        model="scribe_v2_realtime", language="sk", metadata={"turn_id": "turn-1"},
+    ))
+
+    assert stt.calls == []
+    assert processor.requests[0].content == "Streaming transcript"
+    assert processor.requests[0].conversation_id == "conversation-existing"
+    assert processor.requests[0].metadata["turn_id"] == "turn-1"
+    assert tts.calls[0][0] == "Agent text response"
+    assert response.metadata["user_message_id"] == "user-message-1"
 
 
 def test_voice_disabled_tenant_rejects_request():

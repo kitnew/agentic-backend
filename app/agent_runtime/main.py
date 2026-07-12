@@ -11,6 +11,7 @@ from app.core.config import AgentRuntimeSettings
 from app.infrastructure.database import init_db
 from app.tenants.loader import TenantConfigLoader
 from app.voice.session_token import VoiceRuntimeAuthenticator, VoiceSessionTokenCodec
+from app.voice.stt.streaming import ElevenLabsStreamingSTTProvider
 
 
 @asynccontextmanager
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     init_db()
     settings = AgentRuntimeSettings.from_env()
     loader = get_tenant_config_loader()
+    app.state.tenant_config_loader = loader
     router = get_capability_router()
     capability_executor = get_capability_executor(loader, router)
     app.state.voice_authenticator = VoiceRuntimeAuthenticator(
@@ -27,6 +29,8 @@ async def lifespan(app: FastAPI):
     app.state.voice_processing_executor = VoiceProcessingExecutor(
         turn_processor=VoiceTurnProcessor(capability_executor=capability_executor)
     )
+    app.state.agent_runtime_settings = settings
+    app.state.streaming_stt_provider = ElevenLabsStreamingSTTProvider()
     try:
         yield
     finally:

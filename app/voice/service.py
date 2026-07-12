@@ -23,7 +23,9 @@ from app.voice.errors import (
 )
 from app.voice.schemas import (
     AudioInput,
+    FinalizedTranscriptRequest,
     SynthesizedAudioResult,
+    TranscriptResult,
     VoiceMessageRequest,
     VoiceMessageResponse,
 )
@@ -97,6 +99,35 @@ class VoiceMessageService:
                 raise VoiceSTTProviderError("STT metadata is missing")
             warnings.append("STT metadata missing; continuing with transcript only")
 
+        return self._complete_transcript(
+            request=request, transcript_result=transcript_result, voice_config=voice_config,
+            timings=timings, total_timer=total_timer, warnings=warnings, audio=audio,
+        )
+
+    def process_transcript(self, request: FinalizedTranscriptRequest) -> VoiceMessageResponse:
+        total_timer = start_timer()
+        timings = new_timing_trace()
+        voice_config = self.tenant_config_loader.load(request.tenant_id).voice
+        if not voice_config.enabled:
+            raise VoiceDisabledError("Voice mode is disabled for this tenant")
+        transcript = request.transcript.strip()
+        if not transcript:
+            raise EmptyTranscriptError("STT produced an empty transcript")
+        return self._complete_transcript(
+            request=request,
+            transcript_result=TranscriptResult(
+                provider=request.provider, text=transcript, language=request.language,
+                metadata={"model": request.model},
+            ),
+            voice_config=voice_config, timings=timings, total_timer=total_timer, warnings=[],
+        )
+
+    def _complete_transcript(
+        self, *, request, transcript_result: TranscriptResult, voice_config,
+        timings: dict, total_timer, warnings: list[str], audio: AudioInput | None = None,
+    ) -> VoiceMessageResponse:
+        transcript = transcript_result.text.strip()
+
         component_timer = start_timer()
         message_response = self._process_transcript(
             request=request,
@@ -159,7 +190,7 @@ class VoiceMessageService:
                 "tts_provider": voice_config.tts.provider,
                 "language": transcript_result.language or voice_config.stt.language,
                 "audio_duration_ms": transcript_result.audio_duration_ms,
-                "content_type": audio.content_type,
+                "content_type": audio.content_type if audio else None,
                 "input_mode": "voice",
                 "original_channel": request.channel,
                 "user_message_id": message_response.user_message.id,
@@ -177,7 +208,7 @@ class VoiceMessageService:
         self,
         *,
         request: VoiceMessageRequest,
-        audio: AudioInput,
+        audio: AudioInput | None,
         transcript: str,
         transcript_provider: str,
     ) -> ProcessMessageResponse:
@@ -186,9 +217,9 @@ class VoiceMessageService:
             "input_mode": "voice",
             "stt_provider": transcript_provider,
             "original_channel": request.channel,
-            "audio_content_type": audio.content_type,
-            "audio_filename": audio.filename,
-            "audio_size_bytes": audio.size_bytes,
+            "audio_content_type": audio.content_type if audio else None,
+            "audio_filename": audio.filename if audio else None,
+            "audio_size_bytes": audio.size_bytes if audio else None,
         }
         text_request = CreateMessageRequest(
             tenant_id=request.tenant_id,

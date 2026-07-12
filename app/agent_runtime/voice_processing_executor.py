@@ -41,11 +41,17 @@ class VoiceProcessingExecutor:
         self._closed = False
 
     async def process(self, request: VoiceMessageRequest) -> VoiceProcessingResult:
+        return await self._process(request, self.turn_processor.process)
+
+    async def process_transcript(self, request) -> VoiceProcessingResult:
+        return await self._process(request, self.turn_processor.process_transcript)
+
+    async def _process(self, request, processor) -> VoiceProcessingResult:
         if self._closed:
             raise RuntimeError("Voice processing executor is closed")
 
         started_at = time.perf_counter()
-        future = self._executor.submit(self.turn_processor.process, request)
+        future = self._executor.submit(processor, request)
         try:
             response = await self._await_future(future)
         except asyncio.CancelledError:

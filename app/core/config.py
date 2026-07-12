@@ -116,8 +116,21 @@ class AgentRuntimeSettings:
     public_ws_url: str
     session_token_secret: str
     session_token_ttl_seconds: int = 120
+    call_session_ttl_seconds: int = 3600
+    call_mode_enabled: bool = False
     host: str = "0.0.0.0"
     port: int = 8001
+    stt_mode: str = "batch"
+    realtime_stt_model: str = "scribe_v2_realtime"
+    stt_connect_timeout_seconds: float = 10
+    stt_finalize_timeout_seconds: float = 10
+    stt_max_turn_seconds: float = 30
+    stt_max_chunk_bytes: int = 32_000
+    call_vad_silence_threshold_seconds: float = 1.5
+    call_vad_threshold: float = 0.4
+    call_min_speech_duration_ms: int = 100
+    call_min_silence_duration_ms: int = 100
+    call_max_utterance_seconds: float = 30
 
     @classmethod
     def from_env(cls) -> "AgentRuntimeSettings":
@@ -125,8 +138,21 @@ class AgentRuntimeSettings:
             public_ws_url=_text("AGENT_RUNTIME_PUBLIC_WS_URL", ""),
             session_token_secret=os.getenv("VOICE_SESSION_TOKEN_SECRET", ""),
             session_token_ttl_seconds=_number("VOICE_SESSION_TOKEN_TTL_SECONDS", 120, int),
+            call_session_ttl_seconds=_number("VOICE_CALL_SESSION_TTL_SECONDS", 3600, int),
+            call_mode_enabled=_text("VOICE_CALL_MODE_ENABLED", "false").lower() in {"1", "true", "yes"},
             host=_text("AGENT_RUNTIME_HOST", "0.0.0.0"),
             port=_number("AGENT_RUNTIME_PORT", 8001, int),
+            stt_mode=_text("VOICE_STT_MODE", "batch"),
+            realtime_stt_model=_text("ELEVENLABS_REALTIME_STT_MODEL", "scribe_v2_realtime"),
+            stt_connect_timeout_seconds=_number("VOICE_STT_CONNECT_TIMEOUT_SECONDS", 10, float),
+            stt_finalize_timeout_seconds=_number("VOICE_STT_FINALIZE_TIMEOUT_SECONDS", 10, float),
+            stt_max_turn_seconds=_number("VOICE_STT_MAX_TURN_SECONDS", 30, float),
+            stt_max_chunk_bytes=_number("VOICE_STT_MAX_CHUNK_BYTES", 32_000, int),
+            call_vad_silence_threshold_seconds=_number("VOICE_CALL_VAD_SILENCE_THRESHOLD_SECONDS", 1.5, float),
+            call_vad_threshold=_number("VOICE_CALL_VAD_THRESHOLD", .4, float),
+            call_min_speech_duration_ms=_number("VOICE_CALL_MIN_SPEECH_DURATION_MS", 100, int),
+            call_min_silence_duration_ms=_number("VOICE_CALL_MIN_SILENCE_DURATION_MS", 100, int),
+            call_max_utterance_seconds=_number("VOICE_CALL_MAX_UTTERANCE_SECONDS", 30, float),
         )
         settings.validate()
         return settings
@@ -143,6 +169,19 @@ class AgentRuntimeSettings:
             raise ValueError("AGENT_RUNTIME_HOST must not be empty")
         if not 1 <= self.port <= 65535:
             raise ValueError("AGENT_RUNTIME_PORT must be between 1 and 65535")
+        if self.stt_mode not in {"batch", "streaming"}:
+            raise ValueError("VOICE_STT_MODE must be 'batch' or 'streaming'")
+        if not self.realtime_stt_model:
+            raise ValueError("ELEVENLABS_REALTIME_STT_MODEL must not be empty")
+        for name in ("stt_connect_timeout_seconds", "stt_finalize_timeout_seconds", "stt_max_turn_seconds", "stt_max_chunk_bytes"):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be positive")
+        if self.call_session_ttl_seconds <= 0 or self.call_max_utterance_seconds <= 0:
+            raise ValueError("call session and utterance limits must be positive")
+        if not 0 <= self.call_vad_threshold <= 1:
+            raise ValueError("VOICE_CALL_VAD_THRESHOLD must be between 0 and 1")
+        if min(self.call_vad_silence_threshold_seconds, self.call_min_speech_duration_ms, self.call_min_silence_duration_ms) <= 0:
+            raise ValueError("call VAD durations must be positive")
 
 
 def _text(name: str, default: str) -> str:

@@ -21,6 +21,7 @@ class CreateVoiceSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     tenant_id: str
     conversation_id: str | None = None
+    mode: str = "manual"
 
 
 class VoiceSessionResponse(BaseModel):
@@ -29,6 +30,7 @@ class VoiceSessionResponse(BaseModel):
     websocket_url: str
     session_token: str
     expires_at: datetime
+    mode: str
 
 
 @router.post("/sessions", response_model=VoiceSessionResponse, response_model_exclude_none=True, status_code=status.HTTP_201_CREATED)
@@ -53,6 +55,10 @@ def create_voice_session(
             raise HTTPException(status_code=400, detail="Conversation does not belong to tenant")
 
     settings = AgentRuntimeSettings.from_env()
+    if request.mode not in {"manual", "call"}:
+        raise HTTPException(status_code=422, detail="mode must be 'manual' or 'call'")
+    if request.mode == "call" and not settings.call_mode_enabled:
+        raise HTTPException(status_code=403, detail="Voice call mode is disabled")
     now = int(time.time())
     call_session_id = str(uuid4())
     context = build_voice_runtime_context(tenant)
@@ -63,7 +69,8 @@ def create_voice_session(
         language=context.language,
         timezone=context.timezone,
         iat=now,
-        exp=now + settings.session_token_ttl_seconds,
+        exp=now + (settings.call_session_ttl_seconds if request.mode == "call" else settings.session_token_ttl_seconds),
+        mode=request.mode,
     )
     return VoiceSessionResponse(
         call_session_id=call_session_id,
@@ -71,4 +78,5 @@ def create_voice_session(
         websocket_url=settings.public_ws_url,
         session_token=VoiceSessionTokenCodec(settings.session_token_secret).encode(claims),
         expires_at=datetime.fromtimestamp(claims.exp, timezone.utc),
+        mode=request.mode,
     )

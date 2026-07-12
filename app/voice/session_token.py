@@ -21,6 +21,7 @@ class VoiceSessionClaims:
     exp: int
     conversation_id: str | None = None
     channel: str = "voice"
+    mode: str = "manual"
 
 
 class VoiceSessionTokenCodec:
@@ -61,6 +62,7 @@ class VoiceSessionTokenCodec:
             or type(claims.iat) is not int
             or type(claims.exp) is not int
             or claims.channel != "voice"
+            or claims.mode not in {"manual", "call"}
             or claims.iat > current
             or claims.exp <= current
             or claims.exp <= claims.iat
