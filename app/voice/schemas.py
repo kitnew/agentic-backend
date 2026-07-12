@@ -19,6 +19,18 @@ class VoiceMessageRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class FinalizedTranscriptRequest(BaseModel):
+    tenant_id: str
+    transcript: str
+    provider: str
+    model: str
+    language: str | None = None
+    conversation_id: str | None = None
+    external_user_id: str | None = None
+    channel: str = "voice"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class TranscriptResult(BaseModel):
     provider: str
     text: str

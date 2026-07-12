@@ -4,17 +4,18 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.api.routes.messages import (
-    get_agent_runtime,
+    get_capability_executor,
     get_capability_router,
     get_conversation_repository,
     get_message_repository,
     get_tenant_config_loader,
     get_tool_call_repository,
 )
+from app.application.capabilities.boundary import CapabilityExecutor
+from app.agent_runtime.voice_turn_processor import build_voice_message_service
 from app.application.messages.process_incoming_message import (
     ConversationNotFoundError,
     ConversationTenantMismatchError,
-    ProcessIncomingMessage,
 )
 from app.capabilities.router import CapabilityRouter
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
@@ -37,22 +38,17 @@ def get_voice_message_service(
     repository: MessageRepository = Depends(get_message_repository),
     tenant_config_loader: TenantConfigLoader = Depends(get_tenant_config_loader),
     capability_router: CapabilityRouter = Depends(get_capability_router),
+    capability_executor: CapabilityExecutor = Depends(get_capability_executor),
     tool_call_repository: ToolCallRepository = Depends(get_tool_call_repository),
     conversation_repository: ConversationRepository = Depends(get_conversation_repository),
 ) -> VoiceMessageService:
-    def build_message_processor() -> ProcessIncomingMessage:
-        return ProcessIncomingMessage(
-            message_repository=repository,
-            agent_runtime=get_agent_runtime(),
-            tenant_config_loader=tenant_config_loader,
-            capability_router=capability_router,
-            tool_call_repository=tool_call_repository,
-            conversation_repository=conversation_repository,
-        )
-
-    return VoiceMessageService(
+    return build_voice_message_service(
+        message_repository=repository,
         tenant_config_loader=tenant_config_loader,
-        message_processor_factory=build_message_processor,
+        capability_router=capability_router,
+        tool_call_repository=tool_call_repository,
+        conversation_repository=conversation_repository,
+        capability_executor=capability_executor,
     )
 
 

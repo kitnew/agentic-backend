@@ -226,3 +226,9 @@ __marimo__/
 *.db
 *.zip
 *.pyc
+
+# PyCharm
+.idea/
+
+# Agents
+AGENTS.md

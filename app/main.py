@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from app.api.router import router as api_router
 from app.capabilities.registry import CapabilityRegistry
+from app.core.config import AgentRuntimeSettings
 from app.infrastructure.database import init_db
 from app.tenants.loader import TenantConfigLoader
 from app.voice.audio.storage import get_voice_audio_storage_dir
@@ -10,6 +11,7 @@ from app.voice.audio.storage import get_voice_audio_storage_dir
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     TenantConfigLoader().validate_all(CapabilityRegistry().provider_names())
+    AgentRuntimeSettings.from_env()
     init_db()
     yield
 

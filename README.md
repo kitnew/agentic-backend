@@ -1,5 +1,96 @@
 # agentic-backend
 
+## Setup and capability execution
+
+The application defaults to in-process capability execution, so Redis is not
+required for local development or tests.
+
+```bash
+uv sync --frozen
+uv run pytest -q
+uv run uvicorn app.main:app --reload
+```
+
+To use Redis Streams, start Redis and run the API, agent runtime, and worker with the same
+configuration:
+
+```bash
+export CAPABILITY_EXECUTION_MODE=redis
+export REDIS_URL=redis://localhost:6379/0
+uv run python -m app.workers.capability_worker
+uv run uvicorn app.main:app --reload
+uv run uvicorn app.agent_runtime.main:app --port 8001 --reload
+```
+
+Copy `.env.example` to the ignored `app/.env`. Outside Compose the database
+still defaults to SQLite; Compose overrides it with PostgreSQL.
+
+### Docker Compose
+
+The Compose stack uses one application image for the API, agent runtime, and
+capability worker. Redis and PostgreSQL are internal-only; API `8000` and runtime
+`8001` are published. Set a nonblank `POSTGRES_PASSWORD` and a unique
+`VOICE_SESSION_TOKEN_SECRET` of at least 32 bytes in `app/.env`, then run:
+
+```bash
+docker compose --env-file app/.env build
+docker compose --env-file app/.env up -d
+curl --fail http://localhost:8000/health
+curl --fail http://localhost:8001/health
+docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
+docker compose logs capability-worker
+docker compose exec -T api python scripts/capability_compose_smoke.py
+# Or run the host-side voice, capability, health, and restart smoke:
+.venv/bin/python scripts/compose_smoke.py
+```
+
+The smoke command uses two checked-in manual-provider tenants. It exercises the
+Redis executor, worker, existing router, correlated results, idempotency reuse,
+and concurrent tenant/session isolation without an external write.
+
+Verify that a restarted worker rejoins the group, inspect its logs, then stop
+the stack:
+
+```bash
+docker compose restart capability-worker
+docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
+docker compose logs --since=5m capability-worker
+docker compose --env-file app/.env down
+```
+
+For a standalone image build:
+
+```bash
+docker build -t agentic-backend:local .
+```
+
+The production image installs only the frozen runtime environment with
+`uv sync --frozen --no-dev` and runs as a non-root user.
+
+PostgreSQL 18 stores its cluster in the `postgres-data` volume. API and agent
+runtime share only generated audio through `voice-audio-data`; the worker gets
+the same `DATABASE_URL` but does not currently open a SQL session. Startup keeps
+`Base.metadata.create_all` and serializes it with a PostgreSQL advisory lock.
+
+### Redis protocol and settings
+
+Defaults are shown in `.env.example`. The command stream is
+`capability:commands`, consumer group is `capability-workers`, and dead-letter
+stream is `capability:commands:dead-letter`. Results, completion records,
+idempotency records, locks, and attempt counters use the same command-stream
+prefix.
+
+`CAPABILITY_MAX_RETRIES=3` means one initial execution plus three retries with
+1, 2, and 4 second backoffs. Idle pending entries are reclaimed with
+`XAUTOCLAIM`; terminal result publication, cache writes, dead-lettering when
+needed, acknowledgment, stream deletion, and retry-counter deletion are one
+Redis transaction.
+
+Delivery is at-least-once. A worker crash or ambiguous provider response after
+an external side effect but before Redis records success can repeat that side
+effect. A caller-supplied idempotency key narrows this window but cannot provide
+provider-level exactly-once execution.
+
 ## Voice Message Mode
 
 Voice mode is a universal, channel-independent request path for:
@@ -70,6 +161,64 @@ export VOICE_AUDIO_PUBLIC_BASE_URL="/api/v1/voice/audio"
 ```
 
 FastAPI multipart parsing requires `python-multipart` in the runtime environment.
+
+## Minimal Voice WebSocket Stream
+
+`/api/v1/voice/stream` is a first-step realtime voice entrypoint. It accepts one
+WebSocket connection per voice call and creates an isolated in-process
+`VoiceSession` for that connection. It buffers audio chunks and processes one
+complete voice turn through the existing synchronous voice pipeline when the
+client commits the input audio. True streaming STT/TTS is intentionally not
+wired here yet.
+
+First issue a short-lived session through the API, then connect directly to the
+returned runtime URL using WebSocket subprotocols `voice-session` and the token:
+
+```text
+POST http://localhost:8000/api/v1/voice/sessions
+Sec-WebSocket-Protocol: voice-session, <session_token>
+```
+
+On connect, the server sends a `session_started` event containing a unique
+`call_session_id`. Clients can send JSON events, binary audio chunks, or JSON
+base64 audio chunks, then commit the buffered audio:
+
+```json
+{"type":"ping"}
+{"type":"audio_chunk","audio_base64":"ZmFrZS1hdWRpbw=="}
+{"type":"input_audio_commit","content_type":"audio/webm","filename":"turn.webm"}
+{"type":"session_end"}
+```
+
+On commit, the server sends `processing_started`, transcript/assistant/audio
+events when available, and finally `turn_completed`. The existing REST voice
+pipeline remains unchanged.
+
+Manual smoke test:
+
+```bash
+VOICE_SESSION_TOKEN_SECRET="replace-with-at-least-32-bytes" \
+AGENT_RUNTIME_PUBLIC_WS_URL="ws://localhost:8001/api/v1/voice/stream" \
+uvicorn app.main:app --reload
+VOICE_SESSION_TOKEN_SECRET="replace-with-at-least-32-bytes" \
+AGENT_RUNTIME_PUBLIC_WS_URL="ws://localhost:8001/api/v1/voice/stream" \
+uvicorn app.agent_runtime.main:app --port 8001 --reload
+.venv/bin/python scripts/voice_ws_smoke.py
+.venv/bin/python scripts/voice_ws_concurrency_smoke.py
+```
+
+The dependency-free browser debug page at `http://127.0.0.1:8080` can issue a
+signed session through its local proxy and send repeated MediaRecorder batches
+over one WebSocket. It keeps the token only in memory and uses the
+`voice-session` subprotocol.
+
+Batch-turn processing runs the existing synchronous voice pipeline through a
+bounded in-process executor. Tune it with:
+
+```bash
+export VOICE_WS_PROCESSING_MAX_WORKERS=4
+export VOICE_WS_PROCESSING_TIMEOUT_SECONDS=120
+```
 
 ### Curl Example
 
