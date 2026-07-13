@@ -104,7 +104,9 @@ class VoiceMessageService:
             timings=timings, total_timer=total_timer, warnings=warnings, audio=audio,
         )
 
-    def process_transcript(self, request: FinalizedTranscriptRequest) -> VoiceMessageResponse:
+    def process_transcript(
+        self, request: FinalizedTranscriptRequest, *, text_callback=None, synthesize: bool = True
+    ) -> VoiceMessageResponse:
         total_timer = start_timer()
         timings = new_timing_trace()
         voice_config = self.tenant_config_loader.load(request.tenant_id).voice
@@ -120,11 +122,13 @@ class VoiceMessageService:
                 metadata={"model": request.model},
             ),
             voice_config=voice_config, timings=timings, total_timer=total_timer, warnings=[],
+            text_callback=text_callback, synthesize=synthesize,
         )
 
     def _complete_transcript(
         self, *, request, transcript_result: TranscriptResult, voice_config,
         timings: dict, total_timer, warnings: list[str], audio: AudioInput | None = None,
+        text_callback=None, synthesize: bool = True,
     ) -> VoiceMessageResponse:
         transcript = transcript_result.text.strip()
 
@@ -134,6 +138,7 @@ class VoiceMessageService:
             audio=audio,
             transcript=transcript,
             transcript_provider=transcript_result.provider,
+            text_callback=text_callback,
         )
         record_component_timing(
             timings,
@@ -159,7 +164,7 @@ class VoiceMessageService:
             tenant_id=request.tenant_id,
             voice_config=voice_config,
             warnings=warnings,
-        )
+        ) if synthesize else None
         record_component_timing(
             timings,
             "tts",
@@ -211,6 +216,7 @@ class VoiceMessageService:
         audio: AudioInput | None,
         transcript: str,
         transcript_provider: str,
+        text_callback=None,
     ) -> ProcessMessageResponse:
         metadata = {
             **request.metadata,
@@ -229,7 +235,9 @@ class VoiceMessageService:
             content=transcript,
             metadata=metadata,
         )
-        return self._get_message_processor().execute(text_request)
+        if text_callback is None:
+            return self._get_message_processor().execute(text_request)
+        return self._get_message_processor().execute(text_request, text_callback=text_callback)
 
     def _try_synthesize_response(
         self,

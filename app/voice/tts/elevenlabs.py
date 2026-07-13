@@ -1,6 +1,11 @@
+import asyncio
+import base64
+import json
 import os
+from urllib.parse import urlencode
 
 import requests
+import websockets
 
 from app.tenants.schemas import TenantVoiceTTSConfig
 from app.voice.errors import VoiceProviderConfigurationError, VoiceTTSProviderError
@@ -83,6 +88,42 @@ class ElevenLabsTTSProvider:
                 or response.headers.get("x-request-id"),
             },
         )
+
+    async def stream_input(self, fragments, *, config: TenantVoiceTTSConfig):
+        if not self.api_key:
+            raise VoiceProviderConfigurationError("ELEVENLABS_API_KEY must be configured")
+        voice_id = config.voice_id or os.getenv("ELEVENLABS_VOICE_ID")
+        if not voice_id:
+            raise VoiceProviderConfigurationError(
+                "voice.tts.voice_id or ELEVENLABS_VOICE_ID must be configured"
+            )
+        ws_base = self.base_url.replace("https://", "wss://").replace("http://", "ws://")
+        query = urlencode({"model_id": config.model, "output_format": "pcm_24000", "auto_mode": "true"})
+        if config.language:
+            query += "&" + urlencode({"language_code": config.language})
+        uri = f"{ws_base}/text-to-speech/{voice_id}/stream-input?{query}"
+        async with websockets.connect(
+            uri, additional_headers={"xi-api-key": self.api_key}, open_timeout=self.timeout_seconds
+        ) as socket:
+            await socket.send(json.dumps({"text": " "}))
+
+            async def send_text():
+                async for fragment in fragments:
+                    await socket.send(json.dumps({"text": fragment, "flush": True}))
+                await socket.send(json.dumps({"text": ""}))
+
+            sender = asyncio.create_task(send_text())
+            try:
+                async for raw in socket:
+                    message = json.loads(raw)
+                    if message.get("audio"):
+                        yield base64.b64decode(message["audio"])
+                    if message.get("isFinal"):
+                        break
+                await sender
+            finally:
+                if not sender.done():
+                    sender.cancel()
 
     def _content_type_from_output_format(self, output_format: str) -> str:
         if output_format.startswith("mp3"):

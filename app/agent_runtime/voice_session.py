@@ -200,5 +200,6 @@ class VoiceSession:
             "type": event_type,
             "call_session_id": self.call_session_id,
             "turn_id": self.active_turn.turn_id if self.active_turn else None,
+            **({"conversation_id": self.conversation_id} if self.conversation_id else {}),
             **payload,
         }

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -9,17 +10,20 @@ from uuid import uuid4
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from starlette.websockets import WebSocketState
 
+from app.api.routes.messages import get_tenant_config_loader
 from app.agent_runtime.voice_processing_executor import (
     VoiceProcessingExecutor,
     VoiceProcessingTimeoutError,
 )
 from app.agent_runtime.voice_session import ActiveStreamingTurn, VoiceSession, VoiceSessionPayloadError
+from app.agent_runtime.text_fragmenter import TextFragmenter
 from app.core.config import AgentRuntimeSettings
 from app.core.context import VoiceRuntimeContext
 from app.voice.errors import VoiceServiceError
 from app.voice.schemas import FinalizedTranscriptRequest, VoiceMessageResponse
 from app.voice.session_token import InvalidVoiceSessionToken
 from app.voice.stt.streaming import StreamingTranscriptEvent
+from app.voice.tts.elevenlabs import ElevenLabsTTSProvider
 
 
 logger = logging.getLogger(__name__)
@@ -341,6 +345,9 @@ async def _finalize_call_turn(session, turn, executor, settings, send_event):
         ))
         session.processing = True
         await send_event(session._event("processing_started"))
+        if settings.response_streaming_enabled:
+            await _run_response_streaming(session, executor, request, settings, send_event)
+            return
         for event in await _run_streaming_turn(session, executor, request):
             await send_event(event)
     except Exception:
@@ -424,6 +431,171 @@ async def _run_streaming_turn(session, executor, request):
     session.finish_processing()
     session.active_turn = None
     return events
+
+
+async def _run_response_streaming(session, executor, request, settings, send_event):
+    loop = asyncio.get_running_loop()
+    deltas = asyncio.Queue()
+    fragments = asyncio.Queue()
+    audio = asyncio.Queue()
+    cancelled = False
+    queued_bytes = 0
+    space = asyncio.Condition()
+    fragmenter = TextFragmenter(
+        settings.response_stream_min_chars, settings.response_stream_max_chars
+    )
+    streamed_text = ""
+    text_sequence = 0
+    audio_sequence = 0
+    audio_bytes = 0
+    audio_started = False
+    tts_error = None
+
+    def on_text(delta):
+        if not cancelled:
+            loop.call_soon_threadsafe(deltas.put_nowait, delta)
+
+    async def fragment_source():
+        while True:
+            value = await fragments.get()
+            if value is None:
+                return
+            yield value
+
+    async def tts_producer(config):
+        nonlocal queued_bytes, tts_error
+        try:
+            provider = ElevenLabsTTSProvider()
+            async for chunk in provider.stream_input(fragment_source(), config=config):
+                limit = settings.response_stream_max_audio_queue_bytes
+                for offset in range(0, len(chunk), limit):
+                    part = chunk[offset:offset + limit]
+                    async with space:
+                        await space.wait_for(lambda: queued_bytes + len(part) <= limit)
+                        queued_bytes += len(part)
+                    await audio.put(part)
+        except Exception as exc:
+            tts_error = exc
+        finally:
+            await audio.put(None)
+
+    async def audio_consumer():
+        nonlocal queued_bytes, audio_sequence, audio_bytes, audio_started
+        while True:
+            chunk = await audio.get()
+            if chunk is None:
+                return
+            if not audio_started:
+                audio_started = True
+                await send_event(session._event(
+                    "assistant_audio_started", content_type="audio/pcm", encoding="pcm_s16le",
+                    sample_rate=24000, channels=1, fallback_used=False,
+                ))
+            audio_sequence += 1
+            audio_bytes += len(chunk)
+            await send_event(session._event(
+                "assistant_audio_chunk", sequence=audio_sequence,
+                audio_base64=base64.b64encode(chunk).decode(), size_bytes=len(chunk),
+            ))
+            async with space:
+                queued_bytes -= len(chunk)
+                space.notify_all()
+
+    voice_config = get_tenant_config_loader().load(session.tenant_id).voice
+    agent_task = asyncio.create_task(executor.process_transcript(
+        request, text_callback=on_text, synthesize=False
+    ))
+    producer_task = asyncio.create_task(tts_producer(voice_config.tts))
+    consumer_task = asyncio.create_task(audio_consumer())
+    await send_event(session._event("assistant_text_started"))
+    try:
+        while not agent_task.done() or not deltas.empty():
+            try:
+                delta = await asyncio.wait_for(
+                    deltas.get(), settings.response_stream_flush_timeout_seconds
+                )
+                streamed_text += delta
+                text_sequence += 1
+                await send_event(session._event(
+                    "assistant_text_delta", sequence=text_sequence, delta=delta
+                ))
+                ready = fragmenter.add(delta)
+            except asyncio.TimeoutError:
+                ready = fragmenter.add("", timed_out=True)
+            for fragment in ready:
+                await fragments.put(fragment)
+        result = await agent_task
+        for fragment in fragmenter.finish():
+            await fragments.put(fragment)
+        await fragments.put(None)
+        await producer_task
+        await consumer_task
+        session.conversation_id = result.response.conversation_id
+        final_text = result.response.response_text
+        if streamed_text != final_text:
+            raise RuntimeError("streamed assistant text did not match persisted response")
+        await send_event(session._event("assistant_text_completed", text=final_text))
+
+        if tts_error and not audio_started:
+            try:
+                batch_config = voice_config.tts.model_copy(update={"output_format": "pcm_24000"})
+                batch = await asyncio.to_thread(
+                    ElevenLabsTTSProvider().synthesize, final_text, config=batch_config
+                )
+                audio_sequence = 1
+                audio_bytes = len(batch.audio_bytes)
+                audio_started = True
+                await send_event(session._event(
+                    "assistant_audio_started", content_type="audio/pcm", encoding="pcm_s16le",
+                    sample_rate=24000, channels=1, fallback_used=True,
+                ))
+                await send_event(session._event(
+                    "assistant_audio_chunk", sequence=1,
+                    audio_base64=base64.b64encode(batch.audio_bytes).decode(),
+                    size_bytes=len(batch.audio_bytes),
+                ))
+                tts_error = None
+            except Exception:
+                if not voice_config.fallback.send_text_if_tts_fails:
+                    raise
+                tts_error = None
+        if audio_started:
+            status = "partial" if tts_error else "completed"
+            await send_event(session._event(
+                "assistant_audio_completed", chunk_count=audio_sequence,
+                size_bytes=audio_bytes, status=status,
+            ))
+        if tts_error and audio_started:
+            await send_event(session._event(
+                "error", code="tts_stream_failed", message="Streaming TTS failed",
+                recoverable=True, partial_audio=True,
+            ))
+        await send_event(session._event(
+            "turn_completed", status="partial" if tts_error else "completed",
+            metadata=result.response.metadata,
+        ))
+    except asyncio.CancelledError:
+        cancelled = True
+        raise
+    except Exception:
+        logger.exception("Response streaming failed", extra={"call_session_id": session.call_session_id})
+        if audio_started:
+            await send_event(session._event(
+                "assistant_audio_completed", chunk_count=audio_sequence,
+                size_bytes=audio_bytes, status="partial",
+            ))
+        await send_event(session._event(
+            "error", code="response_stream_failed", message="Assistant response streaming failed",
+            recoverable=True, partial_audio=audio_started,
+        ))
+        await send_event(session._event("turn_completed", status="failed"))
+    finally:
+        cancelled = True
+        for task in (agent_task, producer_task, consumer_task):
+            if not task.done():
+                task.cancel()
+        session.finish_processing()
+        session.active_turn = None
 
 
 async def _process_input_audio_commit(

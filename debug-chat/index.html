@@ -364,6 +364,14 @@
     let streamingFrames = [];
     let streamingReady = false;
     let voiceMuted = false;
+    let assistantTextSequence = 0;
+    const streamedPlayback = new VoiceProtocol.PCMPlayback({
+      createAudioContext: () => audioContext,
+      closeAudioContext: false,
+      onStart: () => { voiceState.hasAssistantAudio = true; setVoiceState('processing', 'Assistant speaking...'); },
+      onDrain: () => { if (voiceSocket) startNextStreamingTurn(); },
+      onError: error => showVoiceError(error.message),
+    });
 
     const saved = JSON.parse(localStorage.getItem('debug-chat-settings') || '{}');
     for (const [id, value] of Object.entries(saved)) {
@@ -693,6 +701,7 @@
           if (workletNode) workletNode.disconnect(); workletNode = null;
           if (audioContext) audioContext.close(); audioContext = null;
           cleanupRecordingTimers(); cleanupMediaStream(); revokeAudioUrl();
+          streamedPlayback.stop();
           setVoiceState('idle', 'Disconnected'); updateVoiceControlAvailability();
         };
         updateVoiceControlAvailability();
@@ -707,6 +716,7 @@
       cleanupMediaStream();
       if (voiceSocket) voiceSocket.close();
       voiceSocket = null; sessionToken = null; revokeAudioUrl(); updateVoiceControlAvailability();
+      streamedPlayback.stop();
     }
 
     function handleVoiceEvent(event) {
@@ -728,10 +738,21 @@
       if (event.type === 'processing_started' || event.code === 'processing_busy') setVoiceState('processing');
       if (event.type === 'transcript' || event.type === 'transcript_completed') { voiceTranscript.value = event.text || event.transcript || ''; appendMessage('user', 'Voice transcript', voiceTranscript.value); }
       if (event.type === 'assistant_response') { voiceAssistantResponse.value = event.text || ''; appendMessage('assistant', 'Assistant', voiceAssistantResponse.value); }
+      if (event.type === 'assistant_text_started') { voiceAssistantResponse.value = ''; assistantTextSequence = 0; }
+      if (event.type === 'assistant_text_delta') {
+        if (event.sequence === assistantTextSequence + 1) {
+          voiceAssistantResponse.value += event.delta || ''; assistantTextSequence = event.sequence;
+        } else if (event.sequence > assistantTextSequence) showVoiceError('Assistant text sequence gap.');
+      }
+      if (event.type === 'assistant_text_completed') { voiceAssistantResponse.value = event.text || ''; appendMessage('assistant', 'Assistant', voiceAssistantResponse.value); }
       if (event.type === 'assistant_audio') { voiceState.hasAssistantAudio = true; playAssistantEventAudio(event, voiceInteractionMode.value === 'call'); }
+      if (event.type === 'assistant_audio_started') streamedPlayback.start();
+      if (event.type === 'assistant_audio_chunk') streamedPlayback.push(event);
+      if (event.type === 'assistant_audio_completed') streamedPlayback.completeAudio();
       if (event.type === 'error') showVoiceError(event.message || event.code || event.type);
       if (event.type === 'session_ended') disconnectVoice();
       if (!voiceState.processing && event.type === 'turn_completed' && voiceInteractionMode.value !== 'call') setVoiceState('idle', 'Voice turn completed');
+      else if (event.type === 'turn_completed' && streamedPlayback.active) streamedPlayback.completeTurn();
       else if (event.type === 'turn_completed' && voiceInteractionMode.value === 'call' && !voiceState.hasAssistantAudio) startNextStreamingTurn();
       else if (event.type === 'turn_ignored' && voiceInteractionMode.value === 'call') startNextStreamingTurn();
       else updateVoiceControlAvailability();

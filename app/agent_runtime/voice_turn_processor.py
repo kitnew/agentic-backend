@@ -49,10 +49,14 @@ class VoiceTurnProcessor:
     def process(self, request: VoiceMessageRequest) -> VoiceMessageResponse:
         return self._process(request, "process")
 
-    def process_transcript(self, request: FinalizedTranscriptRequest) -> VoiceMessageResponse:
-        return self._process(request, "process_transcript")
+    def process_transcript(
+        self, request: FinalizedTranscriptRequest, *, text_callback=None, synthesize=True
+    ) -> VoiceMessageResponse:
+        return self._process(
+            request, "process_transcript", text_callback=text_callback, synthesize=synthesize
+        )
 
-    def _process(self, request, method: str) -> VoiceMessageResponse:
+    def _process(self, request, method: str, **kwargs) -> VoiceMessageResponse:
         db = SessionLocal()
         try:
             tenant_config_loader = get_tenant_config_loader()
@@ -67,6 +71,6 @@ class VoiceTurnProcessor:
                     tenant_config_loader, capability_router
                 ),
             )
-            return getattr(service, method)(request)
+            return getattr(service, method)(request, **kwargs)
         finally:
             db.close()

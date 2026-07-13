@@ -26,6 +26,7 @@ class AgentRuntime:
         *,
         context: AgentContext,
         tools=None,
+        text_callback=None,
     ) -> AgentOutput:
         total_timer = start_timer()
         timings = new_timing_trace()
@@ -41,7 +42,9 @@ class AgentRuntime:
         graph = self._get_graph(tools=tools)
         record_component_timing(timings, "graph_build", graph_build_timer)
         graph_run_timer = start_timer()
-        final_output = self._run_graph(graph, graph_input, context=context, trace=trace)
+        final_output = self._run_graph(
+            graph, graph_input, context=context, trace=trace, text_callback=text_callback
+        )
         record_component_timing(
             timings,
             "graph_run",
@@ -70,13 +73,28 @@ class AgentRuntime:
         *,
         context: AgentContext,
         trace: dict,
+        text_callback=None,
     ) -> dict:
         final_output: dict = {}
 
-        for event in graph.stream(agent_input, context=context, stream_mode="updates"):
-            trace["events"].append(serialize_event(event))
-            if "finalize" in event:
-                final_output = event["finalize"]
+        modes = ["messages", "updates"] if text_callback else "updates"
+        for event in graph.stream(agent_input, context=context, stream_mode=modes):
+            mode, data = event if text_callback else ("updates", event)
+            if mode == "messages":
+                chunk, metadata = data
+                content = chunk.content
+                if (
+                    metadata.get("langgraph_node") == "agent"
+                    and isinstance(content, str)
+                    and content
+                    and not getattr(chunk, "tool_calls", None)
+                    and not getattr(chunk, "tool_call_chunks", None)
+                ):
+                    text_callback(content)
+                continue
+            trace["events"].append(serialize_event(data))
+            if "finalize" in data:
+                final_output = data["finalize"]
 
         return final_output
 

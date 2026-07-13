@@ -220,6 +220,17 @@ export VOICE_WS_PROCESSING_MAX_WORKERS=4
 export VOICE_WS_PROCESSING_TIMEOUT_SECONDS=120
 ```
 
+Call-mode response streaming is opt-in. It streams assistant text and mono
+24 kHz signed 16-bit PCM audio while leaving REST and manual voice unchanged:
+
+```bash
+export VOICE_RESPONSE_STREAMING_ENABLED=true
+export VOICE_RESPONSE_STREAM_MIN_CHARS=40
+export VOICE_RESPONSE_STREAM_MAX_CHARS=160
+export VOICE_RESPONSE_STREAM_FLUSH_TIMEOUT_SECONDS=0.4
+export VOICE_RESPONSE_STREAM_MAX_AUDIO_QUEUE_BYTES=524288
+```
+
 ### Curl Example
 
 ```bash

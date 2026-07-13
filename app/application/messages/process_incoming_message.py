@@ -59,7 +59,7 @@ class ProcessIncomingMessage:
         self.conversation_repository = conversation_repository
         self.capability_executor = capability_executor
 
-    def execute(self, request: CreateMessageRequest) -> ProcessMessageResponse:
+    def execute(self, request: CreateMessageRequest, *, text_callback=None) -> ProcessMessageResponse:
         total_timer = start_timer()
         pipeline_timings = new_timing_trace()
         component_timer = start_timer()
@@ -121,10 +121,15 @@ class ProcessIncomingMessage:
                 raw_message=user_message.content,
             )
             component_timer = start_timer()
+            run_kwargs = {
+                "context": self._build_agent_context(tenant_context, conversation.id),
+                "tools": create_langchain_tools(agent_tools),
+            }
+            if text_callback is not None:
+                run_kwargs["text_callback"] = text_callback
             agent_output = self.agent_runtime.run(
                 agent_input,
-                context=self._build_agent_context(tenant_context, conversation.id),
-                tools=create_langchain_tools(agent_tools),
+                **run_kwargs,
             )
             record_component_timing(pipeline_timings, "agent_runtime", component_timer)
             component_timer = start_timer()

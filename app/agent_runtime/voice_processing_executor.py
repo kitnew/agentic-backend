@@ -43,8 +43,10 @@ class VoiceProcessingExecutor:
     async def process(self, request: VoiceMessageRequest) -> VoiceProcessingResult:
         return await self._process(request, self.turn_processor.process)
 
-    async def process_transcript(self, request) -> VoiceProcessingResult:
-        return await self._process(request, self.turn_processor.process_transcript)
+    async def process_transcript(self, request, **kwargs) -> VoiceProcessingResult:
+        return await self._process(
+            request, lambda value: self.turn_processor.process_transcript(value, **kwargs)
+        )
 
     async def _process(self, request, processor) -> VoiceProcessingResult:
         if self._closed:

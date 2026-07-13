@@ -131,6 +131,11 @@ class AgentRuntimeSettings:
     call_min_speech_duration_ms: int = 100
     call_min_silence_duration_ms: int = 100
     call_max_utterance_seconds: float = 30
+    response_streaming_enabled: bool = False
+    response_stream_min_chars: int = 40
+    response_stream_max_chars: int = 160
+    response_stream_flush_timeout_seconds: float = 0.4
+    response_stream_max_audio_queue_bytes: int = 524_288
 
     @classmethod
     def from_env(cls) -> "AgentRuntimeSettings":
@@ -153,6 +158,17 @@ class AgentRuntimeSettings:
             call_min_speech_duration_ms=_number("VOICE_CALL_MIN_SPEECH_DURATION_MS", 100, int),
             call_min_silence_duration_ms=_number("VOICE_CALL_MIN_SILENCE_DURATION_MS", 100, int),
             call_max_utterance_seconds=_number("VOICE_CALL_MAX_UTTERANCE_SECONDS", 30, float),
+            response_streaming_enabled=_text(
+                "VOICE_RESPONSE_STREAMING_ENABLED", "false"
+            ).lower() in {"1", "true", "yes"},
+            response_stream_min_chars=_number("VOICE_RESPONSE_STREAM_MIN_CHARS", 40, int),
+            response_stream_max_chars=_number("VOICE_RESPONSE_STREAM_MAX_CHARS", 160, int),
+            response_stream_flush_timeout_seconds=_number(
+                "VOICE_RESPONSE_STREAM_FLUSH_TIMEOUT_SECONDS", .4, float
+            ),
+            response_stream_max_audio_queue_bytes=_number(
+                "VOICE_RESPONSE_STREAM_MAX_AUDIO_QUEUE_BYTES", 524_288, int
+            ),
         )
         settings.validate()
         return settings
@@ -182,6 +198,16 @@ class AgentRuntimeSettings:
             raise ValueError("VOICE_CALL_VAD_THRESHOLD must be between 0 and 1")
         if min(self.call_vad_silence_threshold_seconds, self.call_min_speech_duration_ms, self.call_min_silence_duration_ms) <= 0:
             raise ValueError("call VAD durations must be positive")
+        stream_values = (
+            self.response_stream_min_chars,
+            self.response_stream_max_chars,
+            self.response_stream_flush_timeout_seconds,
+            self.response_stream_max_audio_queue_bytes,
+        )
+        if min(stream_values) <= 0:
+            raise ValueError("voice response streaming values must be positive")
+        if self.response_stream_min_chars > self.response_stream_max_chars:
+            raise ValueError("VOICE_RESPONSE_STREAM_MIN_CHARS must not exceed MAX_CHARS")
 
 
 def _text(name: str, default: str) -> str:

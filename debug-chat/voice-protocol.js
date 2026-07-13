@@ -33,12 +33,80 @@
     return next;
   }
 
+  class PCMPlayback {
+    constructor(deps = {}) {
+      this.deps = deps;
+      this.context = null; this.sources = new Set(); this.sequence = 0;
+      this.cursor = 0; this.audioComplete = false; this.turnComplete = false;
+    }
+
+    get active() { return !!this.context; }
+
+    start() {
+      this.stop();
+      const AudioContextClass = this.deps.AudioContext || globalThis.AudioContext || globalThis.webkitAudioContext;
+      this.context = this.deps.createAudioContext ? this.deps.createAudioContext() : new AudioContextClass();
+      if (this.context.state === 'suspended' && this.context.resume) this.context.resume();
+      this.sequence = 0; this.audioComplete = false; this.turnComplete = false;
+      this.cursor = this.context.currentTime;
+      if (this.deps.onStart) this.deps.onStart();
+    }
+
+    push(event) {
+      if (event.sequence <= this.sequence) return;
+      if (!this.context || event.sequence !== this.sequence + 1) {
+        this.stop();
+        if (this.deps.onError) this.deps.onError(new Error('Assistant audio sequence gap'));
+        return;
+      }
+      const decode = this.deps.decodeBase64 || (value => Uint8Array.from(atob(value), c => c.charCodeAt(0)));
+      const bytes = decode(event.audio_base64);
+      const samples = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+      const buffer = this.context.createBuffer(1, samples.length, event.sample_rate || 24000);
+      const channel = buffer.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) channel[i] = samples[i] / 32768;
+      const source = this.context.createBufferSource(); source.buffer = buffer;
+      source.connect(this.context.destination); this.sources.add(source);
+      source.onended = () => { this.sources.delete(source); this.maybeDrain(); };
+      const startAt = Math.max(this.context.currentTime, this.cursor);
+      source.start(startAt); this.cursor = startAt + buffer.duration; this.sequence = event.sequence;
+    }
+
+    completeAudio() { this.audioComplete = true; this.maybeDrain(); }
+    completeTurn() { this.turnComplete = true; this.maybeDrain(); }
+
+    maybeDrain() {
+      if (!this.turnComplete || !this.audioComplete || this.sources.size) return;
+      this.stop();
+      if (this.deps.onDrain) this.deps.onDrain();
+    }
+
+    stop() {
+      this.turnComplete = this.audioComplete = false;
+      for (const source of this.sources) { try { source.stop(); } catch (_) {} }
+      this.sources.clear();
+      if (this.context && this.deps.closeAudioContext !== false && this.context.close) this.context.close();
+      this.context = null;
+    }
+  }
+
   class CallController {
     constructor(deps) {
       this.deps = deps;
       this.state = { mode: 'call', phase: 'idle', connection: 'disconnected', processing: false };
       this.socket = this.capture = this.playback = null;
       this.playbackTimer = null;
+      this.pcm = new PCMPlayback({
+        ...deps,
+        onStart: () => { this.state = transition(this.state, { type: 'assistant_playback_started' }); },
+        onDrain: () => {
+          this.state = transition(this.state, { type: 'assistant_playback_completed' });
+          this.startTurn();
+        },
+        onError: () => {
+          this.cleanup(); this.state = transition(this.state, { type: 'assistant_playback_failed' });
+        },
+      });
     }
 
     async start(values) {
@@ -64,8 +132,13 @@
 
     async handle(event) {
       this.state = transition(this.state, event);
+      const hadPCM = this.pcm.active;
       if (event.type === 'assistant_audio') await this.play(event);
-      if (event.type === 'turn_ignored' || (event.type === 'turn_completed' && !this.playback)) this.startTurn();
+      if (event.type === 'assistant_audio_started') this.pcm.start();
+      if (event.type === 'assistant_audio_chunk') this.pcm.push(event);
+      if (event.type === 'assistant_audio_completed') this.pcm.completeAudio();
+      if (event.type === 'turn_completed') this.pcm.completeTurn();
+      if (event.type === 'turn_ignored' || (event.type === 'turn_completed' && !this.playback && !hadPCM)) this.startTurn();
       if (this.deps.onState) this.deps.onState(this.state, event);
     }
 
@@ -99,6 +172,7 @@
 
     cleanup() {
       clearTimeout(this.playbackTimer);
+      this.pcm.stop();
       if (this.playback && this.playback.stop) this.playback.stop();
       if (this.capture && this.capture.close) this.capture.close();
       if (this.socket && this.socket.close) this.socket.close();
@@ -106,5 +180,5 @@
     }
   }
 
-  return { parseSession, transition, CallController };
+  return { parseSession, transition, PCMPlayback, CallController };
 });
