@@ -365,10 +365,16 @@
     let streamingReady = false;
     let voiceMuted = false;
     let assistantTextSequence = 0;
+    let voiceTimeline = [];
+    let voiceTimelineStart = 0;
+    let voiceTimelineSeen = new Set();
     const streamedPlayback = new VoiceProtocol.PCMPlayback({
       createAudioContext: () => audioContext,
       closeAudioContext: false,
-      onStart: () => { voiceState.hasAssistantAudio = true; setVoiceState('processing', 'Assistant speaking...'); },
+      onStart: () => {
+        traceVoice('browser_playback_started');
+        voiceState.hasAssistantAudio = true; setVoiceState('processing', 'Assistant speaking...');
+      },
       onDrain: () => { if (voiceSocket) startNextStreamingTurn(); },
       onError: error => showVoiceError(error.message),
     });
@@ -678,6 +684,7 @@
 
     async function connectVoice() {
       clearVoiceMessages();
+      voiceTimeline = []; voiceTimelineSeen.clear(); voiceTimelineStart = performance.now();
       try {
         const response = await fetch('/debug/voice-session', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -721,7 +728,17 @@
 
     function handleVoiceEvent(event) {
       voiceState = VoiceProtocol.transition(voiceState, event);
-      apiResponse.textContent = JSON.stringify(event, null, 2);
+      const markers = {
+        assistant_text_started: 'assistant_text_started',
+        assistant_text_delta: 'first_text_delta',
+        assistant_audio_started: 'assistant_audio_started',
+        assistant_audio_chunk: 'browser_audio_chunk_received',
+        assistant_text_completed: 'text_completed',
+        assistant_audio_completed: 'audio_completed',
+        turn_completed: 'turn_completed',
+      };
+      if (markers[event.type]) traceVoice(markers[event.type], event);
+      apiResponse.textContent = JSON.stringify({ event, streaming_timeline: voiceTimeline }, null, 2);
       if (event.conversation_id) { conversationIdInput.value = event.conversation_id; saveSettings(); }
       if (event.type === 'audio_chunk_received') voiceStatusEl.textContent = 'Audio buffered';
       if (event.type === 'input_audio_started') {
@@ -774,6 +791,20 @@
     }
 
     function revokeAudioUrl() { if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl); audioObjectUrl = null; }
+
+    function traceVoice(marker, event = {}) {
+      if (voiceTimelineSeen.has(marker)) return;
+      voiceTimelineSeen.add(marker);
+      voiceTimeline.push({
+        marker,
+        browser_elapsed_ms: Math.round(performance.now() - voiceTimelineStart),
+        server_stream_elapsed_ms: event.stream_elapsed_ms ?? null,
+        sequence: event.sequence ?? null,
+        size_bytes: event.size_bytes ?? null,
+        first_tts_fragment_submitted_ms: event.first_tts_fragment_submitted_ms ?? null,
+        first_provider_audio_received_ms: event.first_provider_audio_received_ms ?? null,
+      });
+    }
 
     function selectRecordingMimeType() {
       for (const mimeType of PREFERRED_AUDIO_TYPES) {

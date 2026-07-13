@@ -2,7 +2,9 @@ import base64
 import asyncio
 import time
 from datetime import datetime
+from types import SimpleNamespace
 
+from app.agent_runtime import voice_ws
 from app.agent_runtime.voice_processing_executor import VoiceProcessingExecutor
 from app.agent_runtime.voice_session import VoiceSession
 from app.api.routes.voice_ws import _handle_message
@@ -10,6 +12,7 @@ from app.core.context import VoiceRuntimeContext
 from app.schemas.messages import MessageResponse
 from app.voice.errors import VoiceValidationError
 from app.voice.schemas import SynthesizedAudioResult, TranscriptResult, VoiceMessageResponse
+from app.tenants.schemas import TenantVoiceConfig
 
 
 def build_session() -> VoiceSession:
@@ -400,3 +403,53 @@ def test_voice_ws_disconnect_cancels_processing_task_without_clearing_buffer():
     assert session.cancelled is True
     assert session.pending_audio_bytes == 8
     assert session.processing is False
+
+
+def test_call_response_sends_pcm_before_text_and_turn_completion(monkeypatch):
+    text = "First long assistant phrase. Second phrase."
+    session = build_session()
+    session.mode = "call"
+    session.active_turn = SimpleNamespace(turn_id="turn-1")
+    events = []
+
+    class Executor:
+        async def process_transcript(self, _request, *, text_callback, synthesize):
+            assert synthesize is False
+            text_callback("First long assistant phrase. ")
+            await asyncio.sleep(0.01)
+            text_callback("Second phrase.")
+            return SimpleNamespace(response=SimpleNamespace(
+                conversation_id="conversation-processed", response_text=text, metadata={}
+            ))
+
+    class StreamingTTS:
+        async def stream_input(self, fragments, *, config):
+            async for _fragment in fragments:
+                yield b"\0\0"
+
+    voice_config = TenantVoiceConfig(enabled=True)
+    monkeypatch.setattr(voice_ws, "ElevenLabsTTSProvider", StreamingTTS)
+    monkeypatch.setattr(
+        voice_ws, "get_tenant_config_loader",
+        lambda: SimpleNamespace(load=lambda _tenant_id: SimpleNamespace(voice=voice_config)),
+    )
+    settings = SimpleNamespace(
+        response_stream_min_chars=10,
+        response_stream_max_chars=80,
+        response_stream_flush_timeout_seconds=0.01,
+        response_stream_max_audio_queue_bytes=1024,
+    )
+
+    async def send_event(event):
+        events.append(event)
+
+    asyncio.run(voice_ws._run_response_streaming(
+        session, Executor(), object(), settings, send_event
+    ))
+
+    types = [event["type"] for event in events]
+    assert types.index("assistant_audio_chunk") < types.index("assistant_text_completed")
+    assert types.index("assistant_text_completed") < types.index("assistant_audio_completed")
+    assert types[-1] == "turn_completed"
+    assert events[-1]["metadata"]["output_format"] == "pcm_24000"
+    assert events[-1]["metadata"]["response_streaming"] is True

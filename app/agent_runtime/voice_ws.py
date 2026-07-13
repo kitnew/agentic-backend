@@ -435,6 +435,7 @@ async def _run_streaming_turn(session, executor, request):
 
 async def _run_response_streaming(session, executor, request, settings, send_event):
     loop = asyncio.get_running_loop()
+    stream_started = time.monotonic()
     deltas = asyncio.Queue()
     fragments = asyncio.Queue()
     audio = asyncio.Queue()
@@ -450,6 +451,11 @@ async def _run_response_streaming(session, executor, request, settings, send_eve
     audio_bytes = 0
     audio_started = False
     tts_error = None
+    first_fragment_ms = None
+    first_provider_audio_ms = None
+
+    def elapsed_ms():
+        return int((time.monotonic() - stream_started) * 1000)
 
     def on_text(delta):
         if not cancelled:
@@ -462,11 +468,21 @@ async def _run_response_streaming(session, executor, request, settings, send_eve
                 return
             yield value
 
+    async def run_agent():
+        try:
+            return await executor.process_transcript(
+                request, text_callback=on_text, synthesize=False
+            )
+        finally:
+            loop.call_soon(deltas.put_nowait, None)
+
     async def tts_producer(config):
-        nonlocal queued_bytes, tts_error
+        nonlocal queued_bytes, tts_error, first_provider_audio_ms
         try:
             provider = ElevenLabsTTSProvider()
             async for chunk in provider.stream_input(fragment_source(), config=config):
+                if first_provider_audio_ms is None:
+                    first_provider_audio_ms = elapsed_ms()
                 limit = settings.response_stream_max_audio_queue_bytes
                 for offset in range(0, len(chunk), limit):
                     part = chunk[offset:offset + limit]
@@ -490,51 +506,62 @@ async def _run_response_streaming(session, executor, request, settings, send_eve
                 await send_event(session._event(
                     "assistant_audio_started", content_type="audio/pcm", encoding="pcm_s16le",
                     sample_rate=24000, channels=1, fallback_used=False,
+                    first_tts_fragment_submitted_ms=first_fragment_ms,
+                    first_provider_audio_received_ms=first_provider_audio_ms,
+                    stream_elapsed_ms=elapsed_ms(),
                 ))
             audio_sequence += 1
             audio_bytes += len(chunk)
             await send_event(session._event(
                 "assistant_audio_chunk", sequence=audio_sequence,
                 audio_base64=base64.b64encode(chunk).decode(), size_bytes=len(chunk),
+                stream_elapsed_ms=elapsed_ms(),
             ))
             async with space:
                 queued_bytes -= len(chunk)
                 space.notify_all()
 
     voice_config = get_tenant_config_loader().load(session.tenant_id).voice
-    agent_task = asyncio.create_task(executor.process_transcript(
-        request, text_callback=on_text, synthesize=False
-    ))
+    agent_task = asyncio.create_task(run_agent())
     producer_task = asyncio.create_task(tts_producer(voice_config.tts))
     consumer_task = asyncio.create_task(audio_consumer())
     await send_event(session._event("assistant_text_started"))
     try:
-        while not agent_task.done() or not deltas.empty():
+        while True:
             try:
                 delta = await asyncio.wait_for(
                     deltas.get(), settings.response_stream_flush_timeout_seconds
                 )
+                if delta is None:
+                    break
                 streamed_text += delta
                 text_sequence += 1
                 await send_event(session._event(
-                    "assistant_text_delta", sequence=text_sequence, delta=delta
+                    "assistant_text_delta", sequence=text_sequence, delta=delta,
+                    stream_elapsed_ms=elapsed_ms(),
                 ))
                 ready = fragmenter.add(delta)
             except asyncio.TimeoutError:
                 ready = fragmenter.add("", timed_out=True)
             for fragment in ready:
+                if first_fragment_ms is None:
+                    first_fragment_ms = elapsed_ms()
                 await fragments.put(fragment)
         result = await agent_task
         for fragment in fragmenter.finish():
+            if first_fragment_ms is None:
+                first_fragment_ms = elapsed_ms()
             await fragments.put(fragment)
         await fragments.put(None)
-        await producer_task
-        await consumer_task
         session.conversation_id = result.response.conversation_id
         final_text = result.response.response_text
         if streamed_text != final_text:
             raise RuntimeError("streamed assistant text did not match persisted response")
-        await send_event(session._event("assistant_text_completed", text=final_text))
+        await send_event(session._event(
+            "assistant_text_completed", text=final_text, stream_elapsed_ms=elapsed_ms()
+        ))
+        await producer_task
+        await consumer_task
 
         if tts_error and not audio_started:
             try:
@@ -548,11 +575,12 @@ async def _run_response_streaming(session, executor, request, settings, send_eve
                 await send_event(session._event(
                     "assistant_audio_started", content_type="audio/pcm", encoding="pcm_s16le",
                     sample_rate=24000, channels=1, fallback_used=True,
+                    stream_elapsed_ms=elapsed_ms(),
                 ))
                 await send_event(session._event(
                     "assistant_audio_chunk", sequence=1,
                     audio_base64=base64.b64encode(batch.audio_bytes).decode(),
-                    size_bytes=len(batch.audio_bytes),
+                    size_bytes=len(batch.audio_bytes), stream_elapsed_ms=elapsed_ms(),
                 ))
                 tts_error = None
             except Exception:
@@ -563,7 +591,7 @@ async def _run_response_streaming(session, executor, request, settings, send_eve
             status = "partial" if tts_error else "completed"
             await send_event(session._event(
                 "assistant_audio_completed", chunk_count=audio_sequence,
-                size_bytes=audio_bytes, status=status,
+                size_bytes=audio_bytes, status=status, stream_elapsed_ms=elapsed_ms(),
             ))
         if tts_error and audio_started:
             await send_event(session._event(
@@ -572,7 +600,12 @@ async def _run_response_streaming(session, executor, request, settings, send_eve
             ))
         await send_event(session._event(
             "turn_completed", status="partial" if tts_error else "completed",
-            metadata=result.response.metadata,
+            metadata={
+                **result.response.metadata,
+                "response_streaming": True,
+                "output_format": "pcm_24000",
+                "stream_elapsed_ms": elapsed_ms(),
+            },
         ))
     except asyncio.CancelledError:
         cancelled = True

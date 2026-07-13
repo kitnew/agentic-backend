@@ -157,23 +157,25 @@ class VoiceMessageService:
         ):
             raise VoiceAgentProcessingError("Agent failed to process the transcript")
 
-        component_timer = start_timer()
-        audio_result = self._try_synthesize_response(
-            response_text=response_text,
-            conversation_id=message_response.conversation_id,
-            tenant_id=request.tenant_id,
-            voice_config=voice_config,
-            warnings=warnings,
-        ) if synthesize else None
-        record_component_timing(
-            timings,
-            "tts",
-            component_timer,
-            provider=voice_config.tts.provider,
-            model=voice_config.tts.model,
-            output_format=voice_config.tts.output_format,
-            fallback_used=audio_result is None,
-        )
+        audio_result = None
+        if synthesize:
+            component_timer = start_timer()
+            audio_result = self._try_synthesize_response(
+                response_text=response_text,
+                conversation_id=message_response.conversation_id,
+                tenant_id=request.tenant_id,
+                voice_config=voice_config,
+                warnings=warnings,
+            )
+            record_component_timing(
+                timings,
+                "tts",
+                component_timer,
+                provider=voice_config.tts.provider,
+                model=voice_config.tts.model,
+                output_format=voice_config.tts.output_format,
+                fallback_used=audio_result is None,
+            )
         finished_timings = finish_timing_trace(timings, total_timer)
         agent_trace = {
             "input_mode": "voice",
