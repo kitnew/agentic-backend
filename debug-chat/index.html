@@ -202,6 +202,14 @@
       width: 100%;
       min-height: 36px;
     }
+    .livekit-status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 4px 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    #livekitLog { max-height: 180px; border-radius: 6px; }
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; height: auto; }
       section { min-height: 420px; }
@@ -266,6 +274,7 @@
           <span id="voiceStatus" class="status">Idle</span>
         </div>
         <div class="voice-controls">
+          <label>Runtime <select id="voiceRuntime"><option value="legacy" selected>Legacy</option><option value="livekit">LiveKit</option></select></label>
           <label>Mode <select id="voiceInteractionMode"><option value="call" selected>Call</option><option value="manual">Manual</option></select></label>
           <button id="connectVoice" type="button">Start Call</button>
           <button id="disconnectVoice" class="secondary" type="button" disabled>End Call</button>
@@ -277,8 +286,19 @@
           <span id="voiceIndicator" class="voice-indicator" aria-hidden="true"></span>
           <span id="recordingTimer" class="voice-timer">00:00</span>
         </div>
-        <div class="status">Call session: <span id="callSessionId">none</span></div>
+        <div class="livekit-status-grid">
+          <span>Call session: <b id="callSessionId">none</b></span>
+          <span>Room: <b id="livekitRoom">none</b></span>
+          <span>Participant: <b id="livekitParticipant">none</b></span>
+          <span>Microphone: <b id="livekitMicrophone">disabled</b></span>
+          <span>User: <b id="livekitUserState">silent</b></span>
+          <span>Agent: <b id="livekitAgentState">idle</b></span>
+          <span>Latency: <b id="livekitLatency">none</b></span>
+        </div>
         <div class="voice-results">
+          <label>Interim transcript
+            <textarea id="livekitInterim" readonly placeholder="No interim transcript yet."></textarea>
+          </label>
           <label>Transcript
             <textarea id="voiceTranscript" readonly placeholder="No voice transcript yet."></textarea>
           </label>
@@ -288,6 +308,9 @@
           <div id="voiceWarnings" class="voice-warning"></div>
           <div id="voiceError" class="voice-error"></div>
           <audio id="assistantAudio" controls></audio>
+          <div id="livekitAudio"></div>
+          <div class="row"><span class="status">LiveKit telemetry</span><button id="clearLivekitLog" class="secondary" type="button">Clear log</button></div>
+          <pre id="livekitLog">No LiveKit events yet.</pre>
         </div>
       </div>
     </section>
@@ -302,6 +325,8 @@
   </main>
 
   <script src="/voice-protocol.js"></script>
+  <script src="/vendor/livekit-client.umd.js"></script>
+  <script src="/livekit-controller.js"></script>
   <script>
     const backendUrlInput = document.querySelector('#backendUrl');
     const apiPathInput = document.querySelector('#apiPath');
@@ -336,6 +361,16 @@
     const callSessionId = document.querySelector('#callSessionId');
     const voiceInteractionMode = document.querySelector('#voiceInteractionMode');
     const muteVoiceButton = document.querySelector('#muteVoice');
+    const voiceRuntime = document.querySelector('#voiceRuntime');
+    const livekitRoom = document.querySelector('#livekitRoom');
+    const livekitParticipant = document.querySelector('#livekitParticipant');
+    const livekitMicrophone = document.querySelector('#livekitMicrophone');
+    const livekitUserState = document.querySelector('#livekitUserState');
+    const livekitAgentState = document.querySelector('#livekitAgentState');
+    const livekitLatency = document.querySelector('#livekitLatency');
+    const livekitInterim = document.querySelector('#livekitInterim');
+    const livekitAudio = document.querySelector('#livekitAudio');
+    const livekitLog = document.querySelector('#livekitLog');
 
     const VOICE_API_PATH = '/api/v1/voice/messages';
     const MAX_RECORDING_MS = 30000;
@@ -368,6 +403,9 @@
     let voiceTimeline = [];
     let voiceTimelineStart = 0;
     let voiceTimelineSeen = new Set();
+    let liveKitController = null;
+    let livekitEvents = [];
+    let livekitAssistantSegments = new Map();
     const streamedPlayback = new VoiceProtocol.PCMPlayback({
       createAudioContext: () => audioContext,
       closeAudioContext: false,
@@ -466,6 +504,10 @@
     textModeButton.addEventListener('click', () => switchInputMode('text'));
     voiceModeButton.addEventListener('click', () => switchInputMode('voice'));
     muteVoiceButton.addEventListener('click', () => {
+      if (voiceRuntime.value === 'livekit') {
+        liveKitController?.toggleMute().then(muted => { muteVoiceButton.textContent = muted ? 'Unmute' : 'Mute'; });
+        return;
+      }
       voiceMuted = !voiceMuted;
       for (const track of mediaStream?.getAudioTracks() || []) track.enabled = !voiceMuted;
       muteVoiceButton.textContent = voiceMuted ? 'Unmute' : 'Mute';
@@ -475,9 +517,20 @@
     connectVoiceButton.addEventListener('click', connectVoice);
     disconnectVoiceButton.addEventListener('click', disconnectVoice);
     reconnectVoiceButton.addEventListener('click', () => {
+      if (voiceRuntime.value === 'livekit') { disconnectLiveKit().then(connectLiveKit); return; }
       if (!voiceSocket) { connectVoice(); return; }
       voiceSocket.addEventListener('close', connectVoice, { once: true });
       voiceSocket.close();
+    });
+    voiceRuntime.addEventListener('change', () => {
+      disconnectVoice();
+      voiceInteractionMode.disabled = voiceRuntime.value === 'livekit';
+      clearVoiceMessages();
+      updateVoiceControlAvailability();
+    });
+    document.querySelector('#clearLivekitLog').addEventListener('click', () => {
+      livekitEvents = [];
+      livekitLog.textContent = 'No LiveKit events yet.';
     });
     resetVoiceConversationButton.addEventListener('click', () => {
       disconnectVoice();
@@ -683,6 +736,7 @@
     }
 
     async function connectVoice() {
+      if (voiceRuntime.value === 'livekit') return connectLiveKit();
       clearVoiceMessages();
       voiceTimeline = []; voiceTimelineSeen.clear(); voiceTimelineStart = performance.now();
       try {
@@ -716,6 +770,7 @@
     }
 
     function disconnectVoice() {
+      if (voiceRuntime.value === 'livekit') { disconnectLiveKit(); return; }
       streamingReady = false;
       if (voiceSocket?.readyState === WebSocket.OPEN) voiceSocket.send(JSON.stringify({ type: 'session_end' }));
       if (workletNode) workletNode.disconnect(); workletNode = null;
@@ -724,6 +779,78 @@
       if (voiceSocket) voiceSocket.close();
       voiceSocket = null; sessionToken = null; revokeAudioUrl(); updateVoiceControlAvailability();
       streamedPlayback.stop();
+    }
+
+    async function connectLiveKit() {
+      clearVoiceMessages();
+      if (liveKitController?.room || liveKitController?.starting) return;
+      liveKitController = liveKitController || new LiveKitDebug.LiveKitController({
+        sdk: LivekitClient,
+        fetchFn: fetch.bind(window),
+        audioContainer: livekitAudio,
+        onSession: session => {
+          callSessionId.textContent = session.call_session_id;
+          livekitRoom.textContent = session.room_name;
+          conversationIdInput.value = session.conversation_id;
+          apiResponse.textContent = JSON.stringify(session, null, 2);
+          saveSettings();
+        },
+        onState: state => {
+          if (state.connection) voiceStatusEl.textContent = `LiveKit ${state.connection}`;
+          if (state.participantIdentity) livekitParticipant.textContent = state.participantIdentity;
+          if (state.microphone) livekitMicrophone.textContent = state.microphone;
+          if (state.user) livekitUserState.textContent = state.user;
+          if (state.agent) livekitAgentState.textContent = state.agent;
+          updateVoiceControlAvailability();
+        },
+        onTranscript: item => {
+          if (item.role === 'user') {
+            if (item.final) {
+              livekitInterim.value = '';
+              voiceTranscript.value = item.text;
+              livekitAssistantSegments = new Map();
+              voiceAssistantResponse.value = '';
+              appendMessage('user', 'LiveKit transcript', item.text);
+            } else livekitInterim.value = item.text;
+          } else {
+            livekitAssistantSegments.set(item.segmentId || `segment-${livekitAssistantSegments.size}`, item.text);
+            voiceAssistantResponse.value = [...livekitAssistantSegments.values()].join('');
+          }
+        },
+        onTelemetry: event => {
+          livekitEvents.push(event);
+          livekitLog.textContent = JSON.stringify(livekitEvents.slice(-100), null, 2);
+          livekitLog.scrollTop = livekitLog.scrollHeight;
+          if (event.event === 'interruption_detected') voiceWarnings.textContent = 'Interruption detected';
+          const latency = Object.entries(event).filter(([key]) => key.endsWith('_ms'));
+          if (latency.length) livekitLatency.textContent = latency.map(([key, value]) => `${key}: ${value}`).join(', ');
+          if (event.event === 'turn_completed' && voiceAssistantResponse.value) {
+            appendMessage('assistant', 'LiveKit assistant', voiceAssistantResponse.value);
+          }
+        },
+        onError: error => showVoiceError(error.message),
+      });
+      voiceAssistantResponse.value = '';
+      livekitAssistantSegments = new Map();
+      await liveKitController.start({
+        tenantId: tenantIdInput.value.trim(),
+        conversationId: conversationIdInput.value.trim(),
+      });
+      updateVoiceControlAvailability();
+    }
+
+    async function disconnectLiveKit() {
+      await liveKitController?.stop();
+      callSessionId.textContent = 'none';
+      livekitRoom.textContent = 'none';
+      livekitParticipant.textContent = 'none';
+      livekitMicrophone.textContent = 'disabled';
+      livekitUserState.textContent = 'silent';
+      livekitAgentState.textContent = 'idle';
+      livekitLatency.textContent = 'none';
+      conversationIdInput.value = '';
+      saveSettings();
+      updateVoiceControlAvailability();
     }
 
     function handleVoiceEvent(event) {
@@ -915,6 +1042,17 @@
 
     function updateVoiceControlAvailability(isRecording = false) {
       const voiceModeActive = inputMode === 'voice';
+      if (voiceRuntime.value === 'livekit') {
+        const connected = !!liveKitController?.room;
+        startRecordingButton.disabled = true;
+        stopRecordingButton.disabled = true;
+        connectVoiceButton.disabled = !voiceModeActive || connected || !!liveKitController?.starting;
+        disconnectVoiceButton.disabled = !connected;
+        muteVoiceButton.disabled = !connected;
+        reconnectVoiceButton.disabled = !connected;
+        resetVoiceConversationButton.disabled = !voiceModeActive;
+        return;
+      }
       const connected = voiceSocket && voiceSocket.readyState === WebSocket.OPEN;
       startRecordingButton.disabled = !voiceModeActive || voiceBusy || !connected;
       stopRecordingButton.disabled = !voiceModeActive || !isRecording;
@@ -965,8 +1103,13 @@
         conversationId: conversationIdInput.value,
         metadata: metadataInput.value,
         inputMode,
+        voiceRuntime: voiceRuntime.value,
       }));
     }
+    window.addEventListener('beforeunload', () => {
+      if (voiceRuntime.value === 'livekit') liveKitController?.stop();
+      else disconnectVoice();
+    });
   </script>
 </body>
 </html>

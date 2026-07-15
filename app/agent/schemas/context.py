@@ -18,3 +18,8 @@ class AgentContext(TypedDict):
     required_reservation_fields: list[str]
     schedule_summary: str
     enabled_capabilities: list[str]
+    call_session_id: NotRequired[str]
+    channel: NotRequired[str]
+    language: NotRequired[str]
+    thread_id: NotRequired[str]
+    idempotency_key: NotRequired[str]
