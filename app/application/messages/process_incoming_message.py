@@ -38,6 +38,50 @@ class ConversationTenantMismatchError(Exception):
     pass
 
 
+def resolve_conversation(
+    repository: ConversationRepository,
+    *,
+    tenant_id: str,
+    channel: str,
+    conversation_id: str | None = None,
+    external_user_id: str | None = None,
+) -> Conversation:
+    if conversation_id:
+        conversation = repository.get_by_id(conversation_id)
+        if not conversation:
+            raise ConversationNotFoundError(f"Conversation not found: {conversation_id}")
+        if conversation.tenant_id != tenant_id:
+            raise ConversationTenantMismatchError(
+                f"Conversation {conversation_id} does not belong to tenant {tenant_id}"
+            )
+        conversation.updated_at = datetime.now()
+        return repository.update(conversation)
+
+    if external_user_id:
+        conversation = repository.get_active_by_participant(
+            tenant_id=tenant_id,
+            channel=channel,
+            external_user_id=external_user_id,
+        )
+        if conversation:
+            conversation.updated_at = datetime.now()
+            return repository.update(conversation)
+
+    now = datetime.now()
+    return repository.create(
+        Conversation(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            channel=channel,
+            external_user_id=external_user_id,
+            status=ConversationStatus.ACTIVE,
+            metadata=None,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+
 class ProcessIncomingMessage:
     """Stores an incoming message and runs the prototype LangGraph agent flow."""
 
@@ -122,7 +166,9 @@ class ProcessIncomingMessage:
             )
             component_timer = start_timer()
             run_kwargs = {
-                "context": self._build_agent_context(tenant_context, conversation.id),
+                "context": self._build_agent_context(
+                    tenant_context, conversation.id, metadata=request.metadata
+                ),
                 "tools": create_langchain_tools(agent_tools),
             }
             if text_callback is not None:
@@ -269,6 +315,8 @@ class ProcessIncomingMessage:
         self,
         tenant_context: TenantContext,
         conversation_id: str,
+        *,
+        metadata: dict | None = None,
     ) -> AgentContext:
         enabled_capabilities = [
             name
@@ -277,7 +325,7 @@ class ProcessIncomingMessage:
         ]
         tenant_now = datetime.now(ZoneInfo(tenant_context.timezone))
 
-        return {
+        context: AgentContext = {
             "tenant_id": tenant_context.tenant_id,
             "conversation_id": conversation_id,
             "agent_profile": tenant_context.agent.profile,
@@ -295,6 +343,11 @@ class ProcessIncomingMessage:
             "schedule_summary": self._build_schedule_summary(tenant_context),
             "enabled_capabilities": enabled_capabilities,
         }
+        metadata = metadata or {}
+        for key in ("call_session_id", "channel", "language", "thread_id", "idempotency_key"):
+            if metadata.get(key):
+                context[key] = metadata[key]
+        return context
 
     def _build_prompt_business_info(self, tenant_context: TenantContext) -> dict[str, str]:
         raw_info = tenant_context.business_info.model_dump(exclude_none=True)
@@ -383,38 +436,10 @@ class ProcessIncomingMessage:
         )
 
     def _get_or_create_conversation(self, request: CreateMessageRequest) -> Conversation:
-        if request.conversation_id:
-            conversation = self.conversation_repository.get_by_id(request.conversation_id)
-            if not conversation:
-                raise ConversationNotFoundError(f"Conversation not found: {request.conversation_id}")
-
-            if conversation.tenant_id != request.tenant_id:
-                raise ConversationTenantMismatchError(
-                    f"Conversation {request.conversation_id} does not belong to tenant {request.tenant_id}"
-                )
-
-            conversation.updated_at = datetime.now()
-            return self.conversation_repository.update(conversation)
-
-        if request.external_user_id:
-            conversation = self.conversation_repository.get_active_by_participant(
-                tenant_id=request.tenant_id,
-                channel=request.channel,
-                external_user_id=request.external_user_id,
-            )
-            if conversation:
-                conversation.updated_at = datetime.now()
-                return self.conversation_repository.update(conversation)
-
-        now = datetime.now()
-        conversation = Conversation(
-            id=str(uuid.uuid4()),
+        return resolve_conversation(
+            self.conversation_repository,
             tenant_id=request.tenant_id,
             channel=request.channel,
+            conversation_id=request.conversation_id,
             external_user_id=request.external_user_id,
-            status=ConversationStatus.ACTIVE,
-            metadata=None,
-            created_at=now,
-            updated_at=now,
         )
-        return self.conversation_repository.create(conversation)

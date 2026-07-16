@@ -141,7 +141,11 @@ class RedisCapabilityExecutor:
     def _new_client(self):
         from redis.asyncio import Redis
 
-        return Redis.from_url(self.settings.redis_url, decode_responses=True)
+        return Redis.from_url(
+            self.settings.redis_url,
+            decode_responses=True,
+            socket_timeout=None,
+        )
 
     def _failure(
         self,

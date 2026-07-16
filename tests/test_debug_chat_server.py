@@ -19,3 +19,24 @@ def test_voice_session_proxy_forwards_call_mode():
     handler._handle_voice_session()
 
     assert forwarded == [{"tenant_id": "tenant-1", "mode": "call"}]
+
+
+def test_livekit_session_proxy_forwards_only_server_safe_context():
+    handler = object.__new__(server.DebugChatHandler)
+    handler._read_json = lambda: {
+        "tenant_id": " tenant-1 ",
+        "conversation_id": "conversation-1",
+        "system_prompt": "ignored",
+    }
+    forwarded = []
+    handler._post_json = lambda url, payload: (201, forwarded.append((url, payload)) or {})
+    handler._send_json = lambda status, response: None
+
+    handler._handle_livekit_session()
+
+    assert forwarded == [
+        (
+            "http://127.0.0.1:8000/api/v1/voice/livekit/sessions",
+            {"tenant_id": "tenant-1", "conversation_id": "conversation-1"},
+        )
+    ]

@@ -78,7 +78,12 @@ class AgentRuntime:
         final_output: dict = {}
 
         modes = ["messages", "updates"] if text_callback else "updates"
-        for event in graph.stream(agent_input, context=context, stream_mode=modes):
+        config = (
+            {"configurable": {"thread_id": context["thread_id"]}}
+            if context.get("thread_id")
+            else None
+        )
+        for event in graph.stream(agent_input, config=config, context=context, stream_mode=modes):
             mode, data = event if text_callback else ("updates", event)
             if mode == "messages":
                 chunk, metadata = data

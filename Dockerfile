@@ -19,5 +19,11 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 USER appuser
-EXPOSE 8000 8001
+EXPOSE 8000 8001 8081
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+FROM runtime AS voice-agent
+RUN python -m app.voice_agent.server download-files
+CMD ["python", "-m", "app.voice_agent.server", "start"]
+
+FROM runtime AS api

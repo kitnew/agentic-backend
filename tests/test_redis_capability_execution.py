@@ -268,6 +268,12 @@ def test_redis_executor_normalizes_timeout_connection_and_serialization():
     assert bad_redis.published == []
 
 
+def test_redis_executor_does_not_cut_off_long_running_capabilities():
+    client = RedisCapabilityExecutor(settings=settings())._new_client()
+
+    assert client.connection_pool.connection_kwargs["socket_timeout"] is None
+
+
 def test_worker_success_is_stored_before_ack_and_attempt_is_deleted():
     config = settings()
     redis = WorkerRedis()

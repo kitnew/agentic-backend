@@ -39,6 +39,27 @@ x-application: &application
     VOICE_RESPONSE_STREAM_MAX_CHARS: ${VOICE_RESPONSE_STREAM_MAX_CHARS:-160}
     VOICE_RESPONSE_STREAM_FLUSH_TIMEOUT_SECONDS: ${VOICE_RESPONSE_STREAM_FLUSH_TIMEOUT_SECONDS:-0.4}
     VOICE_RESPONSE_STREAM_MAX_AUDIO_QUEUE_BYTES: ${VOICE_RESPONSE_STREAM_MAX_AUDIO_QUEUE_BYTES:-524288}
+    VOICE_LIVEKIT_ENABLED: ${VOICE_LIVEKIT_ENABLED:-true}
+    LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+    LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+    LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:-ws://livekit:7880}
+    LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+    LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-hospitality-voice}
+    LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS: ${LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS:-120}
+    VOICE_LIVEKIT_MIN_SPEECH_DURATION_SECONDS: ${VOICE_LIVEKIT_MIN_SPEECH_DURATION_SECONDS:-0.10}
+    VOICE_LIVEKIT_MIN_SILENCE_DURATION_SECONDS: ${VOICE_LIVEKIT_MIN_SILENCE_DURATION_SECONDS:-0.55}
+    VOICE_LIVEKIT_PREFIX_PADDING_SECONDS: ${VOICE_LIVEKIT_PREFIX_PADDING_SECONDS:-0.50}
+    VOICE_LIVEKIT_VAD_ACTIVATION_THRESHOLD: ${VOICE_LIVEKIT_VAD_ACTIVATION_THRESHOLD:-0.50}
+    VOICE_LIVEKIT_MIN_ENDPOINTING_DELAY_SECONDS: ${VOICE_LIVEKIT_MIN_ENDPOINTING_DELAY_SECONDS:-0.70}
+    VOICE_LIVEKIT_MAX_ENDPOINTING_DELAY_SECONDS: ${VOICE_LIVEKIT_MAX_ENDPOINTING_DELAY_SECONDS:-2.50}
+    VOICE_LIVEKIT_STT_VAD_SILENCE_THRESHOLD_SECONDS: ${VOICE_LIVEKIT_STT_VAD_SILENCE_THRESHOLD_SECONDS:-1.50}
+    VOICE_LIVEKIT_STT_VAD_THRESHOLD: ${VOICE_LIVEKIT_STT_VAD_THRESHOLD:-0.40}
+    VOICE_LIVEKIT_STT_MIN_SPEECH_DURATION_MS: ${VOICE_LIVEKIT_STT_MIN_SPEECH_DURATION_MS:-100}
+    VOICE_LIVEKIT_STT_MIN_SILENCE_DURATION_MS: ${VOICE_LIVEKIT_STT_MIN_SILENCE_DURATION_MS:-100}
+    VOICE_LIVEKIT_MIN_INTERRUPTION_DURATION_SECONDS: ${VOICE_LIVEKIT_MIN_INTERRUPTION_DURATION_SECONDS:-0.20}
+    VOICE_LIVEKIT_MIN_INTERRUPTION_WORDS: ${VOICE_LIVEKIT_MIN_INTERRUPTION_WORDS:-1}
+    VOICE_LIVEKIT_FALSE_INTERRUPTION_TIMEOUT_SECONDS: ${VOICE_LIVEKIT_FALSE_INTERRUPTION_TIMEOUT_SECONDS:-1.0}
+    VOICE_LIVEKIT_RESUME_FALSE_INTERRUPTION: ${VOICE_LIVEKIT_RESUME_FALSE_INTERRUPTION:-false}
   depends_on:
     redis:
       condition: service_healthy
@@ -84,6 +105,52 @@ services:
       - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
       - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
     stop_grace_period: 2m
+
+  voice-agent:
+    <<: *application
+    build:
+      context: .
+      target: voice-agent
+    image: agentic-voice-agent:local
+    command: ["python", "-m", "app.voice_agent.server", "start"]
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
+      - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    stop_grace_period: 2m
+
+  livekit:
+    image: livekit/livekit-server:v1.13.3
+    command: ["--config", "/etc/livekit.yaml"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 7880"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
 
   redis:
     image: redis:8.8.0-alpine

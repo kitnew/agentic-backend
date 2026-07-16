@@ -33,6 +33,17 @@ class DebugChatHandler(BaseHTTPRequestHandler):
             self._send_file(ROOT / "voice-protocol.js", "text/javascript; charset=utf-8")
             return
 
+        if self.path == "/livekit-controller.js":
+            self._send_file(ROOT / "livekit-controller.js", "text/javascript; charset=utf-8")
+            return
+
+        if self.path == "/vendor/livekit-client.umd.js":
+            self._send_file(
+                ROOT / "node_modules/livekit-client/dist/livekit-client.umd.js",
+                "text/javascript; charset=utf-8",
+            )
+            return
+
         if self.path == "/config":
             self._send_json(
                 200,
@@ -50,7 +61,11 @@ class DebugChatHandler(BaseHTTPRequestHandler):
             self._send_headers(200, "text/html; charset=utf-8", (ROOT / "index.html").stat().st_size)
             return
 
-        if self.path == "/voice-protocol.js":
+        if self.path in ("/voice-protocol.js", "/livekit-controller.js"):
+            self._send_headers(200, "text/javascript; charset=utf-8", 0)
+            return
+
+        if self.path == "/vendor/livekit-client.umd.js":
             self._send_headers(200, "text/javascript; charset=utf-8", 0)
             return
 
@@ -75,6 +90,10 @@ class DebugChatHandler(BaseHTTPRequestHandler):
             self._handle_voice_session()
             return
 
+        if parsed_path.path == "/debug/livekit-session":
+            self._handle_livekit_session()
+            return
+
         self._send_json(404, {"error": "Not found"})
 
     def _handle_voice_session(self) -> None:
@@ -94,6 +113,29 @@ class DebugChatHandler(BaseHTTPRequestHandler):
                 payload["conversation_id"] = conversation_id
             status, response = self._post_json(
                 f"{DEFAULT_BACKEND_URL.rstrip('/')}/api/v1/voice/sessions", payload
+            )
+            self._send_json(status, response)
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+        except HTTPError as exc:
+            self._send_json(exc.code, self._decode_response(exc.read()))
+        except URLError as exc:
+            self._send_json(502, {"error": f"Backend request failed: {exc.reason}"})
+
+    def _handle_livekit_session(self) -> None:
+        try:
+            body = self._read_json()
+            tenant_id = body.get("tenant_id")
+            conversation_id = body.get("conversation_id")
+            if not isinstance(tenant_id, str) or not tenant_id.strip():
+                raise ValueError("tenant_id must be a non-empty string")
+            if conversation_id is not None and not isinstance(conversation_id, str):
+                raise ValueError("conversation_id must be a string")
+            payload = {"tenant_id": tenant_id.strip()}
+            if conversation_id:
+                payload["conversation_id"] = conversation_id
+            status, response = self._post_json(
+                f"{DEFAULT_BACKEND_URL.rstrip('/')}/api/v1/voice/livekit/sessions", payload
             )
             self._send_json(status, response)
         except ValueError as exc:
