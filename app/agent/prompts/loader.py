@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from app.agent.schemas.context import AgentContext
@@ -23,30 +24,53 @@ class PromptLoader:
 
     def build_system_prompt(self, context: AgentContext) -> str:
         prompt_parts = [
-            self.load_system_prompt(),
-            self.load_profile_prompt(context.get("agent_profile")),
-            self._build_temporal_context(context),
-            self._build_agent_style_rules(context),
-            self._build_tenant_instructions(context),
-            self._build_business_info(context),
-            self._build_reservation_policy(context),
-            self._build_required_reservation_fields(context),
-            self._build_schedule_summary(context),
-            self._build_enabled_capabilities(context),
+            self._section("global_system_instructions", self.load_system_prompt()),
+            self._section(
+                "profile_instructions",
+                self.load_profile_prompt(context.get("agent_profile")),
+            ),
+            self._section("tenant_instructions", self._build_tenant_instructions(context)),
+            self._section("tenant_identity", self._dump(context.get("tenant_identity"))),
+            self._section("tenant_business_context", self._build_business_context(context)),
+            self._section("tenant_knowledge_base", context.get("knowledge_base", "")),
+            self._section(
+                "tenant_supplementary_guidance",
+                "\n\n".join(context.get("supplementary_guidance") or []),
+            ),
         ]
 
         return "\n\n".join(part for part in prompt_parts if part)
 
+    def _section(self, name: str, content: str) -> str:
+        if not content:
+            return ""
+        return f"<{name}>\n{content}\n</{name}>"
+
+    def _build_business_context(self, context: AgentContext) -> str:
+        parts = [
+            self._build_temporal_context(context),
+            self._build_conversation_scope(context),
+            self._build_business_info(context),
+            self._build_reservation_policy(context),
+            self._build_required_reservation_fields(context),
+            self._build_schedule_summary(context),
+            self._build_supported_operations(context),
+        ]
+        return "\n\n".join(part for part in parts if part)
+
     def _build_temporal_context(self, context: AgentContext) -> str:
         return (
-            "Current tenant time:\n"
-            f"now: {context['now']}\n"
-            f"datetime: {context['datetime']}\n"
+            "Current local tenant date and time for this turn:\n"
+            f"current local datetime: {context.get('current_local_datetime', context['datetime'])}\n"
+            f"current local date: {context.get('current_local_date', context['date'])}\n"
+            f"current local time: {context.get('current_local_time', context['time'])}\n"
             f"locale: {context['locale']}\n"
-            f"date: {context['date']}\n"
-            f"time: {context['time']}\n"
-            f"timezone: {context['timezone']}"
+            f"tenant timezone: {context['timezone']}"
         )
+
+    def _build_conversation_scope(self, context: AgentContext) -> str:
+        scope = context.get("conversation_scope")
+        return f"Conversation scope:\n{scope}" if scope else ""
 
     def _build_agent_style_rules(self, context: AgentContext) -> str:
         style_rules = context.get("agent_style_rules") or []
@@ -55,18 +79,17 @@ class PromptLoader:
         return "Agent style rules:\n" + "\n".join(f"- {rule}" for rule in style_rules)
 
     def _build_tenant_instructions(self, context: AgentContext) -> str:
-        tenant_instructions = context.get("tenant_instructions")
-        if not tenant_instructions:
-            return ""
-        return f"Tenant instructions:\n{tenant_instructions}"
+        parts = [
+            self._build_agent_style_rules(context),
+            context.get("tenant_instructions", ""),
+        ]
+        return "\n\n".join(part for part in parts if part)
 
     def _build_business_info(self, context: AgentContext) -> str:
         business_info = context.get("business_info") or {}
         if not business_info:
             return ""
-        return "Business information:\n" + "\n".join(
-            f"{key}: {value}" for key, value in business_info.items()
-        )
+        return "Business information:\n" + self._dump(business_info)
 
     def _build_reservation_policy(self, context: AgentContext) -> str:
         reservation_policy = context.get("reservation_policy")
@@ -88,13 +111,14 @@ class PromptLoader:
             return ""
         return f"Reservation schedule:\n{schedule_summary}"
 
-    def _build_enabled_capabilities(self, context: AgentContext) -> str:
-        enabled_capabilities = context.get("enabled_capabilities") or []
-        if not enabled_capabilities:
+    def _build_supported_operations(self, context: AgentContext) -> str:
+        operations = context.get("supported_operations")
+        return f"Supported operations:\n{operations}" if operations else ""
+
+    def _dump(self, value) -> str:
+        if not value:
             return ""
-        return "Enabled capabilities:\n" + "\n".join(
-            f"- {name}" for name in enabled_capabilities
-        )
+        return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True)
 
     def _read_prompt(self, path: Path) -> str:
         with path.open("r", encoding="utf-8") as prompt_file:

@@ -1,9 +1,12 @@
+schema_version: 2
 tenant_id: demo_restaurant
 name: Demo Restaurant
 business_type: restaurant
 
 default_language: sk
 locale: sk-SK
+supported_locales:
+  - sk-SK
 timezone: Europe/Bratislava
 
 agent:
@@ -94,6 +97,16 @@ reservation:
       sunday:
         open: false
         intervals: []
+
+features:
+  factual_qa: true
+  room_recommendation: false
+  availability_check: false
+  reservation_create: true
+  reservation_modify: false
+  reservation_cancel: false
+  reservation_lookup: false
+  human_transfer: false
 
 voice:
   enabled: true

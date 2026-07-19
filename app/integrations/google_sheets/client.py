@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from app.integrations.google_sheets.schemas import (
     GoogleSheetsAppendRowRequest,
     GoogleSheetsAppendRowResult,
+    GoogleSheetsReadRequest,
+    GoogleSheetsReadResult,
 )
 
 
@@ -14,7 +16,8 @@ load_dotenv(APP_DIR / ".env")
 
 
 class GoogleSheetsClient:
-    scopes = ("https://www.googleapis.com/auth/spreadsheets",)
+    read_scopes = ("https://www.googleapis.com/auth/spreadsheets.readonly",)
+    write_scopes = ("https://www.googleapis.com/auth/spreadsheets",)
 
     def __init__(self, service_account_file: str | None = None):
         configured_file = (
@@ -25,7 +28,7 @@ class GoogleSheetsClient:
         self.service_account_file = self._resolve_service_account_file(configured_file)
 
     def append_row(self, request: GoogleSheetsAppendRowRequest) -> GoogleSheetsAppendRowResult:
-        service = self._build_service()
+        service = self._build_service(self.write_scopes)
         response = (
             service.spreadsheets()
             .values()
@@ -47,7 +50,23 @@ class GoogleSheetsClient:
             updated_rows=updates.get("updatedRows"),
         )
 
-    def _build_service(self):
+    def read_values(self, request: GoogleSheetsReadRequest) -> GoogleSheetsReadResult:
+        service = self._build_service(self.read_scopes)
+        response = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=request.spreadsheet_id,
+                range=f"{request.sheet_name}!{request.table_range}",
+                majorDimension="ROWS",
+                valueRenderOption="UNFORMATTED_VALUE",
+                dateTimeRenderOption="SERIAL_NUMBER",
+            )
+            .execute()
+        )
+        return GoogleSheetsReadResult(values=response.get("values", []))
+
+    def _build_service(self, scopes):
         if not self.service_account_file:
             raise RuntimeError(
                 "Google Sheets credentials are not configured. Set GOOGLE_SERVICE_ACCOUNT_FILE "
@@ -65,7 +84,7 @@ class GoogleSheetsClient:
 
         credentials = service_account.Credentials.from_service_account_file(
             self.service_account_file,
-            scopes=self.scopes,
+            scopes=scopes,
         )
         return build("sheets", "v4", credentials=credentials)
 

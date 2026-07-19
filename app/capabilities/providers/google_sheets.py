@@ -1,9 +1,32 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
+from typing import Any
 
-from app.capabilities.schemas import CapabilityRequest, CapabilityResult, CapabilityStatus
+from pydantic import ValidationError
+
+from app.capabilities.schemas import (
+    CapabilityRequest,
+    CapabilityResult,
+    CapabilityStatus,
+    RoomAvailabilityRequest,
+    RoomAvailabilityResult,
+    RoomAvailabilityStatus,
+)
 from app.integrations.google_sheets.client import GoogleSheetsClient
-from app.integrations.google_sheets.schemas import GoogleSheetsAppendRowRequest
-from app.tenants.schemas import TenantContext
+from app.integrations.google_sheets.schemas import (
+    GoogleSheetsAppendRowRequest,
+    GoogleSheetsReadRequest,
+)
+from app.tenants.schemas import (
+    TenantAvailabilityConfig,
+    TenantContext,
+    spreadsheet_column_index,
+    spreadsheet_column_span,
+)
+from app.tenants.policies import stay_nights
+
+
+class GoogleSheetsSourceDataError(Exception):
+    pass
 
 
 class GoogleSheetsReservationProvider:
@@ -13,6 +36,183 @@ class GoogleSheetsReservationProvider:
         self.client = client or GoogleSheetsClient()
 
     def execute(
+        self,
+        tenant_context: TenantContext,
+        capability_request: CapabilityRequest,
+    ) -> CapabilityResult:
+        if capability_request.name == "reservation.check_availability":
+            return self._check_availability(tenant_context, capability_request)
+        return self._create_reservation_request(tenant_context, capability_request)
+
+    def _check_availability(
+        self,
+        tenant_context: TenantContext,
+        capability_request: CapabilityRequest,
+    ) -> CapabilityResult:
+        try:
+            request = RoomAvailabilityRequest.model_validate(
+                {
+                    field: capability_request.input.get(field)
+                    for field in ("check_in", "check_out", "room_type", "room_count")
+                }
+            )
+        except ValidationError:
+            return self._availability_failure(
+                capability_request.name,
+                "Invalid availability request.",
+            )
+
+        config = tenant_context.availability_config
+        if not config or request.room_type not in config.room_type_columns:
+            return self._availability_failure(
+                capability_request.name,
+                "Unsupported room type for tenant availability.",
+            )
+
+        try:
+            table = self.client.read_values(
+                GoogleSheetsReadRequest(
+                    spreadsheet_id=config.spreadsheet_id,
+                    sheet_name=config.sheet_name,
+                    table_range=config.table_range,
+                )
+            ).values
+            result = self._calculate_availability(table, config, request)
+        except GoogleSheetsSourceDataError as exc:
+            return self._availability_failure(capability_request.name, str(exc))
+        except Exception as exc:
+            return self._availability_failure(
+                capability_request.name,
+                f"Availability source read failed ({exc.__class__.__name__}).",
+            )
+
+        messages = {
+            RoomAvailabilityStatus.AVAILABLE: (
+                "Podľa aktuálnych údajov je požadovaný počet izieb voľný. "
+                "Izby tým nie sú rezervované ani blokované."
+            ),
+            RoomAvailabilityStatus.UNAVAILABLE: (
+                "Požadovaný počet izieb nie je voľný počas celého termínu."
+            ),
+            RoomAvailabilityStatus.DATA_NOT_COVERED: (
+                "Dostupnosť pre tento termín sa momentálne nedá spoľahlivo overiť. "
+                "Kontaktujte prosím recepciu."
+            ),
+        }
+        return CapabilityResult(
+            name=capability_request.name,
+            status=CapabilityStatus.SUCCESS,
+            provider=self.provider_name,
+            user_message=messages[result.status],
+            output=result.model_dump(mode="json"),
+        )
+
+    def _calculate_availability(
+        self,
+        table: list[list[Any]],
+        config: TenantAvailabilityConfig,
+        request: RoomAvailabilityRequest,
+    ) -> RoomAvailabilityResult:
+        table_start, table_end = spreadsheet_column_span(config.table_range)
+        expected_width = table_end - table_start + 1
+        date_index = spreadsheet_column_index(config.date_column) - table_start
+        room_start, room_end = spreadsheet_column_span(
+            config.room_type_columns[request.room_type]
+        )
+        room_indexes = set(range(room_start - table_start, room_end - table_start + 1))
+        data_rows = table[config.data_start_row - 1 :]
+        last_active = next(
+            (
+                index
+                for index in range(len(data_rows) - 1, -1, -1)
+                if any(not self._is_blank(value) for value in data_rows[index])
+            ),
+            -1,
+        )
+
+        free_rooms_by_date: dict[date, set[int]] = {}
+        for offset, raw_row in enumerate(data_rows[: last_active + 1]):
+            row_number = config.data_start_row + offset
+            row = [*raw_row, *([""] * max(0, expected_width - len(raw_row)))]
+            if self._is_blank(row[date_index]):
+                raise GoogleSheetsSourceDataError(
+                    f"Missing date in active availability row {row_number}."
+                )
+            row_date = self._parse_date(row[date_index], config.date_formats, row_number)
+            if row_date in free_rooms_by_date:
+                raise GoogleSheetsSourceDataError(
+                    f"Duplicate availability date: {row_date.isoformat()}."
+                )
+            free_rooms_by_date[row_date] = {
+                index for index in room_indexes if self._is_blank(row[index])
+            }
+
+        nights = stay_nights(request.check_in, request.check_out)
+        if any(night not in free_rooms_by_date for night in nights):
+            return RoomAvailabilityResult(
+                status=RoomAvailabilityStatus.DATA_NOT_COVERED,
+                room_type=request.room_type,
+                check_in=request.check_in,
+                check_out=request.check_out,
+                requested_rooms=request.room_count,
+                available_rooms=None,
+            )
+
+        continuously_free = set(room_indexes)
+        for night in nights:
+            continuously_free &= free_rooms_by_date[night]
+        available_rooms = len(continuously_free)
+        return RoomAvailabilityResult(
+            status=(
+                RoomAvailabilityStatus.AVAILABLE
+                if available_rooms >= request.room_count
+                else RoomAvailabilityStatus.UNAVAILABLE
+            ),
+            room_type=request.room_type,
+            check_in=request.check_in,
+            check_out=request.check_out,
+            requested_rooms=request.room_count,
+            available_rooms=available_rooms,
+        )
+
+    def _parse_date(self, value: Any, formats: list[str], row_number: int) -> date:
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            numeric_value = float(value)
+            if numeric_value.is_integer():
+                try:
+                    return date(1899, 12, 30) + timedelta(days=int(numeric_value))
+                except OverflowError:
+                    pass
+        if isinstance(value, str):
+            for date_format in formats:
+                try:
+                    return datetime.strptime(value.strip(), date_format).date()
+                except ValueError:
+                    continue
+        raise GoogleSheetsSourceDataError(
+            f"Malformed date in availability row {row_number}."
+        )
+
+    def _is_blank(self, value: Any) -> bool:
+        return value is None or (isinstance(value, str) and not value.strip())
+
+    def _availability_failure(self, name: str, error: str) -> CapabilityResult:
+        return CapabilityResult(
+            name=name,
+            status=CapabilityStatus.FAILED,
+            provider=self.provider_name,
+            user_message=(
+                "Dostupnosť sa momentálne nepodarilo overiť. "
+                "Kontaktujte prosím recepciu."
+            ),
+            error=error,
+        )
+
+    def _create_reservation_request(
         self,
         tenant_context: TenantContext,
         capability_request: CapabilityRequest,

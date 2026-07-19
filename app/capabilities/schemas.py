@@ -1,7 +1,8 @@
+from datetime import date
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class CapabilityStatus(str, Enum):
@@ -15,6 +16,43 @@ class CapabilityExecutionStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     PENDING = "pending"
+
+
+class RoomAvailabilityStatus(str, Enum):
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+    DATA_NOT_COVERED = "data_not_covered"
+
+
+class RoomAvailabilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_in: date
+    check_out: date
+    room_type: str
+    room_count: int = Field(gt=0, strict=True)
+
+    @field_validator("room_type")
+    @classmethod
+    def validate_room_type(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("room_type must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def validate_stay(self):
+        if self.check_out <= self.check_in:
+            raise ValueError("check_out must be later than check_in")
+        return self
+
+
+class RoomAvailabilityResult(BaseModel):
+    status: RoomAvailabilityStatus
+    room_type: str
+    check_in: date
+    check_out: date
+    requested_rooms: int
+    available_rooms: int | None
 
 
 class CapabilityRequest(BaseModel):

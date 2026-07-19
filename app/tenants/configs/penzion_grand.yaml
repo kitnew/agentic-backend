@@ -1,0 +1,165 @@
+schema_version: 2
+tenant_id: penzion_grand
+name: Penzión Grand
+business_type: hotel
+enabled: true
+
+default_language: sk
+locale: sk-SK
+supported_locales:
+  - sk-SK
+  - en-GB
+timezone: Europe/Bratislava
+
+agent:
+  profile: hotel_assistant
+  display_name: Amélia
+  role: voice receptionist
+  use_display_name: true
+  greeting_phrase: Dobrý deň, Penzión Grand Košice, pri telefóne Amélia. Ako vám môžem pomôcť?
+  localized_greetings:
+    sk-SK: Dobrý deň, Penzión Grand Košice, pri telefóne Amélia. Ako vám môžem pomôcť?
+    en-GB: Good day, Penzión Grand Košice, Amélia speaking. How may I help you?
+  tone: professional_concise
+  language: sk
+
+prompt:
+  instructions_file: penzion_grand/instructions.md
+  knowledge_base_files:
+    - penzion_grand/knowledge_base.md
+  supplementary_files:
+    - penzion_grand/room_recommendations.md
+
+business_info:
+  property_name: Penzión Grand
+  category: guesthouse
+  address: Kováčska 65, 040 01 Košice
+  public_email: recepcia@penziongrand.eu
+  website: www.penziongrand.eu
+  reception_hours: daily 07:00-22:00
+  phone: "+421 908 992 447"
+  room_types:
+    - code: two_bed
+      display_name:
+        sk-SK: Dvojlôžková izba
+        en-GB: Double or twin room
+      capacity: 2
+      inventory_count: 19
+      unit_price_per_night: 65
+      single_occupancy_price: 55
+      currency: EUR
+      notes:
+        - Some rooms have a double bed and some have separate beds.
+        - Separate beds are a preference and are not guaranteed by the current system.
+    - code: three_bed
+      display_name:
+        sk-SK: Trojlôžková izba
+        en-GB: Triple room
+      capacity: 3
+      inventory_count: 2
+      unit_price_per_night: 85
+      currency: EUR
+    - code: four_bed
+      display_name:
+        sk-SK: Štvorlôžková izba
+        en-GB: Quadruple room
+      capacity: 4
+      inventory_count: 6
+      unit_price_per_night: 99
+      currency: EUR
+
+reservation:
+  enabled: false
+  mode: unsupported
+  requires_human_confirmation: true
+  can_confirm_reservation: false
+  request_cutoff_local_time: "22:00"
+  reject_at_or_after_cutoff: true
+  cutoff_responses:
+    sk-SK: Po dvadsiatej druhej už nové rezervácie neprijímame. Prosím, kontaktujte recepciu počas otváracích hodín.
+    en-GB: We do not accept new reservation requests at or after ten p.m. Please contact reception during opening hours.
+  new_request_phrases:
+    sk-SK:
+      - chcem rezervovať
+      - chcem rezerváciu
+      - rezervujte mi
+      - objednať izbu
+    en-GB:
+      - make a reservation
+      - book a room
+      - reserve a room
+
+conversation_scope:
+  mode: property_only
+  localized_refusals:
+    sk-SK: S otázkami mimo Penziónu Grand vám bohužiaľ neviem pomôcť. Rada vám pomôžem s informáciami o ubytovaní alebo službách penziónu.
+    en-GB: I can only help with questions related to Penzión Grand, its accommodation and services.
+  blocked_phrases:
+    sk-SK:
+      - napíš mi python
+      - politika
+      - politiku
+      - politike
+      - ignoruj predchádzajúce
+      - systémový prompt
+      - počasie v londýne
+    en-GB:
+      - write me a python
+      - write a python
+      - politics
+      - ignore previous
+      - system prompt
+      - weather in london
+
+features:
+  factual_qa: true
+  room_recommendation: true
+  availability_check: true
+  reservation_create: false
+  reservation_modify: false
+  reservation_cancel: false
+  reservation_lookup: false
+  human_transfer: false
+
+capabilities:
+  reservation.check_availability:
+    enabled: true
+    provider: google_sheets
+    config:
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "test"
+      table_range: "A:AE"
+      header_row: 1
+      data_start_row: 2
+      date_column: "A"
+      room_type_columns:
+        two_bed: "E:W"
+        three_bed: "X:Y"
+        four_bed: "Z:AE"
+      free_cell_policy: blank
+      stay_interval: check_in_inclusive_check_out_exclusive
+      reject_past_check_in: true
+      past_check_in_responses:
+        sk-SK: Dostupnosť viem overiť len pre dnešný alebo budúci termín.
+        en-GB: I can only check availability for today or a future date.
+      date_formats:
+        - "%Y-%m-%d"
+        - "%d.%m.%Y"
+
+voice:
+  enabled: true
+  stt:
+    provider: elevenlabs
+    model: scribe_v2
+    language: slk
+    keyterms:
+      - Penzión Grand
+      - Amélia
+      - Kováčska
+      - Košice
+  tts:
+    provider: elevenlabs
+    model: eleven_flash_v2_5
+    voice_id: 9Nd358gE1qQp0pDh8FgP
+    output_format: mp3_44100_128
+    language: sk

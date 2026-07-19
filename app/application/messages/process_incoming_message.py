@@ -1,8 +1,7 @@
 import uuid
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, message_to_dict
 
 from app.agent.runtime import AgentRuntime
 from app.agent.schemas.context import AgentContext
@@ -27,6 +26,14 @@ from app.infrastructure.repositories.message_repository import MessageRepository
 from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.schemas.messages import CreateMessageRequest, MessageResponse, ProcessMessageResponse
 from app.tenants.loader import TenantConfigLoader
+from app.tenants.policies import (
+    Clock,
+    localized_phrase_match,
+    localized_response,
+    reservation_cutoff_reached,
+    tenant_local_datetime,
+    utc_now,
+)
 from app.tenants.schemas import TenantContext
 
 
@@ -94,6 +101,7 @@ class ProcessIncomingMessage:
         tool_call_repository: ToolCallRepository,
         conversation_repository: ConversationRepository,
         capability_executor: CapabilityExecutor | None = None,
+        clock: Clock = utc_now,
     ):
         self.message_repository = message_repository
         self.agent_runtime = agent_runtime
@@ -102,12 +110,14 @@ class ProcessIncomingMessage:
         self.tool_call_repository = tool_call_repository
         self.conversation_repository = conversation_repository
         self.capability_executor = capability_executor
+        self.clock = clock
 
     def execute(self, request: CreateMessageRequest, *, text_callback=None) -> ProcessMessageResponse:
         total_timer = start_timer()
         pipeline_timings = new_timing_trace()
         component_timer = start_timer()
         tenant_context = self.tenant_config_loader.load(request.tenant_id)
+        tenant_now = tenant_local_datetime(tenant_context, self.clock)
         record_component_timing(pipeline_timings, "tenant_config_load", component_timer)
         component_timer = start_timer()
         conversation = self._get_or_create_conversation(request)
@@ -153,30 +163,48 @@ class ProcessIncomingMessage:
                 message_text=user_message.content,
                 chat_history=chat_history,
             )
-            capability_executor = BackendCapabilityExecutor(
-                tenant_context=tenant_context,
-                message=user_message,
-                capability_router=self.capability_router,
-                tool_call_repository=self.tool_call_repository,
-                capability_executor=self.capability_executor,
-            )
-            agent_tools = create_agent_tools(
-                capability_executor=capability_executor,
-                raw_message=user_message.content,
-            )
             component_timer = start_timer()
-            run_kwargs = {
-                "context": self._build_agent_context(
-                    tenant_context, conversation.id, metadata=request.metadata
-                ),
-                "tools": create_langchain_tools(agent_tools),
-            }
-            if text_callback is not None:
-                run_kwargs["text_callback"] = text_callback
-            agent_output = self.agent_runtime.run(
-                agent_input,
-                **run_kwargs,
+            context = self._build_agent_context(
+                tenant_context,
+                conversation.id,
+                metadata=request.metadata,
+                local_now=tenant_now,
             )
+            fixed_response = self._policy_response(
+                tenant_context,
+                user_message.content,
+                request.metadata,
+                tenant_now,
+            )
+            if fixed_response:
+                agent_tools = []
+                if text_callback is not None:
+                    text_callback(fixed_response)
+                agent_output = {
+                    "response_text": fixed_response,
+                    "response": message_to_dict(AIMessage(content=fixed_response)),
+                    "agent_trace": {"policy_response": True, "context": context},
+                }
+            else:
+                capability_executor = BackendCapabilityExecutor(
+                    tenant_context=tenant_context,
+                    message=user_message,
+                    capability_router=self.capability_router,
+                    tool_call_repository=self.tool_call_repository,
+                    capability_executor=self.capability_executor,
+                )
+                agent_tools = create_agent_tools(
+                    capability_executor=capability_executor,
+                    raw_message=user_message.content,
+                    tenant_context=tenant_context,
+                )
+                run_kwargs = {
+                    "context": context,
+                    "tools": create_langchain_tools(agent_tools),
+                }
+                if text_callback is not None:
+                    run_kwargs["text_callback"] = text_callback
+                agent_output = self.agent_runtime.run(agent_input, **run_kwargs)
             record_component_timing(pipeline_timings, "agent_runtime", component_timer)
             component_timer = start_timer()
             capability_executions = self._collect_capability_executions(agent_tools)
@@ -317,13 +345,9 @@ class ProcessIncomingMessage:
         conversation_id: str,
         *,
         metadata: dict | None = None,
+        local_now: datetime | None = None,
     ) -> AgentContext:
-        enabled_capabilities = [
-            name
-            for name, capability in tenant_context.capabilities.items()
-            if capability.enabled
-        ]
-        tenant_now = datetime.now(ZoneInfo(tenant_context.timezone))
+        tenant_now = local_now or tenant_local_datetime(tenant_context, self.clock)
 
         context: AgentContext = {
             "tenant_id": tenant_context.tenant_id,
@@ -331,17 +355,41 @@ class ProcessIncomingMessage:
             "agent_profile": tenant_context.agent.profile,
             "now": tenant_now.isoformat(),
             "datetime": tenant_now.isoformat(),
+            "current_local_datetime": tenant_now.isoformat(),
+            "current_local_date": tenant_now.date().isoformat(),
+            "current_local_time": tenant_now.time().isoformat(timespec="seconds"),
             "locale": tenant_context.locale or tenant_context.default_language,
             "date": tenant_now.date().isoformat(),
             "time": tenant_now.time().isoformat(timespec="seconds"),
             "timezone": tenant_context.timezone,
             "agent_style_rules": tenant_context.agent.style_rules,
-            "tenant_instructions": tenant_context.prompt.tenant_instructions,
+            "tenant_instructions": "\n\n".join(
+                part
+                for part in (
+                    tenant_context.prompt.tenant_instructions,
+                    tenant_context.prompt.instructions,
+                )
+                if part
+            ),
+            "tenant_identity": {
+                "tenant_id": tenant_context.tenant_id,
+                "display_name": tenant_context.name,
+                "business_type": tenant_context.business_type,
+                "assistant_name": tenant_context.agent.display_name,
+                "assistant_role": tenant_context.agent.role,
+                "default_locale": tenant_context.default_locale,
+                "supported_locales": tenant_context.supported_locales,
+                "default_greeting": tenant_context.agent.greeting_phrase,
+                "localized_greetings": tenant_context.agent.localized_greetings,
+            },
             "business_info": self._build_prompt_business_info(tenant_context),
             "reservation_policy": self._build_reservation_policy(tenant_context),
             "required_reservation_fields": self._build_required_reservation_fields(tenant_context),
             "schedule_summary": self._build_schedule_summary(tenant_context),
-            "enabled_capabilities": enabled_capabilities,
+            "supported_operations": self._build_supported_operations(tenant_context),
+            "conversation_scope": self._build_conversation_scope(tenant_context),
+            "knowledge_base": tenant_context.prompt.knowledge_base,
+            "supplementary_guidance": tenant_context.prompt.supplementary_guidance,
         }
         metadata = metadata or {}
         for key in ("call_session_id", "channel", "language", "thread_id", "idempotency_key"):
@@ -349,21 +397,96 @@ class ProcessIncomingMessage:
                 context[key] = metadata[key]
         return context
 
-    def _build_prompt_business_info(self, tenant_context: TenantContext) -> dict[str, str]:
-        raw_info = tenant_context.business_info.model_dump(exclude_none=True)
-        return {key: str(value) for key, value in raw_info.items()}
+    def _policy_response(
+        self,
+        tenant_context: TenantContext,
+        message: str,
+        metadata: dict | None,
+        local_now: datetime,
+    ) -> str | None:
+        preferred_locale = (metadata or {}).get("language")
+        scope = tenant_context.conversation_scope
+        if scope.mode == "property_only":
+            locale = localized_phrase_match(
+                message,
+                scope.blocked_phrases,
+                preferred_locale,
+            )
+            if locale:
+                return localized_response(
+                    scope.localized_refusals,
+                    locale,
+                    tenant_context.default_locale,
+                )
+
+        reservation = tenant_context.reservation
+        if reservation_cutoff_reached(tenant_context, local_now):
+            locale = localized_phrase_match(
+                message,
+                reservation.new_request_phrases,
+                preferred_locale,
+            )
+            if locale:
+                return localized_response(
+                    reservation.cutoff_responses,
+                    locale,
+                    tenant_context.default_locale,
+                )
+        return None
+
+    def _build_conversation_scope(self, tenant_context: TenantContext) -> str:
+        scope = tenant_context.conversation_scope
+        if scope.mode != "property_only":
+            return ""
+        refusals = "\n".join(
+            f"- {locale}: {response}"
+            for locale, response in scope.localized_refusals.items()
+        )
+        return (
+            f"Only answer questions related to {tenant_context.name}, its accommodation, "
+            "services, relevant nearby places covered by the knowledge base, and current "
+            "guest or property emergencies. Refuse unrelated requests without answering them.\n"
+            f"Use the matching fixed refusal:\n{refusals}"
+        )
+
+    def _build_prompt_business_info(self, tenant_context: TenantContext) -> dict:
+        return tenant_context.business_info.model_dump(mode="json", exclude_none=True)
+
+    def _build_supported_operations(self, tenant_context: TenantContext) -> str:
+        labels = {
+            "factual_qa": "Factual property questions",
+            "room_recommendation": "Room recommendations",
+            "availability_check": "Room availability checks",
+            "reservation_create": "New reservation submission",
+            "reservation_modify": "Reservation modification",
+            "reservation_cancel": "Reservation cancellation",
+            "reservation_lookup": "Reservation lookup",
+            "human_transfer": "Human call transfer",
+        }
+        return "\n".join(
+            f"- {labels[name]}: {'supported' if enabled else 'not supported'}"
+            for name, enabled in tenant_context.features.model_dump().items()
+        )
 
     def _build_reservation_policy(self, tenant_context: TenantContext) -> str:
         reservation = tenant_context.reservation
         policy_parts = [
-            f"enabled: {reservation.enabled}",
-            f"mode: {reservation.mode}",
-            f"requires_human_confirmation: {reservation.requires_human_confirmation}",
-            f"can_confirm_reservation: {reservation.can_confirm_reservation}",
+            "New reservation submission is currently supported."
+            if reservation.enabled
+            else "New reservation submission is currently not supported."
         ]
-        if reservation.mode == "request_only" or not reservation.can_confirm_reservation:
+        if reservation.request_cutoff_local_time:
+            cutoff = reservation.request_cutoff_local_time.isoformat(timespec="minutes")
             policy_parts.append(
-                "Describe reservations as submitted requests waiting for staff confirmation. "
+                f"Do not accept or submit a new reservation request at or after {cutoff} "
+                "in the tenant's local timezone. Availability and factual questions remain allowed."
+            )
+        if reservation.enabled and (
+            reservation.mode == "request_only" or not reservation.can_confirm_reservation
+        ):
+            policy_parts.append(
+                "Reservation handling is request-only. Describe reservations as submitted "
+                "requests waiting for staff confirmation. "
                 "Do not describe them as confirmed reservations."
             )
         return "\n".join(policy_parts)

@@ -87,7 +87,7 @@ class InProcessCapabilityExecutor:
     ) -> CapabilityExecutionResult:
         status = (
             CapabilityExecutionStatus.SUCCESS
-            if legacy_result.status == CapabilityStatus.SUCCESS
+            if legacy_result.status in {CapabilityStatus.SUCCESS, CapabilityStatus.SKIPPED}
             else CapabilityExecutionStatus.FAILED
         )
         return CapabilityExecutionResult(

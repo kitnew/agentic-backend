@@ -46,8 +46,7 @@ def agent_context():
             "address": "Demo ulica 12, Bratislava",
         },
         "reservation_policy": (
-            "mode: request_only\n"
-            "can_confirm_reservation: False\n"
+            "Reservation handling is request-only.\n"
             "Describe reservations as submitted requests waiting for staff confirmation."
         ),
         "required_reservation_fields": [
@@ -55,7 +54,7 @@ def agent_context():
             "phone: phone number",
         ],
         "schedule_summary": "monday: 10:00-21:00\nsunday: closed",
-        "enabled_capabilities": ["reservation.create_request"],
+        "supported_operations": "- New reservation submission: supported",
     }
 
 
@@ -68,9 +67,11 @@ def test_agent_modules_export_node_and_tool_classes():
     assert [node.__name__ for node in CONDITIONAL_NODE_CLASSES] == ["ShouldContinueNode"]
     assert [tool.__name__ for tool in TOOL_CLASSES] == [
         "CreateReservationTool",
+        "CheckRoomAvailabilityTool",
     ]
     assert [tool.name for tool in create_langchain_tools()] == [
         "create_reservation",
+        "check_room_availability",
     ]
 
 
@@ -143,8 +144,9 @@ def test_prompt_loader_includes_profile_and_tenant_time():
     assert "Europe/Bratislava" in prompt
     assert "2026-06-12" in prompt
     assert "opening_hours_text" in prompt
-    assert "request_only" in prompt
+    assert "request-only" in prompt
     assert "submitted requests waiting for staff confirmation" in prompt
-    assert "reservation.create_request" in prompt
+    assert "New reservation submission: supported" in prompt
+    assert "reservation.create_request" not in prompt
     assert "spreadsheet_id" not in prompt
     assert "sheet_name" not in prompt

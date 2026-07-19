@@ -57,6 +57,17 @@ class UnknownRouter:
         )
 
 
+class ValidationRouter:
+    def execute(self, tenant_context, capability_request):
+        return CapabilityResult(
+            name=capability_request.name,
+            status=CapabilityStatus.SKIPPED,
+            provider="validation",
+            user_message="Choose a future date.",
+            error="past_check_in_not_allowed",
+        )
+
+
 def tenant(tenant_id: str) -> TenantContext:
     return TenantContext.model_validate(
         {
@@ -115,6 +126,20 @@ def test_in_process_capability_executor_unknown_capability_returns_failed_result
     assert result.status == CapabilityExecutionStatus.FAILED
     assert result.error_code == "failed"
     assert result.error_message == "unknown capability"
+
+
+def test_domain_validation_is_terminal_and_keeps_legacy_skipped_status():
+    executor = InProcessCapabilityExecutor(
+        tenant_config_loader=FakeTenantLoader({"tenant-1": tenant("tenant-1")}),
+        capability_router=ValidationRouter(),
+    )
+
+    result = asyncio.run(executor.execute(command("command-validation")))
+
+    assert result.status == CapabilityExecutionStatus.SUCCESS
+    assert result.metadata["legacy_status"] == "skipped"
+    assert result.metadata["provider"] == "validation"
+    assert result.error_message == "past_check_in_not_allowed"
 
 
 def test_in_process_capability_executor_normalizes_handler_exception():

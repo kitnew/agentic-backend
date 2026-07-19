@@ -26,6 +26,7 @@ x-application: &application
     AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
     ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
     ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+    GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google-service-account
     VOICE_STT_MODE: ${VOICE_STT_MODE:-streaming}
     ELEVENLABS_REALTIME_STT_MODEL: ${ELEVENLABS_REALTIME_STT_MODEL:-scribe_v2_realtime}
     VOICE_STT_CONNECT_TIMEOUT_SECONDS: ${VOICE_STT_CONNECT_TIMEOUT_SECONDS:-10}
@@ -101,6 +102,8 @@ services:
   capability-worker:
     <<: *application
     command: ["python", "-m", "app.workers.capability_worker"]
+    secrets:
+      - google-service-account
     volumes:
       - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
       - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
@@ -183,3 +186,7 @@ volumes:
   redis-data:
   postgres-data:
   voice-audio-data:
+
+secrets:
+  google-service-account:
+    file: ${GOOGLE_SERVICE_ACCOUNT_FILE:?set GOOGLE_SERVICE_ACCOUNT_FILE in app/.env}

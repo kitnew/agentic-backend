@@ -15,6 +15,7 @@ class CreateReservationArgs(BaseModel):
 
 class CreateReservationTool(BaseAgentTool):
     name = "create_reservation"
+    capability_name = "reservation.create_request"
     description = (
         "Submit a reservation request for staff confirmation. "
         "Use only after the required reservation fields are known."
