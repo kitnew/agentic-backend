@@ -208,6 +208,12 @@ class VoiceMessageService:
                 ),
                 "warnings": warnings,
                 "timings": finished_timings,
+                "turn_kind": (
+                    "tool_call" if message_response.requested_capabilities else "direct_response"
+                ),
+                "tool_execution_ms": sum(
+                    tool.latency_ms or 0 for tool in message_response.tool_calls
+                ) if message_response.tool_calls else None,
             },
         )
 

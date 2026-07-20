@@ -107,3 +107,19 @@ test('ignores late user interim after final until speech resumes', async () => {
   assert.deepEqual(transcripts.map(item => item.text), ['Ahoj', 'Nová veta']);
   await controller.stop();
 });
+
+test('sends typed overrides without leaking them between calls', async () => {
+  const bodies = [];
+  const controller = new LiveKitController({
+    sdk,
+    fetchFn: async (_url, options) => { bodies.push(JSON.parse(options.body)); return response(); },
+  });
+  await controller.start({
+    tenantId: 'demo_restaurant',
+    turnOverrides: { endpointing: { min_delay_ms: 200 } },
+  });
+  await controller.stop();
+  await controller.start({ tenantId: 'demo_restaurant' });
+  assert.equal(bodies[0].turn_overrides.endpointing.min_delay_ms, 200);
+  assert.equal(bodies[1].turn_overrides, undefined);
+});

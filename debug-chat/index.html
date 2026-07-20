@@ -210,6 +210,10 @@
       color: var(--muted);
     }
     #livekitLog { max-height: 180px; border-radius: 6px; }
+    .turn-tuning { display: grid; gap: 10px; padding: 10px 0; }
+    .turn-tuning fieldset { border: 1px solid var(--border); border-radius: 6px; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+    .turn-tuning legend { font-size: 12px; font-weight: 600; }
+    .turn-tuning input[type="number"] { width: 100%; }
     @media (max-width: 900px) {
       main { grid-template-columns: 1fr; height: auto; }
       section { min-height: 420px; }
@@ -295,6 +299,42 @@
           <span>Agent: <b id="livekitAgentState">idle</b></span>
           <span>Latency: <b id="livekitLatency">none</b></span>
         </div>
+        <details>
+          <summary>Turn tuning (applies to the next call)</summary>
+          <div class="turn-tuning">
+            <div class="voice-controls">
+              <button id="recommendedTurnDefaults" type="button">Use recommended defaults</button>
+              <button id="resetTurnChanges" class="secondary" type="button">Reset changes</button>
+            </div>
+            <fieldset><legend>Speech detection</legend>
+              <label title="Lower reacts to quieter speech but increases false starts.">Activation threshold<input data-turn="vad.activation_threshold" type="number" min="0.01" max="1" step="0.01" value="0.5"></label>
+              <label title="Shorter accepts brief sounds; longer rejects them.">Minimum speech (ms)<input data-turn="vad.min_speech_ms" type="number" min="50" max="2000" step="10" value="100"></label>
+              <label title="Shorter responds faster but can cut natural pauses.">Silence to stop speech (ms)<input data-turn="vad.min_silence_ms" type="number" min="50" max="3000" step="10" value="550"></label>
+              <label title="Audio retained before detected speech to avoid clipped initials.">Prefix padding (ms)<input data-turn="vad.prefix_padding_ms" type="number" min="0" max="2000" step="10" value="500"></label>
+            </fieldset>
+            <fieldset><legend>Turn completion</legend>
+              <label title="Minimum wait after speech before replying.">Minimum endpointing delay (ms)<input data-turn="endpointing.min_delay_ms" type="number" min="100" max="5000" step="50" value="700"></label>
+              <label title="Maximum wait after speech before forcing the turn complete.">Maximum endpointing delay (ms)<input data-turn="endpointing.max_delay_ms" type="number" min="100" max="10000" step="50" value="2500"></label>
+            </fieldset>
+            <fieldset><legend>Interruptions</legend>
+              <label title="Allow caller speech to stop assistant playback.">Enabled<input data-turn="interruption.enabled" type="checkbox" checked></label>
+              <label title="Speech duration required before barge-in.">Minimum duration (ms)<input data-turn="interruption.min_duration_ms" type="number" min="0" max="3000" step="10" value="200"></label>
+              <label title="Transcript words required before barge-in.">Minimum words<input data-turn="interruption.min_words" type="number" min="0" max="20" step="1" value="1"></label>
+              <label title="Wait before treating an interruption as false.">False interruption timeout (ms)<input data-turn="interruption.false_interruption_timeout_ms" type="number" min="100" max="10000" step="50" value="1000"></label>
+              <label title="Resume playback when an interruption was false.">Resume after false interruption<input data-turn="interruption.resume_after_false_interruption" type="checkbox"></label>
+            </fieldset>
+            <fieldset><legend>STT segmentation</legend>
+              <label title="Enable ElevenLabs Scribe realtime server VAD.">Enabled<input data-turn="stt_segmentation.enabled" type="checkbox" checked></label>
+              <label title="Provider silence duration before final transcript.">Silence duration (ms)<input data-turn="stt_segmentation.silence_ms" type="number" min="100" max="5000" step="50" value="400"></label>
+              <label title="Provider speech probability threshold; must be at most 1.">Provider VAD threshold<input data-turn="stt_segmentation.threshold" type="number" min="0.01" max="1" step="0.01" value="0.4"></label>
+              <label title="Minimum provider speech segment.">Minimum speech (ms)<input data-turn="stt_segmentation.min_speech_ms" type="number" min="0" max="5000" step="10" value="100"></label>
+              <label title="Minimum provider silence segment.">Minimum silence (ms)<input data-turn="stt_segmentation.min_silence_ms" type="number" min="0" max="5000" step="10" value="100"></label>
+            </fieldset>
+            <div id="turnValidation" class="voice-error"></div>
+          </div>
+          <div class="status">Active-call resolved configuration</div>
+          <pre id="resolvedTurnConfig">No active call.</pre>
+        </details>
         <div class="voice-results">
           <label>Interim transcript
             <textarea id="livekitInterim" readonly placeholder="No interim transcript yet."></textarea>
@@ -368,6 +408,14 @@
     const livekitUserState = document.querySelector('#livekitUserState');
     const livekitAgentState = document.querySelector('#livekitAgentState');
     const livekitLatency = document.querySelector('#livekitLatency');
+    const turnInputs = [...document.querySelectorAll('[data-turn]')];
+    const recommendedTurnValues = Object.fromEntries(turnInputs.map(input => [input.dataset.turn, input.type === 'checkbox' ? input.checked : Number(input.value)]));
+    const resolvedTurnConfig = document.querySelector('#resolvedTurnConfig');
+    const turnValidation = document.querySelector('#turnValidation');
+    let turnTuningDirty = false;
+    turnInputs.forEach(input => input.addEventListener('input', () => { turnTuningDirty = true; turnValidation.textContent = ''; }));
+    document.querySelector('#recommendedTurnDefaults').onclick = () => { setTurnValues(recommendedTurnValues); turnTuningDirty = true; };
+    document.querySelector('#resetTurnChanges').onclick = () => { setTurnValues(recommendedTurnValues); turnTuningDirty = false; turnValidation.textContent = ''; };
     const livekitInterim = document.querySelector('#livekitInterim');
     const livekitAudio = document.querySelector('#livekitAudio');
     const livekitLog = document.querySelector('#livekitLog');
@@ -793,6 +841,7 @@
           livekitRoom.textContent = session.room_name;
           conversationIdInput.value = session.conversation_id;
           apiResponse.textContent = JSON.stringify(session, null, 2);
+          resolvedTurnConfig.textContent = JSON.stringify(session.turn_config || {}, null, 2);
           saveSettings();
         },
         onState: state => {
@@ -822,8 +871,21 @@
           livekitLog.textContent = JSON.stringify(livekitEvents.slice(-100), null, 2);
           livekitLog.scrollTop = livekitLog.scrollHeight;
           if (event.event === 'interruption_detected') voiceWarnings.textContent = 'Interruption detected';
-          const latency = Object.entries(event).filter(([key]) => key.endsWith('_ms'));
-          if (latency.length) livekitLatency.textContent = latency.map(([key, value]) => `${key}: ${value}`).join(', ');
+          if (event.type === 'voice_latency_trace') {
+            const metrics = event.durations_ms || {};
+            const labels = [
+              ['stt_finalization_delay_ms', 'STT finalization'],
+              ['turn_commit_delay_ms', 'Turn commit'],
+              ['preemptive_generation_head_start_ms', 'Preemptive head start'],
+              ['llm_ttft_ms', 'LLM TTFT'],
+              ['tts_ttfb_ms', 'TTS TTFB'],
+              ['server_first_audio_latency_ms', 'Server first audio'],
+              ['perceived_latency_ms', 'Browser first playout'],
+            ];
+            livekitLatency.textContent = labels.map(([key, label]) =>
+              `${label}: ${key in metrics ? `${metrics[key]} ms` : 'unavailable'}`
+            ).join(', ');
+          }
           if (event.event === 'turn_completed' && voiceAssistantResponse.value) {
             appendMessage('assistant', 'LiveKit assistant', voiceAssistantResponse.value);
           }
@@ -835,6 +897,7 @@
       await liveKitController.start({
         tenantId: tenantIdInput.value.trim(),
         conversationId: conversationIdInput.value.trim(),
+        turnOverrides: turnTuningDirty ? readTurnOverrides() : undefined,
       });
       updateVoiceControlAvailability();
     }
@@ -851,6 +914,28 @@
       conversationIdInput.value = '';
       saveSettings();
       updateVoiceControlAvailability();
+    }
+
+    function setTurnValues(values) {
+      for (const input of turnInputs) {
+        const value = values[input.dataset.turn];
+        if (input.type === 'checkbox') input.checked = Boolean(value);
+        else input.value = value;
+      }
+    }
+
+    function readTurnOverrides() {
+      const result = {};
+      for (const input of turnInputs) {
+        const [group, field] = input.dataset.turn.split('.');
+        result[group] ||= {};
+        result[group][field] = input.type === 'checkbox' ? input.checked : Number(input.value);
+      }
+      if (result.endpointing.min_delay_ms > result.endpointing.max_delay_ms) {
+        turnValidation.textContent = 'Minimum endpointing delay cannot exceed maximum delay.';
+        throw new Error(turnValidation.textContent);
+      }
+      return result;
     }
 
     function handleVoiceEvent(event) {

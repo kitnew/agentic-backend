@@ -13,7 +13,6 @@ __pycache__
 .coverage*
 htmlcov
 tests
-test_langgraph
 debug-chat
 *.db
 *.sqlite*

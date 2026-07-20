@@ -150,7 +150,7 @@ voice:
   enabled: true
   stt:
     provider: elevenlabs
-    model: scribe_v2
+    model: scribe_v2_realtime
     language: slk
     keyterms:
       - Penzión Grand

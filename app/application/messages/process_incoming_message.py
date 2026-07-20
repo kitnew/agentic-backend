@@ -90,7 +90,7 @@ def resolve_conversation(
 
 
 class ProcessIncomingMessage:
-    """Stores an incoming message and runs the prototype LangGraph agent flow."""
+    """Stores an incoming message and runs the shared provider tool loop."""
 
     def __init__(
         self,
@@ -111,6 +111,24 @@ class ProcessIncomingMessage:
         self.conversation_repository = conversation_repository
         self.capability_executor = capability_executor
         self.clock = clock
+
+    @classmethod
+    def build_agent_context_snapshot(
+        cls,
+        tenant_context: TenantContext,
+        conversation_id: str,
+        *,
+        metadata: dict | None = None,
+        clock: Clock = utc_now,
+    ) -> AgentContext:
+        builder = cls.__new__(cls)
+        builder.clock = clock
+        return builder._build_agent_context(
+            tenant_context,
+            conversation_id,
+            metadata=metadata,
+            local_now=tenant_local_datetime(tenant_context, clock),
+        )
 
     def execute(self, request: CreateMessageRequest, *, text_callback=None) -> ProcessMessageResponse:
         total_timer = start_timer()

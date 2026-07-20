@@ -112,7 +112,7 @@ The backend:
 5. Synthesizes the agent text response with the configured TTS provider.
 6. Stores generated audio locally under `VOICE_AUDIO_STORAGE_DIR` and returns an `audio_url`.
 
-There is still one canonical agent/message path; voice does not duplicate LangGraph or capability execution logic.
+The LiveKit voice worker uses the native LiveKit LLM/tool loop; business side effects still route through Backend Core capabilities.
 
 ### ElevenLabs Configuration
 

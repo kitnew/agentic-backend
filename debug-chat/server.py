@@ -127,6 +127,7 @@ class DebugChatHandler(BaseHTTPRequestHandler):
             body = self._read_json()
             tenant_id = body.get("tenant_id")
             conversation_id = body.get("conversation_id")
+            turn_overrides = body.get("turn_overrides")
             if not isinstance(tenant_id, str) or not tenant_id.strip():
                 raise ValueError("tenant_id must be a non-empty string")
             if conversation_id is not None and not isinstance(conversation_id, str):
@@ -134,6 +135,8 @@ class DebugChatHandler(BaseHTTPRequestHandler):
             payload = {"tenant_id": tenant_id.strip()}
             if conversation_id:
                 payload["conversation_id"] = conversation_id
+            if turn_overrides:
+                payload["turn_overrides"] = turn_overrides
             status, response = self._post_json(
                 f"{DEFAULT_BACKEND_URL.rstrip('/')}/api/v1/voice/livekit/sessions", payload
             )

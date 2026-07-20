@@ -20,7 +20,7 @@
       this.acceptUserInterim = true;
     }
 
-    async start({ tenantId, conversationId }) {
+    async start({ tenantId, conversationId, turnOverrides }) {
       if (this.starting || this.stopping || this.room) return false;
       this.starting = true;
       this.acceptUserInterim = true;
@@ -29,7 +29,11 @@
         const response = await this.fetchFn('/debug/livekit-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(compact({ tenant_id: tenantId, conversation_id: conversationId })),
+          body: JSON.stringify(compact({
+            tenant_id: tenantId,
+            conversation_id: conversationId,
+            turn_overrides: turnOverrides,
+          })),
         });
         const session = await response.json();
         if (!response.ok) throw new Error(readError(session, `Session HTTP ${response.status}`));
@@ -110,7 +114,9 @@
         if (topic !== 'voice.telemetry') return;
         try {
           const event = JSON.parse(new TextDecoder().decode(payload));
-          if (event.event === 'user_speech_started') this.acceptUserInterim = true;
+          if (event.event === 'user_speech_started' || event.event === 'speech_started') {
+            this.acceptUserInterim = true;
+          }
           this.onTelemetry(event);
         } catch (error) {
           this.onError(new Error(`Invalid telemetry: ${error.message}`));

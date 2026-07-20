@@ -235,7 +235,8 @@ __marimo__/
 
 # Agents
 AGENTS.md
-test_langgraph/
 
 #Legacy
 legacy/
+*.bak
+tenant_raw_info/

@@ -34,6 +34,7 @@ def configure(monkeypatch):
     monkeypatch.setenv("LIVEKIT_API_SECRET", API_SECRET)
     monkeypatch.setenv("LIVEKIT_PUBLIC_URL", "ws://localhost:7880")
     monkeypatch.setenv("LIVEKIT_AGENT_NAME", "hospitality-voice")
+    monkeypatch.setenv("VOICE_TURN_DEBUG_OVERRIDES_ENABLED", "false")
 
 
 def test_livekit_settings_are_optional_until_feature_is_used(monkeypatch):
@@ -86,13 +87,20 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
     dispatch = claims.room_config.agents[0]
     metadata = json.loads(dispatch.metadata)
     assert dispatch.agent_name == "hospitality-voice"
-    assert metadata == {
+    assert {key: metadata[key] for key in (
+        "tenant_id", "call_session_id", "conversation_id", "channel", "language"
+    )} == {
         "tenant_id": "demo_restaurant",
         "call_session_id": response.call_session_id,
         "conversation_id": response.conversation_id,
         "channel": "voice",
         "language": "sk",
     }
+    assert metadata["turn_config"]["endpointing"]["min_delay_ms"] == 700
+    assert response.turn_config.stt_segmentation.threshold == 0.4
+    assert metadata["instructions"]
+    assert metadata["enabled_capabilities"] == ["reservation.create_request"]
+    assert "backend_token" not in metadata
     raw_claims = jwt.decode(response.participant_token, options={"verify_signature": False})
     assert 115 <= raw_claims["exp"] - int(time.time()) <= 120
     serialized = response.model_dump_json()
@@ -122,3 +130,18 @@ def test_livekit_session_accepts_only_same_tenant_conversation(monkeypatch, db):
             TenantConfigLoader(),
         )
     assert error.value.status_code == 404
+
+
+def test_turn_overrides_are_gated_and_resolved(monkeypatch, db):
+    configure(monkeypatch)
+    request = CreateLiveKitSessionRequest(
+        tenant_id="demo_restaurant",
+        turn_overrides={"endpointing": {"min_delay_ms": 250}},
+    )
+    with pytest.raises(HTTPException) as disabled:
+        create_livekit_session(request, db, TenantConfigLoader())
+    assert disabled.value.status_code == 403
+
+    monkeypatch.setenv("VOICE_TURN_DEBUG_OVERRIDES_ENABLED", "true")
+    response = create_livekit_session(request, db, TenantConfigLoader())
+    assert response.turn_config.endpointing.min_delay_ms == 250

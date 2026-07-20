@@ -40,7 +40,8 @@ class VoiceSessionTokenCodec:
         try:
             payload_part, signature_part = token.split(".")
             expected = hmac.digest(self._secret, payload_part.encode(), "sha256")
-            if not hmac.compare_digest(expected, _unb64(signature_part)):
+            signature = _unb64(signature_part)
+            if _b64(signature) != signature_part or not hmac.compare_digest(expected, signature):
                 raise InvalidVoiceSessionToken("invalid token signature")
             payload: dict[str, Any] = json.loads(_unb64(payload_part))
             claims = VoiceSessionClaims(**payload)

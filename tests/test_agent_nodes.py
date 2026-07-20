@@ -1,6 +1,5 @@
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.agent.nodes import CONDITIONAL_NODE_CLASSES, NODE_CLASSES
 from app.agent.prompts.loader import PromptLoader
 from app.agent.runtime import AgentRuntime
 from app.agent.tools import TOOL_CLASSES, create_langchain_tools
@@ -58,13 +57,7 @@ def agent_context():
     }
 
 
-def test_agent_modules_export_node_and_tool_classes():
-    assert [node.__name__ for node in NODE_CLASSES] == [
-        "LlmAgentNode",
-        "ToolExecutionNode",
-        "FinalizeNode",
-    ]
-    assert [node.__name__ for node in CONDITIONAL_NODE_CLASSES] == ["ShouldContinueNode"]
+def test_agent_tools_remain_available_to_manual_runtime():
     assert [tool.__name__ for tool in TOOL_CLASSES] == [
         "CreateReservationTool",
         "CheckRoomAvailabilityTool",
@@ -93,13 +86,10 @@ def test_runtime_runs_direct_agent_path_with_agent_input_and_output():
         "previous",
         "hello",
     ]
-    assert [list(event.keys())[0] for event in result["agent_trace"]["events"]] == [
-        "agent",
-        "finalize",
-    ]
+    assert [list(event.keys())[0] for event in result["agent_trace"]["events"]] == ["llm"]
 
 
-def test_runtime_runs_tool_path_inside_langgraph():
+def test_runtime_runs_direct_provider_tool_loop():
     runtime = AgentRuntime(
         FakeLlm(
             [
@@ -129,10 +119,9 @@ def test_runtime_runs_tool_path_inside_langgraph():
 
     assert result["response_text"] == "Business info loaded"
     assert [list(event.keys())[0] for event in result["agent_trace"]["events"]] == [
-        "agent",
+        "llm",
         "tool",
-        "agent",
-        "finalize",
+        "llm",
     ]
 
 

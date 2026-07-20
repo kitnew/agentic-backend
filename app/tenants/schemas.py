@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.voice.latency import VoiceTurnConfig
+
 
 class TenantModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -284,6 +286,7 @@ class TenantVoiceConfig(TenantModel):
     stt: TenantVoiceSTTConfig = Field(default_factory=TenantVoiceSTTConfig)
     tts: TenantVoiceTTSConfig = Field(default_factory=TenantVoiceTTSConfig)
     fallback: TenantVoiceFallbackConfig = Field(default_factory=TenantVoiceFallbackConfig)
+    turn: VoiceTurnConfig = Field(default_factory=VoiceTurnConfig)
 
 
 class TenantContext(TenantModel):

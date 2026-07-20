@@ -1,34 +1,37 @@
-from types import SimpleNamespace
+from langchain_core.messages import AIMessageChunk
 
 from app.agent.runtime.runtime import AgentRuntime
 
 
-class Graph:
-    def __init__(self):
-        self.config = None
+class StreamingLlm:
+    def bind_tools(self, _tools):
+        return self
 
-    def stream(self, *_args, **kwargs):
-        self.config = kwargs["config"]
-        assert kwargs["stream_mode"] == ["messages", "updates"]
-        yield "messages", (
-            SimpleNamespace(content="Ahoj ", tool_calls=[], tool_call_chunks=[]),
-            {"langgraph_node": "agent"},
-        )
-        yield "messages", (
-            SimpleNamespace(content="", tool_calls=[{"name": "tool"}], tool_call_chunks=[]),
-            {"langgraph_node": "agent"},
-        )
-        yield "updates", {"finalize": {"response_text": "Ahoj svet"}}
+    def stream(self, _messages):
+        yield AIMessageChunk(content="Ahoj ")
+        yield AIMessageChunk(content="svet")
 
 
-def test_agent_runtime_forwards_only_agent_text_and_keeps_final_output():
+def test_agent_runtime_forwards_native_provider_chunks_and_keeps_final_output():
     deltas = []
-    graph = Graph()
-    output = AgentRuntime(None, graph=graph).run(
+    output = AgentRuntime(StreamingLlm()).run(
         {"message_text": "hi", "chat_history": []},
-        context={"thread_id": "conversation-1"},
+        context={
+            "tenant_id": "tenant",
+            "agent_profile": "restaurant_assistant",
+            "datetime": "2026-01-01T12:00:00+00:00",
+            "date": "2026-01-01",
+            "time": "12:00:00",
+            "locale": "en",
+            "timezone": "UTC",
+            "agent_style_rules": [],
+            "tenant_instructions": "",
+            "business_info": {},
+            "reservation_policy": "",
+            "required_reservation_fields": [],
+            "schedule_summary": "",
+        },
         text_callback=deltas.append,
     )
-    assert deltas == ["Ahoj "]
+    assert deltas == ["Ahoj ", "svet"]
     assert output["response_text"] == "Ahoj svet"
-    assert graph.config == {"configurable": {"thread_id": "conversation-1"}}
