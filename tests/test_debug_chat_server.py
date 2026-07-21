@@ -64,8 +64,9 @@ def test_livekit_session_proxy_forwards_typed_turn_debug_fields():
 def test_debug_page_uses_grouped_millisecond_controls_without_raw_json():
     page = (Path(__file__).parents[1] / "debug-chat" / "index.html").read_text()
     assert all(group in page for group in (
-        "Speech detection", "Turn completion", "Interruptions", "STT segmentation"
+        "Speech detection", "Turn completion", "Interruptions", "STT segmentation",
+        "Preemptive LLM generation",
     ))
-    assert page.count("data-turn=") == 16
+    assert page.count("data-turn=") == 17
     assert "Advanced overrides (JSON)" not in page
     assert "Use recommended defaults" in page and "Reset changes" in page

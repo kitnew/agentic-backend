@@ -121,7 +121,10 @@ def build_session(settings, metadata, vad) -> AgentSession:
                 ),
                 "resume_false_interruption": turn.interruption.resume_after_false_interruption,
             },
-            "preemptive_generation": {"enabled": False, "preemptive_tts": False},
+            "preemptive_generation": {
+                "enabled": turn.preemptive_generation.enabled,
+                "preemptive_tts": False,
+            },
         },
     )
 
@@ -134,18 +137,105 @@ def build_chat_context(metadata) -> llm.ChatContext:
 
 
 @dataclass
+class TurnCommitState:
+    speech_id: str
+    turn_id: str | None = None
+    committed: asyncio.Event = field(default_factory=asyncio.Event)
+    cancelled: asyncio.Event = field(default_factory=asyncio.Event)
+
+    def commit(self, turn_id: str) -> None:
+        if not self.cancelled.is_set():
+            self.turn_id = turn_id
+            self.committed.set()
+
+    def cancel(self) -> None:
+        if not self.committed.is_set():
+            self.cancelled.set()
+
+    async def wait_until_committed_or_cancelled(self) -> bool:
+        committed = asyncio.create_task(self.committed.wait())
+        cancelled = asyncio.create_task(self.cancelled.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {committed, cancelled}, return_when=asyncio.FIRST_COMPLETED
+            )
+            return committed in done and self.committed.is_set()
+        finally:
+            for task in (committed, cancelled):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(committed, cancelled, return_exceptions=True)
+
+
+@dataclass
 class VoiceTurnState:
     current_turn_id: str | None = None
     user_persistence: dict[str, asyncio.Task] = field(default_factory=dict)
+    turns_by_speech: dict[str, TurnCommitState] = field(default_factory=dict)
+    pending_speech_id: str | None = None
+    closed: bool = False
+
+    def register_speech(self, speech_handle) -> None:
+        if self.pending_speech_id:
+            self.turns_by_speech[self.pending_speech_id].cancel()
+        turn = TurnCommitState(speech_id=speech_handle.id)
+        self.turns_by_speech[speech_handle.id] = turn
+        self.pending_speech_id = speech_handle.id
+        speech_handle.add_done_callback(
+            lambda handle: self.cancel_speech(handle.id) if handle.interrupted else None
+        )
+
+    def commit_turn(self, turn_id: str) -> TurnCommitState | None:
+        if self.closed or self.pending_speech_id is None:
+            return None
+        turn = self.turns_by_speech[self.pending_speech_id]
+        turn.commit(turn_id)
+        self.current_turn_id = turn_id
+        return turn
+
+    def cancel_speech(self, speech_id: str) -> None:
+        if turn := self.turns_by_speech.get(speech_id):
+            turn.cancel()
+
+    def close(self) -> None:
+        self.closed = True
+        for turn in self.turns_by_speech.values():
+            turn.cancel()
 
 
 def build_function_tools(metadata, backend: BackendCoreClient, state: VoiceTurnState, telemetry):
     async def execute(context: RunContext, capability: str, arguments: dict):
-        turn_id = state.current_turn_id
-        if turn_id is None:
-            return {"status": "failed", "error": "voice turn is not initialized"}
+        turn = state.turns_by_speech.get(context.speech_handle.id)
+        waited_for_commit = bool(turn and not turn.committed.is_set()) or bool(
+            getattr(telemetry, "preemptive_generation_used", False)
+        )
+        if waited_for_commit:
+            telemetry.emit(
+                "tool_waiting_for_commit",
+                tool_call_id=context.function_call.call_id,
+                capability=capability,
+            )
+        if turn is None or not await turn.wait_until_committed_or_cancelled():
+            telemetry.emit(
+                "tool_cancelled_before_commit",
+                tool_call_id=context.function_call.call_id,
+                capability=capability,
+            )
+            raise asyncio.CancelledError
+        turn_id = turn.turn_id
+        if turn_id is None or state.closed or context.speech_handle.interrupted:
+            raise asyncio.CancelledError
+        telemetry.mark_preemptive_reused(tool_waited=waited_for_commit)
+        if waited_for_commit:
+            telemetry.emit(
+                "tool_released_after_commit",
+                tool_call_id=context.function_call.call_id,
+                capability=capability,
+            )
         if task := state.user_persistence.get(turn_id):
             await task
+        if state.closed or context.speech_handle.interrupted:
+            raise asyncio.CancelledError
         telemetry.set_turn_kind("tool_call")
         telemetry.emit("tool_call_started", tool_call_id=context.function_call.call_id, capability=capability)
         try:
@@ -209,12 +299,14 @@ class HospitalityAgent(Agent):
         self.state = state
 
     async def on_user_turn_completed(self, _turn_ctx, new_message) -> None:
-        self.accept_user_message(new_message)
+        self.telemetry.mark_turn_committed()
 
     def accept_user_message(self, new_message) -> None:
         if new_message.id in self.state.user_persistence:
             return
-        self.state.current_turn_id = new_message.id
+        if self.state.commit_turn(new_message.id) is None:
+            logger.error("Cannot persist voice turn without a LiveKit speech handle")
+            return
         self.telemetry.begin_turn(new_message.id, str(uuid4()))
         task = asyncio.create_task(
             self.backend.persist_message(
@@ -228,23 +320,25 @@ class HospitalityAgent(Agent):
         task.add_done_callback(_log_persistence_failure)
 
     async def llm_node(self, chat_ctx, tools, model_settings):
-        for item in reversed(chat_ctx.items):
-            if getattr(item, "role", None) == "user":
-                self.accept_user_message(item)
-                break
-        self.telemetry.emit("llm_request_started")
-        stream = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
-        if inspect.isawaitable(stream):
-            stream = await stream
-        first = True
-        async for chunk in stream:
-            if first:
-                first = False
-                self.telemetry.emit("llm_first_chunk")
-            yield chunk
-        self.telemetry.emit("llm_completed")
+        attempt = self.telemetry.mark_llm_started()
+        try:
+            stream = Agent.default.llm_node(self, chat_ctx, tools, model_settings)
+            if inspect.isawaitable(stream):
+                stream = await stream
+            first = True
+            async for chunk in stream:
+                if first:
+                    first = False
+                    self.telemetry.mark_llm_first_chunk(attempt)
+                yield chunk
+            self.telemetry.emit("llm_completed")
+        except asyncio.CancelledError:
+            self.telemetry.mark_preemptive_cancelled(attempt)
+            raise
 
     async def tts_node(self, text, model_settings):
+        self.telemetry.mark_preemptive_reused()
+        self.telemetry.emit("tts_started")
         self.telemetry.emit("tts_request_started")
         stream = Agent.default.tts_node(self, text, model_settings)
         if inspect.isawaitable(stream):

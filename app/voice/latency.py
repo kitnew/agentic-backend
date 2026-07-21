@@ -82,11 +82,18 @@ class SttSegmentationConfig(_VoiceConfigModel):
     )
 
 
+class PreemptiveGenerationConfig(_VoiceConfigModel):
+    enabled: bool = False
+
+
 class VoiceTurnConfig(_VoiceConfigModel):
     vad: VadConfig = Field(default_factory=VadConfig)
     endpointing: EndpointingConfig = Field(default_factory=EndpointingConfig)
     interruption: InterruptionConfig = Field(default_factory=InterruptionConfig)
     stt_segmentation: SttSegmentationConfig = Field(default_factory=SttSegmentationConfig)
+    preemptive_generation: PreemptiveGenerationConfig = Field(
+        default_factory=PreemptiveGenerationConfig
+    )
 
     def sanitized(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -120,11 +127,16 @@ class SttSegmentationOverrides(_VoiceConfigModel):
     min_silence_ms: int | None = Field(None, ge=0, le=5000)
 
 
+class PreemptiveGenerationOverrides(_VoiceConfigModel):
+    enabled: bool | None = None
+
+
 class VoiceTurnOverrides(_VoiceConfigModel):
     vad: VadOverrides | None = None
     endpointing: EndpointingOverrides | None = None
     interruption: InterruptionOverrides | None = None
     stt_segmentation: SttSegmentationOverrides | None = None
+    preemptive_generation: PreemptiveGenerationOverrides | None = None
 
 
 def resolve_voice_turn_config(

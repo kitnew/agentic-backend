@@ -91,6 +91,17 @@ async def voice_agent(ctx: JobContext) -> None:
     agent = HospitalityAgent(metadata, backend, telemetry, state)
     persistence_tasks: set[asyncio.Task] = set()
 
+    logger.info(
+        "LiveKit session configuration preemptive_generation_enabled=%s "
+        "preemptive_tts_enabled=false",
+        metadata.turn_config.preemptive_generation.enabled,
+    )
+
+    @session.on("speech_created")
+    def register_speech(event):
+        if event.source == "generate_reply":
+            state.register_speech(event.speech_handle)
+
     @session.on("conversation_item_added")
     def persist_conversation_item(event):
         item = event.item
@@ -115,6 +126,7 @@ async def voice_agent(ctx: JobContext) -> None:
     telemetry.bind_session(session, on_user_speech_started=session.stt.mark_speech_started)
 
     async def cleanup(_reason: str = "") -> None:
+        state.close()
         pending = [*state.user_persistence.values(), *persistence_tasks]
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)

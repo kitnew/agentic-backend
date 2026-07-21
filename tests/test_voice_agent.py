@@ -11,6 +11,7 @@ from app.voice_agent.models import LiveKitJobMetadata, SessionChatMessage
 from app.voice_agent.session_factory import (
     HospitalityAgent,
     StableElevenLabsSTT,
+    TurnCommitState,
     VoiceTurnState,
     _PostFinalStream,
     build_function_tools,
@@ -58,6 +59,28 @@ class Telemetry:
 
     def emit(self, event, **fields):
         self.events.append((event, fields))
+
+    def mark_turn_committed(self):
+        self.emit("turn_committed")
+
+    def mark_llm_started(self):
+        self.emit("llm_request_started")
+
+    def mark_llm_first_chunk(self, _attempt):
+        self.emit("llm_first_chunk")
+
+    def mark_preemptive_reused(self, **_kwargs):
+        pass
+
+
+class Speech:
+    def __init__(self, speech_id="speech-1"):
+        self.id = speech_id
+        self.interrupted = False
+        self.callbacks = []
+
+    def add_done_callback(self, callback):
+        self.callbacks.append(callback)
 
 
 class Backend:
@@ -107,8 +130,10 @@ def test_session_factory_maps_milliseconds_and_stt_fields_to_sdk(monkeypatch):
     assert captured["llm"]["azure_deployment"] == "gpt-4o-mini"
 
 
-def test_native_tools_are_tenant_scoped_and_propagate_correlation():
-    backend, state, telemetry = Backend(), VoiceTurnState(current_turn_id="turn-1"), Telemetry()
+def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation():
+    backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
+    speech = Speech()
+    state.register_speech(speech)
     tools = build_function_tools(
         metadata(enabled_capabilities=("reservation.check_availability",)),
         backend,
@@ -116,17 +141,21 @@ def test_native_tools_are_tenant_scoped_and_propagate_correlation():
         telemetry,
     )
     assert [tool.info.name for tool in tools] == ["check_room_availability"]
-    context = SimpleNamespace(function_call=SimpleNamespace(call_id="tool-1"))
+    context = SimpleNamespace(
+        function_call=SimpleNamespace(call_id="tool-1"), speech_handle=speech
+    )
     async def run():
-        state.user_persistence["turn-1"] = asyncio.get_running_loop().create_future()
-        state.user_persistence["turn-1"].set_result({"message_id": "user"})
-        return await tools[0]._func(
+        task = asyncio.create_task(tools[0]._func(
             context,
             __import__("datetime").date(2026, 8, 1),
             __import__("datetime").date(2026, 8, 3),
             "double",
             1,
-        )
+        ))
+        await asyncio.sleep(0)
+        assert backend.tools == []
+        state.commit_turn("turn-1")
+        return await task
 
     result = asyncio.run(run())
     assert result["status"] == "success"
@@ -134,13 +163,16 @@ def test_native_tools_are_tenant_scoped_and_propagate_correlation():
     assert backend.tools[0]["tool_call_id"] == "tool-1"
 
 
-def test_hospitality_agent_uses_native_llm_and_persists_user_once():
+def test_hospitality_agent_persists_only_the_canonical_committed_user_once():
     backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
     agent = HospitalityAgent(metadata(enabled_capabilities=()), backend, telemetry, state)
     assert agent.instructions == "Tenant-only instructions"
     message = SimpleNamespace(id="turn-1", raw_text_content="Hello")
     async def run():
         await agent.on_user_turn_completed(None, message)
+        assert backend.messages == []
+        state.register_speech(Speech())
+        agent.accept_user_message(message)
         agent.accept_user_message(message)
         await state.user_persistence[message.id]
 
@@ -148,6 +180,49 @@ def test_hospitality_agent_uses_native_llm_and_persists_user_once():
     assert backend.messages == [{
         "role": "user", "content": "Hello", "turn_id": "turn-1", "item_id": "turn-1"
     }]
+
+
+def test_cancelled_speculative_tool_never_reaches_backend_and_wait_has_no_orphans():
+    backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
+    speech = Speech()
+    state.register_speech(speech)
+    tool = build_function_tools(
+        metadata(enabled_capabilities=("reservation.check_availability",)),
+        backend,
+        state,
+        telemetry,
+    )[0]
+    context = SimpleNamespace(
+        function_call=SimpleNamespace(call_id="tool-cancelled"), speech_handle=speech
+    )
+
+    async def run():
+        task = asyncio.create_task(tool._func(
+            context,
+            __import__("datetime").date(2026, 8, 1),
+            __import__("datetime").date(2026, 8, 3),
+            "double",
+            1,
+        ))
+        await asyncio.sleep(0)
+        state.cancel_speech(speech.id)
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0)
+        assert not [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+
+    asyncio.run(run())
+    assert backend.tools == []
+
+
+def test_turn_commit_states_are_idempotent_and_call_local():
+    first, second = TurnCommitState("speech-1"), TurnCommitState("speech-2")
+    first.commit("turn-1")
+    first.commit("turn-1")
+    second.cancel()
+    second.cancel()
+    assert first.committed.is_set() and not second.committed.is_set()
+    assert second.cancelled.is_set() and first.turn_id == "turn-1"
 
 
 def test_stt_suppresses_post_final_tail_until_new_vad_speech():
@@ -207,6 +282,26 @@ def test_telemetry_uses_native_llm_events(monkeypatch):
     assert trace["durations_ms"]["llm_total_ms"] == 600.0
     assert trace["durations_ms"]["tool_execution_ms"] == 300.0
     assert trace["flags"]["preemptive_generation_enabled"] is False
+
+
+def test_preemptive_telemetry_reports_real_head_start_and_reuse(monkeypatch):
+    values = iter([0.0, 0.1, 0.2, 0.3, 0.5, 0.6, 1.0, 1.1])
+    monkeypatch.setattr("app.voice_agent.telemetry.time.monotonic", lambda: next(values))
+    tracker = VoiceTelemetry(
+        {"tenant_id": "tenant"},
+        configuration=VoiceTurnConfig(preemptive_generation={"enabled": True}),
+    )
+    tracker.emit("speech_started")
+    attempt = tracker.mark_llm_started()
+    tracker.mark_llm_first_chunk(attempt)
+    tracker.mark_turn_committed()
+    tracker.mark_preemptive_reused()
+    tracker.begin_turn("turn", "response")
+    trace = tracker.emit_trace()
+    assert trace["durations_ms"]["preemptive_head_start_ms"] == 700.0
+    assert trace["durations_ms"]["first_chunk_before_commit_ms"] == 400.0
+    assert trace["flags"]["preemptive_generation_used"] is True
+    assert trace["flags"]["preemptive_response_reused"] is True
 
 
 def test_interruption_keeps_the_interrupted_turn_correlation():

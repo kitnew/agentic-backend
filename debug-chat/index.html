@@ -298,6 +298,7 @@
           <span>User: <b id="livekitUserState">silent</b></span>
           <span>Agent: <b id="livekitAgentState">idle</b></span>
           <span>Latency: <b id="livekitLatency">none</b></span>
+          <span>Preemptive LLM: <b id="livekitPreemptiveEffective">Off</b></span>
         </div>
         <details>
           <summary>Turn tuning (applies to the next call)</summary>
@@ -329,6 +330,9 @@
               <label title="Provider speech probability threshold; must be at most 1.">Provider VAD threshold<input data-turn="stt_segmentation.threshold" type="number" min="0.01" max="1" step="0.01" value="0.4"></label>
               <label title="Minimum provider speech segment.">Minimum speech (ms)<input data-turn="stt_segmentation.min_speech_ms" type="number" min="0" max="5000" step="10" value="100"></label>
               <label title="Minimum provider silence segment.">Minimum silence (ms)<input data-turn="stt_segmentation.min_silence_ms" type="number" min="0" max="5000" step="10" value="100"></label>
+            </fieldset>
+            <fieldset><legend>Generation</legend>
+              <label title="Start native LiveKit LLM generation before turn commitment. Applies only to the next call.">Preemptive LLM generation<input data-turn="preemptive_generation.enabled" type="checkbox"></label>
             </fieldset>
             <div id="turnValidation" class="voice-error"></div>
           </div>
@@ -408,6 +412,7 @@
     const livekitUserState = document.querySelector('#livekitUserState');
     const livekitAgentState = document.querySelector('#livekitAgentState');
     const livekitLatency = document.querySelector('#livekitLatency');
+    const livekitPreemptiveEffective = document.querySelector('#livekitPreemptiveEffective');
     const turnInputs = [...document.querySelectorAll('[data-turn]')];
     const recommendedTurnValues = Object.fromEntries(turnInputs.map(input => [input.dataset.turn, input.type === 'checkbox' ? input.checked : Number(input.value)]));
     const resolvedTurnConfig = document.querySelector('#resolvedTurnConfig');
@@ -842,6 +847,7 @@
           conversationIdInput.value = session.conversation_id;
           apiResponse.textContent = JSON.stringify(session, null, 2);
           resolvedTurnConfig.textContent = JSON.stringify(session.turn_config || {}, null, 2);
+          livekitPreemptiveEffective.textContent = session.turn_config?.preemptive_generation?.enabled ? 'On' : 'Off';
           saveSettings();
         },
         onState: state => {
@@ -876,7 +882,7 @@
             const labels = [
               ['stt_finalization_delay_ms', 'STT finalization'],
               ['turn_commit_delay_ms', 'Turn commit'],
-              ['preemptive_generation_head_start_ms', 'Preemptive head start'],
+              ['preemptive_head_start_ms', 'Head start'],
               ['llm_ttft_ms', 'LLM TTFT'],
               ['tts_ttfb_ms', 'TTS TTFB'],
               ['server_first_audio_latency_ms', 'Server first audio'],
@@ -885,6 +891,12 @@
             livekitLatency.textContent = labels.map(([key, label]) =>
               `${label}: ${key in metrics ? `${metrics[key]} ms` : 'unavailable'}`
             ).join(', ');
+            const flags = event.flags || {};
+            const speculation = flags.preemptive_response_reused ? 'reused'
+              : flags.preemptive_response_cancelled ? 'cancelled' : 'not created';
+            livekitLatency.textContent += `, Preemptive generation: ${flags.preemptive_generation_used ? 'used' : 'not used'}`;
+            livekitLatency.textContent += `, Speculative response: ${speculation}`;
+            livekitLatency.textContent += `, Tool waited for commit: ${flags.tool_waited_for_commit ? 'yes' : 'no'}`;
           }
           if (event.event === 'turn_completed' && voiceAssistantResponse.value) {
             appendMessage('assistant', 'LiveKit assistant', voiceAssistantResponse.value);
@@ -911,6 +923,7 @@
       livekitUserState.textContent = 'silent';
       livekitAgentState.textContent = 'idle';
       livekitLatency.textContent = 'none';
+      livekitPreemptiveEffective.textContent = 'Off';
       conversationIdInput.value = '';
       saveSettings();
       updateVoiceControlAvailability();

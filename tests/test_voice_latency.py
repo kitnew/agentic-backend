@@ -10,6 +10,7 @@ def test_recommended_defaults_and_sdk_units_are_unambiguous():
     assert config.endpointing.min_delay_ms == 700
     assert config.stt_segmentation.silence_ms == 400
     assert config.stt_segmentation.threshold == 0.4
+    assert config.preemptive_generation.enabled is False
 
 
 def test_tenant_then_debug_precedence_and_immutability():
@@ -22,6 +23,12 @@ def test_tenant_then_debug_precedence_and_immutability():
     assert resolved.endpointing.max_delay_ms == 2500
     with pytest.raises(ValidationError):
         resolved.endpointing.min_delay_ms = 1000
+
+    enabled = resolve_voice_turn_config(
+        tenant,
+        VoiceTurnOverrides(preemptive_generation={"enabled": True}),
+    )
+    assert enabled.preemptive_generation.enabled is True
 
 
 def test_sessions_do_not_share_mutable_configuration():
@@ -40,6 +47,7 @@ def test_sessions_do_not_share_mutable_configuration():
         {"endpointing": {"min_delay_ms": 8000}},
         {"interruption": {"min_words": -1}},
         {"stt_segmentation": {"threshold": 1.5}},
+        {"preemptive_generation": {"unknown": True}},
     ],
 )
 def test_invalid_and_unknown_overrides_are_rejected(payload):

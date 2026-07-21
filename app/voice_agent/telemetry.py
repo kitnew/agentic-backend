@@ -20,6 +20,14 @@ class VoiceTelemetry:
         self.agent_state = "initializing"
         self.turn_kind = "direct_response"
         self.interrupted = False
+        self.preemptive_generation_enabled = bool(
+            configuration and configuration.preemptive_generation.enabled
+        )
+        self.preemptive_generation_used = False
+        self.preemptive_response_reused = False
+        self.preemptive_response_cancelled = False
+        self.tool_waited_for_commit = False
+        self._preemptive_attempt = 0
         self.recorded_durations: dict[str, float] = {}
         self._traced_turns: set[tuple[str | None, str | None]] = set()
         self._tasks: set[asyncio.Task] = set()
@@ -31,13 +39,51 @@ class VoiceTelemetry:
                 for key, value in self.marks.items()
                 if key in {
                     "speech_started", "speech_ended", "first_interim_transcript",
-                    "final_transcript", "turn_committed",
+                    "final_transcript", "turn_committed", "preemptive_llm_started",
+                    "preemptive_llm_first_chunk", "preemptive_response_reused",
+                    "preemptive_response_cancelled",
                 }
             }
             self.turn_kind = "direct_response"
             self.interrupted = False
             self.recorded_durations = {}
         self.turn_id, self.response_id = turn_id, response_id
+
+    def mark_turn_committed(self) -> None:
+        self.emit("turn_committed")
+
+    def mark_llm_started(self) -> int | None:
+        self.emit("llm_request_started")
+        if not self.preemptive_generation_enabled or "turn_committed" in self.marks:
+            return None
+        self._preemptive_attempt += 1
+        self.preemptive_generation_used = True
+        self.emit("preemptive_candidate_ready", attempt=self._preemptive_attempt)
+        self.emit("preemptive_llm_started", attempt=self._preemptive_attempt)
+        return self._preemptive_attempt
+
+    def mark_llm_first_chunk(self, attempt: int | None) -> None:
+        self.emit("llm_first_chunk")
+        if attempt == self._preemptive_attempt:
+            self.emit("preemptive_llm_first_chunk", attempt=attempt)
+
+    def mark_preemptive_cancelled(self, attempt: int | None) -> None:
+        if attempt is None:
+            return
+        self.preemptive_response_cancelled = True
+        self.emit("preemptive_response_cancelled", attempt=attempt)
+        self.emit("preemptive_response_discarded", attempt=attempt)
+
+    def mark_preemptive_reused(self, *, tool_waited: bool = False) -> None:
+        self.tool_waited_for_commit |= tool_waited
+        if (
+            not self.preemptive_generation_used
+            or self.preemptive_response_reused
+            or "turn_committed" not in self.marks
+        ):
+            return
+        self.preemptive_response_reused = True
+        self.emit("preemptive_response_reused")
 
     def set_turn_kind(self, value: str) -> None:
         self.turn_kind = value
@@ -53,6 +99,10 @@ class VoiceTelemetry:
             if self.agent_state != "speaking":
                 self.turn_id = self.response_id = self.speech_id = None
             self._traced_turns.discard((None, None))
+            self.preemptive_generation_used = False
+            self.preemptive_response_reused = False
+            self.preemptive_response_cancelled = False
+            self.tool_waited_for_commit = False
         if fields.get("speech_id"):
             self.speech_id = fields["speech_id"]
         self.marks[event] = now
@@ -99,11 +149,6 @@ class VoiceTelemetry:
                 self.emit("final_transcript")
             elif "first_interim_transcript" not in self.marks:
                 self.emit("first_interim_transcript")
-
-        @session.on("conversation_item_added")
-        def on_conversation_item(event):
-            if getattr(event.item, "role", None) == "user":
-                self.emit("turn_committed")
 
         @session.on("speech_created")
         def on_speech(event):
@@ -157,6 +202,11 @@ class VoiceTelemetry:
             if base is not None and value >= base
         }
         config = self.configuration
+        turn_kind = (
+            "cancelled_speculation"
+            if self.preemptive_response_cancelled and not self.preemptive_response_reused
+            else self.turn_kind
+        )
         payload = {
             **self.identifiers,
             "type": "voice_latency_trace",
@@ -166,10 +216,15 @@ class VoiceTelemetry:
             "speech_id": self.speech_id,
             "timestamps_ms_from_speech_start": timestamps,
             "durations_ms": durations,
-            "turn_kind": self.turn_kind,
+            "turn_kind": turn_kind,
+            "configuration": config.sanitized() if config else None,
             "flags": {
-                "preemptive_generation_enabled": False,
+                "preemptive_generation_enabled": self.preemptive_generation_enabled,
                 "preemptive_tts_enabled": False,
+                "preemptive_generation_used": self.preemptive_generation_used,
+                "preemptive_response_reused": self.preemptive_response_reused,
+                "preemptive_response_cancelled": self.preemptive_response_cancelled,
+                "tool_waited_for_commit": self.tool_waited_for_commit,
                 "llm_streaming_enabled": True,
                 "tool_call_used": self.turn_kind == "tool_call",
                 "interrupted": self.interrupted,
@@ -187,7 +242,10 @@ class VoiceTelemetry:
         pairs = {
             "stt_finalization_delay_ms": ("speech_ended", "final_transcript"),
             "turn_commit_delay_ms": ("speech_ended", "turn_committed"),
-            "preemptive_generation_head_start_ms": ("llm_request_started", "turn_committed"),
+            "preemptive_head_start_ms": ("preemptive_llm_started", "turn_committed"),
+            "first_chunk_before_commit_ms": (
+                "preemptive_llm_first_chunk", "turn_committed"
+            ),
             "llm_ttft_ms": ("llm_request_started", "llm_first_chunk"),
             "llm_total_ms": ("llm_request_started", "llm_completed"),
             "tts_start_delay_from_first_llm_chunk_ms": ("llm_first_chunk", "tts_request_started"),

@@ -136,7 +136,10 @@ def test_turn_overrides_are_gated_and_resolved(monkeypatch, db):
     configure(monkeypatch)
     request = CreateLiveKitSessionRequest(
         tenant_id="demo_restaurant",
-        turn_overrides={"endpointing": {"min_delay_ms": 250}},
+        turn_overrides={
+            "endpointing": {"min_delay_ms": 250},
+            "preemptive_generation": {"enabled": True},
+        },
     )
     with pytest.raises(HTTPException) as disabled:
         create_livekit_session(request, db, TenantConfigLoader())
@@ -145,3 +148,4 @@ def test_turn_overrides_are_gated_and_resolved(monkeypatch, db):
     monkeypatch.setenv("VOICE_TURN_DEBUG_OVERRIDES_ENABLED", "true")
     response = create_livekit_session(request, db, TenantConfigLoader())
     assert response.turn_config.endpointing.min_delay_ms == 250
+    assert response.turn_config.preemptive_generation.enabled is True
