@@ -234,6 +234,16 @@ def create_livekit_session(
             "enabled_capabilities": sorted(
                 name for name, capability in tenant.capabilities.items() if capability.enabled
             ),
+            "reservation_request_schema": (
+                tenant.capabilities.get("reservation.create_request").config.get("row_format")
+                if tenant.capabilities.get("reservation.create_request")
+                else None
+            ),
+            "post_call_transcript": (
+                tenant.post_call_transcript.model_dump(mode="json")
+                if tenant.post_call_transcript
+                else None
+            ),
             "chat_history": [message.model_dump(mode="json") for message in history],
             "stt_language": tenant.voice.stt.language or tenant.default_language,
             "tts_voice_id": resolve_voice_id(tenant),

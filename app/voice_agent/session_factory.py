@@ -7,6 +7,7 @@ from datetime import date
 from uuid import uuid4
 
 from livekit.agents import Agent, AgentSession, RunContext, function_tool, llm, stt
+from livekit.agents.beta import EndCallTool
 from livekit.plugins import elevenlabs, openai
 
 from app.voice_agent.backend_client import BackendCoreClient
@@ -173,6 +174,7 @@ class VoiceTurnState:
     user_persistence: dict[str, asyncio.Task] = field(default_factory=dict)
     turns_by_speech: dict[str, TurnCommitState] = field(default_factory=dict)
     pending_speech_id: str | None = None
+    pending_tool_calls: int = 0
     closed: bool = False
 
     def register_speech(self, speech_handle) -> None:
@@ -203,8 +205,80 @@ class VoiceTurnState:
             turn.cancel()
 
 
-def build_function_tools(metadata, backend: BackendCoreClient, state: VoiceTurnState, telemetry):
-    async def execute(context: RunContext, capability: str, arguments: dict):
+_END_CALL_INTENTS = (
+    "nič viac",
+    "nepotrebujem nič ďalšie",
+    "nemám ďalšie otázky",
+    "už nič",
+    "to je všetko",
+    "to bude všetko",
+    "to je odo mňa všetko",
+    "dovidenia",
+    "zbohom",
+    "ukončiť hovor",
+    "ukončite hovor",
+    "zložte",
+    "nothing else",
+    "don't need anything else",
+    "no more questions",
+    "that's all",
+    "that is all",
+    "goodbye",
+    "bye",
+    "end the call",
+    "hang up",
+)
+
+
+class GuardedEndCallTool(EndCallTool):
+    def __init__(self, state: VoiceTurnState):
+        self._state = state
+        super().__init__(
+            ignore_on_enter=True,
+            extra_description=(
+                "Use only after a new, explicit user statement that they need nothing "
+                "else, clearly say goodbye, or ask to end the call. Never use for an "
+                "ambiguous acknowledgement such as 'dobre' or 'okay', in the same turn "
+                "as another tool, while a tool is pending, before its result was spoken, "
+                "or while a question remains unresolved."
+            ),
+            end_instructions=(
+                "Give one short, natural farewell in the active conversation language. "
+                "Do not add information or ask another question."
+            ),
+        )
+
+    async def _end_call(self, ctx: RunContext):
+        turn = self._state.turns_by_speech.get(ctx.speech_handle.id)
+        if turn is None or not await turn.wait_until_committed_or_cancelled():
+            return "The call remains active because the user's turn is not final."
+        await asyncio.sleep(0)
+        if self._state.pending_tool_calls:
+            return "The call remains active because another tool is still running."
+        last_user_message = next(
+            (
+                item.raw_text_content or ""
+                for item in reversed(ctx.session.history.items)
+                if getattr(item, "type", None) == "message"
+                and getattr(item, "role", None) == "user"
+            ),
+            "",
+        ).casefold()
+        if not any(intent in last_user_message for intent in _END_CALL_INTENTS):
+            return "The call remains active because the user did not clearly end it."
+        return await super()._end_call(ctx)
+
+
+def build_function_tools(
+    metadata, backend: BackendCoreClient, state: VoiceTurnState, telemetry, caller_number=None
+):
+    async def _execute(context: RunContext, capability: str, arguments: dict):
+        if capability in {
+            "reservation.create_request",
+            "reservation.change_request",
+            "reservation.cancel_request",
+        }:
+            arguments = {**arguments, "caller_number": caller_number}
         turn = state.turns_by_speech.get(context.speech_handle.id)
         waited_for_commit = bool(turn and not turn.committed.is_set()) or bool(
             getattr(telemetry, "preemptive_generation_used", False)
@@ -251,6 +325,13 @@ def build_function_tools(metadata, backend: BackendCoreClient, state: VoiceTurnS
         telemetry.emit("tool_call_completed", tool_call_id=context.function_call.call_id, capability=capability, status=result.get("status"))
         return result
 
+    async def execute(context: RunContext, capability: str, arguments: dict):
+        state.pending_tool_calls += 1
+        try:
+            return await _execute(context, capability, arguments)
+        finally:
+            state.pending_tool_calls -= 1
+
     @function_tool(description="Check room availability for every night of a requested stay.")
     async def check_room_availability(
         context: RunContext,
@@ -280,19 +361,95 @@ def build_function_tools(metadata, backend: BackendCoreClient, state: VoiceTurnS
             frame["notes"] = notes
         return await execute(context, "reservation.create_request", {"reservation_frame": frame})
 
+    @function_tool(description="Submit a new accommodation request after availability and final guest confirmation.")
+    async def submit_new_reservation_request(
+        context: RunContext,
+        check_in: date,
+        check_out: date,
+        reservation_name: str,
+        reservation_phone: str,
+        email: str,
+        room_type: str,
+        room_count: int,
+        confirmed: bool,
+    ) -> dict:
+        return await execute(context, "reservation.create_request", {
+            "check_in": check_in.isoformat(), "check_out": check_out.isoformat(),
+            "reservation_name": reservation_name, "reservation_phone": reservation_phone,
+            "email": email, "room_type": room_type, "room_count": room_count,
+            "confirmed": confirmed,
+        })
+
+    @function_tool(description="Submit any confirmed reservation change; availability fields are all-or-none.")
+    async def submit_reservation_change_request(
+        context: RunContext,
+        original_check_in: date,
+        original_check_out: date,
+        reservation_name: str,
+        reservation_phone: str,
+        change: str,
+        confirmed: bool,
+        check_in: date | None = None,
+        check_out: date | None = None,
+        room_type: str | None = None,
+        room_count: int | None = None,
+    ) -> dict:
+        arguments = {
+            "original_check_in": original_check_in.isoformat(),
+            "original_check_out": original_check_out.isoformat(),
+            "reservation_name": reservation_name, "reservation_phone": reservation_phone,
+            "change": change, "confirmed": confirmed,
+        }
+        if check_in is not None:
+            arguments.update(
+                check_in=check_in.isoformat(),
+                check_out=check_out.isoformat() if check_out else None,
+                room_type=room_type,
+                room_count=room_count,
+            )
+        return await execute(context, "reservation.change_request", arguments)
+
+    @function_tool(description="Submit a reservation cancellation after final guest confirmation.")
+    async def submit_reservation_cancellation_request(
+        context: RunContext,
+        original_check_in: date,
+        original_check_out: date,
+        reservation_name: str,
+        reservation_phone: str,
+        confirmed: bool,
+        reason: str = "",
+    ) -> dict:
+        return await execute(context, "reservation.cancel_request", {
+            "original_check_in": original_check_in.isoformat(),
+            "original_check_out": original_check_out.isoformat(),
+            "reservation_name": reservation_name, "reservation_phone": reservation_phone,
+            "confirmed": confirmed, "reason": reason,
+        })
+
     tools = {
         "reservation.check_availability": check_room_availability,
-        "reservation.create_request": create_reservation,
+        "reservation.create_request": (
+            submit_new_reservation_request
+            if metadata.reservation_request_schema == "penzion_grand"
+            else create_reservation
+        ),
+        "reservation.change_request": submit_reservation_change_request,
+        "reservation.cancel_request": submit_reservation_cancellation_request,
     }
     return [tools[name] for name in metadata.enabled_capabilities if name in tools]
 
 
 class HospitalityAgent(Agent):
-    def __init__(self, metadata, backend: BackendCoreClient, telemetry, state: VoiceTurnState):
+    def __init__(
+        self, metadata, backend: BackendCoreClient, telemetry, state: VoiceTurnState, caller_number=None
+    ):
+        tools = build_function_tools(metadata, backend, state, telemetry, caller_number)
+        if metadata.tenant_id == "penzion_grand":
+            tools.append(GuardedEndCallTool(state))
         super().__init__(
             instructions=metadata.instructions,
             chat_ctx=build_chat_context(metadata),
-            tools=build_function_tools(metadata, backend, state, telemetry),
+            tools=tools,
         )
         self.backend = backend
         self.telemetry = telemetry

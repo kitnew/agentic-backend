@@ -63,6 +63,14 @@ def test_penzion_grand_identity_and_rooms():
     assert tenant.business_info.room_types[0].single_occupancy_price == 55
 
 
+def test_penzion_grand_end_call_policy_requires_explicit_separate_goodbye():
+    instructions = TenantConfigLoader().load("penzion_grand").prompt.instructions
+    assert "similar acknowledgements are ambiguous" in instructions
+    assert "while any tool is pending" in instructions
+    assert "wait for a separate, explicit closing statement" in instructions
+    assert "active conversation language" in instructions
+
+
 def test_tenant_config_defaults_voice_disabled_when_omitted(tmp_path: Path):
     config = minimal_config()
     del config["schema_version"]
@@ -243,7 +251,7 @@ def test_penzion_grand_prompt_contains_each_safe_section_once():
     assert "spreadsheet_id" not in prompt
     assert "sheet_name" not in prompt
     assert "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI" not in prompt
-    assert "submitted requests waiting for staff confirmation" not in prompt
+    assert "submitted requests waiting for staff confirmation" in prompt
     for unavailable_tool in (
         "get_availability",
         "send_reservation_email",

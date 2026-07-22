@@ -100,11 +100,23 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
     assert response.turn_config.stt_segmentation.threshold == 0.4
     assert metadata["instructions"]
     assert metadata["enabled_capabilities"] == ["reservation.create_request"]
+    assert metadata["post_call_transcript"] is None
     assert "backend_token" not in metadata
     raw_claims = jwt.decode(response.participant_token, options={"verify_signature": False})
     assert 115 <= raw_claims["exp"] - int(time.time()) <= 120
     serialized = response.model_dump_json()
     assert API_SECRET not in serialized and "ELEVENLABS" not in serialized
+
+
+def test_penzion_grand_dispatch_contains_post_call_transcript_config(monkeypatch, db):
+    configure(monkeypatch)
+    response = create_livekit_session(
+        CreateLiveKitSessionRequest(tenant_id="penzion_grand"), db, TenantConfigLoader()
+    )
+    claims = api.TokenVerifier(API_KEY, API_SECRET).verify(response.participant_token)
+    metadata = json.loads(claims.room_config.agents[0].metadata)
+    configured = TenantConfigLoader().load("penzion_grand").post_call_transcript
+    assert metadata["post_call_transcript"]["sheet_name"] == configured.sheet_name
 
 
 def test_livekit_session_accepts_only_same_tenant_conversation(monkeypatch, db):

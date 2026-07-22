@@ -7,6 +7,9 @@ from app.capabilities.schemas import (
     CapabilityRequest,
     CapabilityResult,
     CapabilityStatus,
+    NewReservationRequest,
+    ReservationCancellationRequest,
+    ReservationChangeRequest,
     RoomAvailabilityRequest,
     RoomAvailabilityResult,
     RoomAvailabilityStatus,
@@ -42,7 +45,141 @@ class GoogleSheetsReservationProvider:
     ) -> CapabilityResult:
         if capability_request.name == "reservation.check_availability":
             return self._check_availability(tenant_context, capability_request)
+        config = tenant_context.capabilities[capability_request.name].config
+        if capability_request.name in {
+            "reservation.change_request",
+            "reservation.cancel_request",
+        } or config.get("row_format") == "penzion_grand":
+            return self._submit_reservation_request(tenant_context, capability_request)
         return self._create_reservation_request(tenant_context, capability_request)
+
+    def _submit_reservation_request(
+        self,
+        tenant_context: TenantContext,
+        capability_request: CapabilityRequest,
+    ) -> CapabilityResult:
+        models = {
+            "reservation.create_request": NewReservationRequest,
+            "reservation.change_request": ReservationChangeRequest,
+            "reservation.cancel_request": ReservationCancellationRequest,
+        }
+        model = models[capability_request.name]
+        try:
+            request = model.model_validate(
+                {
+                    field: capability_request.input.get(field)
+                    for field in model.model_fields
+                    if field in capability_request.input
+                }
+            )
+        except ValidationError:
+            return CapabilityResult(
+                name=capability_request.name,
+                status=CapabilityStatus.SKIPPED,
+                provider="validation",
+                user_message="Skontrolujte údaje žiadosti a potvrďte finálne detaily.",
+                error="invalid_reservation_request",
+            )
+
+        availability = None
+        if isinstance(request, NewReservationRequest) or (
+            isinstance(request, ReservationChangeRequest)
+            and request.affects_availability
+        ):
+            availability = self._check_availability(
+                tenant_context,
+                CapabilityRequest(
+                    name="reservation.check_availability",
+                    input={
+                        "check_in": request.check_in,
+                        "check_out": request.check_out,
+                        "room_type": request.room_type,
+                        "room_count": request.room_count,
+                    },
+                    metadata=capability_request.metadata,
+                ),
+            )
+            if availability.status != CapabilityStatus.SUCCESS or (
+                availability.output or {}
+            ).get("status") != RoomAvailabilityStatus.AVAILABLE.value:
+                return CapabilityResult(
+                    name=capability_request.name,
+                    status=(
+                        CapabilityStatus.FAILED
+                        if availability.status == CapabilityStatus.FAILED
+                        else CapabilityStatus.SKIPPED
+                    ),
+                    provider=availability.provider,
+                    user_message=availability.user_message,
+                    error=availability.error or "requested_stay_not_available",
+                    output=availability.output,
+                )
+
+        config = tenant_context.capabilities[capability_request.name].config
+        rows = {
+            "reservation.create_request": lambda value: [
+                value.check_in.isoformat(),
+                value.check_out.isoformat(),
+                value.reservation_name,
+                value.caller_number,
+                value.reservation_phone,
+                value.email,
+                {"two_bed": 2, "three_bed": 3, "four_bed": 4}[
+                    value.room_type
+                ],
+                value.room_count,
+                "",
+                False,
+            ],
+            "reservation.change_request": lambda value: [
+                value.original_check_in.isoformat(),
+                value.original_check_out.isoformat(),
+                value.reservation_name,
+                value.caller_number,
+                value.reservation_phone,
+                value.change,
+                False,
+            ],
+            "reservation.cancel_request": lambda value: [
+                value.original_check_in.isoformat(),
+                value.original_check_out.isoformat(),
+                value.reservation_name,
+                value.caller_number,
+                value.reservation_phone,
+                value.reason,
+                False,
+            ],
+        }
+        try:
+            append_result = self.client.append_row(
+                GoogleSheetsAppendRowRequest(
+                    spreadsheet_id=config["spreadsheet_id"],
+                    sheet_name=config["sheet_name"],
+                    values=rows[capability_request.name](request),
+                )
+            )
+        except Exception as exc:
+            return CapabilityResult(
+                name=capability_request.name,
+                status=CapabilityStatus.FAILED,
+                provider=self.provider_name,
+                user_message="Žiadosť sa nepodarilo odoslať. Skúste to prosím neskôr.",
+                error=str(exc),
+            )
+
+        return CapabilityResult(
+            name=capability_request.name,
+            status=CapabilityStatus.SUCCESS,
+            provider=self.provider_name,
+            user_message="Vaša žiadosť bola odoslaná personálu na spracovanie.",
+            output={
+                "request_status": "submitted",
+                "sheet_name": append_result.sheet_name,
+                "row_appended": True,
+                "updated_range": append_result.updated_range,
+                "updated_rows": append_result.updated_rows,
+            },
+        )
 
     def _check_availability(
         self,

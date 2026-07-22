@@ -9,6 +9,7 @@ from livekit.agents import stt
 from app.voice.latency import VoiceTurnConfig
 from app.voice_agent.models import LiveKitJobMetadata, SessionChatMessage
 from app.voice_agent.session_factory import (
+    GuardedEndCallTool,
     HospitalityAgent,
     StableElevenLabsSTT,
     TurnCommitState,
@@ -163,6 +164,49 @@ def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation(
     assert backend.tools[0]["tool_call_id"] == "tool-1"
 
 
+def test_reservation_tool_injects_caller_number_from_call_context():
+    backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
+    speech = Speech()
+    state.register_speech(speech)
+    tool = build_function_tools(
+        metadata(
+            tenant_id="penzion_grand",
+            enabled_capabilities=("reservation.create_request",),
+            reservation_request_schema="penzion_grand",
+        ),
+        backend,
+        state,
+        telemetry,
+        "+421900111222",
+    )[0]
+    context = SimpleNamespace(
+        function_call=SimpleNamespace(call_id="tool-phone"), speech_handle=speech
+    )
+
+    async def run():
+        task = asyncio.create_task(
+            tool._func(
+                context,
+                __import__("datetime").date(2026, 8, 29),
+                __import__("datetime").date(2026, 8, 31),
+                "Ján Novák",
+                "+421900333444",
+                "jan@example.com",
+                "two_bed",
+                1,
+                True,
+            )
+        )
+        await asyncio.sleep(0)
+        state.commit_turn("turn-phone")
+        await task
+
+    asyncio.run(run())
+    assert tool.info.name == "submit_new_reservation_request"
+    assert backend.tools[0]["arguments"]["caller_number"] == "+421900111222"
+    assert backend.tools[0]["arguments"]["reservation_phone"] == "+421900333444"
+
+
 def test_hospitality_agent_persists_only_the_canonical_committed_user_once():
     backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
     agent = HospitalityAgent(metadata(enabled_capabilities=()), backend, telemetry, state)
@@ -180,6 +224,86 @@ def test_hospitality_agent_persists_only_the_canonical_committed_user_once():
     assert backend.messages == [{
         "role": "user", "content": "Hello", "turn_id": "turn-1", "item_id": "turn-1"
     }]
+
+
+def _run_end_call(user_text, *, pending_tools=0):
+    state = VoiceTurnState(pending_tool_calls=pending_tools)
+    speech = Speech("end-call-speech")
+    state.register_speech(speech)
+    state.commit_turn("end-call-turn")
+
+    class Session:
+        def __init__(self):
+            self.history = SimpleNamespace(
+                items=[
+                    SimpleNamespace(
+                        type="message", role="user", raw_text_content=user_text
+                    )
+                ]
+            )
+            self.current_agent = SimpleNamespace(
+                _get_activity_or_raise=lambda: SimpleNamespace(
+                    llm=object(), realtime_llm_session=None
+                )
+            )
+            self.shutdowns = 0
+            self.close_callback = None
+
+        def once(self, event, callback):
+            if event == "close":
+                self.close_callback = callback
+
+        def shutdown(self):
+            self.shutdowns += 1
+
+    session = Session()
+    toolset = GuardedEndCallTool(state)
+    context = SimpleNamespace(
+        session=session,
+        speech_handle=speech,
+        function_call=SimpleNamespace(call_id="end-call"),
+    )
+    result = asyncio.run(toolset.tools[0]._func(context))
+    return result, session, speech, toolset
+
+
+def test_penzion_agent_registers_official_end_call_tool():
+    agent = HospitalityAgent(
+        metadata(tenant_id="penzion_grand", enabled_capabilities=()),
+        Backend(),
+        Telemetry(),
+        VoiceTurnState(),
+    )
+    toolset = next(tool for tool in agent.tools if isinstance(tool, GuardedEndCallTool))
+    assert toolset.tools[0].info.name == "end_call"
+    assert "'dobre' or 'okay'" in toolset.tools[0].info.description
+
+
+def test_explicit_goodbye_ends_only_after_farewell_playout():
+    result, session, speech, _toolset = _run_end_call(
+        "Ďakujem, to je všetko. Dovidenia."
+    )
+    assert "active conversation language" in result
+    assert session.shutdowns == 0
+    assert session.close_callback is not None
+    assert _toolset._delete_room is True
+    for callback in speech.callbacks:
+        callback(speech)
+    assert session.shutdowns == 1
+
+
+def test_ambiguous_acknowledgement_does_not_end_call():
+    result, session, _speech, _toolset = _run_end_call("Dobre, ďakujem.")
+    assert "did not clearly end" in result
+    assert session.shutdowns == 0
+
+
+def test_pending_capability_prevents_end_call():
+    result, session, _speech, _toolset = _run_end_call(
+        "Dovidenia.", pending_tools=1
+    )
+    assert "another tool is still running" in result
+    assert session.shutdowns == 0
 
 
 def test_cancelled_speculative_tool_never_reaches_backend_and_wait_has_no_orphans():
@@ -312,3 +436,112 @@ def test_interruption_keeps_the_interrupted_turn_correlation():
     event = tracker.emit("interruption_detected")
     assert event["turn_id"] == "turn"
     assert event["response_id"] == "response"
+
+
+def test_post_call_persistence_runs_once_from_livekit_shutdown(monkeypatch):
+    from app.voice_agent import server as voice_server
+
+    calls = []
+    state = VoiceTurnState()
+
+    class Session:
+        def __init__(self):
+            self.history = SimpleNamespace(items=[])
+            self.llm = object()
+            self.stt = SimpleNamespace(mark_speech_started=lambda: None)
+
+        def on(self, _event):
+            return lambda callback: callback
+
+        async def start(self, **_kwargs):
+            pass
+
+        async def aclose(self):
+            pass
+
+    class RuntimeBackend:
+        def __init__(self, *_args):
+            pass
+
+        async def aclose(self):
+            pass
+
+    class RuntimeTelemetry:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def emit(self, *_args, **_kwargs):
+            pass
+
+        def bind_session(self, *_args, **_kwargs):
+            pass
+
+        async def aclose(self):
+            pass
+
+    class Context:
+        def __init__(self, raw_metadata):
+            self.job = SimpleNamespace(metadata=raw_metadata.model_dump_json())
+            self.room = SimpleNamespace(
+                name=f"voice-{raw_metadata.call_session_id}",
+                local_participant=SimpleNamespace(),
+            )
+            self.shutdown = None
+
+        async def connect(self, **_kwargs):
+            pass
+
+        async def wait_for_participant(self):
+            return SimpleNamespace(
+                attributes={"sip.phoneNumber": "+421900111222"}, identity="sip-user"
+            )
+
+        def add_shutdown_callback(self, callback):
+            self.shutdown = callback
+
+    job = metadata(
+        tenant_id="penzion_grand",
+        greeting=None,
+        enabled_capabilities=(),
+        post_call_transcript={"spreadsheet_id": "sheet-id", "sheet_name": "Transkripty"},
+    )
+    ctx = Context(job)
+    session = Session()
+    monkeypatch.setattr(voice_server, "build_vad", lambda _config: object())
+    monkeypatch.setattr(voice_server, "build_session", lambda *_args: session)
+    monkeypatch.setattr(voice_server, "VoiceTurnState", lambda: state)
+    monkeypatch.setattr(voice_server, "BackendCoreClient", RuntimeBackend)
+    monkeypatch.setattr(voice_server, "VoiceTelemetry", RuntimeTelemetry)
+    monkeypatch.setattr(voice_server, "HospitalityAgent", lambda *_args: object())
+    monkeypatch.setattr(
+        voice_server,
+        "VoiceSessionTokenCodec",
+        lambda _secret: SimpleNamespace(encode=lambda _claims: "token"),
+    )
+    monkeypatch.setattr(
+        voice_server,
+        "settings",
+        SimpleNamespace(
+            session_token_secret="secret",
+            backend_token_ttl_seconds=60,
+            backend_url="http://backend",
+        ),
+    )
+
+    async def save(*args, **kwargs):
+        assert all(task.done() for task in state.user_persistence.values())
+        calls.append((args, kwargs))
+        return True
+
+    monkeypatch.setattr(voice_server, "persist_post_call", save)
+
+    async def run():
+        await voice_server.voice_agent(ctx)
+        assert calls == []
+        state.user_persistence["final-user-turn"] = asyncio.create_task(asyncio.sleep(0))
+        await ctx.shutdown("participant disconnected")
+        await ctx.shutdown("duplicate callback")
+
+    asyncio.run(run())
+    assert len(calls) == 1
+    assert calls[0][0][2] == "+421900111222"

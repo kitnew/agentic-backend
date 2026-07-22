@@ -5,9 +5,18 @@ from app.capabilities.schemas import (
     CapabilityRequest,
     CapabilityResult,
     CapabilityStatus,
+    NewReservationRequest,
+    ReservationCancellationRequest,
+    ReservationChangeRequest,
     RoomAvailabilityRequest,
 )
-from app.tenants.policies import Clock, localized_response, tenant_local_datetime, utc_now
+from app.tenants.policies import (
+    Clock,
+    localized_response,
+    reservation_cutoff_reached,
+    tenant_local_datetime,
+    utc_now,
+)
 from app.tenants.schemas import TenantContext
 
 
@@ -67,21 +76,65 @@ class CapabilityRouter:
         tenant_context: TenantContext,
         request: CapabilityRequest,
     ) -> CapabilityResult | None:
-        if request.name != "reservation.check_availability":
+        models = {
+            "reservation.check_availability": RoomAvailabilityRequest,
+            "reservation.create_request": NewReservationRequest,
+            "reservation.change_request": ReservationChangeRequest,
+            "reservation.cancel_request": ReservationCancellationRequest,
+        }
+        model = models.get(request.name)
+        if model is None:
             return None
         try:
-            availability_request = RoomAvailabilityRequest.model_validate(
+            validated = model.model_validate(
                 {
-                    field: request.input.get(field)
-                    for field in ("check_in", "check_out", "room_type", "room_count")
+                    field: request.input[field]
+                    for field in model.model_fields
+                    if field in request.input
                 }
             )
         except ValidationError:
             return self._validation_error(
                 request.name,
-                "invalid_availability_request",
-                "Dátum odchodu musí byť neskôr ako dátum príchodu a počet izieb musí byť kladný.",
+                (
+                    "invalid_availability_request"
+                    if request.name == "reservation.check_availability"
+                    else "invalid_reservation_request"
+                ),
+                (
+                    "Dátum odchodu musí byť neskôr ako dátum príchodu a počet izieb musí byť kladný."
+                    if request.name == "reservation.check_availability"
+                    else "Skontrolujte údaje žiadosti a potvrďte finálne detaily."
+                ),
             )
+
+        local_now = tenant_local_datetime(tenant_context, self.clock)
+        if request.name == "reservation.create_request" and reservation_cutoff_reached(
+            tenant_context, local_now
+        ):
+            locale = (request.metadata or {}).get("language")
+            return self._validation_error(
+                request.name,
+                "reservation_cutoff_reached",
+                localized_response(
+                    tenant_context.reservation.cutoff_responses,
+                    locale,
+                    tenant_context.default_locale,
+                ),
+            )
+
+        availability_request = validated
+        if isinstance(validated, ReservationChangeRequest):
+            if not validated.affects_availability:
+                return None
+            availability_request = RoomAvailabilityRequest(
+                check_in=validated.check_in,
+                check_out=validated.check_out,
+                room_type=validated.room_type,
+                room_count=validated.room_count,
+            )
+        elif not isinstance(validated, (RoomAvailabilityRequest, NewReservationRequest)):
+            return None
 
         config = tenant_context.availability_config
         if not config or availability_request.room_type not in config.room_type_columns:
@@ -93,7 +146,7 @@ class CapabilityRouter:
         if (
             config.reject_past_check_in
             and availability_request.check_in
-            < tenant_local_datetime(tenant_context, self.clock).date()
+            < local_now.date()
         ):
             locale = (request.metadata or {}).get("language")
             return self._validation_error(

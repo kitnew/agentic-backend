@@ -3,1211 +3,435 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agentic Backend Debug Chat</title>
+  <title>Voice Lab</title>
   <style>
     :root {
-      --border: #d0d7de;
-      --muted: #57606a;
-      --bg: #f6f8fa;
-      --panel: #ffffff;
-      --user: #0969da;
-      --assistant: #1a7f37;
-      --error: #cf222e;
+      color-scheme: dark;
+      --bg: #0b0d10;
+      --panel: #12161b;
+      --panel-2: #181d24;
+      --line: #29313b;
+      --text: #edf2f7;
+      --muted: #8f9ba8;
+      --accent: #8cffc1;
+      --blue: #7cb8ff;
+      --warn: #ffc66d;
+      --danger: #ff7d7d;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
     }
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: #24292f;
-    }
+    body { margin: 0; background: var(--bg); color: var(--text); min-height: 100vh; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
     header {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--panel);
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
+      height: 64px; padding: 0 24px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: space-between; background: #0e1115;
     }
-    header h1 { font-size: 16px; margin: 0 8px 0 0; }
-    label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
-    input, textarea, button, select {
-      font: inherit;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: #fff;
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 750; letter-spacing: .08em; }
+    .brand-mark { width: 12px; height: 12px; border: 2px solid var(--accent); border-radius: 50%; box-shadow: 0 0 18px #8cffc177; }
+    .connection { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #55606d; }
+    .dot.live { background: var(--accent); box-shadow: 0 0 12px #8cffc188; }
+    .dot.busy { background: var(--warn); }
+    main { max-width: 1500px; margin: 0 auto; padding: 18px; }
+    .toolbar, .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+    .toolbar { padding: 14px; display: flex; gap: 12px; align-items: end; flex-wrap: wrap; }
+    label { color: var(--muted); font-size: 12px; display: grid; gap: 6px; }
+    input, select {
+      color: var(--text); background: #0c1014; border: 1px solid var(--line); border-radius: 7px;
+      padding: 9px 10px; min-width: 180px; outline: none;
     }
-    input, textarea { padding: 8px; }
-    button {
-      padding: 8px 12px;
-      cursor: pointer;
-      background: #24292f;
-      color: #fff;
-      border-color: #24292f;
+    input:focus, select:focus { border-color: var(--blue); }
+    .grow { flex: 1; }
+    .grow input { width: 100%; }
+    .actions { display: flex; gap: 8px; margin-left: auto; }
+    .button {
+      border: 1px solid var(--line); border-radius: 8px; padding: 9px 15px;
+      background: var(--panel-2); color: var(--text); font-weight: 650;
     }
-    button:disabled { cursor: not-allowed; opacity: 0.6; }
-    main {
-      display: grid;
-      grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
-      gap: 12px;
-      padding: 12px;
-      height: calc(100vh - 82px);
+    .button:hover { border-color: #485463; }
+    .button.primary { background: var(--accent); color: #07100b; border-color: var(--accent); }
+    .button.danger { color: var(--danger); }
+    .button:disabled { opacity: .4; cursor: not-allowed; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(380px, .75fr); gap: 16px; margin-top: 16px; }
+    .panel { min-height: 0; overflow: hidden; }
+    .panel-head { height: 48px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .panel-title { font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; color: #b8c3cf; }
+    .subtle { color: var(--muted); font-size: 12px; }
+    .transcript { height: 590px; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+    .empty { margin: auto; color: #66717d; text-align: center; max-width: 320px; line-height: 1.6; }
+    .message { max-width: 78%; display: grid; gap: 5px; }
+    .message.user { align-self: flex-end; }
+    .message.assistant { align-self: flex-start; }
+    .message .role { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+    .message.user .role { text-align: right; }
+    .bubble { padding: 11px 13px; border-radius: 12px; line-height: 1.5; white-space: pre-wrap; background: var(--panel-2); border: 1px solid var(--line); }
+    .user .bubble { background: #14251e; border-color: #28523f; }
+    .interim { min-height: 38px; padding: 10px 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; font-style: italic; }
+    .state-strip { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+    .state { padding: 12px; border-right: 1px solid var(--line); min-width: 0; }
+    .state:last-child { border-right: 0; }
+    .state small { display: block; color: var(--muted); margin-bottom: 4px; }
+    .state b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 12px; }
+    .metric { background: #0d1115; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+    .metric span { color: var(--muted); font-size: 10px; display: block; margin-bottom: 5px; text-transform: uppercase; }
+    .metric b { font: 700 15px ui-monospace, monospace; }
+    .tool-status { margin: 0 12px 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 12px; }
+    .tool-status.active { border-color: #5b4b28; color: var(--warn); }
+    .tool-status.success { border-color: #28523f; color: var(--accent); }
+    .tool-status.failed { border-color: #653737; color: var(--danger); }
+    .events { height: 320px; overflow: auto; border-top: 1px solid var(--line); }
+    .event { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; padding: 8px 12px; border-bottom: 1px solid #20262d; font: 11px ui-monospace, monospace; }
+    .event time { color: #65717d; }
+    .event summary { cursor: pointer; color: #cbd5df; }
+    .event pre, pre { white-space: pre-wrap; overflow-wrap: anywhere; color: #9facb9; font: 11px/1.5 ui-monospace, monospace; }
+    .event.hidden { display: none; }
+    .event-filter { min-width: 110px; padding: 5px 7px; font-size: 11px; }
+    .error { margin-top: 12px; padding: 11px 13px; border: 1px solid #653737; background: #2b1717; color: #ffb3b3; border-radius: 8px; display: none; }
+    details.settings { margin-top: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+    details.settings > summary { cursor: pointer; list-style: none; padding: 15px; font-weight: 700; }
+    details.settings > summary::after { content: 'Open'; float: right; color: var(--muted); font-size: 11px; }
+    details[open].settings > summary::after { content: 'Close'; }
+    .tuning { padding: 0 15px 15px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+    fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+    legend { color: #c5cfda; font-size: 11px; font-weight: 700; padding: 0 5px; }
+    fieldset label { margin: 8px 0; }
+    fieldset input { min-width: 0; width: 100%; padding: 7px; }
+    fieldset input[type=checkbox] { width: auto; justify-self: start; }
+    .tuning-actions { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+    .tuning-actions .subtle { margin-left: auto; }
+    .session { margin: 0 15px 15px; border-top: 1px solid var(--line); padding-top: 10px; }
+    #audio { display: none; }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .transcript { height: 430px; }
+      .tuning { grid-template-columns: 1fr 1fr; }
     }
-    section {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-    }
-    .section-title {
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--border);
-      font-weight: 600;
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      align-items: center;
-    }
-    .chat-log {
-      flex: 1;
-      overflow: auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    .message {
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px;
-      white-space: pre-wrap;
-      line-height: 1.4;
-    }
-    .message.user { border-left: 4px solid var(--user); }
-    .message.assistant { border-left: 4px solid var(--assistant); }
-    .message.error { border-left: 4px solid var(--error); }
-    .message .meta {
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 6px;
-    }
-    form {
-      border-top: 1px solid var(--border);
-      padding: 12px;
-      display: grid;
-      gap: 8px;
-    }
-    textarea { min-height: 100px; resize: vertical; }
-    pre {
-      margin: 0;
-      flex: 1;
-      overflow: auto;
-      padding: 12px;
-      font-size: 12px;
-      line-height: 1.45;
-      background: #0d1117;
-      color: #e6edf3;
-      border-radius: 0 0 8px 8px;
-    }
-    .row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
-    .row label { flex: 1 1 160px; }
-    .wide { min-width: 300px; }
-    .status { color: var(--muted); font-size: 12px; }
-    .title-actions {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .mode-switch {
-      display: inline-flex;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      overflow: hidden;
-      background: #fff;
-    }
-    .mode-switch button {
-      border: 0;
-      border-radius: 0;
-      background: #fff;
-      color: #24292f;
-      padding: 6px 10px;
-    }
-    .mode-switch button.active {
-      background: #24292f;
-      color: #fff;
-    }
-    .text-input-panel[hidden],
-    .voice-panel[hidden] {
-      display: none;
-    }
-    .voice-panel {
-      border-top: 1px solid var(--border);
-      padding: 12px;
-      display: grid;
-      gap: 10px;
-      background: #fff;
-    }
-    .voice-panel h2 {
-      margin: 0;
-      font-size: 14px;
-    }
-    .voice-controls {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-    .voice-controls button.secondary {
-      background: #fff;
-      color: #24292f;
-      border-color: var(--border);
-    }
-    .voice-indicator {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: var(--border);
-      display: inline-block;
-    }
-    .voice-indicator.active { background: var(--error); }
-    .voice-timer {
-      font-variant-numeric: tabular-nums;
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .voice-results {
-      display: grid;
-      gap: 8px;
-    }
-    .voice-results textarea {
-      min-height: 56px;
-      resize: vertical;
-      background: #f6f8fa;
-    }
-    .voice-warning {
-      color: #9a6700;
-      font-size: 12px;
-      white-space: pre-wrap;
-    }
-    .voice-error {
-      color: var(--error);
-      font-size: 12px;
-      white-space: pre-wrap;
-    }
-    #assistantAudio {
-      width: 100%;
-      min-height: 36px;
-    }
-    .livekit-status-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 4px 12px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    #livekitLog { max-height: 180px; border-radius: 6px; }
-    .turn-tuning { display: grid; gap: 10px; padding: 10px 0; }
-    .turn-tuning fieldset { border: 1px solid var(--border); border-radius: 6px; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
-    .turn-tuning legend { font-size: 12px; font-weight: 600; }
-    .turn-tuning input[type="number"] { width: 100%; }
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; height: auto; }
-      section { min-height: 420px; }
+    @media (max-width: 620px) {
+      header, main { padding-left: 12px; padding-right: 12px; }
+      .toolbar { align-items: stretch; }
+      .toolbar label, .actions { width: 100%; margin-left: 0; }
+      .toolbar input, .toolbar select, .actions .button { width: 100%; }
+      .state-strip { grid-template-columns: 1fr 1fr; }
+      .metrics, .tuning { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>Debug Chat</h1>
-    <label class="wide">Backend URL
-      <input id="backendUrl" value="http://127.0.0.1:8000">
-    </label>
-    <label>API path
-      <input id="apiPath" value="/api/v1/messages">
-    </label>
-    <span id="status" class="status">Idle</span>
+    <div class="brand"><span class="brand-mark"></span>VOICE LAB</div>
+    <div class="connection"><span id="connectionDot" class="dot"></span><span id="connectionText">Disconnected</span></div>
   </header>
-
   <main>
-    <section>
-      <div class="section-title">
-        <span>Conversation</span>
-        <div class="title-actions">
-          <div class="mode-switch" aria-label="Input mode">
-            <button id="textModeButton" class="active" type="button">Text</button>
-            <button id="voiceModeButton" type="button">Voice</button>
-          </div>
-          <button id="clearChat" type="button">Clear</button>
-        </div>
-      </div>
-      <div id="chatLog" class="chat-log"></div>
-      <form id="messageForm">
-        <div class="row">
-          <label>Tenant ID
-            <input id="tenantId" value="demo_restaurant" required>
-          </label>
-          <label>Channel
-            <input id="channel" value="debug-chat" required>
-          </label>
-        </div>
-        <div class="row">
-          <label>External user ID
-            <input id="externalUserId" value="debug-user">
-          </label>
-          <label>Conversation ID
-            <input id="conversationId" placeholder="Empty means create/use new conversation">
-          </label>
-        </div>
-        <div id="textInputPanel" class="text-input-panel">
-          <label>Metadata JSON (optional)
-            <input id="metadata" placeholder='{"source":"debug"}'>
-          </label>
-          <label>Message
-            <textarea id="content" placeholder="Type a message..."></textarea>
-          </label>
-          <button id="sendButton" type="submit">Send</button>
-        </div>
-      </form>
-      <div id="voicePanel" class="voice-panel" hidden>
-        <div class="row">
-          <h2>Voice message</h2>
-          <span id="voiceStatus" class="status">Idle</span>
-        </div>
-        <div class="voice-controls">
-          <label>Runtime <select id="voiceRuntime"><option value="legacy" selected>Legacy</option><option value="livekit">LiveKit</option></select></label>
-          <label>Mode <select id="voiceInteractionMode"><option value="call" selected>Call</option><option value="manual">Manual</option></select></label>
-          <button id="connectVoice" type="button">Start Call</button>
-          <button id="disconnectVoice" class="secondary" type="button" disabled>End Call</button>
-          <button id="muteVoice" class="secondary" type="button" disabled>Mute</button>
-          <button id="reconnectVoice" class="secondary" type="button" disabled>Reconnect</button>
-          <button id="startRecording" type="button">Start recording</button>
-          <button id="stopRecording" type="button" disabled>Stop recording</button>
-          <button id="resetVoiceConversation" class="secondary" type="button">Reset voice conversation</button>
-          <span id="voiceIndicator" class="voice-indicator" aria-hidden="true"></span>
-          <span id="recordingTimer" class="voice-timer">00:00</span>
-        </div>
-        <div class="livekit-status-grid">
-          <span>Call session: <b id="callSessionId">none</b></span>
-          <span>Room: <b id="livekitRoom">none</b></span>
-          <span>Participant: <b id="livekitParticipant">none</b></span>
-          <span>Microphone: <b id="livekitMicrophone">disabled</b></span>
-          <span>User: <b id="livekitUserState">silent</b></span>
-          <span>Agent: <b id="livekitAgentState">idle</b></span>
-          <span>Latency: <b id="livekitLatency">none</b></span>
-          <span>Preemptive LLM: <b id="livekitPreemptiveEffective">Off</b></span>
-        </div>
-        <details>
-          <summary>Turn tuning (applies to the next call)</summary>
-          <div class="turn-tuning">
-            <div class="voice-controls">
-              <button id="recommendedTurnDefaults" type="button">Use recommended defaults</button>
-              <button id="resetTurnChanges" class="secondary" type="button">Reset changes</button>
-            </div>
-            <fieldset><legend>Speech detection</legend>
-              <label title="Lower reacts to quieter speech but increases false starts.">Activation threshold<input data-turn="vad.activation_threshold" type="number" min="0.01" max="1" step="0.01" value="0.5"></label>
-              <label title="Shorter accepts brief sounds; longer rejects them.">Minimum speech (ms)<input data-turn="vad.min_speech_ms" type="number" min="50" max="2000" step="10" value="100"></label>
-              <label title="Shorter responds faster but can cut natural pauses.">Silence to stop speech (ms)<input data-turn="vad.min_silence_ms" type="number" min="50" max="3000" step="10" value="550"></label>
-              <label title="Audio retained before detected speech to avoid clipped initials.">Prefix padding (ms)<input data-turn="vad.prefix_padding_ms" type="number" min="0" max="2000" step="10" value="500"></label>
-            </fieldset>
-            <fieldset><legend>Turn completion</legend>
-              <label title="Minimum wait after speech before replying.">Minimum endpointing delay (ms)<input data-turn="endpointing.min_delay_ms" type="number" min="100" max="5000" step="50" value="700"></label>
-              <label title="Maximum wait after speech before forcing the turn complete.">Maximum endpointing delay (ms)<input data-turn="endpointing.max_delay_ms" type="number" min="100" max="10000" step="50" value="2500"></label>
-            </fieldset>
-            <fieldset><legend>Interruptions</legend>
-              <label title="Allow caller speech to stop assistant playback.">Enabled<input data-turn="interruption.enabled" type="checkbox" checked></label>
-              <label title="Speech duration required before barge-in.">Minimum duration (ms)<input data-turn="interruption.min_duration_ms" type="number" min="0" max="3000" step="10" value="200"></label>
-              <label title="Transcript words required before barge-in.">Minimum words<input data-turn="interruption.min_words" type="number" min="0" max="20" step="1" value="1"></label>
-              <label title="Wait before treating an interruption as false.">False interruption timeout (ms)<input data-turn="interruption.false_interruption_timeout_ms" type="number" min="100" max="10000" step="50" value="1000"></label>
-              <label title="Resume playback when an interruption was false.">Resume after false interruption<input data-turn="interruption.resume_after_false_interruption" type="checkbox"></label>
-            </fieldset>
-            <fieldset><legend>STT segmentation</legend>
-              <label title="Enable ElevenLabs Scribe realtime server VAD.">Enabled<input data-turn="stt_segmentation.enabled" type="checkbox" checked></label>
-              <label title="Provider silence duration before final transcript.">Silence duration (ms)<input data-turn="stt_segmentation.silence_ms" type="number" min="100" max="5000" step="50" value="400"></label>
-              <label title="Provider speech probability threshold; must be at most 1.">Provider VAD threshold<input data-turn="stt_segmentation.threshold" type="number" min="0.01" max="1" step="0.01" value="0.4"></label>
-              <label title="Minimum provider speech segment.">Minimum speech (ms)<input data-turn="stt_segmentation.min_speech_ms" type="number" min="0" max="5000" step="10" value="100"></label>
-              <label title="Minimum provider silence segment.">Minimum silence (ms)<input data-turn="stt_segmentation.min_silence_ms" type="number" min="0" max="5000" step="10" value="100"></label>
-            </fieldset>
-            <fieldset><legend>Generation</legend>
-              <label title="Start native LiveKit LLM generation before turn commitment. Applies only to the next call.">Preemptive LLM generation<input data-turn="preemptive_generation.enabled" type="checkbox"></label>
-            </fieldset>
-            <div id="turnValidation" class="voice-error"></div>
-          </div>
-          <div class="status">Active-call resolved configuration</div>
-          <pre id="resolvedTurnConfig">No active call.</pre>
-        </details>
-        <div class="voice-results">
-          <label>Interim transcript
-            <textarea id="livekitInterim" readonly placeholder="No interim transcript yet."></textarea>
-          </label>
-          <label>Transcript
-            <textarea id="voiceTranscript" readonly placeholder="No voice transcript yet."></textarea>
-          </label>
-          <label>Assistant response
-            <textarea id="voiceAssistantResponse" readonly placeholder="No voice response yet."></textarea>
-          </label>
-          <div id="voiceWarnings" class="voice-warning"></div>
-          <div id="voiceError" class="voice-error"></div>
-          <audio id="assistantAudio" controls></audio>
-          <div id="livekitAudio"></div>
-          <div class="row"><span class="status">LiveKit telemetry</span><button id="clearLivekitLog" class="secondary" type="button">Clear log</button></div>
-          <pre id="livekitLog">No LiveKit events yet.</pre>
-        </div>
+    <section class="toolbar">
+      <label>Tenant
+        <select id="tenant"><option value="penzion_grand">Penzión Grand</option><option value="demo_restaurant">Demo restaurant</option></select>
+      </label>
+      <label class="grow">Conversation ID <span class="subtle">optional</span>
+        <input id="conversation" placeholder="A new conversation is created when empty">
+      </label>
+      <div class="actions">
+        <button id="newConversation" class="button">New conversation</button>
+        <button id="start" class="button primary">Start call</button>
+        <button id="mute" class="button" disabled>Mute</button>
+        <button id="stop" class="button danger" disabled>End call</button>
       </div>
     </section>
 
-    <section>
-      <div class="section-title">
-        <span>Full API response</span>
-        <button id="copyResponse" type="button">Copy JSON</button>
+    <div id="error" class="error"></div>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="panel-head"><span class="panel-title">Conversation</span><button id="clearTranscript" class="button">Clear</button></div>
+        <div id="transcript" class="transcript"><div class="empty">Start a call and speak. Final user and assistant transcripts appear here.</div></div>
+        <div id="interim" class="interim">Waiting for microphone…</div>
+        <div id="audio"></div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-head"><span class="panel-title">Turn inspector</span><span id="timer" class="subtle">00:00</span></div>
+        <div class="state-strip">
+          <div class="state"><small>Microphone</small><b id="microphone">disabled</b></div>
+          <div class="state"><small>User</small><b id="userState">silent</b></div>
+          <div class="state"><small>Agent</small><b id="agentState">idle</b></div>
+          <div class="state"><small>Preemptive</small><b id="preemptive">off</b></div>
+        </div>
+        <div class="metrics">
+          <div class="metric"><span>STT final</span><b id="sttMetric">—</b></div>
+          <div class="metric"><span>Turn commit</span><b id="commitMetric">—</b></div>
+          <div class="metric"><span>LLM TTFT</span><b id="llmMetric">—</b></div>
+          <div class="metric"><span>Tool</span><b id="toolMetric">—</b></div>
+          <div class="metric"><span>TTS TTFB</span><b id="ttsMetric">—</b></div>
+          <div class="metric"><span>Total turn</span><b id="totalMetric">—</b></div>
+        </div>
+        <div id="toolStatus" class="tool-status">No capability call in this turn.</div>
+        <div class="panel-head">
+          <span class="panel-title">Event stream</span>
+          <div><select id="eventFilter" class="event-filter"><option value="all">All events</option><option value="turn">Turn</option><option value="tool">Tools</option><option value="latency">Latency</option><option value="error">Errors</option></select> <button id="clearEvents" class="button">Clear</button></div>
+        </div>
+        <div id="events" class="events"><div class="empty">Telemetry events will appear here.</div></div>
+      </aside>
+    </div>
+
+    <details class="settings">
+      <summary>Turn tuning <span class="subtle">applies to the next call</span></summary>
+      <div class="tuning">
+        <fieldset><legend>Speech detection</legend>
+          <label>Activation threshold<input data-turn="vad.activation_threshold" type="number" min="0.01" max="1" step="0.01" value="0.5"></label>
+          <label>Minimum speech (ms)<input data-turn="vad.min_speech_ms" type="number" min="50" max="2000" step="10" value="100"></label>
+          <label>Silence to stop (ms)<input data-turn="vad.min_silence_ms" type="number" min="50" max="3000" step="10" value="550"></label>
+          <label>Prefix padding (ms)<input data-turn="vad.prefix_padding_ms" type="number" min="0" max="2000" step="10" value="500"></label>
+        </fieldset>
+        <fieldset><legend>Turn completion</legend>
+          <label>Minimum delay (ms)<input data-turn="endpointing.min_delay_ms" type="number" min="100" max="5000" step="50" value="700"></label>
+          <label>Maximum delay (ms)<input data-turn="endpointing.max_delay_ms" type="number" min="100" max="10000" step="50" value="2500"></label>
+        </fieldset>
+        <fieldset><legend>Interruptions</legend>
+          <label>Enabled<input data-turn="interruption.enabled" type="checkbox" checked></label>
+          <label>Minimum duration (ms)<input data-turn="interruption.min_duration_ms" type="number" min="0" max="3000" step="10" value="200"></label>
+          <label>Minimum words<input data-turn="interruption.min_words" type="number" min="0" max="20" step="1" value="1"></label>
+          <label>False interruption timeout (ms)<input data-turn="interruption.false_interruption_timeout_ms" type="number" min="100" max="10000" step="50" value="1000"></label>
+          <label>Resume after false interruption<input data-turn="interruption.resume_after_false_interruption" type="checkbox"></label>
+        </fieldset>
+        <fieldset><legend>STT segmentation</legend>
+          <label>Enabled<input data-turn="stt_segmentation.enabled" type="checkbox" checked></label>
+          <label>Silence duration (ms)<input data-turn="stt_segmentation.silence_ms" type="number" min="100" max="5000" step="50" value="400"></label>
+          <label>Provider threshold<input data-turn="stt_segmentation.threshold" type="number" min="0.01" max="1" step="0.01" value="0.4"></label>
+          <label>Minimum speech (ms)<input data-turn="stt_segmentation.min_speech_ms" type="number" min="0" max="5000" step="10" value="100"></label>
+          <label>Minimum silence (ms)<input data-turn="stt_segmentation.min_silence_ms" type="number" min="0" max="5000" step="10" value="100"></label>
+        </fieldset>
+        <fieldset><legend>Preemptive LLM generation</legend>
+          <label>Enabled<input data-turn="preemptive_generation.enabled" type="checkbox"></label>
+        </fieldset>
+        <div class="tuning-actions">
+          <button id="recommended" class="button">Use recommended defaults</button>
+          <button id="resetTuning" class="button">Reset changes</button>
+          <span id="tuningState" class="subtle">Using tenant defaults</span>
+        </div>
       </div>
-      <pre id="apiResponse">No requests yet.</pre>
-    </section>
+      <details class="session"><summary>Active session details</summary><pre id="sessionJson">No active call.</pre></details>
+    </details>
   </main>
 
-  <script src="/voice-protocol.js"></script>
   <script src="/vendor/livekit-client.umd.js"></script>
   <script src="/livekit-controller.js"></script>
   <script>
-    const backendUrlInput = document.querySelector('#backendUrl');
-    const apiPathInput = document.querySelector('#apiPath');
-    const tenantIdInput = document.querySelector('#tenantId');
-    const channelInput = document.querySelector('#channel');
-    const externalUserIdInput = document.querySelector('#externalUserId');
-    const conversationIdInput = document.querySelector('#conversationId');
-    const metadataInput = document.querySelector('#metadata');
-    const contentInput = document.querySelector('#content');
-    const chatLog = document.querySelector('#chatLog');
-    const apiResponse = document.querySelector('#apiResponse');
-    const statusEl = document.querySelector('#status');
-    const sendButton = document.querySelector('#sendButton');
-    const textModeButton = document.querySelector('#textModeButton');
-    const voiceModeButton = document.querySelector('#voiceModeButton');
-    const textInputPanel = document.querySelector('#textInputPanel');
-    const voicePanel = document.querySelector('#voicePanel');
-    const startRecordingButton = document.querySelector('#startRecording');
-    const stopRecordingButton = document.querySelector('#stopRecording');
-    const resetVoiceConversationButton = document.querySelector('#resetVoiceConversation');
-    const voiceStatusEl = document.querySelector('#voiceStatus');
-    const voiceIndicator = document.querySelector('#voiceIndicator');
-    const recordingTimer = document.querySelector('#recordingTimer');
-    const voiceTranscript = document.querySelector('#voiceTranscript');
-    const voiceAssistantResponse = document.querySelector('#voiceAssistantResponse');
-    const voiceWarnings = document.querySelector('#voiceWarnings');
-    const voiceError = document.querySelector('#voiceError');
-    const assistantAudio = document.querySelector('#assistantAudio');
-    const connectVoiceButton = document.querySelector('#connectVoice');
-    const disconnectVoiceButton = document.querySelector('#disconnectVoice');
-    const reconnectVoiceButton = document.querySelector('#reconnectVoice');
-    const callSessionId = document.querySelector('#callSessionId');
-    const voiceInteractionMode = document.querySelector('#voiceInteractionMode');
-    const muteVoiceButton = document.querySelector('#muteVoice');
-    const voiceRuntime = document.querySelector('#voiceRuntime');
-    const livekitRoom = document.querySelector('#livekitRoom');
-    const livekitParticipant = document.querySelector('#livekitParticipant');
-    const livekitMicrophone = document.querySelector('#livekitMicrophone');
-    const livekitUserState = document.querySelector('#livekitUserState');
-    const livekitAgentState = document.querySelector('#livekitAgentState');
-    const livekitLatency = document.querySelector('#livekitLatency');
-    const livekitPreemptiveEffective = document.querySelector('#livekitPreemptiveEffective');
+    const $ = selector => document.querySelector(selector);
+    const ui = {
+      tenant: $('#tenant'), conversation: $('#conversation'), start: $('#start'), stop: $('#stop'), mute: $('#mute'),
+      dot: $('#connectionDot'), connection: $('#connectionText'), microphone: $('#microphone'), user: $('#userState'), agent: $('#agentState'),
+      transcript: $('#transcript'), interim: $('#interim'), events: $('#events'), error: $('#error'), audio: $('#audio'), timer: $('#timer'),
+      preemptive: $('#preemptive'), toolStatus: $('#toolStatus'), session: $('#sessionJson'), filter: $('#eventFilter'), tuning: $('#tuningState'),
+    };
+    const metrics = {
+      stt_finalization_delay_ms: $('#sttMetric'), turn_commit_delay_ms: $('#commitMetric'), llm_ttft_ms: $('#llmMetric'),
+      tool_execution_ms: $('#toolMetric'), tts_ttfb_ms: $('#ttsMetric'), total_turn_ms: $('#totalMetric'),
+    };
     const turnInputs = [...document.querySelectorAll('[data-turn]')];
-    const recommendedTurnValues = Object.fromEntries(turnInputs.map(input => [input.dataset.turn, input.type === 'checkbox' ? input.checked : Number(input.value)]));
-    const resolvedTurnConfig = document.querySelector('#resolvedTurnConfig');
-    const turnValidation = document.querySelector('#turnValidation');
-    let turnTuningDirty = false;
-    turnInputs.forEach(input => input.addEventListener('input', () => { turnTuningDirty = true; turnValidation.textContent = ''; }));
-    document.querySelector('#recommendedTurnDefaults').onclick = () => { setTurnValues(recommendedTurnValues); turnTuningDirty = true; };
-    document.querySelector('#resetTurnChanges').onclick = () => { setTurnValues(recommendedTurnValues); turnTuningDirty = false; turnValidation.textContent = ''; };
-    const livekitInterim = document.querySelector('#livekitInterim');
-    const livekitAudio = document.querySelector('#livekitAudio');
-    const livekitLog = document.querySelector('#livekitLog');
+    const defaults = Object.fromEntries(turnInputs.map(input => [input.dataset.turn, input.type === 'checkbox' ? input.checked : Number(input.value)]));
+    let controller;
+    let callStartedAt;
+    let timerHandle;
+    let tuningDirty = false;
+    let eventStart;
+    let assistantSegments = new Map();
+    let turnNumber = 0;
+    const transcriptNodes = new Map();
 
-    const VOICE_API_PATH = '/api/v1/voice/messages';
-    const MAX_RECORDING_MS = 30000;
-    const PREFERRED_AUDIO_TYPES = [
-      'audio/webm;codecs=opus',
-      'audio/ogg;codecs=opus',
-      'audio/webm',
-      'audio/ogg',
-    ];
-
-    let mediaRecorder = null;
-    let mediaStream = null;
-    let recordedChunks = [];
-    let selectedMimeType = '';
-    let recordingStartedAt = 0;
-    let recordingTimerInterval = null;
-    let maxRecordingTimeout = null;
-    let inputMode = 'text';
-    let voiceBusy = false;
-    let voiceSocket = null;
-    let sessionToken = null;
-    let voiceState = { connection: 'disconnected', processing: false };
-    let audioObjectUrl = null;
-    let audioContext = null;
-    let workletNode = null;
-    let streamingFrames = [];
-    let streamingReady = false;
-    let voiceMuted = false;
-    let assistantTextSequence = 0;
-    let voiceTimeline = [];
-    let voiceTimelineStart = 0;
-    let voiceTimelineSeen = new Set();
-    let liveKitController = null;
-    let livekitEvents = [];
-    let livekitAssistantSegments = new Map();
-    const streamedPlayback = new VoiceProtocol.PCMPlayback({
-      createAudioContext: () => audioContext,
-      closeAudioContext: false,
-      onStart: () => {
-        traceVoice('browser_playback_started');
-        voiceState.hasAssistantAudio = true; setVoiceState('processing', 'Assistant speaking...');
-      },
-      onDrain: () => { if (voiceSocket) startNextStreamingTurn(); },
-      onError: error => showVoiceError(error.message),
-    });
-
-    const saved = JSON.parse(localStorage.getItem('debug-chat-settings') || '{}');
-    for (const [id, value] of Object.entries(saved)) {
-      const element = document.querySelector(`#${id}`);
-      if (element && value !== undefined) element.value = value;
+    function setConnection(connection) {
+      ui.connection.textContent = connection[0].toUpperCase() + connection.slice(1);
+      ui.dot.className = `dot ${connection === 'connected' ? 'live' : connection === 'connecting' ? 'busy' : ''}`;
+      const connected = connection === 'connected';
+      ui.start.disabled = connected || connection === 'connecting';
+      ui.stop.disabled = !connected;
+      ui.mute.disabled = !connected;
+      ui.tenant.disabled = connected;
+      ui.conversation.disabled = connected;
+      $('#newConversation').disabled = connected;
+      if (connection === 'disconnected') clearInterval(timerHandle);
     }
-    inputMode = saved.inputMode === 'voice' ? 'voice' : 'text';
-    applyInputMode(inputMode);
 
-    fetch('/config')
-      .then((response) => response.json())
-      .then((config) => {
-        if (!saved.backendUrl && config.backend_url) backendUrlInput.value = config.backend_url;
-        if (!saved.apiPath && config.api_path) apiPathInput.value = config.api_path;
-      })
-      .catch(() => {});
+    function showError(error) {
+      ui.error.textContent = error?.message || String(error);
+      ui.error.style.display = 'block';
+      addEvent({ event: 'browser_error', error: ui.error.textContent }, 'error');
+    }
 
-    document.querySelector('#messageForm').addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const content = contentInput.value.trim();
-      if (!content) return;
-
-      let metadata = null;
-      if (metadataInput.value.trim()) {
-        try {
-          metadata = JSON.parse(metadataInput.value);
-        } catch (error) {
-          appendMessage('error', 'UI', `Metadata JSON is invalid: ${error.message}`);
-          return;
-        }
+    function addTranscript(item) {
+      ui.transcript.querySelector('.empty')?.remove();
+      const key = `${item.role}:${item.segmentId || crypto.randomUUID()}`;
+      let node = transcriptNodes.get(key);
+      if (!node) {
+        node = document.createElement('div');
+        node.className = `message ${item.role}`;
+        const role = document.createElement('div');
+        role.className = 'role';
+        role.textContent = item.role === 'user' ? 'Caller' : 'Agent';
+        const bubble = document.createElement('div');
+        bubble.className = 'bubble';
+        node.append(role, bubble);
+        transcriptNodes.set(key, node);
+        ui.transcript.append(node);
       }
+      node.querySelector('.bubble').textContent = item.text;
+      ui.transcript.scrollTop = ui.transcript.scrollHeight;
+    }
 
-      const payload = compact({
-        tenant_id: tenantIdInput.value.trim(),
-        channel: channelInput.value.trim(),
-        external_user_id: externalUserIdInput.value.trim(),
-        conversation_id: conversationIdInput.value.trim(),
-        content,
-        metadata,
-      });
+    function eventKind(event) {
+      const name = `${event.event || ''} ${event.type || ''}`;
+      if (name.includes('error') || event.status === 'failed') return 'error';
+      if (name.includes('tool')) return 'tool';
+      if (name.includes('latency')) return 'latency';
+      return 'turn';
+    }
 
-      saveSettings();
-      appendMessage('user', 'You', content);
-      contentInput.value = '';
-      setBusy(true, 'Sending...');
+    function addEvent(event, forcedKind) {
+      ui.events.querySelector('.empty')?.remove();
+      eventStart ||= performance.now();
+      const kind = forcedKind || eventKind(event);
+      const row = document.createElement('div');
+      row.className = 'event';
+      row.dataset.kind = kind;
+      const time = document.createElement('time');
+      time.textContent = `+${((performance.now() - eventStart) / 1000).toFixed(1)}s`;
+      const details = document.createElement('details');
+      const summary = document.createElement('summary');
+      summary.textContent = event.event || event.type || 'event';
+      const raw = document.createElement('pre');
+      raw.textContent = JSON.stringify(event, null, 2);
+      details.append(summary, raw);
+      row.append(time, details);
+      ui.events.append(row);
+      applyEventFilter();
+      ui.events.scrollTop = ui.events.scrollHeight;
+    }
 
-      try {
-        const response = await fetch('/debug/message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            backend_url: backendUrlInput.value.trim(),
-            api_path: apiPathInput.value.trim(),
-            payload,
-          }),
-        });
-        const result = await response.json();
-        apiResponse.textContent = JSON.stringify(result, null, 2);
+    function applyEventFilter() {
+      const selected = ui.filter.value;
+      for (const row of ui.events.querySelectorAll('.event')) row.classList.toggle('hidden', selected !== 'all' && row.dataset.kind !== selected);
+    }
 
-        const backendResponse = result.response || {};
-        if (backendResponse.conversation_id) {
-          conversationIdInput.value = backendResponse.conversation_id;
-          saveSettings();
-        }
-
-        if (!response.ok || result.error) {
-          appendMessage('error', 'Proxy error', result.error || `HTTP ${response.status}`);
-        } else if (result.proxied_status >= 400) {
-          appendMessage('error', `Backend HTTP ${result.proxied_status}`, JSON.stringify(backendResponse, null, 2));
-        } else {
-          appendMessage('assistant', 'Assistant', backendResponse.response_text || backendResponse.assistant_message?.content || '(empty response)');
-        }
-      } catch (error) {
-        appendMessage('error', 'Request failed', error.message);
-        apiResponse.textContent = JSON.stringify({ error: error.message }, null, 2);
-      } finally {
-        setBusy(false, 'Idle');
+    function updateTelemetry(event) {
+      addEvent(event);
+      if (event.event === 'turn_completed' && event.total_turn_ms != null) metrics.total_turn_ms.textContent = `${Math.round(event.total_turn_ms)} ms`;
+      if (event.event === 'tool_call_started') {
+        ui.toolStatus.className = 'tool-status active';
+        ui.toolStatus.textContent = `Running ${event.capability || 'capability'}…`;
       }
-    });
-
-    document.querySelector('#clearChat').addEventListener('click', () => {
-      chatLog.innerHTML = '';
-      apiResponse.textContent = 'No requests yet.';
-    });
-
-    textModeButton.addEventListener('click', () => switchInputMode('text'));
-    voiceModeButton.addEventListener('click', () => switchInputMode('voice'));
-    muteVoiceButton.addEventListener('click', () => {
-      if (voiceRuntime.value === 'livekit') {
-        liveKitController?.toggleMute().then(muted => { muteVoiceButton.textContent = muted ? 'Unmute' : 'Mute'; });
-        return;
+      if (event.event === 'tool_call_completed') {
+        const failed = event.status && event.status !== 'success';
+        ui.toolStatus.className = `tool-status ${failed ? 'failed' : 'success'}`;
+        ui.toolStatus.textContent = `${event.capability || 'Capability'}: ${event.status || 'completed'}`;
       }
-      voiceMuted = !voiceMuted;
-      for (const track of mediaStream?.getAudioTracks() || []) track.enabled = !voiceMuted;
-      muteVoiceButton.textContent = voiceMuted ? 'Unmute' : 'Mute';
-    });
-    startRecordingButton.addEventListener('click', startVoiceRecording);
-    stopRecordingButton.addEventListener('click', stopVoiceRecording);
-    connectVoiceButton.addEventListener('click', connectVoice);
-    disconnectVoiceButton.addEventListener('click', disconnectVoice);
-    reconnectVoiceButton.addEventListener('click', () => {
-      if (voiceRuntime.value === 'livekit') { disconnectLiveKit().then(connectLiveKit); return; }
-      if (!voiceSocket) { connectVoice(); return; }
-      voiceSocket.addEventListener('close', connectVoice, { once: true });
-      voiceSocket.close();
-    });
-    voiceRuntime.addEventListener('change', () => {
-      disconnectVoice();
-      voiceInteractionMode.disabled = voiceRuntime.value === 'livekit';
-      clearVoiceMessages();
-      updateVoiceControlAvailability();
-    });
-    document.querySelector('#clearLivekitLog').addEventListener('click', () => {
-      livekitEvents = [];
-      livekitLog.textContent = 'No LiveKit events yet.';
-    });
-    resetVoiceConversationButton.addEventListener('click', () => {
-      disconnectVoice();
-      conversationIdInput.value = '';
-      saveSettings();
-      voiceStatusEl.textContent = 'Voice conversation reset';
-      setTimeout(() => voiceStatusEl.textContent = 'Idle', 1200);
-    });
-
-    document.querySelector('#copyResponse').addEventListener('click', async () => {
-      await navigator.clipboard.writeText(apiResponse.textContent);
-      statusEl.textContent = 'Copied response JSON';
-      setTimeout(() => statusEl.textContent = 'Idle', 1200);
-    });
-
-    function compact(value) {
-      return Object.fromEntries(
-        Object.entries(value).filter(([, item]) => item !== '' && item !== null && item !== undefined)
-      );
-    }
-
-    function appendMessage(kind, author, text) {
-      const message = document.createElement('div');
-      message.className = `message ${kind}`;
-      message.innerHTML = `<div class="meta"></div><div></div>`;
-      message.children[0].textContent = `${author} · ${new Date().toLocaleTimeString()}`;
-      message.children[1].textContent = text;
-      chatLog.append(message);
-      chatLog.scrollTop = chatLog.scrollHeight;
-    }
-
-    function setBusy(isBusy, text) {
-      sendButton.disabled = isBusy;
-      statusEl.textContent = text;
-    }
-
-    function switchInputMode(nextMode) {
-      if (nextMode === inputMode) return;
-      if (voiceBusy) {
-        voiceStatusEl.textContent = 'Finish the current voice message before switching modes';
-        return;
+      if (event.type === 'voice_latency_trace') {
+        const values = { ...(event.durations_ms || {}), total_turn_ms: event.total_turn_ms };
+        for (const [key, element] of Object.entries(metrics)) element.textContent = values[key] == null ? '—' : `${Math.round(values[key])} ms`;
+        ui.preemptive.textContent = event.flags?.preemptive_response_reused ? 'reused' : event.flags?.preemptive_generation_used ? 'used' : 'off';
       }
-
-      inputMode = nextMode;
-      applyInputMode(inputMode);
-      saveSettings();
     }
 
-    function applyInputMode(nextMode) {
-      const isVoice = nextMode === 'voice';
-      textInputPanel.hidden = isVoice;
-      voicePanel.hidden = !isVoice;
-      textModeButton.classList.toggle('active', !isVoice);
-      voiceModeButton.classList.toggle('active', isVoice);
-      contentInput.required = !isVoice;
-      if (isVoice) {
-        statusEl.textContent = 'Voice input mode';
-      } else {
-        statusEl.textContent = 'Text input mode';
-      }
-      updateVoiceControlAvailability();
-    }
-
-    async function startVoiceRecording() {
-      clearVoiceMessages();
-
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showVoiceError('This browser does not support microphone capture.');
-        return;
-      }
-      if (voiceState.sttMode === 'streaming') {
-        await startStreamingRecording();
-        return;
-      }
-      if (!window.MediaRecorder) {
-        showVoiceError('This browser does not support MediaRecorder.');
-        return;
-      }
-
-      selectedMimeType = selectRecordingMimeType();
-      recordedChunks = [];
-
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(
-          mediaStream,
-          selectedMimeType ? { mimeType: selectedMimeType } : undefined
-        );
-      } catch (error) {
-        cleanupMediaStream();
-        showVoiceError(`Microphone recording could not start: ${error.message}`);
-        return;
-      }
-
-      mediaRecorder.addEventListener('dataavailable', (event) => {
-        if (event.data && event.data.size > 0) {
-          recordedChunks.push(event.data);
-          if (voiceSocket?.readyState === WebSocket.OPEN) voiceSocket.send(event.data);
-        }
-      });
-
-      mediaRecorder.addEventListener('error', (event) => {
-        cleanupRecordingTimers();
-        cleanupMediaStream();
-        setVoiceState('idle');
-        showVoiceError(`Recording failed: ${event.error?.message || 'unknown MediaRecorder error'}`);
-      });
-
-      mediaRecorder.addEventListener('stop', () => {
-        handleRecordingStopped().catch((error) => {
-          setVoiceState('idle');
-          showVoiceError(error.message);
-        });
-      });
-
-      recordingStartedAt = Date.now();
-      updateRecordingTimer();
-      recordingTimerInterval = setInterval(updateRecordingTimer, 250);
-      maxRecordingTimeout = setTimeout(() => {
-        if (mediaRecorder && mediaRecorder.state === 'recording') stopVoiceRecording();
-      }, MAX_RECORDING_MS);
-
-      mediaRecorder.start(100);
-      setVoiceState('recording');
-    }
-
-    function stopVoiceRecording() {
-      if (voiceState.sttMode === 'streaming') { stopStreamingRecording(); return; }
-      if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
-      setVoiceState('stopping');
-      mediaRecorder.stop();
-    }
-
-    async function handleRecordingStopped() {
-      cleanupRecordingTimers();
-      cleanupMediaStream();
-
-      const blobType = selectedMimeType || recordedChunks[0]?.type || 'audio/webm';
-      const audioBlob = new Blob(recordedChunks, { type: blobType });
-      if (!audioBlob.size) {
-        setVoiceState('idle');
-        showVoiceError('Recording was empty.');
-        return;
-      }
-
-      await sendVoiceRecording(audioBlob, blobType);
-    }
-
-    async function sendVoiceRecording(audioBlob, mimeType) {
-      setVoiceState('processing');
-      saveSettings();
-      if (!voiceSocket || voiceSocket.readyState !== WebSocket.OPEN) throw new Error('Connect voice first.');
-      const filename = `debug-recording-${Date.now()}.${extensionForMimeType(mimeType)}`;
-      voiceSocket.send(JSON.stringify({ type: 'input_audio_commit', content_type: mimeType, filename }));
-    }
-
-    async function startStreamingRecording() {
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: {
-          channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
-        } });
-        audioContext = new AudioContext();
-        const source = `class PCM extends AudioWorkletProcessor {
-          constructor(){super();this.b=[];this.phase=0;this.port.onmessage=()=>this.flush()}
-          process(inputs){const c=inputs[0];if(!c.length)return true;const n=c[0].length;
-            for(let i=0;i<n;i++){let v=0;for(const ch of c)v+=ch[i]/c.length;this.phase+=16000/sampleRate;
-              if(this.phase>=1){this.phase-=1;this.b.push(Math.max(-1,Math.min(1,v)))}
-              if(this.b.length===1600){const a=new ArrayBuffer(3200),d=new DataView(a);this.b.forEach((x,j)=>d.setInt16(j*2,x<0?x*32768:x*32767,true));this.port.postMessage(a,[a]);this.b=[]}}
-            return true}
-          flush(){if(this.b.length){const a=new ArrayBuffer(this.b.length*2),d=new DataView(a);this.b.forEach((x,j)=>d.setInt16(j*2,x<0?x*32768:x*32767,true));this.port.postMessage(a,[a]);this.b=[]}}
-        } registerProcessor('pcm16',PCM)`;
-        const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
-        await audioContext.audioWorklet.addModule(url); URL.revokeObjectURL(url);
-        workletNode = new AudioWorkletNode(audioContext, 'pcm16');
-        workletNode.port.onmessage = ({ data }) => streamingReady ? voiceSocket.send(data) : streamingFrames.push(data);
-        audioContext.createMediaStreamSource(mediaStream).connect(workletNode);
-        streamingFrames = []; streamingReady = false;
-        startNextStreamingTurn();
-        recordingStartedAt = Date.now(); recordingTimerInterval = setInterval(updateRecordingTimer, 250);
-        if (voiceInteractionMode.value !== 'call') maxRecordingTimeout = setTimeout(stopVoiceRecording, MAX_RECORDING_MS);
-        setVoiceState('starting', 'Starting realtime STT...');
-      } catch (error) { cleanupMediaStream(); showVoiceError(error.message); updateVoiceControlAvailability(); }
-    }
-
-    function startNextStreamingTurn() {
-      streamingReady = false;
-      const call = voiceInteractionMode.value === 'call';
-      voiceSocket.send(JSON.stringify({ type: 'input_audio_start', mode: call ? 'call' : 'manual',
-        commit_strategy: call ? 'vad' : 'manual', content_type: 'audio/pcm', sample_rate: 16000, channels: 1 }));
-      setVoiceState('starting', call ? 'Listening...' : 'Starting realtime STT...');
-    }
-
-    async function stopStreamingRecording() {
-      if (!workletNode || !voiceState.turnId) return;
-      setVoiceState('stopping', 'Finalizing transcript...');
-      workletNode.port.postMessage('flush');
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      for (const frame of streamingFrames.splice(0)) voiceSocket.send(frame);
-      voiceSocket.send(JSON.stringify({ type: 'input_audio_commit', turn_id: voiceState.turnId }));
-      workletNode.disconnect(); workletNode = null;
-      if (audioContext) await audioContext.close(); audioContext = null;
-      cleanupRecordingTimers(); cleanupMediaStream();
-    }
-
-    async function connectVoice() {
-      if (voiceRuntime.value === 'livekit') return connectLiveKit();
-      clearVoiceMessages();
-      voiceTimeline = []; voiceTimelineSeen.clear(); voiceTimelineStart = performance.now();
-      try {
-        const response = await fetch('/debug/voice-session', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(compact({ tenant_id: tenantIdInput.value.trim(), conversation_id: conversationIdInput.value.trim(), mode: voiceInteractionMode.value })),
-        });
-        if (!response.ok) throw new Error(readBackendError(await response.json(), `Session HTTP ${response.status}`));
-        const session = VoiceProtocol.parseSession(await response.json());
-        sessionToken = session.session_token;
-        callSessionId.textContent = session.call_session_id;
-        voiceSocket = new WebSocket(session.websocket_url, ['voice-session', sessionToken]);
-        voiceSocket.onopen = () => {
-          sessionToken = null;
-          if (voiceSocket.protocol !== 'voice-session') { voiceSocket.close(); showVoiceError('Server did not select voice-session protocol.'); return; }
-          voiceStatusEl.textContent = 'Connected'; updateVoiceControlAvailability();
-          if (voiceInteractionMode.value === 'call') startStreamingRecording();
-        };
-        voiceSocket.onmessage = ({ data }) => { if (typeof data === 'string') handleVoiceEvent(JSON.parse(data)); };
-        voiceSocket.onerror = () => showVoiceError('WebSocket connection failed.');
-        voiceSocket.onclose = () => {
-          voiceSocket = null; streamingReady = false; voiceState.connection = 'disconnected';
-          if (workletNode) workletNode.disconnect(); workletNode = null;
-          if (audioContext) audioContext.close(); audioContext = null;
-          cleanupRecordingTimers(); cleanupMediaStream(); revokeAudioUrl();
-          streamedPlayback.stop();
-          setVoiceState('idle', 'Disconnected'); updateVoiceControlAvailability();
-        };
-        updateVoiceControlAvailability();
-      } catch (error) { sessionToken = null; showVoiceError(error.message); }
-    }
-
-    function disconnectVoice() {
-      if (voiceRuntime.value === 'livekit') { disconnectLiveKit(); return; }
-      streamingReady = false;
-      if (voiceSocket?.readyState === WebSocket.OPEN) voiceSocket.send(JSON.stringify({ type: 'session_end' }));
-      if (workletNode) workletNode.disconnect(); workletNode = null;
-      if (audioContext) audioContext.close(); audioContext = null;
-      cleanupMediaStream();
-      if (voiceSocket) voiceSocket.close();
-      voiceSocket = null; sessionToken = null; revokeAudioUrl(); updateVoiceControlAvailability();
-      streamedPlayback.stop();
-    }
-
-    async function connectLiveKit() {
-      clearVoiceMessages();
-      if (liveKitController?.room || liveKitController?.starting) return;
-      liveKitController = liveKitController || new LiveKitDebug.LiveKitController({
-        sdk: LivekitClient,
-        fetchFn: fetch.bind(window),
-        audioContainer: livekitAudio,
-        onSession: session => {
-          callSessionId.textContent = session.call_session_id;
-          livekitRoom.textContent = session.room_name;
-          conversationIdInput.value = session.conversation_id;
-          apiResponse.textContent = JSON.stringify(session, null, 2);
-          resolvedTurnConfig.textContent = JSON.stringify(session.turn_config || {}, null, 2);
-          livekitPreemptiveEffective.textContent = session.turn_config?.preemptive_generation?.enabled ? 'On' : 'Off';
-          saveSettings();
-        },
-        onState: state => {
-          if (state.connection) voiceStatusEl.textContent = `LiveKit ${state.connection}`;
-          if (state.participantIdentity) livekitParticipant.textContent = state.participantIdentity;
-          if (state.microphone) livekitMicrophone.textContent = state.microphone;
-          if (state.user) livekitUserState.textContent = state.user;
-          if (state.agent) livekitAgentState.textContent = state.agent;
-          updateVoiceControlAvailability();
-        },
-        onTranscript: item => {
-          if (item.role === 'user') {
-            if (item.final) {
-              livekitInterim.value = '';
-              voiceTranscript.value = item.text;
-              livekitAssistantSegments = new Map();
-              voiceAssistantResponse.value = '';
-              appendMessage('user', 'LiveKit transcript', item.text);
-            } else livekitInterim.value = item.text;
-          } else {
-            livekitAssistantSegments.set(item.segmentId || `segment-${livekitAssistantSegments.size}`, item.text);
-            voiceAssistantResponse.value = [...livekitAssistantSegments.values()].join('');
-          }
-        },
-        onTelemetry: event => {
-          livekitEvents.push(event);
-          livekitLog.textContent = JSON.stringify(livekitEvents.slice(-100), null, 2);
-          livekitLog.scrollTop = livekitLog.scrollHeight;
-          if (event.event === 'interruption_detected') voiceWarnings.textContent = 'Interruption detected';
-          if (event.type === 'voice_latency_trace') {
-            const metrics = event.durations_ms || {};
-            const labels = [
-              ['stt_finalization_delay_ms', 'STT finalization'],
-              ['turn_commit_delay_ms', 'Turn commit'],
-              ['preemptive_head_start_ms', 'Head start'],
-              ['llm_ttft_ms', 'LLM TTFT'],
-              ['tts_ttfb_ms', 'TTS TTFB'],
-              ['server_first_audio_latency_ms', 'Server first audio'],
-              ['perceived_latency_ms', 'Browser first playout'],
-            ];
-            livekitLatency.textContent = labels.map(([key, label]) =>
-              `${label}: ${key in metrics ? `${metrics[key]} ms` : 'unavailable'}`
-            ).join(', ');
-            const flags = event.flags || {};
-            const speculation = flags.preemptive_response_reused ? 'reused'
-              : flags.preemptive_response_cancelled ? 'cancelled' : 'not created';
-            livekitLatency.textContent += `, Preemptive generation: ${flags.preemptive_generation_used ? 'used' : 'not used'}`;
-            livekitLatency.textContent += `, Speculative response: ${speculation}`;
-            livekitLatency.textContent += `, Tool waited for commit: ${flags.tool_waited_for_commit ? 'yes' : 'no'}`;
-          }
-          if (event.event === 'turn_completed' && voiceAssistantResponse.value) {
-            appendMessage('assistant', 'LiveKit assistant', voiceAssistantResponse.value);
-          }
-        },
-        onError: error => showVoiceError(error.message),
-      });
-      voiceAssistantResponse.value = '';
-      livekitAssistantSegments = new Map();
-      await liveKitController.start({
-        tenantId: tenantIdInput.value.trim(),
-        conversationId: conversationIdInput.value.trim(),
-        turnOverrides: turnTuningDirty ? readTurnOverrides() : undefined,
-      });
-      updateVoiceControlAvailability();
-    }
-
-    async function disconnectLiveKit() {
-      await liveKitController?.stop();
-      callSessionId.textContent = 'none';
-      livekitRoom.textContent = 'none';
-      livekitParticipant.textContent = 'none';
-      livekitMicrophone.textContent = 'disabled';
-      livekitUserState.textContent = 'silent';
-      livekitAgentState.textContent = 'idle';
-      livekitLatency.textContent = 'none';
-      livekitPreemptiveEffective.textContent = 'Off';
-      conversationIdInput.value = '';
-      saveSettings();
-      updateVoiceControlAvailability();
-    }
-
-    function setTurnValues(values) {
-      for (const input of turnInputs) {
-        const value = values[input.dataset.turn];
-        if (input.type === 'checkbox') input.checked = Boolean(value);
-        else input.value = value;
-      }
+    function setPath(target, path, value) {
+      const parts = path.split('.');
+      let node = target;
+      for (const part of parts.slice(0, -1)) node = node[part] ||= {};
+      node[parts.at(-1)] = value;
     }
 
     function readTurnOverrides() {
       const result = {};
       for (const input of turnInputs) {
-        const [group, field] = input.dataset.turn.split('.');
-        result[group] ||= {};
-        result[group][field] = input.type === 'checkbox' ? input.checked : Number(input.value);
+        if (!input.reportValidity()) throw new Error(`Invalid turn setting: ${input.dataset.turn}`);
+        setPath(result, input.dataset.turn, input.type === 'checkbox' ? input.checked : Number(input.value));
       }
-      if (result.endpointing.min_delay_ms > result.endpointing.max_delay_ms) {
-        turnValidation.textContent = 'Minimum endpointing delay cannot exceed maximum delay.';
-        throw new Error(turnValidation.textContent);
-      }
+      if (result.endpointing.min_delay_ms > result.endpointing.max_delay_ms) throw new Error('Minimum endpointing delay cannot exceed maximum delay.');
       return result;
     }
 
-    function handleVoiceEvent(event) {
-      voiceState = VoiceProtocol.transition(voiceState, event);
-      const markers = {
-        assistant_text_started: 'assistant_text_started',
-        assistant_text_delta: 'first_text_delta',
-        assistant_audio_started: 'assistant_audio_started',
-        assistant_audio_chunk: 'browser_audio_chunk_received',
-        assistant_text_completed: 'text_completed',
-        assistant_audio_completed: 'audio_completed',
-        turn_completed: 'turn_completed',
-      };
-      if (markers[event.type]) traceVoice(markers[event.type], event);
-      apiResponse.textContent = JSON.stringify({ event, streaming_timeline: voiceTimeline }, null, 2);
-      if (event.conversation_id) { conversationIdInput.value = event.conversation_id; saveSettings(); }
-      if (event.type === 'audio_chunk_received') voiceStatusEl.textContent = 'Audio buffered';
-      if (event.type === 'input_audio_started') {
-        streamingReady = true;
-        for (const frame of streamingFrames.splice(0)) voiceSocket.send(frame);
-        setVoiceState('recording');
+    function setTurnValues(values) {
+      for (const input of turnInputs) {
+        const value = values[input.dataset.turn];
+        if (input.type === 'checkbox') input.checked = value;
+        else input.value = value;
       }
-      if (event.type === 'listening_started' || event.type === 'listening_resumed') {
-        streamingReady = true; voiceState.hasAssistantAudio = false; setVoiceState('recording', 'Listening...');
-      }
-      if (event.type === 'speech_started') setVoiceState('recording', 'Speaking...');
-      if (event.type === 'speech_ended') { streamingReady = false; setVoiceState('stopping', 'Finalizing transcript...'); }
-      if (event.type === 'transcript_partial') voiceTranscript.value = event.text || '';
-      if (event.type === 'processing_started' || event.code === 'processing_busy') setVoiceState('processing');
-      if (event.type === 'transcript' || event.type === 'transcript_completed') { voiceTranscript.value = event.text || event.transcript || ''; appendMessage('user', 'Voice transcript', voiceTranscript.value); }
-      if (event.type === 'assistant_response') { voiceAssistantResponse.value = event.text || ''; appendMessage('assistant', 'Assistant', voiceAssistantResponse.value); }
-      if (event.type === 'assistant_text_started') { voiceAssistantResponse.value = ''; assistantTextSequence = 0; }
-      if (event.type === 'assistant_text_delta') {
-        if (event.sequence === assistantTextSequence + 1) {
-          voiceAssistantResponse.value += event.delta || ''; assistantTextSequence = event.sequence;
-        } else if (event.sequence > assistantTextSequence) showVoiceError('Assistant text sequence gap.');
-      }
-      if (event.type === 'assistant_text_completed') { voiceAssistantResponse.value = event.text || ''; appendMessage('assistant', 'Assistant', voiceAssistantResponse.value); }
-      if (event.type === 'assistant_audio') { voiceState.hasAssistantAudio = true; playAssistantEventAudio(event, voiceInteractionMode.value === 'call'); }
-      if (event.type === 'assistant_audio_started') streamedPlayback.start();
-      if (event.type === 'assistant_audio_chunk') streamedPlayback.push(event);
-      if (event.type === 'assistant_audio_completed') streamedPlayback.completeAudio();
-      if (event.type === 'error') showVoiceError(event.message || event.code || event.type);
-      if (event.type === 'session_ended') disconnectVoice();
-      if (!voiceState.processing && event.type === 'turn_completed' && voiceInteractionMode.value !== 'call') setVoiceState('idle', 'Voice turn completed');
-      else if (event.type === 'turn_completed' && streamedPlayback.active) streamedPlayback.completeTurn();
-      else if (event.type === 'turn_completed' && voiceInteractionMode.value === 'call' && !voiceState.hasAssistantAudio) startNextStreamingTurn();
-      else if (event.type === 'turn_ignored' && voiceInteractionMode.value === 'call') startNextStreamingTurn();
-      else updateVoiceControlAvailability();
     }
 
-    function playAssistantEventAudio(event, resumeCall = false) {
-      revokeAudioUrl();
-      if (event.audio_base64) {
-        const bytes = Uint8Array.from(atob(event.audio_base64), (c) => c.charCodeAt(0));
-        audioObjectUrl = URL.createObjectURL(new Blob([bytes], { type: event.content_type || 'audio/mpeg' }));
-        assistantAudio.src = audioObjectUrl;
-      } else if (event.audio_url) assistantAudio.src = resolveBackendAssetUrl(event.audio_url);
-      assistantAudio.load();
-      if (resumeCall) setVoiceState('processing', 'Assistant speaking...');
-      const playbackWatchdog = setTimeout(() => { assistantAudio.pause(); resume(); }, 120000);
-      const resume = () => { clearTimeout(playbackWatchdog); assistantAudio.onended = assistantAudio.onerror = null; if (resumeCall && voiceSocket) startNextStreamingTurn(); };
-      assistantAudio.onended = resume; assistantAudio.onerror = resume;
-      assistantAudio.play().catch(() => { showVoiceWarnings(['Playback failed; listening resumed.']); resume(); });
-    }
-
-    function revokeAudioUrl() { if (audioObjectUrl) URL.revokeObjectURL(audioObjectUrl); audioObjectUrl = null; }
-
-    function traceVoice(marker, event = {}) {
-      if (voiceTimelineSeen.has(marker)) return;
-      voiceTimelineSeen.add(marker);
-      voiceTimeline.push({
-        marker,
-        browser_elapsed_ms: Math.round(performance.now() - voiceTimelineStart),
-        server_stream_elapsed_ms: event.stream_elapsed_ms ?? null,
-        sequence: event.sequence ?? null,
-        size_bytes: event.size_bytes ?? null,
-        first_tts_fragment_submitted_ms: event.first_tts_fragment_submitted_ms ?? null,
-        first_provider_audio_received_ms: event.first_provider_audio_received_ms ?? null,
-      });
-    }
-
-    function selectRecordingMimeType() {
-      for (const mimeType of PREFERRED_AUDIO_TYPES) {
-        if (MediaRecorder.isTypeSupported(mimeType)) return mimeType;
-      }
-      return '';
-    }
-
-    function extensionForMimeType(mimeType) {
-      if (mimeType.includes('ogg')) return 'ogg';
-      return 'webm';
-    }
-
-    function buildVoiceProxyUrl() {
-      const params = new URLSearchParams({
-        backend_url: getBackendBaseUrl(),
-        api_path: VOICE_API_PATH,
-      });
-      return `/debug/voice-message?${params.toString()}`;
-    }
-
-    function getBackendBaseUrl() {
-      return (backendUrlInput.value.trim() || window.location.origin).replace(/\/+$/, '');
-    }
-
-    function resolveBackendAssetUrl(url) {
-      return new URL(url, `${getBackendBaseUrl()}/`).href;
-    }
-
-    async function playAssistantAudio(audioUrl) {
-      assistantAudio.pause();
-      assistantAudio.removeAttribute('src');
-      assistantAudio.load();
-
-      if (!audioUrl) {
-        showVoiceWarnings(['Backend response did not include audio_url.']);
-        return;
-      }
-
-      assistantAudio.src = resolveBackendAssetUrl(audioUrl);
-      assistantAudio.load();
+    async function startCall() {
+      ui.error.style.display = 'none';
+      ui.toolStatus.className = 'tool-status';
+      ui.toolStatus.textContent = 'No capability call in this turn.';
+      assistantSegments = new Map();
       try {
-        await assistantAudio.play();
-      } catch (error) {
-        showVoiceWarnings([
-          ...collectVisibleWarnings(),
-          'Click play to listen to the response.',
-        ]);
-      }
+        const started = await controller.start({
+          tenantId: ui.tenant.value,
+          conversationId: ui.conversation.value.trim() || undefined,
+          turnOverrides: tuningDirty ? readTurnOverrides() : undefined,
+        });
+        if (started) {
+          callStartedAt = Date.now();
+          timerHandle = setInterval(() => ui.timer.textContent = new Date(Date.now() - callStartedAt).toISOString().slice(14, 19), 1000);
+        }
+      } catch (error) { showError(error); }
     }
 
-    function collectVoiceWarnings(backendResponse) {
-      const warnings = [];
-      const metadataWarnings = backendResponse.metadata?.warnings;
-      if (Array.isArray(metadataWarnings)) warnings.push(...metadataWarnings);
-      if (!backendResponse.audio_url) warnings.push('Backend response did not include audio_url.');
-      return warnings.filter(Boolean);
+    async function stopCall() {
+      await controller.stop();
+      clearInterval(timerHandle);
+      ui.timer.textContent = '00:00';
+      ui.interim.textContent = 'Call ended.';
     }
 
-    function collectVisibleWarnings() {
-      return voiceWarnings.textContent
-        .split('\n')
-        .map((item) => item.trim())
-        .filter(Boolean);
-    }
-
-    function showVoiceWarnings(warnings) {
-      voiceWarnings.textContent = warnings.length ? warnings.join('\n') : '';
-    }
-
-    function showVoiceError(text) {
-      voiceError.textContent = text;
-      voiceStatusEl.textContent = 'Error';
-    }
-
-    function clearVoiceMessages() {
-      voiceError.textContent = '';
-      voiceWarnings.textContent = '';
-    }
-
-    function readBackendError(value, fallback) {
-      if (!value) return fallback;
-      if (typeof value === 'string') return value;
-      if (typeof value.detail === 'string') return value.detail;
-      if (value.detail) return JSON.stringify(value.detail);
-      if (value.error) return String(value.error);
-      return JSON.stringify(value, null, 2);
-    }
-
-    function setVoiceState(state, text) {
-      const isRecording = state === 'recording';
-      voiceBusy = isRecording || state === 'starting' || state === 'stopping' || state === 'processing';
-      updateVoiceControlAvailability(isRecording);
-      voiceIndicator.classList.toggle('active', isRecording);
-
-      if (text) {
-        voiceStatusEl.textContent = text;
-      } else if (state === 'recording') {
-        voiceStatusEl.textContent = 'Recording...';
-      } else if (state === 'stopping') {
-        voiceStatusEl.textContent = 'Stopping recording...';
-      } else if (state === 'processing') {
-        voiceStatusEl.textContent = 'Processing voice message...';
-      } else {
-        voiceStatusEl.textContent = 'Idle';
-      }
-    }
-
-    function updateVoiceControlAvailability(isRecording = false) {
-      const voiceModeActive = inputMode === 'voice';
-      if (voiceRuntime.value === 'livekit') {
-        const connected = !!liveKitController?.room;
-        startRecordingButton.disabled = true;
-        stopRecordingButton.disabled = true;
-        connectVoiceButton.disabled = !voiceModeActive || connected || !!liveKitController?.starting;
-        disconnectVoiceButton.disabled = !connected;
-        muteVoiceButton.disabled = !connected;
-        reconnectVoiceButton.disabled = !connected;
-        resetVoiceConversationButton.disabled = !voiceModeActive;
-        return;
-      }
-      const connected = voiceSocket && voiceSocket.readyState === WebSocket.OPEN;
-      startRecordingButton.disabled = !voiceModeActive || voiceBusy || !connected;
-      stopRecordingButton.disabled = !voiceModeActive || !isRecording;
-      resetVoiceConversationButton.disabled = !voiceModeActive || voiceBusy;
-      textModeButton.disabled = voiceBusy;
-      voiceModeButton.disabled = voiceBusy;
-      connectVoiceButton.disabled = !voiceModeActive || !!voiceSocket;
-      disconnectVoiceButton.disabled = !voiceSocket;
-      muteVoiceButton.disabled = !connected || voiceInteractionMode.value !== 'call';
-      reconnectVoiceButton.disabled = !voiceModeActive || voiceBusy;
-    }
-
-    function updateRecordingTimer() {
-      const elapsedMs = recordingStartedAt ? Date.now() - recordingStartedAt : 0;
-      recordingTimer.textContent = formatDuration(elapsedMs);
-    }
-
-    function formatDuration(ms) {
-      const totalSeconds = Math.floor(ms / 1000);
-      const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
-      const seconds = String(totalSeconds % 60).padStart(2, '0');
-      return `${minutes}:${seconds}`;
-    }
-
-    function cleanupRecordingTimers() {
-      if (recordingTimerInterval) clearInterval(recordingTimerInterval);
-      if (maxRecordingTimeout) clearTimeout(maxRecordingTimeout);
-      recordingTimerInterval = null;
-      maxRecordingTimeout = null;
-      updateRecordingTimer();
-    }
-
-    function cleanupMediaStream() {
-      if (mediaStream) {
-        for (const track of mediaStream.getTracks()) track.stop();
-      }
-      mediaStream = null;
-      mediaRecorder = null;
-    }
-
-    function saveSettings() {
-      localStorage.setItem('debug-chat-settings', JSON.stringify({
-        backendUrl: backendUrlInput.value,
-        apiPath: apiPathInput.value,
-        tenantId: tenantIdInput.value,
-        channel: channelInput.value,
-        externalUserId: externalUserIdInput.value,
-        conversationId: conversationIdInput.value,
-        metadata: metadataInput.value,
-        inputMode,
-        voiceRuntime: voiceRuntime.value,
-      }));
-    }
-    window.addEventListener('beforeunload', () => {
-      if (voiceRuntime.value === 'livekit') liveKitController?.stop();
-      else disconnectVoice();
+    controller = new LiveKitDebug.LiveKitController({
+      sdk: LivekitClient,
+      fetchFn: fetch.bind(window),
+      audioContainer: ui.audio,
+      onSession: session => {
+        ui.conversation.value = session.conversation_id;
+        ui.session.textContent = JSON.stringify(session, null, 2);
+        ui.preemptive.textContent = session.turn_config?.preemptive_generation?.enabled ? 'on' : 'off';
+        localStorage.setItem('voice-lab', JSON.stringify({ tenant: ui.tenant.value, conversation: ui.conversation.value }));
+      },
+      onState: state => {
+        if (state.connection) setConnection(state.connection);
+        if (state.microphone) { ui.microphone.textContent = state.microphone; ui.mute.textContent = state.microphone === 'muted' ? 'Unmute' : 'Mute'; }
+        if (state.user) ui.user.textContent = state.user;
+        if (state.agent) ui.agent.textContent = state.agent;
+      },
+      onTranscript: item => {
+        if (item.role === 'user' && !item.final) { ui.interim.textContent = item.text; return; }
+        if (item.role === 'user') {
+          ui.interim.textContent = 'Listening…';
+          assistantSegments = new Map();
+          turnNumber += 1;
+          ui.toolStatus.className = 'tool-status';
+          ui.toolStatus.textContent = 'No capability call in this turn.';
+          for (const element of Object.values(metrics)) element.textContent = '—';
+        }
+        if (item.role === 'assistant') {
+          const key = item.segmentId || 'assistant';
+          assistantSegments.set(key, item.text);
+          item = { ...item, segmentId: `assistant-${turnNumber}`, text: [...assistantSegments.values()].join('') };
+        }
+        addTranscript(item);
+      },
+      onTelemetry: updateTelemetry,
+      onError: showError,
     });
+
+    ui.start.onclick = startCall;
+    $('#newConversation').onclick = () => { ui.conversation.value = ''; localStorage.removeItem('voice-lab'); };
+    ui.stop.onclick = stopCall;
+    ui.mute.onclick = () => controller.toggleMute();
+    ui.filter.onchange = applyEventFilter;
+    $('#clearEvents').onclick = () => { ui.events.innerHTML = '<div class="empty">Telemetry events will appear here.</div>'; eventStart = undefined; };
+    $('#clearTranscript').onclick = () => { ui.transcript.innerHTML = '<div class="empty">Start a call and speak. Final user and assistant transcripts appear here.</div>'; transcriptNodes.clear(); };
+    $('#recommended').onclick = () => { setTurnValues(defaults); tuningDirty = true; ui.tuning.textContent = 'Recommended overrides will apply'; };
+    $('#resetTuning').onclick = () => { setTurnValues(defaults); tuningDirty = false; ui.tuning.textContent = 'Using tenant defaults'; };
+    for (const input of turnInputs) input.oninput = () => { tuningDirty = true; ui.tuning.textContent = 'Custom overrides will apply'; };
+    const saved = JSON.parse(localStorage.getItem('voice-lab') || '{}');
+    if (saved.tenant) ui.tenant.value = saved.tenant;
+    if (saved.conversation) ui.conversation.value = saved.conversation;
+    setConnection('disconnected');
   </script>
 </body>
 </html>

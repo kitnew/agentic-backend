@@ -1,6 +1,6 @@
 from datetime import date
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -53,6 +53,75 @@ class RoomAvailabilityResult(BaseModel):
     check_out: date
     requested_rooms: int
     available_rooms: int | None
+
+
+class ReservationRequestBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reservation_name: str = Field(min_length=1)
+    caller_number: str = Field(min_length=1, strict=True)
+    reservation_phone: str = Field(min_length=1, strict=True)
+    confirmed: Literal[True]
+
+    @field_validator("caller_number", "reservation_phone")
+    @classmethod
+    def validate_phone(cls, value: str) -> str:
+        value = value.strip()
+        digit_count = sum(character.isdigit() for character in value)
+        if value.casefold() == "z volaného" or digit_count < 6:
+            raise ValueError("phone number must be concrete")
+        return value
+
+
+class NewReservationRequest(ReservationRequestBase, RoomAvailabilityRequest):
+    email: str = Field(min_length=1)
+    room_type: Literal["two_bed", "three_bed", "four_bed"]
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        value = value.strip()
+        if "@" not in value:
+            raise ValueError("email must contain @")
+        return value
+
+
+class ExistingReservationRequest(ReservationRequestBase):
+    original_check_in: date
+    original_check_out: date
+
+    @model_validator(mode="after")
+    def validate_original_stay(self):
+        if self.original_check_out <= self.original_check_in:
+            raise ValueError("original_check_out must be later than original_check_in")
+        return self
+
+
+class ReservationChangeRequest(ExistingReservationRequest):
+    change: str = Field(min_length=1)
+    check_in: date | None = None
+    check_out: date | None = None
+    room_type: Literal["two_bed", "three_bed", "four_bed"] | None = None
+    room_count: int | None = Field(default=None, gt=0, strict=True)
+
+    @model_validator(mode="after")
+    def validate_availability_fields(self):
+        values = (self.check_in, self.check_out, self.room_type, self.room_count)
+        if any(value is not None for value in values) and not all(
+            value is not None for value in values
+        ):
+            raise ValueError("availability-affecting changes require all availability fields")
+        if self.check_in and self.check_out and self.check_out <= self.check_in:
+            raise ValueError("check_out must be later than check_in")
+        return self
+
+    @property
+    def affects_availability(self) -> bool:
+        return self.check_in is not None
+
+
+class ReservationCancellationRequest(ExistingReservationRequest):
+    reason: str = ""
 
 
 class CapabilityRequest(BaseModel):

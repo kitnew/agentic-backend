@@ -69,8 +69,8 @@ business_info:
       currency: EUR
 
 reservation:
-  enabled: false
-  mode: unsupported
+  enabled: true
+  mode: request_only
   requires_human_confirmation: true
   can_confirm_reservation: false
   request_cutoff_local_time: "22:00"
@@ -115,9 +115,9 @@ features:
   factual_qa: true
   room_recommendation: true
   availability_check: true
-  reservation_create: false
-  reservation_modify: false
-  reservation_cancel: false
+  reservation_create: true
+  reservation_modify: true
+  reservation_cancel: true
   reservation_lookup: false
   human_transfer: false
 
@@ -127,7 +127,7 @@ capabilities:
     provider: google_sheets
     config:
       spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
-      sheet_name: "test"
+      sheet_name: "availability"
       table_range: "A:AE"
       header_row: 1
       data_start_row: 2
@@ -145,6 +145,29 @@ capabilities:
       date_formats:
         - "%Y-%m-%d"
         - "%d.%m.%Y"
+  reservation.create_request:
+    enabled: true
+    provider: google_sheets
+    config:
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "reservations_new"
+      row_format: penzion_grand
+  reservation.change_request:
+    enabled: true
+    provider: google_sheets
+    config:
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "reservations_change"
+  reservation.cancel_request:
+    enabled: true
+    provider: google_sheets
+    config:
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "reservations_cancel"
+
+post_call_transcript:
+  spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+  sheet_name: "transcripts"
 
 voice:
   enabled: true

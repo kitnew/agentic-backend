@@ -201,6 +201,18 @@ class TenantAvailabilityConfig(TenantModel):
         return self
 
 
+class TenantPostCallTranscriptConfig(TenantModel):
+    spreadsheet_id: str
+    sheet_name: str
+
+    @field_validator("spreadsheet_id", "sheet_name")
+    @classmethod
+    def validate_non_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value
+
+
 class TenantReservationFieldConfig(TenantModel):
     required: bool = True
     label: str
@@ -308,6 +320,7 @@ class TenantContext(TenantModel):
         default_factory=TenantConversationScopeConfig
     )
     capabilities: dict[str, TenantCapabilityConfig] = Field(default_factory=dict)
+    post_call_transcript: TenantPostCallTranscriptConfig | None = None
     voice: TenantVoiceConfig = Field(default_factory=TenantVoiceConfig)
 
     @model_validator(mode="before")

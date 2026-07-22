@@ -514,7 +514,12 @@ def test_tool_exposure_follows_tenant_capability_configuration():
     grand_tools = create_agent_tools(tenant_context=loader.load("penzion_grand"))
     demo_tools = create_agent_tools(tenant_context=loader.load("demo_restaurant"))
 
-    assert [tool.name for tool in grand_tools] == ["check_room_availability"]
+    assert [tool.name for tool in grand_tools] == [
+        "submit_new_reservation_request",
+        "submit_reservation_change_request",
+        "submit_reservation_cancellation_request",
+        "check_room_availability",
+    ]
     assert [tool.name for tool in demo_tools] == ["create_reservation"]
     assert "tenant_id" not in CheckRoomAvailabilityArgs.model_fields
     assert all(field.is_required() for field in CheckRoomAvailabilityArgs.model_fields.values())

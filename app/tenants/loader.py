@@ -20,6 +20,8 @@ class TenantConfigLoader:
         "knowledge.search",
         "notification.send_staff_message",
         "reservation.check_availability",
+        "reservation.cancel_request",
+        "reservation.change_request",
         "reservation.create_request",
     }
     known_voice_providers = {"elevenlabs"}
