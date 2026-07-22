@@ -10,7 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.api.routes.voice_sessions import create_livekit_session
-from app.contracts.livekit import CreateLiveKitSessionRequest
+from app.contracts.livekit import CreateLiveKitSessionRequest, SessionAccessClaims
 from app.infrastructure.database import Base
 from app.infrastructure.models import CallSessionModel, ConversationModel
 from app.tenants.loader import TenantConfigLoader
@@ -19,6 +19,13 @@ from app.voice_agent.settings import LiveKitSettings
 
 API_KEY = "devkey"
 API_SECRET = "s" * 32
+
+
+def access(*tenant_ids):
+    now = int(time.time())
+    return SessionAccessClaims(
+        subject="test-user", tenant_ids=tenant_ids, iat=now, exp=now + 60
+    )
 
 
 @pytest.fixture
@@ -50,28 +57,46 @@ def test_livekit_session_feature_and_configuration_errors(monkeypatch, db):
     monkeypatch.setenv("VOICE_LIVEKIT_ENABLED", "false")
     loader = TenantConfigLoader()
     with pytest.raises(HTTPException) as disabled:
-        create_livekit_session(CreateLiveKitSessionRequest(tenant_id="demo_restaurant"), db, loader)
+        create_livekit_session(
+            CreateLiveKitSessionRequest(tenant_id="demo_restaurant"),
+            db,
+            loader,
+            access("demo_restaurant"),
+        )
     assert disabled.value.status_code == 403
 
     monkeypatch.setenv("VOICE_LIVEKIT_ENABLED", "true")
     monkeypatch.delenv("LIVEKIT_API_KEY", raising=False)
     monkeypatch.delenv("LIVEKIT_API_SECRET", raising=False)
     with pytest.raises(HTTPException) as missing:
-        create_livekit_session(CreateLiveKitSessionRequest(tenant_id="demo_restaurant"), db, loader)
+        create_livekit_session(
+            CreateLiveKitSessionRequest(tenant_id="demo_restaurant"),
+            db,
+            loader,
+            access("demo_restaurant"),
+        )
     assert missing.value.status_code == 503
 
 
 def test_livekit_session_rejects_unknown_tenant(monkeypatch, db):
     configure(monkeypatch)
     with pytest.raises(HTTPException) as error:
-        create_livekit_session(CreateLiveKitSessionRequest(tenant_id="missing"), db, TenantConfigLoader())
+        create_livekit_session(
+            CreateLiveKitSessionRequest(tenant_id="missing"),
+            db,
+            TenantConfigLoader(),
+            access("missing"),
+        )
     assert error.value.status_code == 404
 
 
 def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypatch, db):
     configure(monkeypatch)
     response = create_livekit_session(
-        CreateLiveKitSessionRequest(tenant_id="demo_restaurant"), db, TenantConfigLoader()
+        CreateLiveKitSessionRequest(tenant_id="demo_restaurant"),
+        db,
+        TenantConfigLoader(),
+        access("demo_restaurant"),
     )
 
     assert response.runtime == "livekit"
@@ -105,7 +130,9 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
     assert metadata["turn_config"]["endpointing"]["min_delay_ms"] == 700
     assert response.turn_config.stt_segmentation.threshold == 0.4
     assert metadata["instructions"]
-    assert metadata["enabled_capabilities"] == ["reservation.create_request"]
+    assert [tool["backend_capability"] for tool in metadata["tools"]] == [
+        "reservation.create_request"
+    ]
     assert "post_call_transcript" not in metadata
     assert "backend_token" not in metadata
     raw_claims = jwt.decode(response.participant_token, options={"verify_signature": False})
@@ -117,7 +144,10 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
 def test_penzion_grand_dispatch_does_not_expose_backend_post_call_config(monkeypatch, db):
     configure(monkeypatch)
     response = create_livekit_session(
-        CreateLiveKitSessionRequest(tenant_id="penzion_grand"), db, TenantConfigLoader()
+        CreateLiveKitSessionRequest(tenant_id="penzion_grand"),
+        db,
+        TenantConfigLoader(),
+        access("penzion_grand"),
     )
     claims = api.TokenVerifier(API_KEY, API_SECRET).verify(response.participant_token)
     metadata = json.loads(claims.room_config.agents[0].metadata)
@@ -145,6 +175,7 @@ def test_livekit_session_accepts_only_same_tenant_conversation(monkeypatch, db):
             ),
             db,
             TenantConfigLoader(),
+            access("demo_restaurant"),
         )
     assert error.value.status_code == 404
 
@@ -159,10 +190,14 @@ def test_turn_overrides_are_gated_and_resolved(monkeypatch, db):
         },
     )
     with pytest.raises(HTTPException) as disabled:
-        create_livekit_session(request, db, TenantConfigLoader())
+        create_livekit_session(
+            request, db, TenantConfigLoader(), access("demo_restaurant")
+        )
     assert disabled.value.status_code == 403
 
     monkeypatch.setenv("VOICE_TURN_DEBUG_OVERRIDES_ENABLED", "true")
-    response = create_livekit_session(request, db, TenantConfigLoader())
+    response = create_livekit_session(
+        request, db, TenantConfigLoader(), access("demo_restaurant")
+    )
     assert response.turn_config.endpointing.min_delay_ms == 250
     assert response.turn_config.preemptive_generation.enabled is True

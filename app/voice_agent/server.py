@@ -6,9 +6,12 @@ import time
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, JobProcess, cli
 from livekit.plugins import silero
 
-from app.contracts.livekit import LiveKitBackendClaims, LiveKitBackendTokenCodec
+from app.contracts.livekit import (
+    LiveKitBackendClaims,
+    LiveKitBackendTokenCodec,
+    LiveKitJobMetadata,
+)
 from app.voice_agent.backend_client import BackendCoreClient
-from app.voice_agent.models import LiveKitJobMetadata
 from app.voice_agent.session_factory import HospitalityAgent, VoiceTurnState, build_session
 from app.voice_agent.settings import LiveKitSettings
 from app.voice_agent.telemetry import VoiceTelemetry

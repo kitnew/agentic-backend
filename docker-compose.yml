@@ -39,6 +39,10 @@ services:
       LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-hospitality-voice}
       LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS: ${LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS:-120}
       VOICE_SESSION_TOKEN_SECRET: ${VOICE_SESSION_TOKEN_SECRET:?set VOICE_SESSION_TOKEN_SECRET in app/.env}
+      LIVEKIT_SESSION_AUTH_SECRET: ${LIVEKIT_SESSION_AUTH_SECRET:-}
+      APP_ENV: ${APP_ENV:-production}
+      LIVEKIT_DEBUG_AUTH_ENABLED: ${LIVEKIT_DEBUG_AUTH_ENABLED:-false}
+      LIVEKIT_DEBUG_ALLOWED_TENANTS: ${LIVEKIT_DEBUG_ALLOWED_TENANTS:-}
       ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
       VOICE_TURN_DEBUG_OVERRIDES_ENABLED: ${VOICE_TURN_DEBUG_OVERRIDES_ENABLED:-false}
     ports:
@@ -100,9 +104,6 @@ services:
       ELEVENLABS_REALTIME_STT_MODEL: ${ELEVENLABS_REALTIME_STT_MODEL:-scribe_v2_realtime}
     ports:
       - "8081:8081"
-    volumes:
-      - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
-      - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
     depends_on:
       api:
         condition: service_healthy

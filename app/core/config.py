@@ -1,7 +1,83 @@
 import os
 from math import isfinite
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
+
+@dataclass(frozen=True)
+class LiveKitApiSettings:
+    enabled: bool = False
+    api_key: str = ""
+    api_secret: str = ""
+    public_url: str = "ws://localhost:7880"
+    agent_name: str = "hospitality-voice"
+    participant_token_ttl_seconds: int = 120
+    turn_debug_overrides_enabled: bool = False
+
+    @classmethod
+    def from_env(cls) -> "LiveKitApiSettings":
+        return cls(
+            enabled=_text("VOICE_LIVEKIT_ENABLED", "false").lower() == "true",
+            api_key=_text("LIVEKIT_API_KEY", ""),
+            api_secret=_text("LIVEKIT_API_SECRET", ""),
+            public_url=_text("LIVEKIT_PUBLIC_URL", cls.public_url),
+            agent_name=_text("LIVEKIT_AGENT_NAME", cls.agent_name),
+            participant_token_ttl_seconds=_number(
+                "LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS",
+                cls.participant_token_ttl_seconds,
+                int,
+            ),
+            turn_debug_overrides_enabled=(
+                _text("VOICE_TURN_DEBUG_OVERRIDES_ENABLED", "false").lower() == "true"
+            ),
+        )
+
+    def validate(self) -> None:
+        parsed = urlparse(self.public_url)
+        if not self.api_key or len(self.api_secret.encode()) < 32:
+            raise ValueError("LIVEKIT_API_KEY and a 32-byte LIVEKIT_API_SECRET are required")
+        if parsed.scheme not in {"ws", "wss"} or not parsed.netloc or parsed.username:
+            raise ValueError("LIVEKIT_PUBLIC_URL must be an absolute ws:// or wss:// URL")
+        if not self.agent_name or self.participant_token_ttl_seconds <= 0:
+            raise ValueError("LIVEKIT_AGENT_NAME and a positive token TTL are required")
+
+
+@dataclass(frozen=True)
+class SessionAuthSettings:
+    secret: str = ""
+    debug_enabled: bool = False
+    debug_tenant_ids: tuple[str, ...] = ()
+    environment: str = "production"
+
+    @classmethod
+    def from_env(cls) -> "SessionAuthSettings":
+        return cls(
+            secret=_text("LIVEKIT_SESSION_AUTH_SECRET", ""),
+            debug_enabled=_text("LIVEKIT_DEBUG_AUTH_ENABLED", "false").lower() == "true",
+            debug_tenant_ids=tuple(
+                value.strip()
+                for value in _text("LIVEKIT_DEBUG_ALLOWED_TENANTS", "").split(",")
+                if value.strip()
+            ),
+            environment=_text("APP_ENV", "production").lower(),
+        )
+
+    @property
+    def debug_available(self) -> bool:
+        return (
+            self.debug_enabled
+            and self.environment in {"development", "test"}
+            and bool(self.debug_tenant_ids)
+        )
+
+
+@dataclass(frozen=True)
+class VoiceBackendAuthSettings:
+    secret: str = ""
+
+    @classmethod
+    def from_env(cls) -> "VoiceBackendAuthSettings":
+        return cls(secret=_text("VOICE_SESSION_TOKEN_SECRET", ""))
 
 @dataclass(frozen=True)
 class DatabaseSettings:

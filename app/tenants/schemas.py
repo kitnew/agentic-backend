@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.agent.schemas.voice import VoiceTurnConfig
+from app.contracts.voice import VoiceTurnConfig
 
 
 class TenantModel(BaseModel):
@@ -277,6 +277,7 @@ class TenantVoiceFallbackConfig(TenantModel):
 
 class TenantVoiceConfig(TenantModel):
     enabled: bool = False
+    end_call_enabled: bool = False
     max_file_size_bytes: int = 25 * 1024 * 1024
     supported_content_types: list[str] = Field(
         default_factory=lambda: [

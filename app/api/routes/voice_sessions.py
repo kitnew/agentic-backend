@@ -1,6 +1,6 @@
-import json
 from datetime import timedelta
 from datetime import datetime
+from time import perf_counter
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -13,8 +13,10 @@ from app.api.dependencies import (
     get_capability_router,
     get_tenant_config_loader,
 )
+from app.api.session_auth import authenticate_session_access
 from app.agent.prompts.context import build_agent_context
 from app.agent.prompts.loader import PromptLoader
+from app.application.livekit_dispatch import resolve_runtime_tools, resolve_voice_id
 from app.application.capabilities.boundary import CapabilityExecutor
 from app.application.capabilities.redis_executor import RedisCapabilityExecutor
 from app.application.capabilities.executor import BackendCapabilityExecutor
@@ -31,12 +33,16 @@ from app.contracts.livekit import (
     ExecuteLiveKitToolRequest,
     LiveKitBackendClaims,
     LiveKitBackendTokenCodec,
+    LiveKitJobMetadata,
     LiveKitSessionResponse,
+    SessionChatMessage,
+    SessionAccessClaims,
     FinalizeLiveKitCallRequest,
     FinalizeLiveKitCallResponse,
     PersistLiveKitMessageRequest,
     PersistLiveKitMessageResponse,
 )
+from app.core.config import LiveKitApiSettings, VoiceBackendAuthSettings
 from app.application.call_sessions import (
     mark_finalization_enqueue_failed,
     mark_finalization_enqueued,
@@ -52,14 +58,12 @@ from app.infrastructure.repositories.tool_call_repository import ToolCallReposit
 from app.infrastructure.repositories.call_session_repository import CallSessionRepository
 from app.domain.messages.entities import Message
 from app.domain.messages.enums import MessageRole, MessageStatus
+from app.domain.tool_calls.entities import ToolCall
+from app.domain.tool_calls.enums import ToolCallStatus
 from app.tenants.loader import TenantConfigInvalidError, TenantConfigLoader, TenantConfigNotFoundError
 from app.agent.schemas.voice import (
     resolve_voice_turn_config,
 )
-from app.voice_agent.models import SessionChatMessage
-from app.voice_agent.session_factory import resolve_voice_id
-from app.voice_agent.settings import LiveKitSettings
-
 router = APIRouter()
 
 
@@ -67,8 +71,8 @@ def _authenticate_livekit_backend(authorization: str = Header(default="")) -> Li
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Bearer token is required")
     try:
-        settings = LiveKitSettings.from_env()
-        return LiveKitBackendTokenCodec(settings.session_token_secret).decode(
+        settings = VoiceBackendAuthSettings.from_env()
+        return LiveKitBackendTokenCodec(settings.secret).decode(
             authorization.removeprefix("Bearer ")
         )
     except ValueError as exc:
@@ -84,12 +88,15 @@ def create_livekit_session(
     request: CreateLiveKitSessionRequest,
     db: Session = Depends(get_db),
     loader: TenantConfigLoader = Depends(get_tenant_config_loader),
+    caller: SessionAccessClaims = Depends(authenticate_session_access),
 ) -> LiveKitSessionResponse:
-    settings = LiveKitSettings.from_env()
+    if request.tenant_id not in caller.tenant_ids:
+        raise HTTPException(status_code=403, detail="Tenant access is forbidden")
+    settings = LiveKitApiSettings.from_env()
     if not settings.enabled:
         raise HTTPException(status_code=403, detail="LiveKit voice mode is disabled")
     try:
-        settings.validate_api()
+        settings.validate()
     except ValueError as exc:
         raise HTTPException(status_code=503, detail="LiveKit is not configured") from exc
 
@@ -153,34 +160,24 @@ def create_livekit_session(
         for message in MessageRepository(db).list_by_conversation_id(conversation.id)
         if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
     )
-    reservation_capability = tenant.capabilities.get("reservation.create_request")
-    metadata = json.dumps(
-        {
-            "tenant_id": request.tenant_id,
-            "call_session_id": call_session_id,
-            "conversation_id": conversation.id,
-            "channel": "voice",
-            "language": tenant.default_language,
-            "timezone": tenant.timezone,
-            "instructions": PromptLoader().build_system_prompt(context),
-            "greeting": tenant.agent.greeting_phrase,
-            "enabled_capabilities": sorted(
-                name for name, capability in tenant.capabilities.items() if capability.enabled
-            ),
-            "reservation_request_schema": (
-                reservation_capability.config.get("row_format")
-                if reservation_capability
-                else None
-            ),
-            "chat_history": [message.model_dump(mode="json") for message in history],
-            "stt_language": tenant.voice.stt.language or tenant.default_language,
-            "tts_voice_id": resolve_voice_id(tenant),
-            "tts_model": tenant.voice.tts.model,
-            "tts_language": tenant.voice.tts.language or tenant.default_language,
-            "turn_config": turn_config.sanitized(),
-        },
-        separators=(",", ":"),
-    )
+    metadata = LiveKitJobMetadata(
+        tenant_id=request.tenant_id,
+        call_session_id=call_session_id,
+        conversation_id=conversation.id,
+        channel="voice",
+        language=tenant.default_language,
+        timezone=tenant.timezone,
+        instructions=PromptLoader().build_system_prompt(context),
+        greeting=tenant.agent.greeting_phrase,
+        tools=resolve_runtime_tools(tenant),
+        end_call_enabled=tenant.voice.end_call_enabled,
+        chat_history=history,
+        stt_language=tenant.voice.stt.language or tenant.default_language,
+        tts_voice_id=resolve_voice_id(tenant),
+        tts_model=tenant.voice.tts.model,
+        tts_language=tenant.voice.tts.language or tenant.default_language,
+        turn_config=turn_config,
+    ).model_dump_json()
     token = (
         api.AccessToken(settings.api_key, settings.api_secret)
         .with_identity(f"browser-{call_session_id}")
@@ -254,6 +251,21 @@ async def execute_livekit_tool(
     capability_executor: CapabilityExecutor = Depends(get_capability_executor),
 ):
     require_active_call(CallSessionRepository(db), claims)
+    repository = ToolCallRepository(db)
+    existing = repository.get_by_livekit_identity(
+        claims.tenant_id, claims.call_session_id, request.tool_call_id
+    )
+    if existing is not None:
+        if (
+            existing.capability_name != request.capability
+            or existing.request_fingerprint != request.request_fingerprint
+        ):
+            raise HTTPException(status_code=409, detail="tool_call_id payload conflict")
+        return ExecuteLiveKitToolResponse.model_validate(
+            existing.response
+            or {"status": existing.status.value, "tool_call_id": existing.id}
+        )
+
     tenant = loader.load(claims.tenant_id)
     capability = tenant.capabilities.get(request.capability)
     if not capability or not capability.enabled:
@@ -262,34 +274,106 @@ async def execute_livekit_tool(
     message = MessageRepository(db).get_by_id(message_id)
     if message is None or message.tenant_id != claims.tenant_id:
         raise HTTPException(status_code=409, detail="User turn has not been persisted")
+    now = datetime.now()
+    durable_call, created = repository.reserve_livekit(
+        ToolCall(
+            id=str(uuid4()),
+            tenant_id=claims.tenant_id,
+            message_id=message.id,
+            conversation_id=claims.conversation_id,
+            call_session_id=claims.call_session_id,
+            external_tool_call_id=request.tool_call_id,
+            request_fingerprint=request.request_fingerprint,
+            capability_name=request.capability,
+            provider="pending",
+            input=request.arguments,
+            status=ToolCallStatus.PENDING,
+            latency_ms=0,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    if (
+        durable_call.capability_name != request.capability
+        or durable_call.request_fingerprint != request.request_fingerprint
+    ):
+        raise HTTPException(status_code=409, detail="tool_call_id payload conflict")
+    if not created:
+        return ExecuteLiveKitToolResponse.model_validate(
+            durable_call.response
+            or {"status": durable_call.status.value, "tool_call_id": durable_call.id}
+        )
+
     arguments = dict(request.arguments)
     if request.capability == "reservation.create_request":
         arguments["raw_message"] = message.content
-    execution = await BackendCapabilityExecutor(
-        tenant_context=tenant,
-        message=message,
-        capability_router=capability_router,
-        tool_call_repository=ToolCallRepository(db),
-        capability_executor=capability_executor,
-    ).execute_async(
-        CapabilityRequest(
-            name=request.capability,
-            input=arguments,
-            metadata={
-                "call_session_id": claims.call_session_id,
-                "turn_id": request.turn_id,
-                "tool_call_id": request.tool_call_id,
-                "idempotency_key": f"livekit:{claims.call_session_id}:{request.tool_call_id}",
-            },
+    started_at = perf_counter()
+    try:
+        execution = await BackendCapabilityExecutor(
+            tenant_context=tenant,
+            message=message,
+            capability_router=capability_router,
+            tool_call_repository=repository,
+            capability_executor=capability_executor,
+            persist_tool_call=False,
+        ).execute_async(
+            CapabilityRequest(
+                name=request.capability,
+                input=arguments,
+                metadata={
+                    "call_session_id": claims.call_session_id,
+                    "turn_id": request.turn_id,
+                    "tool_call_id": request.tool_call_id,
+                    "durable_tool_call_id": durable_call.id,
+                    "idempotency_key": (
+                        f"livekit:{claims.call_session_id}:{request.tool_call_id}"
+                    ),
+                },
+            )
         )
-    )
-    return {
-        "status": execution.result.status.value,
-        "message": execution.result.user_message,
-        "error": execution.result.error,
-        "result": execution.result.output,
-        "tool_call_id": execution.tool_call.id if execution.tool_call else None,
-    }
+        if (
+            execution.execution_result
+            and execution.execution_result.error_code == "capability_result_timeout"
+        ):
+            return ExecuteLiveKitToolResponse(
+                status="pending",
+                message="Tool execution is still pending.",
+                tool_call_id=durable_call.id,
+            )
+        response = ExecuteLiveKitToolResponse(
+            status=execution.result.status.value,
+            message=execution.result.user_message,
+            error=execution.result.error,
+            result=execution.result.output,
+            tool_call_id=durable_call.id,
+        )
+        repository.complete_livekit(
+            durable_call.id,
+            status=ToolCallStatus(execution.result.status.value),
+            provider=execution.result.provider,
+            output=execution.result.output,
+            error=execution.result.error,
+            response=response.model_dump(mode="json"),
+            latency_ms=int((perf_counter() - started_at) * 1000),
+            updated_at=datetime.now(),
+        )
+        return response
+    except Exception as exc:
+        error = str(exc)[:8_192]
+        response = ExecuteLiveKitToolResponse(
+            status="failed", error=error, tool_call_id=durable_call.id
+        )
+        repository.complete_livekit(
+            durable_call.id,
+            status=ToolCallStatus.FAILED,
+            provider="backend",
+            output=None,
+            error=error,
+            response=response.model_dump(mode="json"),
+            latency_ms=int((perf_counter() - started_at) * 1000),
+            updated_at=datetime.now(),
+        )
+        return response
 
 
 @router.post("/livekit/finalize", response_model=FinalizeLiveKitCallResponse)

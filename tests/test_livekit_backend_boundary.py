@@ -1,11 +1,12 @@
 import asyncio
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.routes.voice_sessions import (
     execute_livekit_tool,
@@ -21,8 +22,11 @@ from app.contracts.livekit import (
 )
 from app.capabilities.router import CapabilityRouter
 from app.capabilities.schemas import CapabilityExecutionResult, CapabilityExecutionStatus
+from app.domain.tool_calls.entities import ToolCall
+from app.domain.tool_calls.enums import ToolCallStatus
 from app.infrastructure.database import Base
-from app.infrastructure.models import CallSessionModel, MessageModel
+from app.infrastructure.models import CallSessionModel, MessageModel, ToolCallModel
+from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 from app.tenants.loader import TenantConfigLoader
 
 
@@ -109,22 +113,23 @@ def test_native_tool_routes_through_backend_capability_executor_with_correlation
             claims(),
             db,
         )
+        request = ExecuteLiveKitToolRequest(
+            capability="reservation.create_request",
+            arguments={
+                "reservation_frame": {
+                    "guest_name": "Nina",
+                    "date": "2026-08-01",
+                    "time": "19:00",
+                    "party_size": 2,
+                    "phone": "+421900000000",
+                }
+            },
+            turn_id="turn-1",
+            tool_call_id="tool-1",
+        )
         result = asyncio.run(
             execute_livekit_tool(
-                ExecuteLiveKitToolRequest(
-                    capability="reservation.create_request",
-                    arguments={
-                        "reservation_frame": {
-                            "guest_name": "Nina",
-                            "date": "2026-08-01",
-                            "time": "19:00",
-                            "party_size": 2,
-                            "phone": "+421900000000",
-                        }
-                    },
-                    turn_id="turn-1",
-                    tool_call_id="tool-1",
-                ),
+                request,
                 claims(),
                 db,
                 TenantConfigLoader(),
@@ -133,13 +138,41 @@ def test_native_tool_routes_through_backend_capability_executor_with_correlation
             )
         )
         command = executor.commands[0]
-        assert result["status"] == "success"
+        assert result.status == "success"
         assert command.tenant_id == "demo_restaurant"
         assert command.conversation_id == "conversation-1"
         assert command.call_session_id == "call-1"
         assert command.idempotency_key == "livekit:call-1:tool-1"
         assert command.metadata["turn_id"] == "turn-1"
         assert command.metadata["tool_call_id"] == "tool-1"
+        assert command.command_id == db.query(ToolCallModel).one().id
+
+        duplicate = asyncio.run(
+            execute_livekit_tool(
+                request,
+                claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+        assert duplicate == result
+        assert len(executor.commands) == 1
+        assert db.query(ToolCallModel).count() == 1
+
+        with pytest.raises(HTTPException) as conflict:
+            asyncio.run(
+                execute_livekit_tool(
+                    request.model_copy(update={"arguments": {"changed": True}}),
+                    claims(),
+                    db,
+                    TenantConfigLoader(),
+                    CapabilityRouter(),
+                    executor,
+                )
+            )
+        assert conflict.value.status_code == 409
 
 
 def test_unauthorized_tenant_capability_is_rejected():
@@ -164,6 +197,188 @@ def test_unauthorized_tenant_capability_is_rejected():
                 )
             )
         assert error.value.status_code == 403
+
+
+def test_duplicate_pending_tool_request_does_not_execute_provider():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    executor = Executor()
+    request = ExecuteLiveKitToolRequest(
+        capability="reservation.create_request",
+        arguments={"reservation_frame": {"guest_name": "Nina"}},
+        turn_id="turn-1",
+        tool_call_id="tool-pending",
+    )
+    with Session(engine) as db:
+        active_call(db)
+        persisted = persist_livekit_message(
+            PersistLiveKitMessageRequest(
+                role="user", content="Book", turn_id="turn-1", item_id="turn-1"
+            ),
+            claims(),
+            db,
+        )
+        now = datetime.now()
+        ToolCallRepository(db).create(
+            ToolCall(
+                id="durable-pending",
+                tenant_id="demo_restaurant",
+                message_id=persisted["message_id"],
+                conversation_id="conversation-1",
+                call_session_id="call-1",
+                external_tool_call_id="tool-pending",
+                request_fingerprint=request.request_fingerprint,
+                capability_name=request.capability,
+                provider="pending",
+                input=request.arguments,
+                status=ToolCallStatus.PENDING,
+                latency_ms=0,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        result = asyncio.run(
+            execute_livekit_tool(
+                request,
+                claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+        assert result.status == "pending"
+        assert executor.commands == []
+
+
+def test_duplicate_failed_tool_request_returns_saved_failure():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    class FailingExecutor(Executor):
+        async def execute(self, command):
+            self.commands.append(command)
+            return CapabilityExecutionResult(
+                command_id=command.command_id,
+                status=CapabilityExecutionStatus.FAILED,
+                error_code="provider_failed",
+                error_message="provider failed",
+                execution_duration_ms=1,
+            )
+
+    executor = FailingExecutor()
+    request = ExecuteLiveKitToolRequest(
+        capability="reservation.create_request",
+        arguments={"reservation_frame": {"guest_name": "Nina"}},
+        turn_id="turn-1",
+        tool_call_id="tool-failed",
+    )
+    with Session(engine) as db:
+        active_call(db)
+        persist_livekit_message(
+            PersistLiveKitMessageRequest(
+                role="user", content="Book", turn_id="turn-1", item_id="turn-1"
+            ),
+            claims(),
+            db,
+        )
+        first = asyncio.run(
+            execute_livekit_tool(
+                request,
+                claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+        duplicate = asyncio.run(
+            execute_livekit_tool(
+                request,
+                claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+        assert first == duplicate
+        assert first.status == "failed"
+        assert len(executor.commands) == 1
+
+
+def test_concurrent_duplicate_tool_requests_execute_provider_once(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'tool-idempotency.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    with sessions() as db:
+        active_call(db)
+        persist_livekit_message(
+            PersistLiveKitMessageRequest(
+                role="user", content="Book", turn_id="turn-1", item_id="turn-1"
+            ),
+            claims(),
+            db,
+        )
+
+    class BlockingExecutor(Executor):
+        def __init__(self):
+            super().__init__()
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+
+        async def execute(self, command):
+            self.commands.append(command)
+            self.started.set()
+            await self.release.wait()
+            return CapabilityExecutionResult(
+                command_id=command.command_id,
+                status=CapabilityExecutionStatus.SUCCESS,
+                result={"accepted": True},
+                execution_duration_ms=1,
+            )
+
+    executor = BlockingExecutor()
+    request = ExecuteLiveKitToolRequest(
+        capability="reservation.create_request",
+        arguments={"reservation_frame": {"guest_name": "Nina"}},
+        turn_id="turn-1",
+        tool_call_id="tool-concurrent",
+    )
+
+    async def run():
+        with sessions() as first_db, sessions() as second_db:
+            first = asyncio.create_task(
+                execute_livekit_tool(
+                    request,
+                    claims(),
+                    first_db,
+                    TenantConfigLoader(),
+                    CapabilityRouter(),
+                    executor,
+                )
+            )
+            await executor.started.wait()
+            duplicate = await execute_livekit_tool(
+                request,
+                claims(),
+                second_db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+            assert duplicate.status == "pending"
+            executor.release.set()
+            completed = await first
+            assert completed.status == "success"
+
+    asyncio.run(run())
+    with sessions() as db:
+        assert db.query(ToolCallModel).count() == 1
+    assert len(executor.commands) == 1
 
 
 def test_finalize_is_terminal_idempotent_and_rejects_late_writes():
@@ -233,6 +448,10 @@ def test_production_has_no_legacy_agent_runtime_dependencies():
     voice_agent = "\n".join(
         path.read_text() for path in (app_root / "voice_agent").rglob("*.py")
     )
+    api = "\n".join(path.read_text() for path in (app_root / "api").rglob("*.py"))
+    contracts = "\n".join(
+        path.read_text() for path in (app_root / "contracts").rglob("*.py")
+    )
     assert "langgraph" not in production.lower()
     assert "langchain" not in production.lower()
     assert "app.agent_runtime" not in production
@@ -240,9 +459,22 @@ def test_production_has_no_legacy_agent_runtime_dependencies():
     assert "app.integrations" not in voice_agent
     assert "app.capabilities" not in voice_agent
     assert "import redis" not in voice_agent
+    assert "app.voice_agent" not in api
+    assert "penzion_grand" not in voice_agent
+    assert "reservation_request_schema" not in voice_agent
+    for forbidden in (
+        "app.agent",
+        "app.infrastructure",
+        "app.integrations",
+        "sqlalchemy",
+        "livekit.agents",
+        "googleapiclient",
+    ):
+        assert forbidden not in contracts
     assert not (app_root / "voice").joinpath("latency.py").exists()
 
     compose = (app_root.parent / "docker-compose.yml").read_text()
     voice_service = compose.split("  voice-agent:", 1)[1].split("  redis:", 1)[0]
     assert "GOOGLE_SERVICE_ACCOUNT_FILE" not in voice_service
     assert "google-service-account" not in voice_service
+    assert "smoke/tenants" not in voice_service

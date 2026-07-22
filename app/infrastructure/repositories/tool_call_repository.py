@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.domain.tool_calls.entities import ToolCall
+from app.domain.tool_calls.enums import ToolCallStatus
 from app.infrastructure.models import ToolCallModel
 
 
@@ -14,18 +16,75 @@ class ToolCallRepository:
             tenant_id=tool_call.tenant_id,
             message_id=tool_call.message_id,
             conversation_id=tool_call.conversation_id,
+            call_session_id=tool_call.call_session_id,
+            external_tool_call_id=tool_call.external_tool_call_id,
+            request_fingerprint=tool_call.request_fingerprint,
             capability_name=tool_call.capability_name,
             provider=tool_call.provider,
             input=tool_call.input,
             output=tool_call.output,
-            status=tool_call.status,
+            status=tool_call.status.value,
             error=tool_call.error,
+            response=tool_call.response,
             latency_ms=tool_call.latency_ms,
             created_at=tool_call.created_at,
+            updated_at=tool_call.updated_at,
         )
         self.db.add(db_tool_call)
         self.db.commit()
         return tool_call
+
+    def reserve_livekit(self, tool_call: ToolCall) -> tuple[ToolCall, bool]:
+        try:
+            self.create(tool_call)
+            return tool_call, True
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.get_by_livekit_identity(
+                tool_call.tenant_id,
+                tool_call.call_session_id or "",
+                tool_call.external_tool_call_id or "",
+            )
+            if existing is None:
+                raise
+            return existing, False
+
+    def get_by_livekit_identity(
+        self, tenant_id: str, call_session_id: str, external_tool_call_id: str
+    ) -> ToolCall | None:
+        row = (
+            self.db.query(ToolCallModel)
+            .filter(
+                ToolCallModel.tenant_id == tenant_id,
+                ToolCallModel.call_session_id == call_session_id,
+                ToolCallModel.external_tool_call_id == external_tool_call_id,
+            )
+            .first()
+        )
+        return self._to_domain(row) if row else None
+
+    def complete_livekit(
+        self,
+        tool_call_id: str,
+        *,
+        status: ToolCallStatus,
+        provider: str,
+        output: dict | None,
+        error: str | None,
+        response: dict,
+        latency_ms: int,
+        updated_at,
+    ) -> ToolCall:
+        row = self.db.query(ToolCallModel).filter(ToolCallModel.id == tool_call_id).one()
+        row.status = status.value
+        row.provider = provider
+        row.output = output
+        row.error = error
+        row.response = response
+        row.latency_ms = latency_ms
+        row.updated_at = updated_at
+        self.db.commit()
+        return self._to_domain(row)
 
     def get_by_id(self, tool_call_id: str) -> ToolCall | None:
         db_tool_call = self.db.query(ToolCallModel).filter(ToolCallModel.id == tool_call_id).first()
@@ -58,12 +117,17 @@ class ToolCallRepository:
             tenant_id=db_tool_call.tenant_id,
             message_id=db_tool_call.message_id,
             conversation_id=db_tool_call.conversation_id,
+            call_session_id=db_tool_call.call_session_id,
+            external_tool_call_id=db_tool_call.external_tool_call_id,
+            request_fingerprint=db_tool_call.request_fingerprint,
             capability_name=db_tool_call.capability_name,
             provider=db_tool_call.provider,
             input=db_tool_call.input,
             output=db_tool_call.output,
-            status=db_tool_call.status,
+            status=ToolCallStatus(db_tool_call.status),
             error=db_tool_call.error,
+            response=db_tool_call.response,
             latency_ms=db_tool_call.latency_ms,
             created_at=db_tool_call.created_at,
+            updated_at=db_tool_call.updated_at,
         )

@@ -36,11 +36,11 @@ def init_db() -> None:
     if engine.dialect.name == "postgresql":
         with engine.begin() as connection:
             connection.execute(text("SELECT pg_advisory_xact_lock(773144916)"))
+            Base.metadata.create_all(bind=connection)
             for migration in sorted((Path(__file__).parent / "migrations").glob("*.sql")):
                 for statement in migration.read_text().split(";"):
                     if statement.strip():
                         connection.execute(text(statement))
-            Base.metadata.create_all(bind=connection)
     else:
         Base.metadata.create_all(bind=engine)
         _ensure_sqlite_schema()

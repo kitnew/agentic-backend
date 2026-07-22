@@ -1,9 +1,7 @@
 import asyncio
 import inspect
 import logging
-import os
 from dataclasses import dataclass, field
-from datetime import date
 from uuid import uuid4
 
 from livekit.agents import Agent, AgentSession, RunContext, function_tool, llm, stt
@@ -54,17 +52,6 @@ class _PostFinalStream:
 
     async def __aexit__(self, *_args):
         await self._stream.aclose()
-
-
-def resolve_voice_id(tenant) -> str:
-    if tenant.voice.tts.voice_id:
-        return tenant.voice.tts.voice_id
-    if voice_id := os.getenv("ELEVENLABS_VOICE_ID", "").strip():
-        return voice_id
-    if voice_id := os.getenv("EVELENLABS_VOICE_ID", "").strip():
-        logger.warning("EVELENLABS_VOICE_ID is deprecated; use ELEVENLABS_VOICE_ID")
-        return voice_id
-    raise ValueError("ElevenLabs voice ID is not configured")
 
 
 def build_session(settings, metadata, vad) -> AgentSession:
@@ -272,12 +259,11 @@ class GuardedEndCallTool(EndCallTool):
 def build_function_tools(
     metadata, backend: BackendCoreClient, state: VoiceTurnState, telemetry, caller_number=None
 ):
-    async def _execute(context: RunContext, capability: str, arguments: dict):
-        if capability in {
-            "reservation.create_request",
-            "reservation.change_request",
-            "reservation.cancel_request",
-        }:
+    async def _execute(context: RunContext, definition, arguments: dict):
+        capability = definition.backend_capability
+        if definition.argument_container:
+            arguments = {definition.argument_container: arguments}
+        if definition.inject_caller_number:
             arguments = {**arguments, "caller_number": caller_number}
         turn = state.turns_by_speech.get(context.speech_handle.id)
         waited_for_commit = bool(turn and not turn.committed.is_set()) or bool(
@@ -325,126 +311,39 @@ def build_function_tools(
         telemetry.emit("tool_call_completed", tool_call_id=context.function_call.call_id, capability=capability, status=result.get("status"))
         return result
 
-    async def execute(context: RunContext, capability: str, arguments: dict):
+    async def execute(context: RunContext, definition, arguments: dict):
         state.pending_tool_calls += 1
         try:
-            return await _execute(context, capability, arguments)
+            return await _execute(context, definition, arguments)
         finally:
             state.pending_tool_calls -= 1
 
-    @function_tool(description="Check room availability for every night of a requested stay.")
-    async def check_room_availability(
-        context: RunContext,
-        check_in: date,
-        check_out: date,
-        room_type: str,
-        room_count: int,
-    ) -> dict:
-        return await execute(
-            context,
-            "reservation.check_availability",
-            {"check_in": check_in.isoformat(), "check_out": check_out.isoformat(), "room_type": room_type, "room_count": room_count},
+    def build(definition):
+        async def runtime_tool(
+            context: RunContext, raw_arguments: dict[str, object]
+        ) -> dict:
+            return await execute(context, definition, dict(raw_arguments))
+
+        return function_tool(
+            runtime_tool,
+            raw_schema={
+                "name": definition.public_name,
+                "description": definition.description,
+                "parameters": definition.parameters,
+            },
         )
 
-    @function_tool(description="Submit a reservation request for staff confirmation after collecting all required fields.")
-    async def create_reservation(
-        context: RunContext,
-        guest_name: str,
-        date: str,
-        time: str,
-        party_size: int,
-        phone: str,
-        notes: str | None = None,
-    ) -> dict:
-        frame = {"guest_name": guest_name, "date": date, "time": time, "party_size": party_size, "phone": phone}
-        if notes:
-            frame["notes"] = notes
-        return await execute(context, "reservation.create_request", {"reservation_frame": frame})
-
-    @function_tool(description="Submit a new accommodation request after availability and final guest confirmation.")
-    async def submit_new_reservation_request(
-        context: RunContext,
-        check_in: date,
-        check_out: date,
-        reservation_name: str,
-        reservation_phone: str,
-        email: str,
-        room_type: str,
-        room_count: int,
-        confirmed: bool,
-    ) -> dict:
-        return await execute(context, "reservation.create_request", {
-            "check_in": check_in.isoformat(), "check_out": check_out.isoformat(),
-            "reservation_name": reservation_name, "reservation_phone": reservation_phone,
-            "email": email, "room_type": room_type, "room_count": room_count,
-            "confirmed": confirmed,
-        })
-
-    @function_tool(description="Submit any confirmed reservation change; availability fields are all-or-none.")
-    async def submit_reservation_change_request(
-        context: RunContext,
-        original_check_in: date,
-        original_check_out: date,
-        reservation_name: str,
-        reservation_phone: str,
-        change: str,
-        confirmed: bool,
-        check_in: date | None = None,
-        check_out: date | None = None,
-        room_type: str | None = None,
-        room_count: int | None = None,
-    ) -> dict:
-        arguments = {
-            "original_check_in": original_check_in.isoformat(),
-            "original_check_out": original_check_out.isoformat(),
-            "reservation_name": reservation_name, "reservation_phone": reservation_phone,
-            "change": change, "confirmed": confirmed,
-        }
-        if check_in is not None:
-            arguments.update(
-                check_in=check_in.isoformat(),
-                check_out=check_out.isoformat() if check_out else None,
-                room_type=room_type,
-                room_count=room_count,
-            )
-        return await execute(context, "reservation.change_request", arguments)
-
-    @function_tool(description="Submit a reservation cancellation after final guest confirmation.")
-    async def submit_reservation_cancellation_request(
-        context: RunContext,
-        original_check_in: date,
-        original_check_out: date,
-        reservation_name: str,
-        reservation_phone: str,
-        confirmed: bool,
-        reason: str = "",
-    ) -> dict:
-        return await execute(context, "reservation.cancel_request", {
-            "original_check_in": original_check_in.isoformat(),
-            "original_check_out": original_check_out.isoformat(),
-            "reservation_name": reservation_name, "reservation_phone": reservation_phone,
-            "confirmed": confirmed, "reason": reason,
-        })
-
-    tools = {
-        "reservation.check_availability": check_room_availability,
-        "reservation.create_request": (
-            submit_new_reservation_request
-            if metadata.reservation_request_schema == "penzion_grand"
-            else create_reservation
-        ),
-        "reservation.change_request": submit_reservation_change_request,
-        "reservation.cancel_request": submit_reservation_cancellation_request,
-    }
-    return [tools[name] for name in metadata.enabled_capabilities if name in tools]
+    return [build(definition) for definition in metadata.tools if definition.enabled]
 
 
 class HospitalityAgent(Agent):
     def __init__(
         self, metadata, backend: BackendCoreClient, telemetry, state: VoiceTurnState, caller_number=None
     ):
-        tools = build_function_tools(metadata, backend, state, telemetry, caller_number)
-        if metadata.tenant_id == "penzion_grand":
+        tools: list[llm.Tool | llm.Toolset] = list(
+            build_function_tools(metadata, backend, state, telemetry, caller_number)
+        )
+        if metadata.end_call_enabled:
             tools.append(GuardedEndCallTool(state))
         super().__init__(
             instructions=metadata.instructions,
@@ -455,7 +354,7 @@ class HospitalityAgent(Agent):
         self.telemetry = telemetry
         self.state = state
 
-    async def on_user_turn_completed(self, _turn_ctx, new_message) -> None:
+    async def on_user_turn_completed(self, turn_ctx, new_message) -> None:
         self.telemetry.mark_turn_committed()
 
     def accept_user_message(self, new_message) -> None:

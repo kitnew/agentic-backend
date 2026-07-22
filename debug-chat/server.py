@@ -95,10 +95,12 @@ class DebugChatHandler(BaseHTTPRequestHandler):
         return body
 
     def _post_json(self, url: str, payload: dict) -> tuple[int, object]:
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        headers["X-LiveKit-Debug-Auth"] = "debug-chat"
         request = Request(
             url,
             data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urlopen(request, timeout=120) as response:  # noqa: S310 - local proxy

@@ -7,6 +7,7 @@ import os
 import signal
 import socket
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from time import perf_counter
 from uuid import uuid4
 
@@ -17,8 +18,11 @@ from app.capabilities.schemas import (
     CapabilityExecutionStatus,
 )
 from app.core.config import CapabilitySettings
+from app.contracts.livekit import ExecuteLiveKitToolResponse
+from app.domain.tool_calls.enums import ToolCallStatus
 from app.application.call_finalization import finalize_call
 from app.infrastructure.database import SessionLocal
+from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +34,10 @@ class WorkerCommandExecutor:
 
     async def execute(self, command: CapabilityCommand) -> CapabilityExecutionResult:
         if command.capability != "call" or command.action != "finalize":
-            return await self.capabilities.execute(command)
+            result = await self.capabilities.execute(command)
+            if result.status == CapabilityExecutionStatus.SUCCESS:
+                _persist_tool_result(command, result)
+            return result
         if not command.call_session_id:
             raise ValueError("call_session_id is required for call finalization")
         with SessionLocal() as db:
@@ -41,6 +48,40 @@ class WorkerCommandExecutor:
             result=result,
             execution_duration_ms=0,
             metadata=command.metadata,
+        )
+
+
+def _persist_tool_result(
+    command: CapabilityCommand, result: CapabilityExecutionResult
+) -> None:
+    tool_call_id = command.metadata.get("durable_tool_call_id")
+    if not tool_call_id:
+        return
+    status = "failed"
+    if result.status == CapabilityExecutionStatus.SUCCESS:
+        status = result.metadata.get("legacy_status") or "success"
+    if status not in {item.value for item in ToolCallStatus if item != ToolCallStatus.PENDING}:
+        status = "failed"
+    response = ExecuteLiveKitToolResponse(
+        status=status,
+        message=result.metadata.get("user_message"),
+        error=result.error_message,
+        result=result.result,
+        tool_call_id=tool_call_id,
+    )
+    with SessionLocal() as db:
+        repository = ToolCallRepository(db)
+        if repository.get_by_id(tool_call_id) is None:
+            return
+        repository.complete_livekit(
+            tool_call_id,
+            status=ToolCallStatus(status),
+            provider=result.metadata.get("provider") or "capability_worker",
+            output=result.result,
+            error=result.error_message,
+            response=response.model_dump(mode="json"),
+            latency_ms=result.execution_duration_ms,
+            updated_at=datetime.now(),
         )
 
 
@@ -337,6 +378,13 @@ class CapabilityWorker:
         dead_letter: bool = False,
         locks: list[str] | None = None,
     ) -> None:
+        if (
+            dead_letter
+            and command
+            and result
+            and result.status == CapabilityExecutionStatus.FAILED
+        ):
+            _persist_tool_result(command, result)
         pipe = self.redis.pipeline(transaction=True)
         if result:
             serialized = result.model_dump_json()

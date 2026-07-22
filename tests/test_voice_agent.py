@@ -7,7 +7,9 @@ import pytest
 from livekit.agents import stt
 
 from app.agent.schemas.voice import VoiceTurnConfig
-from app.voice_agent.models import LiveKitJobMetadata, SessionChatMessage
+from app.application.livekit_dispatch import resolve_runtime_tools, resolve_voice_id
+from app.contracts.livekit import LiveKitJobMetadata, SessionChatMessage
+from app.tenants.loader import TenantConfigLoader
 from app.voice_agent.session_factory import (
     GuardedEndCallTool,
     HospitalityAgent,
@@ -17,7 +19,6 @@ from app.voice_agent.session_factory import (
     _PostFinalStream,
     build_function_tools,
     build_session,
-    resolve_voice_id,
 )
 from app.voice_agent.settings import LiveKitSettings
 from app.voice_agent.telemetry import VoiceTelemetry
@@ -26,17 +27,15 @@ from app.voice_agent.telemetry import VoiceTelemetry
 def metadata(**changes):
     values = {
         "tenant_id": "demo_restaurant",
-        "call_session_id": uuid4(),
-        "conversation_id": uuid4(),
+        "call_session_id": str(uuid4()),
+        "conversation_id": str(uuid4()),
         "channel": "voice",
         "language": "sk",
         "timezone": "Europe/Bratislava",
         "instructions": "Tenant-only instructions",
         "greeting": "Dobrý deň",
-        "enabled_capabilities": (
-            "reservation.check_availability",
-            "reservation.create_request",
-        ),
+        "tools": resolve_runtime_tools(TenantConfigLoader().load("demo_restaurant")),
+        "end_call_enabled": False,
         "chat_history": (SessionChatMessage(role="user", content="Earlier"),),
         "stt_language": "slk",
         "tts_voice_id": "tenant-voice",
@@ -46,6 +45,14 @@ def metadata(**changes):
     }
     values.update(changes)
     return LiveKitJobMetadata(**values)
+
+
+def tools_for(tenant_id, *capabilities):
+    return tuple(
+        tool
+        for tool in resolve_runtime_tools(TenantConfigLoader().load(tenant_id))
+        if tool.backend_capability in capabilities
+    )
 
 
 class Telemetry:
@@ -136,7 +143,7 @@ def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation(
     speech = Speech()
     state.register_speech(speech)
     tools = build_function_tools(
-        metadata(enabled_capabilities=("reservation.check_availability",)),
+        metadata(tools=tools_for("penzion_grand", "reservation.check_availability")),
         backend,
         state,
         telemetry,
@@ -146,13 +153,17 @@ def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation(
         function_call=SimpleNamespace(call_id="tool-1"), speech_handle=speech
     )
     async def run():
-        task = asyncio.create_task(tools[0]._func(
-            context,
-            __import__("datetime").date(2026, 8, 1),
-            __import__("datetime").date(2026, 8, 3),
-            "double",
-            1,
-        ))
+        task = asyncio.create_task(
+            tools[0]._func(
+                context,
+                {
+                    "check_in": "2026-08-01",
+                    "check_out": "2026-08-03",
+                    "room_type": "two_bed",
+                    "room_count": 1,
+                },
+            )
+        )
         await asyncio.sleep(0)
         assert backend.tools == []
         state.commit_turn("turn-1")
@@ -171,8 +182,7 @@ def test_reservation_tool_injects_caller_number_from_call_context():
     tool = build_function_tools(
         metadata(
             tenant_id="penzion_grand",
-            enabled_capabilities=("reservation.create_request",),
-            reservation_request_schema="penzion_grand",
+            tools=tools_for("penzion_grand", "reservation.create_request"),
         ),
         backend,
         state,
@@ -187,14 +197,16 @@ def test_reservation_tool_injects_caller_number_from_call_context():
         task = asyncio.create_task(
             tool._func(
                 context,
-                __import__("datetime").date(2026, 8, 29),
-                __import__("datetime").date(2026, 8, 31),
-                "Ján Novák",
-                "+421900333444",
-                "jan@example.com",
-                "two_bed",
-                1,
-                True,
+                {
+                    "check_in": "2026-08-29",
+                    "check_out": "2026-08-31",
+                    "reservation_name": "Ján Novák",
+                    "reservation_phone": "+421900333444",
+                    "email": "jan@example.com",
+                    "room_type": "two_bed",
+                    "room_count": 1,
+                    "confirmed": True,
+                },
             )
         )
         await asyncio.sleep(0)
@@ -209,7 +221,7 @@ def test_reservation_tool_injects_caller_number_from_call_context():
 
 def test_hospitality_agent_persists_only_the_canonical_committed_user_once():
     backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
-    agent = HospitalityAgent(metadata(enabled_capabilities=()), backend, telemetry, state)
+    agent = HospitalityAgent(metadata(tools=()), backend, telemetry, state)
     assert agent.instructions == "Tenant-only instructions"
     message = SimpleNamespace(id="turn-1", raw_text_content="Hello")
     async def run():
@@ -269,7 +281,7 @@ def _run_end_call(user_text, *, pending_tools=0):
 
 def test_penzion_agent_registers_official_end_call_tool():
     agent = HospitalityAgent(
-        metadata(tenant_id="penzion_grand", enabled_capabilities=()),
+        metadata(tenant_id="penzion_grand", tools=(), end_call_enabled=True),
         Backend(),
         Telemetry(),
         VoiceTurnState(),
@@ -311,7 +323,7 @@ def test_cancelled_speculative_tool_never_reaches_backend_and_wait_has_no_orphan
     speech = Speech()
     state.register_speech(speech)
     tool = build_function_tools(
-        metadata(enabled_capabilities=("reservation.check_availability",)),
+        metadata(tools=tools_for("penzion_grand", "reservation.check_availability")),
         backend,
         state,
         telemetry,
@@ -321,13 +333,17 @@ def test_cancelled_speculative_tool_never_reaches_backend_and_wait_has_no_orphan
     )
 
     async def run():
-        task = asyncio.create_task(tool._func(
-            context,
-            __import__("datetime").date(2026, 8, 1),
-            __import__("datetime").date(2026, 8, 3),
-            "double",
-            1,
-        ))
+        task = asyncio.create_task(
+            tool._func(
+                context,
+                {
+                    "check_in": "2026-08-01",
+                    "check_out": "2026-08-03",
+                    "room_type": "two_bed",
+                    "room_count": 1,
+                },
+            )
+        )
         await asyncio.sleep(0)
         state.cancel_speech(speech.id)
         with pytest.raises(asyncio.CancelledError):
@@ -513,7 +529,7 @@ def test_worker_disconnect_requests_backend_finalization_once(monkeypatch):
     job = metadata(
         tenant_id="penzion_grand",
         greeting=None,
-        enabled_capabilities=(),
+        tools=(),
     )
     ctx = Context(job)
     session = Session()

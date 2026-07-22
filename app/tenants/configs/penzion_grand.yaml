@@ -171,6 +171,7 @@ post_call_transcript:
 
 voice:
   enabled: true
+  end_call_enabled: true
   stt:
     provider: elevenlabs
     model: scribe_v2_realtime

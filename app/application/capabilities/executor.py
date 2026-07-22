@@ -29,6 +29,7 @@ class CapabilityExecution:
     request: CapabilityRequest
     result: CapabilityResult
     tool_call: ToolCallResponse | None
+    execution_result: CapabilityExecutionResult | None = None
 
 
 class MissingCapabilityLedger:
@@ -55,6 +56,7 @@ class BackendCapabilityExecutor:
         tool_call_repository: ToolCallRepository,
         capability_executor: CapabilityExecutor | None = None,
         capability_ledger: CapabilityLedger | None = None,
+        persist_tool_call: bool = True,
     ):
         self.tenant_context = tenant_context
         self.message = message
@@ -64,6 +66,7 @@ class BackendCapabilityExecutor:
             capability_router=capability_router,
         )
         self.capability_ledger = capability_ledger or MissingCapabilityLedger()
+        self.persist_tool_call = persist_tool_call
 
     def execute(self, capability_request: CapabilityRequest) -> CapabilityExecution:
         capability_request = self._with_message_metadata(capability_request)
@@ -99,32 +102,39 @@ class BackendCapabilityExecutor:
         latency_ms = int((perf_counter() - started_at) * 1000)
         capability_result = self._to_legacy_result(execution_request, normalized_result)
 
-        tool_call = ToolCall(
-            id=str(uuid.uuid4()),
-            tenant_id=self.message.tenant_id,
-            message_id=self.message.id,
-            conversation_id=self.message.conversation_id,
-            capability_name=execution_request.name,
-            provider=capability_result.provider,
-            input=execution_request.input,
-            output=capability_result.output,
-            status=ToolCallStatus(capability_result.status),
-            error=capability_result.error,
-            latency_ms=latency_ms,
-            created_at=datetime.now(),
-        )
-        self.tool_call_repository.create(tool_call)
+        tool_call = None
+        if self.persist_tool_call:
+            tool_call = ToolCall(
+                id=str(uuid.uuid4()),
+                tenant_id=self.message.tenant_id,
+                message_id=self.message.id,
+                conversation_id=self.message.conversation_id,
+                capability_name=execution_request.name,
+                provider=capability_result.provider,
+                input=execution_request.input,
+                output=capability_result.output,
+                status=ToolCallStatus(capability_result.status),
+                error=capability_result.error,
+                latency_ms=latency_ms,
+                created_at=datetime.now(),
+            )
+            self.tool_call_repository.create(tool_call)
         if reserved_call:
             self.capability_ledger.mark_finished(
                 capability_call_id=reserved_call.id,
                 status=capability_result.status.value,
                 result=capability_result,
-                tool_call_id=tool_call.id,
+                tool_call_id=(
+                    tool_call.id
+                    if tool_call
+                    else (execution_request.metadata or {}).get("durable_tool_call_id")
+                ),
             )
         return CapabilityExecution(
             request=execution_request,
             result=capability_result,
-            tool_call=self._to_tool_call_response(tool_call),
+            tool_call=self._to_tool_call_response(tool_call) if tool_call else None,
+            execution_result=normalized_result,
         )
 
     async def execute_async(self, capability_request: CapabilityRequest) -> CapabilityExecution:
@@ -164,32 +174,39 @@ class BackendCapabilityExecutor:
         latency_ms = int((perf_counter() - started_at) * 1000)
         capability_result = self._to_legacy_result(execution_request, normalized_result)
 
-        tool_call = ToolCall(
-            id=str(uuid.uuid4()),
-            tenant_id=self.message.tenant_id,
-            message_id=self.message.id,
-            conversation_id=self.message.conversation_id,
-            capability_name=execution_request.name,
-            provider=capability_result.provider,
-            input=execution_request.input,
-            output=capability_result.output,
-            status=ToolCallStatus(capability_result.status),
-            error=capability_result.error,
-            latency_ms=latency_ms,
-            created_at=datetime.now(),
-        )
-        self.tool_call_repository.create(tool_call)
+        tool_call = None
+        if self.persist_tool_call:
+            tool_call = ToolCall(
+                id=str(uuid.uuid4()),
+                tenant_id=self.message.tenant_id,
+                message_id=self.message.id,
+                conversation_id=self.message.conversation_id,
+                capability_name=execution_request.name,
+                provider=capability_result.provider,
+                input=execution_request.input,
+                output=capability_result.output,
+                status=ToolCallStatus(capability_result.status),
+                error=capability_result.error,
+                latency_ms=latency_ms,
+                created_at=datetime.now(),
+            )
+            self.tool_call_repository.create(tool_call)
         if reserved_call:
             self.capability_ledger.mark_finished(
                 capability_call_id=reserved_call.id,
                 status=capability_result.status.value,
                 result=capability_result,
-                tool_call_id=tool_call.id,
+                tool_call_id=(
+                    tool_call.id
+                    if tool_call
+                    else (execution_request.metadata or {}).get("durable_tool_call_id")
+                ),
             )
         return CapabilityExecution(
             request=execution_request,
             result=capability_result,
-            tool_call=self._to_tool_call_response(tool_call),
+            tool_call=self._to_tool_call_response(tool_call) if tool_call else None,
+            execution_result=normalized_result,
         )
 
     def _execute_command(self, command: CapabilityCommand) -> CapabilityExecutionResult:
@@ -215,7 +232,7 @@ class BackendCapabilityExecutor:
             "legacy_capability_name": capability_request.name,
         }
         return CapabilityCommand(
-            command_id=str(uuid.uuid4()),
+            command_id=metadata.get("durable_tool_call_id") or str(uuid.uuid4()),
             tenant_id=self.message.tenant_id,
             conversation_id=self.message.conversation_id,
             call_session_id=metadata.get("call_session_id"),

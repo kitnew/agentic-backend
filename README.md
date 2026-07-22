@@ -43,7 +43,7 @@ in `app/secrets/google-service-account.json`.
 
 The supported voice boundary is under `/api/v1/voice/livekit`:
 
-- `POST /sessions`: create a room-scoped participant token and agent dispatch
+- `POST /sessions`: create an authorized room-scoped participant token and agent dispatch
 - `POST /messages`: persist a final LiveKit user or assistant message
 - `POST /tools`: execute an enabled tenant capability for a persisted user turn
 - `POST /finalize`: make a call terminal and enqueue idempotent post-call processing
@@ -53,8 +53,14 @@ The supported voice boundary is under `/api/v1/voice/livekit`:
 builds the transcript from PostgreSQL messages, generates the Slovak summary, and writes
 Google Sheets with `call_session_id` developer metadata as the external idempotency key.
 
-The worker-side client is `app/voice_agent/backend_client.py`; shared request, response,
-and authentication DTOs are in `app/contracts/livekit.py`.
+`POST /sessions` accepts a short-lived HMAC Bearer token whose signed claims contain the
+caller identity and allowed tenant IDs. Its `LIVEKIT_SESSION_AUTH_SECRET` is separate from
+the worker-only `VOICE_SESSION_TOKEN_SECRET`. Tool retries are keyed durably by
+`tenant_id + call_session_id + tool_call_id`; PostgreSQL stores the request fingerprint and
+terminal response while Redis reuses the durable tool-call ID as its command ID.
+
+The worker-side client is `app/voice_agent/backend_client.py`; shared HTTP, dispatch,
+authentication, and voice-turn DTOs are in `app/contracts`.
 
 ## Debug client
 
@@ -63,7 +69,10 @@ python debug-chat/server.py
 ```
 
 Open <http://localhost:8080>. The client creates a LiveKit session through the backend and
-then sends microphone audio directly through LiveKit.
+then sends microphone audio directly through LiveKit. The API must explicitly enable the
+development-only path with `APP_ENV=development`, `LIVEKIT_DEBUG_AUTH_ENABLED=true`, and
+`LIVEKIT_DEBUG_ALLOWED_TENANTS=demo_restaurant,penzion_grand`. No debug token is required;
+the proxy marks its Backend request automatically.
 
 ## Database migration
 
@@ -72,7 +81,7 @@ advisory lock. To verify the lifecycle table manually:
 
 ```bash
 docker compose --env-file app/.env exec -T postgres \
-  psql -U agentic -d agentic -c '\d call_sessions'
+  psql -U agentic -d agentic -c '\d tool_calls'
 ```
 
 ## Verification

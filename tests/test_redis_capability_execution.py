@@ -305,12 +305,43 @@ def test_worker_retries_with_backoff_then_dead_letters():
     asyncio.run(worker.process_entry("2-0", {"command": command().model_dump_json()}))
 
     assert len(executor.calls) == 4
+    assert {call.command_id for call in executor.calls} == {"command-1"}
     assert delays == [1, 2, 4]
     assert redis.dlq[0][0] == config.dead_letter_stream
     assert redis.dlq[0][1]["attempts"] == "4"
     assert CapabilityExecutionResult.model_validate_json(
         redis.lists[config.result_key("command-1")][0]
     ).status == CapabilityExecutionStatus.FAILED
+
+
+def test_worker_retry_preserves_one_durable_tool_identity(monkeypatch):
+    redis = WorkerRedis()
+    provider = SequenceExecutor([False, True])
+    persisted = []
+    monkeypatch.setattr(
+        "app.workers.capability_worker._persist_tool_result",
+        lambda capability_command, execution_result: persisted.append(
+            (capability_command.command_id, execution_result.status)
+        ),
+    )
+    durable = command(
+        "durable-tool-1",
+        metadata={"durable_tool_call_id": "durable-tool-1"},
+    )
+    worker = CapabilityWorker(
+        redis,
+        settings=settings(max_retries=1),
+        executor=WorkerCommandExecutor(provider),
+        sleep=lambda _delay: asyncio.sleep(0),
+    )
+
+    asyncio.run(worker.process_entry("durable-1", {"command": durable.model_dump_json()}))
+
+    assert [call.command_id for call in provider.calls] == [
+        "durable-tool-1",
+        "durable-tool-1",
+    ]
+    assert persisted == [("durable-tool-1", CapabilityExecutionStatus.SUCCESS)]
 
 
 def test_worker_normalizes_provider_exception_and_malformed_commands():
