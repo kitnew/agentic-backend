@@ -23,6 +23,34 @@ class DatabaseSettings:
 
 
 @dataclass(frozen=True)
+class SummarySettings:
+    azure_endpoint: str = ""
+    azure_api_key: str = ""
+    azure_deployment: str = "gpt-4o-mini"
+    azure_api_version: str = "2025-01-01-preview"
+
+    @classmethod
+    def from_env(cls) -> "SummarySettings":
+        return cls(
+            azure_endpoint=_text("AZURE_OPENAI_ENDPOINT", ""),
+            azure_api_key=_text("AZURE_OPENAI_API_KEY", ""),
+            azure_deployment=_text("AZURE_OPENAI_DEPLOYMENT", cls.azure_deployment),
+            azure_api_version=_text("AZURE_OPENAI_API_VERSION", cls.azure_api_version),
+        )
+
+    def validate(self) -> None:
+        if not all(
+            (
+                self.azure_endpoint,
+                self.azure_api_key,
+                self.azure_deployment,
+                self.azure_api_version,
+            )
+        ):
+            raise ValueError("Azure OpenAI summary settings are required")
+
+
+@dataclass(frozen=True)
 class CapabilitySettings:
     execution_mode: str = "in_process"
     redis_url: str = "redis://localhost:6379/0"

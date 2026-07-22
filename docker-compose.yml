@@ -62,6 +62,10 @@ services:
     environment:
       <<: *backend-environment
       GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google-service-account
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
     secrets:
       - google-service-account
     volumes:
@@ -94,9 +98,6 @@ services:
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
       ELEVENLABS_REALTIME_STT_MODEL: ${ELEVENLABS_REALTIME_STT_MODEL:-scribe_v2_realtime}
-      GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google-service-account
-    secrets:
-      - google-service-account
     ports:
       - "8081:8081"
     volumes:

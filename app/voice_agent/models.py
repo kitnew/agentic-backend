@@ -4,8 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.tenants.schemas import TenantPostCallTranscriptConfig
-from app.voice.latency import VoiceTurnConfig
+from app.agent.schemas.voice import VoiceTurnConfig
 
 
 class SessionChatMessage(BaseModel):
@@ -28,7 +27,6 @@ class LiveKitJobMetadata(BaseModel):
     greeting: str | None = None
     enabled_capabilities: tuple[str, ...]
     reservation_request_schema: str | None = None
-    post_call_transcript: TenantPostCallTranscriptConfig | None = None
     chat_history: tuple[SessionChatMessage, ...] = ()
     stt_language: str
     tts_voice_id: str

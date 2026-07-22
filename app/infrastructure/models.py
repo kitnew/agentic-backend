@@ -18,6 +18,30 @@ class ConversationModel(Base):
     updated_at = Column(DateTime, nullable=False)
 
 
+class CallSessionModel(Base):
+    __tablename__ = "call_sessions"
+
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    conversation_id = Column(String, nullable=False, index=True)
+    livekit_room_name = Column(String, nullable=False, unique=True)
+    livekit_job_id = Column(String, nullable=True, unique=True)
+    caller_phone = Column(String, nullable=True)
+    status = Column(String, nullable=False, index=True)
+    finalization_status = Column(String, nullable=False, index=True)
+    started_at = Column(DateTime, nullable=False)
+    ended_at = Column(DateTime, nullable=True)
+    terminal_reason = Column(String, nullable=True)
+    terminal_error = Column(String, nullable=True)
+    finalization_error = Column(String, nullable=True)
+    finalization_command_id = Column(String, nullable=True, unique=True)
+    finalization_enqueued_at = Column(DateTime, nullable=True)
+    transcript = Column(String, nullable=True)
+    summary = Column(String, nullable=True)
+    transcript_sheet_range = Column(String, nullable=True)
+    updated_at = Column(DateTime, nullable=False)
+
+
 class MessageModel(Base):
     """SQLAlchemy model representing a persisted chat message."""
 

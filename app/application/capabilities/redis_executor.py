@@ -73,6 +73,18 @@ class RedisCapabilityExecutor:
         )
         return result
 
+    async def enqueue(self, command: CapabilityCommand) -> str:
+        serialized = command.model_dump_json()
+        client = self.redis_client or self._new_client()
+        try:
+            return _text(
+                await client.xadd(self.settings.command_stream, {"command": serialized})
+            )
+        finally:
+            if self.redis_client is None:
+                with suppress(Exception):
+                    await client.aclose()
+
     async def _wait_for_result(
         self,
         client,

@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.routes.voice_sessions import create_livekit_session
 from app.contracts.livekit import CreateLiveKitSessionRequest
 from app.infrastructure.database import Base
-from app.infrastructure.models import ConversationModel
+from app.infrastructure.models import CallSessionModel, ConversationModel
 from app.tenants.loader import TenantConfigLoader
 from app.voice_agent.settings import LiveKitSettings
 
@@ -78,6 +78,11 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
     assert response.room_name == f"voice-{response.call_session_id}"
     assert response.livekit_url == "ws://localhost:7880"
     assert db.get(ConversationModel, response.conversation_id).tenant_id == "demo_restaurant"
+    call = db.get(CallSessionModel, response.call_session_id)
+    assert call.tenant_id == "demo_restaurant"
+    assert call.conversation_id == response.conversation_id
+    assert call.livekit_room_name == response.room_name
+    assert call.status == "active" and call.finalization_status == "pending"
 
     claims = api.TokenVerifier(API_KEY, API_SECRET).verify(response.participant_token)
     assert claims.identity == f"browser-{response.call_session_id}"
@@ -101,7 +106,7 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
     assert response.turn_config.stt_segmentation.threshold == 0.4
     assert metadata["instructions"]
     assert metadata["enabled_capabilities"] == ["reservation.create_request"]
-    assert metadata["post_call_transcript"] is None
+    assert "post_call_transcript" not in metadata
     assert "backend_token" not in metadata
     raw_claims = jwt.decode(response.participant_token, options={"verify_signature": False})
     assert 115 <= raw_claims["exp"] - int(time.time()) <= 120
@@ -109,15 +114,14 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
     assert API_SECRET not in serialized and "ELEVENLABS" not in serialized
 
 
-def test_penzion_grand_dispatch_contains_post_call_transcript_config(monkeypatch, db):
+def test_penzion_grand_dispatch_does_not_expose_backend_post_call_config(monkeypatch, db):
     configure(monkeypatch)
     response = create_livekit_session(
         CreateLiveKitSessionRequest(tenant_id="penzion_grand"), db, TenantConfigLoader()
     )
     claims = api.TokenVerifier(API_KEY, API_SECRET).verify(response.participant_token)
     metadata = json.loads(claims.room_config.agents[0].metadata)
-    configured = TenantConfigLoader().load("penzion_grand").post_call_transcript
-    assert metadata["post_call_transcript"]["sheet_name"] == configured.sheet_name
+    assert "post_call_transcript" not in metadata
 
 
 def test_livekit_session_accepts_only_same_tenant_conversation(monkeypatch, db):

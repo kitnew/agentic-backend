@@ -14,8 +14,9 @@ browser or SIP participant
 ```
 
 The conversational runtime lives only in `app/voice_agent`. The FastAPI backend does not
-run an agent; it issues LiveKit sessions, persists final conversation messages, and executes
-capabilities through authenticated LiveKit-specific endpoints.
+run an agent; it owns durable call sessions, messages, terminal state, finalization, and
+capability routing through authenticated LiveKit-specific endpoints. `app/agent` contains
+transport-independent prompts and schemas. There is no separate `app/voice` runtime package.
 
 ## Services
 
@@ -45,6 +46,12 @@ The supported voice boundary is under `/api/v1/voice/livekit`:
 - `POST /sessions`: create a room-scoped participant token and agent dispatch
 - `POST /messages`: persist a final LiveKit user or assistant message
 - `POST /tools`: execute an enabled tenant capability for a persisted user turn
+- `POST /finalize`: make a call terminal and enqueue idempotent post-call processing
+
+`call_sessions` uses `active -> completed|failed` for the call and
+`pending -> processing -> completed|failed` for finalization. The existing capability worker
+builds the transcript from PostgreSQL messages, generates the Slovak summary, and writes
+Google Sheets with `call_session_id` developer metadata as the external idempotency key.
 
 The worker-side client is `app/voice_agent/backend_client.py`; shared request, response,
 and authentication DTOs are in `app/contracts/livekit.py`.
@@ -55,8 +62,18 @@ and authentication DTOs are in `app/contracts/livekit.py`.
 python debug-chat/server.py
 ```
 
-Open <http://localhost:3000>. The client creates a LiveKit session through the backend and
+Open <http://localhost:8080>. The client creates a LiveKit session through the backend and
 then sends microphone audio directly through LiveKit.
+
+## Database migration
+
+The API applies `app/infrastructure/migrations/*.sql` under the existing PostgreSQL startup
+advisory lock. To verify the lifecycle table manually:
+
+```bash
+docker compose --env-file app/.env exec -T postgres \
+  psql -U agentic -d agentic -c '\d call_sessions'
+```
 
 ## Verification
 

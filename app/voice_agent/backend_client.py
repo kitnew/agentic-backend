@@ -1,8 +1,13 @@
+import asyncio
+from typing import Literal
+
 import aiohttp
 
 from app.contracts.livekit import (
     ExecuteLiveKitToolRequest,
     ExecuteLiveKitToolResponse,
+    FinalizeLiveKitCallRequest,
+    FinalizeLiveKitCallResponse,
     PersistLiveKitMessageRequest,
     PersistLiveKitMessageResponse,
 )
@@ -18,7 +23,7 @@ class BackendCoreClient:
     async def persist_message(
         self,
         *,
-        role: str,
+        role: Literal["user", "assistant"],
         content: str,
         turn_id: str,
         item_id: str,
@@ -54,6 +59,36 @@ class BackendCoreClient:
             ),
         )
         return ExecuteLiveKitToolResponse.model_validate(response).model_dump()
+
+    async def finalize_call(
+        self,
+        *,
+        call_session_id: str,
+        outcome: Literal["completed", "failed"],
+        reason: str | None,
+        error: str | None,
+        livekit_job_id: str | None,
+        caller_phone: str | None,
+    ) -> dict:
+        request = FinalizeLiveKitCallRequest(
+            call_session_id=call_session_id,
+            outcome=outcome,
+            reason=reason,
+            error=error,
+            livekit_job_id=livekit_job_id,
+            caller_phone=caller_phone,
+        )
+        for attempt in range(3):
+            try:
+                response = await asyncio.wait_for(
+                    self._post("/api/v1/voice/livekit/finalize", request), timeout=3
+                )
+                return FinalizeLiveKitCallResponse.model_validate(response).model_dump()
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(0.1 * (attempt + 1))
+        raise RuntimeError("unreachable")
 
     async def _post(self, path: str, payload) -> dict:
         async with self.session.post(

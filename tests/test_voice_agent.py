@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from livekit.agents import stt
 
-from app.voice.latency import VoiceTurnConfig
+from app.agent.schemas.voice import VoiceTurnConfig
 from app.voice_agent.models import LiveKitJobMetadata, SessionChatMessage
 from app.voice_agent.session_factory import (
     GuardedEndCallTool,
@@ -361,10 +361,14 @@ def test_stt_suppresses_post_final_tail_until_new_vad_speech():
                 SimpleNamespace(type=stt.SpeechEventType.RECOGNITION_USAGE),
                 SimpleNamespace(type=stt.SpeechEventType.INTERIM_TRANSCRIPT),
             ])
-        def __aiter__(self): return self
+        def __aiter__(self):
+            return self
+
         async def __anext__(self):
-            try: return next(self.events)
-            except StopIteration: raise StopAsyncIteration
+            try:
+                return next(self.events)
+            except StopIteration:
+                raise StopAsyncIteration
 
     async def run():
         stream = _PostFinalStream(Events(), provider)
@@ -438,7 +442,7 @@ def test_interruption_keeps_the_interrupted_turn_correlation():
     assert event["response_id"] == "response"
 
 
-def test_post_call_persistence_runs_once_from_livekit_shutdown(monkeypatch):
+def test_worker_disconnect_requests_backend_finalization_once(monkeypatch):
     from app.voice_agent import server as voice_server
 
     calls = []
@@ -460,8 +464,15 @@ def test_post_call_persistence_runs_once_from_livekit_shutdown(monkeypatch):
             pass
 
     class RuntimeBackend:
+        instance = None
+
         def __init__(self, *_args):
-            pass
+            self.finalizations = []
+            RuntimeBackend.instance = self
+
+        async def finalize_call(self, **payload):
+            self.finalizations.append(payload)
+            return {"finalization_status": "pending"}
 
         async def aclose(self):
             pass
@@ -503,7 +514,6 @@ def test_post_call_persistence_runs_once_from_livekit_shutdown(monkeypatch):
         tenant_id="penzion_grand",
         greeting=None,
         enabled_capabilities=(),
-        post_call_transcript={"spreadsheet_id": "sheet-id", "sheet_name": "Transkripty"},
     )
     ctx = Context(job)
     session = Session()
@@ -528,20 +538,16 @@ def test_post_call_persistence_runs_once_from_livekit_shutdown(monkeypatch):
         ),
     )
 
-    async def save(*args, **kwargs):
-        assert all(task.done() for task in state.user_persistence.values())
-        calls.append((args, kwargs))
-        return True
-
-    monkeypatch.setattr(voice_server, "persist_post_call", save)
-
     async def run():
         await voice_server.voice_agent(ctx)
-        assert calls == []
+        assert RuntimeBackend.instance.finalizations == []
         state.user_persistence["final-user-turn"] = asyncio.create_task(asyncio.sleep(0))
         await ctx.shutdown("participant disconnected")
         await ctx.shutdown("duplicate callback")
 
     asyncio.run(run())
+    calls = RuntimeBackend.instance.finalizations
     assert len(calls) == 1
-    assert calls[0][0][2] == "+421900111222"
+    assert calls[0]["call_session_id"] == str(job.call_session_id)
+    assert calls[0]["caller_phone"] == "+421900111222"
+    assert calls[0]["outcome"] == "completed"

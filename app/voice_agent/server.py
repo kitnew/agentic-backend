@@ -2,7 +2,6 @@ import asyncio
 import json
 import logging
 import time
-from datetime import datetime, timezone
 
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, JobProcess, cli
 from livekit.plugins import silero
@@ -10,7 +9,6 @@ from livekit.plugins import silero
 from app.contracts.livekit import LiveKitBackendClaims, LiveKitBackendTokenCodec
 from app.voice_agent.backend_client import BackendCoreClient
 from app.voice_agent.models import LiveKitJobMetadata
-from app.voice_agent.post_call import persist_post_call
 from app.voice_agent.session_factory import HospitalityAgent, VoiceTurnState, build_session
 from app.voice_agent.settings import LiveKitSettings
 from app.voice_agent.telemetry import VoiceTelemetry
@@ -89,11 +87,10 @@ async def voice_agent(ctx: JobContext) -> None:
     backend = BackendCoreClient(settings.backend_url, backend_token)
     state = VoiceTurnState()
     session = build_session(settings, metadata, build_vad(metadata.turn_config))
-    history_start_index = len(session.history.items)
     caller_number = participant.attributes.get("sip.phoneNumber") or participant.identity
     agent = HospitalityAgent(metadata, backend, telemetry, state, caller_number)
     persistence_tasks: set[asyncio.Task] = set()
-    post_call_started = False
+    finalization_started = False
 
     logger.info(
         "LiveKit session configuration preemptive_generation_enabled=%s "
@@ -130,21 +127,30 @@ async def voice_agent(ctx: JobContext) -> None:
     telemetry.bind_session(session, on_user_speech_started=session.stt.mark_speech_started)
 
     async def cleanup(_reason: str = "") -> None:
-        nonlocal post_call_started
-        completed_at = datetime.now(timezone.utc)
+        nonlocal finalization_started
         state.close()
         pending = [*state.user_persistence.values(), *persistence_tasks]
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
-        if metadata.post_call_transcript and not post_call_started:
-            post_call_started = True
-            await persist_post_call(
-                session,
-                metadata,
-                caller_number,
-                history_start_index=history_start_index,
-                completed_at=completed_at,
-            )
+        if not finalization_started:
+            finalization_started = True
+            try:
+                await backend.finalize_call(
+                    call_session_id=str(metadata.call_session_id),
+                    outcome="failed" if "error" in _reason.casefold() else "completed",
+                    reason=_reason or None,
+                    error=_reason if "error" in _reason.casefold() else None,
+                    livekit_job_id=str(getattr(ctx.job, "id", "")) or None,
+                    caller_phone=str(caller_number),
+                )
+            except Exception:
+                logger.exception(
+                    "Backend Core call finalization request failed tenant_id=%s "
+                    "call_session_id=%s conversation_id=%s",
+                    metadata.tenant_id,
+                    metadata.call_session_id,
+                    metadata.conversation_id,
+                )
         await session.aclose()
         await backend.aclose()
         await telemetry.aclose()

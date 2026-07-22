@@ -50,6 +50,120 @@ class GoogleSheetsClient:
             updated_rows=updates.get("updatedRows"),
         )
 
+    def append_row_once(
+        self, request: GoogleSheetsAppendRowRequest, *, idempotency_key: str
+    ) -> GoogleSheetsAppendRowResult:
+        service = self._build_service(self.write_scopes)
+        search = (
+            service.spreadsheets()
+            .developerMetadata()
+            .search(
+                spreadsheetId=request.spreadsheet_id,
+                body={
+                    "dataFilters": [
+                        {
+                            "developerMetadataLookup": {
+                                "metadataKey": "call_session_id",
+                                "metadataValue": idempotency_key,
+                                "visibility": "DOCUMENT",
+                            }
+                        }
+                    ]
+                },
+            )
+            .execute()
+        )
+        if search.get("matchedDeveloperMetadata"):
+            return GoogleSheetsAppendRowResult(
+                spreadsheet_id=request.spreadsheet_id,
+                sheet_name=request.sheet_name,
+                updated_rows=0,
+            )
+
+        spreadsheet = (
+            service.spreadsheets()
+            .get(
+                spreadsheetId=request.spreadsheet_id,
+                fields="sheets(properties(sheetId,title))",
+            )
+            .execute()
+        )
+        sheet = next(
+            (
+                item["properties"]
+                for item in spreadsheet.get("sheets", [])
+                if item.get("properties", {}).get("title") == request.sheet_name
+            ),
+            None,
+        )
+        if sheet is None:
+            raise RuntimeError(f"Google Sheets tab not found: {request.sheet_name}")
+        escaped_name = request.sheet_name.replace("'", "''")
+        existing = (
+            service.spreadsheets()
+            .values()
+            .get(
+                spreadsheetId=request.spreadsheet_id,
+                range=f"'{escaped_name}'!A:A",
+                majorDimension="COLUMNS",
+            )
+            .execute()
+        )
+        columns = existing.get("values", [])
+        row_index = len(columns[0]) if columns else 0
+        cells = [
+            {"userEnteredValue": {"stringValue": "" if value is None else str(value)}}
+            for value in request.values
+        ]
+        (
+            service.spreadsheets()
+            .batchUpdate(
+                spreadsheetId=request.spreadsheet_id,
+                body={
+                    "requests": [
+                        {
+                            "updateCells": {
+                                "start": {
+                                    "sheetId": sheet["sheetId"],
+                                    "rowIndex": row_index,
+                                    "columnIndex": 0,
+                                },
+                                "rows": [{"values": cells}],
+                                "fields": "userEnteredValue",
+                            }
+                        },
+                        {
+                            "createDeveloperMetadata": {
+                                "developerMetadata": {
+                                    "metadataKey": "call_session_id",
+                                    "metadataValue": idempotency_key,
+                                    "visibility": "DOCUMENT",
+                                    "location": {
+                                        "dimensionRange": {
+                                            "sheetId": sheet["sheetId"],
+                                            "dimension": "ROWS",
+                                            "startIndex": row_index,
+                                            "endIndex": row_index + 1,
+                                        }
+                                    },
+                                }
+                            }
+                        },
+                    ]
+                },
+            )
+            .execute()
+        )
+        return GoogleSheetsAppendRowResult(
+            spreadsheet_id=request.spreadsheet_id,
+            sheet_name=request.sheet_name,
+            updated_range=(
+                f"{request.sheet_name}!A{row_index + 1}:"
+                f"{_column_name(len(request.values))}{row_index + 1}"
+            ),
+            updated_rows=1,
+        )
+
     def read_values(self, request: GoogleSheetsReadRequest) -> GoogleSheetsReadResult:
         service = self._build_service(self.read_scopes)
         response = (
@@ -101,3 +215,11 @@ class GoogleSheetsClient:
             return str(app_relative_path)
 
         return str(path)
+
+
+def _column_name(index: int) -> str:
+    name = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        name = chr(65 + remainder) + name
+    return name

@@ -26,3 +26,7 @@ def get_capability_executor(
         tenant_config_loader=tenant_config_loader,
         capability_router=capability_router,
     )
+
+
+def get_finalization_publisher() -> RedisCapabilityExecutor:
+    return RedisCapabilityExecutor(settings=CapabilitySettings.from_env())

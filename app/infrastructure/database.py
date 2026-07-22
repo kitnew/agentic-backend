@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 from app.core.config import DatabaseSettings
@@ -31,10 +32,14 @@ def init_db() -> None:
     Initialize the database by creating all tables registered on the Base metadata.
     """
     # Import all models here to register them with the metadata
-    from app.infrastructure.models import ConversationModel, MessageModel, ToolCallModel
+    import app.infrastructure.models  # noqa: F401 - registers SQLAlchemy metadata
     if engine.dialect.name == "postgresql":
         with engine.begin() as connection:
             connection.execute(text("SELECT pg_advisory_xact_lock(773144916)"))
+            for migration in sorted((Path(__file__).parent / "migrations").glob("*.sql")):
+                for statement in migration.read_text().split(";"):
+                    if statement.strip():
+                        connection.execute(text(statement))
             Base.metadata.create_all(bind=connection)
     else:
         Base.metadata.create_all(bind=engine)

@@ -9,12 +9,14 @@ from livekit import api
 
 from app.api.dependencies import (
     get_capability_executor,
+    get_finalization_publisher,
     get_capability_router,
     get_tenant_config_loader,
 )
 from app.agent.prompts.context import build_agent_context
 from app.agent.prompts.loader import PromptLoader
 from app.application.capabilities.boundary import CapabilityExecutor
+from app.application.capabilities.redis_executor import RedisCapabilityExecutor
 from app.application.capabilities.executor import BackendCapabilityExecutor
 from app.application.conversations import (
     ConversationNotFoundError,
@@ -30,17 +32,28 @@ from app.contracts.livekit import (
     LiveKitBackendClaims,
     LiveKitBackendTokenCodec,
     LiveKitSessionResponse,
+    FinalizeLiveKitCallRequest,
+    FinalizeLiveKitCallResponse,
     PersistLiveKitMessageRequest,
     PersistLiveKitMessageResponse,
 )
+from app.application.call_sessions import (
+    mark_finalization_enqueue_failed,
+    mark_finalization_enqueued,
+    prepare_finalization,
+    require_active_call,
+)
+from app.domain.call_sessions.entities import CallSession as DurableCallSession
+from app.domain.call_sessions.enums import CallFinalizationStatus, CallSessionStatus
 from app.infrastructure.database import get_db
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
 from app.infrastructure.repositories.tool_call_repository import ToolCallRepository
+from app.infrastructure.repositories.call_session_repository import CallSessionRepository
 from app.domain.messages.entities import Message
 from app.domain.messages.enums import MessageRole, MessageStatus
 from app.tenants.loader import TenantConfigInvalidError, TenantConfigLoader, TenantConfigNotFoundError
-from app.voice.latency import (
+from app.agent.schemas.voice import (
     resolve_voice_turn_config,
 )
 from app.voice_agent.models import SessionChatMessage
@@ -108,6 +121,19 @@ def create_livekit_session(
 
     call_session_id = str(uuid4())
     room_name = f"voice-{call_session_id}"
+    now = datetime.now()
+    CallSessionRepository(db).create(
+        DurableCallSession(
+            id=call_session_id,
+            tenant_id=request.tenant_id,
+            conversation_id=conversation.id,
+            livekit_room_name=room_name,
+            status=CallSessionStatus.ACTIVE,
+            finalization_status=CallFinalizationStatus.PENDING,
+            started_at=now,
+            updated_at=now,
+        )
+    )
     context = build_agent_context(
         tenant,
         conversation.id,
@@ -120,10 +146,14 @@ def create_livekit_session(
         },
     )
     history = tuple(
-        SessionChatMessage(role=message.role.value, content=message.content)
+        SessionChatMessage(
+            role="user" if message.role == MessageRole.USER else "assistant",
+            content=message.content,
+        )
         for message in MessageRepository(db).list_by_conversation_id(conversation.id)
         if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
     )
+    reservation_capability = tenant.capabilities.get("reservation.create_request")
     metadata = json.dumps(
         {
             "tenant_id": request.tenant_id,
@@ -138,13 +168,8 @@ def create_livekit_session(
                 name for name, capability in tenant.capabilities.items() if capability.enabled
             ),
             "reservation_request_schema": (
-                tenant.capabilities.get("reservation.create_request").config.get("row_format")
-                if tenant.capabilities.get("reservation.create_request")
-                else None
-            ),
-            "post_call_transcript": (
-                tenant.post_call_transcript.model_dump(mode="json")
-                if tenant.post_call_transcript
+                reservation_capability.config.get("row_format")
+                if reservation_capability
                 else None
             ),
             "chat_history": [message.model_dump(mode="json") for message in history],
@@ -194,6 +219,7 @@ def persist_livekit_message(
     claims: LiveKitBackendClaims = Depends(_authenticate_livekit_backend),
     db: Session = Depends(get_db),
 ):
+    require_active_call(CallSessionRepository(db), claims)
     message_id = _livekit_message_id(claims.call_session_id, request.role, request.item_id)
     now = datetime.now()
     message = Message(
@@ -227,6 +253,7 @@ async def execute_livekit_tool(
     capability_router: CapabilityRouter = Depends(get_capability_router),
     capability_executor: CapabilityExecutor = Depends(get_capability_executor),
 ):
+    require_active_call(CallSessionRepository(db), claims)
     tenant = loader.load(claims.tenant_id)
     capability = tenant.capabilities.get(request.capability)
     if not capability or not capability.enabled:
@@ -263,6 +290,36 @@ async def execute_livekit_tool(
         "result": execution.result.output,
         "tool_call_id": execution.tool_call.id if execution.tool_call else None,
     }
+
+
+@router.post("/livekit/finalize", response_model=FinalizeLiveKitCallResponse)
+async def finalize_livekit_call(
+    request: FinalizeLiveKitCallRequest,
+    claims: LiveKitBackendClaims = Depends(_authenticate_livekit_backend),
+    db: Session = Depends(get_db),
+    finalization_publisher: RedisCapabilityExecutor = Depends(get_finalization_publisher),
+):
+    repository = CallSessionRepository(db)
+    call, command = prepare_finalization(repository, claims, request)
+    queued = False
+    if command is not None:
+        try:
+            await finalization_publisher.enqueue(command)
+            call = mark_finalization_enqueued(repository, call.id, command.command_id)
+            queued = True
+        except Exception as exc:
+            mark_finalization_enqueue_failed(repository, call.id, command.command_id, str(exc))
+            raise HTTPException(status_code=503, detail="Finalization could not be queued") from exc
+    if call.status == CallSessionStatus.ACTIVE:
+        raise RuntimeError("finalization did not make the call terminal")
+    return FinalizeLiveKitCallResponse(
+        call_session_id=call.id,
+        call_status=call.status.value,
+        finalization_status=call.finalization_status.value,
+        queued=queued,
+        transcript_sheet_range=call.transcript_sheet_range,
+        error=call.finalization_error,
+    )
 
 
 def _livekit_message_id(call_session_id: str, role: str, item_id: str) -> str:

@@ -9,18 +9,20 @@ from sqlalchemy.orm import Session
 
 from app.api.routes.voice_sessions import (
     execute_livekit_tool,
+    finalize_livekit_call,
     persist_livekit_message,
 )
 from app.main import app
 from app.contracts.livekit import (
     ExecuteLiveKitToolRequest,
+    FinalizeLiveKitCallRequest,
     LiveKitBackendClaims,
     PersistLiveKitMessageRequest,
 )
 from app.capabilities.router import CapabilityRouter
 from app.capabilities.schemas import CapabilityExecutionResult, CapabilityExecutionStatus
 from app.infrastructure.database import Base
-from app.infrastructure.models import MessageModel
+from app.infrastructure.models import CallSessionModel, MessageModel
 from app.tenants.loader import TenantConfigLoader
 
 
@@ -50,11 +52,33 @@ class Executor:
             execution_duration_ms=1,
         )
 
+    async def enqueue(self, command):
+        self.commands.append(command)
+        return "1-0"
+
+
+def active_call(db, *, status="active", finalization_status="pending"):
+    now = __import__("datetime").datetime.now()
+    db.add(
+        CallSessionModel(
+            id="call-1",
+            tenant_id="demo_restaurant",
+            conversation_id="conversation-1",
+            livekit_room_name="voice-call-1",
+            status=status,
+            finalization_status=finalization_status,
+            started_at=now,
+            updated_at=now,
+        )
+    )
+    db.commit()
+
 
 def test_voice_messages_are_idempotent_and_preserve_interruption_state():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
+        active_call(db)
         request = PersistLiveKitMessageRequest(
             role="assistant",
             content="partial",
@@ -74,6 +98,7 @@ def test_native_tool_routes_through_backend_capability_executor_with_correlation
     Base.metadata.create_all(engine)
     executor = Executor()
     with Session(engine) as db:
+        active_call(db)
         persist_livekit_message(
             PersistLiveKitMessageRequest(
                 role="user",
@@ -121,6 +146,7 @@ def test_unauthorized_tenant_capability_is_rejected():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     with Session(engine) as db:
+        active_call(db)
         with pytest.raises(HTTPException) as error:
             asyncio.run(
                 execute_livekit_tool(
@@ -140,12 +166,55 @@ def test_unauthorized_tenant_capability_is_rejected():
         assert error.value.status_code == 403
 
 
+def test_finalize_is_terminal_idempotent_and_rejects_late_writes():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    publisher = Executor()
+    with Session(engine) as db:
+        active_call(db)
+        request = FinalizeLiveKitCallRequest(
+            call_session_id="call-1", outcome="completed", reason="participant disconnected"
+        )
+        first = asyncio.run(finalize_livekit_call(request, claims(), db, publisher))
+        second = asyncio.run(finalize_livekit_call(request, claims(), db, publisher))
+        assert first.call_status == "completed" and first.queued is True
+        assert second.call_status == "completed" and second.queued is False
+        assert len(publisher.commands) == 1
+        with pytest.raises(HTTPException) as error:
+            persist_livekit_message(
+                PersistLiveKitMessageRequest(
+                    role="user", content="late", turn_id="late", item_id="late"
+                ),
+                claims(),
+                db,
+            )
+        assert error.value.status_code == 409
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(
+                execute_livekit_tool(
+                    ExecuteLiveKitToolRequest(
+                        capability="reservation.create_request",
+                        arguments={},
+                        turn_id="late",
+                        tool_call_id="late",
+                    ),
+                    claims(),
+                    db,
+                    TenantConfigLoader(),
+                    CapabilityRouter(),
+                    Executor(),
+                )
+            )
+        assert error.value.status_code == 409
+
+
 def test_only_livekit_voice_routes_are_exposed():
     paths = {route.path for route in app.routes}
     assert {
         "/api/v1/voice/livekit/sessions",
         "/api/v1/voice/livekit/messages",
         "/api/v1/voice/livekit/tools",
+        "/api/v1/voice/livekit/finalize",
     } <= paths
     assert not paths & {
         "/api/messages",
@@ -168,4 +237,12 @@ def test_production_has_no_legacy_agent_runtime_dependencies():
     assert "langchain" not in production.lower()
     assert "app.agent_runtime" not in production
     assert "app.infrastructure" not in voice_agent
+    assert "app.integrations" not in voice_agent
+    assert "app.capabilities" not in voice_agent
     assert "import redis" not in voice_agent
+    assert not (app_root / "voice").joinpath("latency.py").exists()
+
+    compose = (app_root.parent / "docker-compose.yml").read_text()
+    voice_service = compose.split("  voice-agent:", 1)[1].split("  redis:", 1)[0]
+    assert "GOOGLE_SERVICE_ACCOUNT_FILE" not in voice_service
+    assert "google-service-account" not in voice_service

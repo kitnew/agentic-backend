@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.voice.latency import VoiceTurnConfig, VoiceTurnOverrides, resolve_voice_turn_config
+from app.agent.schemas.voice import VoiceTurnConfig, VoiceTurnOverrides, resolve_voice_turn_config
 
 
 def test_recommended_defaults_and_sdk_units_are_unambiguous():

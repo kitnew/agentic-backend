@@ -19,7 +19,7 @@ from app.domain.messages.entities import Message
 from app.domain.messages.enums import MessageRole, MessageStatus
 from app.tenants.loader import TenantConfigLoader
 from app.tenants.schemas import TenantContext
-from app.workers.capability_worker import CapabilityWorker
+from app.workers.capability_worker import CapabilityWorker, WorkerCommandExecutor
 from redis.exceptions import ResponseError
 
 
@@ -519,3 +519,31 @@ def test_sync_bridge_runs_inside_active_loop_and_merges_message_metadata():
     assert published.idempotency_key == "message-key"
     assert published.call_session_id == "session-from-message"
     assert published.metadata["source"] == "capability"
+
+
+def test_worker_routes_internal_call_finalization_without_exposing_capability(monkeypatch):
+    calls = []
+
+    class Db:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+    async def finalize(_db, call_session_id):
+        calls.append(call_session_id)
+        return {"call_session_id": call_session_id, "finalization_status": "completed"}
+
+    monkeypatch.setattr("app.workers.capability_worker.SessionLocal", Db)
+    monkeypatch.setattr("app.workers.capability_worker.finalize_call", finalize)
+    internal = command(
+        "finalize-1",
+        capability="call",
+        action="finalize",
+        call_session_id="call-1",
+        payload={"call_session_id": "call-1"},
+    )
+    execution = asyncio.run(WorkerCommandExecutor().execute(internal))
+    assert execution.status == CapabilityExecutionStatus.SUCCESS
+    assert calls == ["call-1"]

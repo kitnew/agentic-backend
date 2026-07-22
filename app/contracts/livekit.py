@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.voice.latency import VoiceTurnConfig, VoiceTurnOverrides
+from app.agent.schemas.voice import VoiceTurnConfig, VoiceTurnOverrides
 
 
 class CreateLiveKitSessionRequest(BaseModel):
@@ -55,6 +55,25 @@ class ExecuteLiveKitToolResponse(BaseModel):
     error: str | None = None
     result: dict | None = None
     tool_call_id: str | None = None
+
+
+class FinalizeLiveKitCallRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    call_session_id: str
+    outcome: Literal["completed", "failed"]
+    reason: str | None = None
+    error: str | None = None
+    livekit_job_id: str | None = None
+    caller_phone: str | None = None
+
+
+class FinalizeLiveKitCallResponse(BaseModel):
+    call_session_id: str
+    call_status: Literal["completed", "failed"]
+    finalization_status: Literal["pending", "processing", "completed", "failed"]
+    queued: bool = False
+    transcript_sheet_range: str | None = None
+    error: str | None = None
 
 
 class InvalidLiveKitBackendToken(ValueError):

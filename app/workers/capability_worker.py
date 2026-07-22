@@ -17,9 +17,31 @@ from app.capabilities.schemas import (
     CapabilityExecutionStatus,
 )
 from app.core.config import CapabilitySettings
+from app.application.call_finalization import finalize_call
+from app.infrastructure.database import SessionLocal
 
 
 logger = logging.getLogger(__name__)
+
+
+class WorkerCommandExecutor:
+    def __init__(self, capabilities=None):
+        self.capabilities = capabilities or InProcessCapabilityExecutor()
+
+    async def execute(self, command: CapabilityCommand) -> CapabilityExecutionResult:
+        if command.capability != "call" or command.action != "finalize":
+            return await self.capabilities.execute(command)
+        if not command.call_session_id:
+            raise ValueError("call_session_id is required for call finalization")
+        with SessionLocal() as db:
+            result = await finalize_call(db, command.call_session_id)
+        return CapabilityExecutionResult(
+            command_id=command.command_id,
+            status=CapabilityExecutionStatus.SUCCESS,
+            result=result,
+            execution_duration_ms=0,
+            metadata=command.metadata,
+        )
 
 
 class CapabilityWorker:
@@ -35,7 +57,7 @@ class CapabilityWorker:
         self.redis = redis_client
         self.settings = settings or CapabilitySettings.from_env()
         self.settings.validate()
-        self.executor = executor or InProcessCapabilityExecutor()
+        self.executor = executor or WorkerCommandExecutor()
         self.consumer_name = consumer_name or f"{socket.gethostname()}-{os.getpid()}"
         self.sleep = sleep
         self.stopping = asyncio.Event()
@@ -98,9 +120,9 @@ class CapabilityWorker:
         for stream_id, fields in entries:
             context = {}
             try:
-                context = _context(
-                    CapabilityCommand.model_validate_json(_field(fields, "command"))
-                )
+                command_data = _field(fields, "command")
+                if command_data is not None:
+                    context = _context(CapabilityCommand.model_validate_json(command_data))
             except Exception:
                 pass
             logger.info(

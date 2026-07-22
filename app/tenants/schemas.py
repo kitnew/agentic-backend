@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.voice.latency import VoiceTurnConfig
+from app.agent.schemas.voice import VoiceTurnConfig
 
 
 class TenantModel(BaseModel):

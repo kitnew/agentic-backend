@@ -1,167 +1,161 @@
 import asyncio
-import logging
-from datetime import datetime, timezone
-from types import SimpleNamespace
-from uuid import uuid4
+from datetime import datetime
+from threading import Lock
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
 
-from livekit.agents.llm import ChatContext
+from app.application.call_finalization import finalize_call, format_transcript
+from app.domain.call_sessions.entities import CallSession
+from app.domain.call_sessions.enums import CallFinalizationStatus, CallSessionStatus
+from app.domain.messages.entities import Message
+from app.domain.messages.enums import MessageRole, MessageStatus
+from app.infrastructure.database import Base
+from app.infrastructure.repositories.call_session_repository import CallSessionRepository
+from app.infrastructure.repositories.message_repository import MessageRepository
+from app.integrations.google_sheets.schemas import GoogleSheetsAppendRowResult
 
-from app.tenants.schemas import TenantPostCallTranscriptConfig
-from app.voice_agent.post_call import (
-    SUMMARY_UNAVAILABLE,
-    format_transcript,
-    generate_summary,
-    persist_post_call,
-)
 
-
-class Stream:
-    def __init__(self, chunks=None, error=None):
-        self.chunks = iter(chunks or [])
+class Summary:
+    def __init__(self, error=None):
         self.error = error
+        self.calls = 0
 
-    async def __aenter__(self):
+    async def summarize(self, transcript):
+        self.calls += 1
+        await asyncio.sleep(0)
         if self.error:
-            raise self.error
-        return self
-
-    async def __aexit__(self, *_args):
-        pass
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        try:
-            content = next(self.chunks)
-        except StopIteration:
-            raise StopAsyncIteration
-        return SimpleNamespace(delta=SimpleNamespace(content=content))
-
-
-class LLM:
-    def __init__(self, chunks=None, error=None):
-        self.chunks = chunks
-        self.error = error
-        self.context = None
-
-    def chat(self, *, chat_ctx):
-        self.context = chat_ctx
-        return Stream(self.chunks, self.error)
+            error, self.error = self.error, None
+            raise error
+        return "Hosť požiadal o izbu. Žiadosť bola odoslaná."
 
 
 class Sheets:
-    def __init__(self, error=None):
-        self.error = error
+    def __init__(self):
+        self.keys = set()
         self.rows = []
+        self.lock = Lock()
 
-    def append_row(self, row):
-        if self.error:
-            raise self.error
-        self.rows.append(row)
+    def append_row_once(self, request, *, idempotency_key):
+        with self.lock:
+            if idempotency_key in self.keys:
+                return GoogleSheetsAppendRowResult(
+                    spreadsheet_id=request.spreadsheet_id,
+                    sheet_name=request.sheet_name,
+                    updated_rows=0,
+                )
+            self.keys.add(idempotency_key)
+            self.rows.append(request)
+            return GoogleSheetsAppendRowResult(
+                spreadsheet_id=request.spreadsheet_id,
+                sheet_name=request.sheet_name,
+                updated_range="Transkripty!A2:D2",
+                updated_rows=1,
+            )
 
 
-def history():
-    context = ChatContext()
-    context.add_message(role="system", content="tajný systémový prompt")
-    context.add_message(role="user", content="  Dobrý deň,\nchcem izbu. ")
-    context.items.append(SimpleNamespace(type="function_call", role="assistant"))
-    context.add_message(role="assistant", content="Nedokončená odpoveď", interrupted=True)
-    context.add_message(role="assistant", content="Žiadosť bola odoslaná.")
-    context.add_message(role="user", content="   ")
-    return context
-
-
-def metadata():
-    return SimpleNamespace(
+def seed(db):
+    now = datetime(2026, 7, 22, 20, 15)
+    call = CallSession(
+        id="call-1",
         tenant_id="penzion_grand",
-        call_session_id=uuid4(),
-        conversation_id=uuid4(),
-        timezone="Europe/Bratislava",
-        post_call_transcript=TenantPostCallTranscriptConfig(
-            spreadsheet_id="sheet-id", sheet_name="Transkripty"
+        conversation_id="conversation-1",
+        livekit_room_name="voice-call-1",
+        caller_phone="+421900111222",
+        status=CallSessionStatus.COMPLETED,
+        finalization_status=CallFinalizationStatus.PENDING,
+        started_at=now,
+        ended_at=now,
+        updated_at=now,
+    )
+    CallSessionRepository(db).create(call)
+    for item in (
+        Message(
+            id="user-1", tenant_id="penzion_grand", conversation_id="conversation-1",
+            channel="voice", role=MessageRole.USER, content="  Dobrý deň,\nchcem izbu. ",
+            status=MessageStatus.PROCESSED, metadata={"call_session_id": "call-1"},
+            created_at=now, processed_at=now,
         ),
-    )
+        Message(
+            id="assistant-interrupted", tenant_id="penzion_grand", conversation_id="conversation-1",
+            channel="voice", role=MessageRole.ASSISTANT, content="Nedokončená odpoveď",
+            status=MessageStatus.PROCESSED,
+            metadata={"call_session_id": "call-1", "interrupted": True},
+            created_at=now, processed_at=now,
+        ),
+        Message(
+            id="assistant-1", tenant_id="penzion_grand", conversation_id="conversation-1",
+            channel="voice", role=MessageRole.ASSISTANT, content="Žiadosť bola odoslaná.",
+            status=MessageStatus.PROCESSED,
+            metadata={"call_session_id": "call-1", "interrupted": False},
+            created_at=now, processed_at=now,
+        ),
+    ):
+        MessageRepository(db).save(item)
+    return call
 
 
-def test_transcript_contains_only_final_readable_user_and_assistant_messages():
-    assert format_transcript(history()) == (
-        "Hosť: Dobrý deň, chcem izbu.\nAgent: Žiadosť bola odoslaná."
-    )
-
-
-def test_summary_is_a_separate_slovak_llm_request():
-    llm = LLM(["Hosť požiadal o izbu. ", "Žiadosť bola odoslaná."])
-    result = asyncio.run(generate_summary(llm, "Hosť: Chcem izbu."))
-    assert result == "Hosť požiadal o izbu. Žiadosť bola odoslaná."
-    prompt = llm.context.messages()[0].raw_text_content
-    assert "po slovensky" in prompt
-    assert "potvrdenú rezerváciu" in prompt
-    assert llm.context.messages()[1].raw_text_content.endswith("Hosť: Chcem izbu.")
-
-
-def test_post_call_maps_one_row_and_preserves_phone_prefix():
-    sheets = Sheets()
-    session = SimpleNamespace(history=history(), llm=LLM(["Stručné zhrnutie."]))
-    saved = asyncio.run(
-        persist_post_call(
-            session,
-            metadata(),
-            "+421900111222",
-            completed_at=datetime(2026, 7, 22, 20, 15, tzinfo=timezone.utc),
-            sheets=sheets,
+def test_transcript_uses_only_final_persisted_messages():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        seed(db)
+        assert format_transcript(MessageRepository(db).list_by_conversation_id("conversation-1")) == (
+            "Hosť: Dobrý deň, chcem izbu.\nAgent: Žiadosť bola odoslaná."
         )
-    )
-    assert saved is True
-    assert len(sheets.rows) == 1
-    assert sheets.rows[0].sheet_name == "Transkripty"
+
+
+def test_finalization_maps_row_preserves_phone_and_is_idempotent():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    sheets, summary = Sheets(), Summary()
+    with Session(engine) as db:
+        seed(db)
+        first = asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
+        second = asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
+        call = CallSessionRepository(db).get("call-1")
+    assert first == second
+    assert summary.calls == 1 and len(sheets.rows) == 1
     assert sheets.rows[0].values == [
         "Hosť: Dobrý deň, chcem izbu.\nAgent: Žiadosť bola odoslaná.",
-        "Stručné zhrnutie.",
+        "Hosť požiadal o izbu. Žiadosť bola odoslaná.",
         "22.07.2026 22:15:00",
         "+421900111222",
     ]
+    assert call.finalization_status == CallFinalizationStatus.COMPLETED
 
 
-def test_summary_and_sheets_failures_are_logged_without_raising(caplog):
-    session = SimpleNamespace(history=history(), llm=LLM(error=RuntimeError("llm down")))
-    fallback_sheets = Sheets()
-    with caplog.at_level(logging.ERROR):
-        assert asyncio.run(
-            persist_post_call(session, metadata(), "+421900111222", sheets=fallback_sheets)
-        )
-        assert not asyncio.run(
-            persist_post_call(
-                SimpleNamespace(history=history(), llm=LLM(["Zhrnutie."])),
-                metadata(),
-                "+421900111222",
-                sheets=Sheets(error=RuntimeError("sheets down")),
-            )
-        )
-    assert fallback_sheets.rows[0].values[1] == SUMMARY_UNAVAILABLE
-    assert "tenant_id=penzion_grand" in caplog.text
-    assert "summary generation failed" in caplog.text
-    assert "transcript persistence failed" in caplog.text
+def test_failed_finalization_can_be_retried():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    summary, sheets = Summary(RuntimeError("llm down")), Sheets()
+    with Session(engine) as db:
+        seed(db)
+        try:
+            asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
+        except RuntimeError:
+            pass
+        assert CallSessionRepository(db).get("call-1").finalization_status == CallFinalizationStatus.FAILED
+        asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
+        assert CallSessionRepository(db).get("call-1").finalization_status == CallFinalizationStatus.COMPLETED
+    assert len(sheets.rows) == 1
 
 
-def test_summary_timeout_uses_fallback_and_does_not_block_row(monkeypatch):
-    class HangingStream(Stream):
-        async def __anext__(self):
-            await asyncio.Event().wait()
-
-    class HangingLLM:
-        def chat(self, *, chat_ctx):
-            return HangingStream()
-
-    monkeypatch.setattr("app.voice_agent.post_call.SUMMARY_TIMEOUT_SECONDS", 0.01)
-    sheets = Sheets()
-    saved = asyncio.run(
-        persist_post_call(
-            SimpleNamespace(history=history(), llm=HangingLLM()),
-            metadata(),
-            "+421900111222",
-            sheets=sheets,
-        )
+def test_concurrent_finalization_attempts_append_one_row(tmp_path):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'calls.db'}", connect_args={"check_same_thread": False}
     )
-    assert saved is True
-    assert sheets.rows[0].values[1] == SUMMARY_UNAVAILABLE
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(bind=engine)
+    with sessions() as db:
+        seed(db)
+    sheets, summary = Sheets(), Summary()
+
+    async def run_one():
+        with sessions() as db:
+            return await finalize_call(db, "call-1", summary_client=summary, sheets=sheets)
+
+    async def run_both():
+        return await asyncio.gather(run_one(), run_one())
+
+    asyncio.run(run_both())
+    assert len(sheets.rows) == 1
