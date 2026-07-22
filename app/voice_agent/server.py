@@ -7,13 +7,13 @@ from datetime import datetime, timezone
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, JobProcess, cli
 from livekit.plugins import silero
 
+from app.contracts.livekit import LiveKitBackendClaims, LiveKitBackendTokenCodec
 from app.voice_agent.backend_client import BackendCoreClient
 from app.voice_agent.models import LiveKitJobMetadata
 from app.voice_agent.post_call import persist_post_call
 from app.voice_agent.session_factory import HospitalityAgent, VoiceTurnState, build_session
 from app.voice_agent.settings import LiveKitSettings
 from app.voice_agent.telemetry import VoiceTelemetry
-from app.voice.session_token import VoiceSessionClaims, VoiceSessionTokenCodec
 
 
 logger = logging.getLogger(__name__)
@@ -75,8 +75,8 @@ async def voice_agent(ctx: JobContext) -> None:
     telemetry.emit("room_connected")
     telemetry.emit("participant_connected")
     now = int(time.time())
-    backend_token = VoiceSessionTokenCodec(settings.session_token_secret).encode(
-        VoiceSessionClaims(
+    backend_token = LiveKitBackendTokenCodec(settings.session_token_secret).encode(
+        LiveKitBackendClaims(
             tenant_id=metadata.tenant_id,
             call_session_id=str(metadata.call_session_id),
             conversation_id=str(metadata.conversation_id),
@@ -84,7 +84,6 @@ async def voice_agent(ctx: JobContext) -> None:
             timezone=metadata.timezone,
             iat=now,
             exp=now + settings.backend_token_ttl_seconds,
-            mode="call",
         )
     )
     backend = BackendCoreClient(settings.backend_url, backend_token)

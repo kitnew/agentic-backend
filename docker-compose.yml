@@ -1,55 +1,23 @@
-x-application: &application
-  build: .
+x-backend-environment: &backend-environment
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agentic}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in app/.env}@postgres:5432/${POSTGRES_DB:-agentic}
+  CAPABILITY_EXECUTION_MODE: redis
+  REDIS_URL: redis://redis:6379/0
+  CAPABILITY_COMMAND_STREAM: ${CAPABILITY_COMMAND_STREAM:-capability:commands}
+  CAPABILITY_CONSUMER_GROUP: ${CAPABILITY_CONSUMER_GROUP:-capability-workers}
+  CAPABILITY_DEAD_LETTER_STREAM: ${CAPABILITY_DEAD_LETTER_STREAM:-capability:commands:dead-letter}
+  CAPABILITY_RESULT_TIMEOUT_SECONDS: ${CAPABILITY_RESULT_TIMEOUT_SECONDS:-30}
+  CAPABILITY_RESULT_TTL_SECONDS: ${CAPABILITY_RESULT_TTL_SECONDS:-300}
+  CAPABILITY_IDEMPOTENCY_TTL_SECONDS: ${CAPABILITY_IDEMPOTENCY_TTL_SECONDS:-86400}
+  CAPABILITY_MAX_RETRIES: ${CAPABILITY_MAX_RETRIES:-3}
+  CAPABILITY_PENDING_IDLE_SECONDS: ${CAPABILITY_PENDING_IDLE_SECONDS:-60}
+  CAPABILITY_WORKER_CONCURRENCY: ${CAPABILITY_WORKER_CONCURRENCY:-4}
+
+x-backend: &backend
+  build:
+    context: .
+    target: api
   image: agentic-backend:local
-  environment:
-    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-agentic}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in app/.env}@postgres:5432/${POSTGRES_DB:-agentic}
-    VOICE_AUDIO_STORAGE_DIR: /data/voice-audio
-    AGENT_RUNTIME_PUBLIC_WS_URL: ${AGENT_RUNTIME_PUBLIC_WS_URL:-ws://localhost:8001/api/v1/voice/stream}
-    VOICE_SESSION_TOKEN_SECRET: ${VOICE_SESSION_TOKEN_SECRET:?set VOICE_SESSION_TOKEN_SECRET in app/.env}
-    VOICE_SESSION_TOKEN_TTL_SECONDS: ${VOICE_SESSION_TOKEN_TTL_SECONDS:-120}
-    AGENT_RUNTIME_HOST: ${AGENT_RUNTIME_HOST:-0.0.0.0}
-    AGENT_RUNTIME_PORT: ${AGENT_RUNTIME_PORT:-8001}
-    CAPABILITY_EXECUTION_MODE: redis
-    REDIS_URL: redis://redis:6379/0
-    CAPABILITY_COMMAND_STREAM: ${CAPABILITY_COMMAND_STREAM:-capability:commands}
-    CAPABILITY_CONSUMER_GROUP: ${CAPABILITY_CONSUMER_GROUP:-capability-workers}
-    CAPABILITY_DEAD_LETTER_STREAM: ${CAPABILITY_DEAD_LETTER_STREAM:-capability:commands:dead-letter}
-    CAPABILITY_RESULT_TIMEOUT_SECONDS: ${CAPABILITY_RESULT_TIMEOUT_SECONDS:-30}
-    CAPABILITY_RESULT_TTL_SECONDS: ${CAPABILITY_RESULT_TTL_SECONDS:-300}
-    CAPABILITY_IDEMPOTENCY_TTL_SECONDS: ${CAPABILITY_IDEMPOTENCY_TTL_SECONDS:-86400}
-    CAPABILITY_MAX_RETRIES: ${CAPABILITY_MAX_RETRIES:-3}
-    CAPABILITY_PENDING_IDLE_SECONDS: ${CAPABILITY_PENDING_IDLE_SECONDS:-60}
-    CAPABILITY_WORKER_CONCURRENCY: ${CAPABILITY_WORKER_CONCURRENCY:-4}
-    AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
-    AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
-    AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
-    AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
-    ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
-    ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
-    GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google-service-account
-    VOICE_STT_MODE: ${VOICE_STT_MODE:-streaming}
-    ELEVENLABS_REALTIME_STT_MODEL: ${ELEVENLABS_REALTIME_STT_MODEL:-scribe_v2_realtime}
-    VOICE_STT_CONNECT_TIMEOUT_SECONDS: ${VOICE_STT_CONNECT_TIMEOUT_SECONDS:-10}
-    VOICE_STT_FINALIZE_TIMEOUT_SECONDS: ${VOICE_STT_FINALIZE_TIMEOUT_SECONDS:-10}
-    VOICE_STT_MAX_TURN_SECONDS: ${VOICE_STT_MAX_TURN_SECONDS:-30}
-    VOICE_STT_MAX_CHUNK_BYTES: ${VOICE_STT_MAX_CHUNK_BYTES:-32000}
-    VOICE_CALL_MODE_ENABLED: ${VOICE_CALL_MODE_ENABLED:-true}
-    VOICE_CALL_SESSION_TTL_SECONDS: ${VOICE_CALL_SESSION_TTL_SECONDS:-3600}
-    VOICE_RESPONSE_STREAMING_ENABLED: ${VOICE_RESPONSE_STREAMING_ENABLED:-false}
-    VOICE_RESPONSE_STREAM_MIN_CHARS: ${VOICE_RESPONSE_STREAM_MIN_CHARS:-40}
-    VOICE_RESPONSE_STREAM_MAX_CHARS: ${VOICE_RESPONSE_STREAM_MAX_CHARS:-160}
-    VOICE_RESPONSE_STREAM_FLUSH_TIMEOUT_SECONDS: ${VOICE_RESPONSE_STREAM_FLUSH_TIMEOUT_SECONDS:-0.4}
-    VOICE_RESPONSE_STREAM_MAX_AUDIO_QUEUE_BYTES: ${VOICE_RESPONSE_STREAM_MAX_AUDIO_QUEUE_BYTES:-524288}
-    VOICE_LIVEKIT_ENABLED: ${VOICE_LIVEKIT_ENABLED:-true}
-    LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
-    LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
-    LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:-ws://livekit:7880}
-    LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
-    BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://api:8000}
-    LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-hospitality-voice}
-    LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS: ${LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS:-120}
-    LIVEKIT_BACKEND_TOKEN_TTL_SECONDS: ${LIVEKIT_BACKEND_TOKEN_TTL_SECONDS:-7200}
-    VOICE_TURN_DEBUG_OVERRIDES_ENABLED: ${VOICE_TURN_DEBUG_OVERRIDES_ENABLED:-false}
+  environment: *backend-environment
   depends_on:
     redis:
       condition: service_healthy
@@ -59,12 +27,23 @@ x-application: &application
 
 services:
   api:
-    <<: *application
+    <<: *backend
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *backend-environment
+      VOICE_LIVEKIT_ENABLED: ${VOICE_LIVEKIT_ENABLED:-true}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:?set LIVEKIT_INTERNAL_URL in app/.env}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:?set LIVEKIT_PUBLIC_URL in app/.env}
+      LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-hospitality-voice}
+      LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS: ${LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS:-120}
+      VOICE_SESSION_TOKEN_SECRET: ${VOICE_SESSION_TOKEN_SECRET:?set VOICE_SESSION_TOKEN_SECRET in app/.env}
+      ELEVENLABS_VOICE_ID: ${ELEVENLABS_VOICE_ID:-}
+      VOICE_TURN_DEBUG_OVERRIDES_ENABLED: ${VOICE_TURN_DEBUG_OVERRIDES_ENABLED:-false}
     ports:
       - "8000:8000"
     volumes:
-      - voice-audio-data:/data/voice-audio
       - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
       - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
     healthcheck:
@@ -73,24 +52,16 @@ services:
       timeout: 3s
       retries: 20
 
-  agent-runtime:
-    <<: *application
-    command: ["uvicorn", "app.agent_runtime.main:app", "--host", "${AGENT_RUNTIME_HOST:-0.0.0.0}", "--port", "${AGENT_RUNTIME_PORT:-8001}"]
-    ports:
-      - "8001:8001"
-    volumes:
-      - voice-audio-data:/data/voice-audio
-      - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
-      - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-
   capability-worker:
-    <<: *application
+    <<: *backend
+    build:
+      context: .
+      target: runtime
+    image: agentic-capability-worker:local
     command: ["python", "-m", "app.workers.capability_worker"]
+    environment:
+      <<: *backend-environment
+      GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google-service-account
     secrets:
       - google-service-account
     volumes:
@@ -99,12 +70,31 @@ services:
     stop_grace_period: 2m
 
   voice-agent:
-    <<: *application
     build:
       context: .
       target: voice-agent
     image: agentic-voice-agent:local
     command: ["python", "-m", "app.voice_agent.server", "start"]
+    environment:
+      VOICE_LIVEKIT_ENABLED: ${VOICE_LIVEKIT_ENABLED:-true}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:?set LIVEKIT_INTERNAL_URL in app/.env}
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:?set LIVEKIT_PUBLIC_URL in app/.env}
+      BACKEND_INTERNAL_URL: http://api:8000
+      LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:-hospitality-voice}
+      LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS: ${LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS:-120}
+      LIVEKIT_BACKEND_TOKEN_TTL_SECONDS: ${LIVEKIT_BACKEND_TOKEN_TTL_SECONDS:-7200}
+      LIVEKIT_AGENT_HOST: 0.0.0.0
+      LIVEKIT_AGENT_PORT: 8081
+      VOICE_SESSION_TOKEN_SECRET: ${VOICE_SESSION_TOKEN_SECRET:?set VOICE_SESSION_TOKEN_SECRET in app/.env}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2025-01-01-preview}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+      ELEVENLABS_REALTIME_STT_MODEL: ${ELEVENLABS_REALTIME_STT_MODEL:-scribe_v2_realtime}
+      GOOGLE_SERVICE_ACCOUNT_FILE: /run/secrets/google-service-account
     secrets:
       - google-service-account
     ports:
@@ -115,36 +105,13 @@ services:
     depends_on:
       api:
         condition: service_healthy
-      livekit:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/')"]
       interval: 5s
       timeout: 3s
       retries: 30
-    stop_grace_period: 2m
-
-  livekit:
-    image: livekit/livekit-server:v1.13.3
-    command: ["--config", "/etc/livekit.yaml"]
-    environment:
-      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}"
-    volumes:
-      - ./livekit.yaml:/etc/livekit.yaml:ro
-    ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 7880"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
     restart: unless-stopped
+    stop_grace_period: 2m
 
   redis:
     image: redis:8.8.0-alpine
@@ -176,8 +143,7 @@ services:
 volumes:
   redis-data:
   postgres-data:
-  voice-audio-data:
 
 secrets:
   google-service-account:
-    file: ${GOOGLE_SERVICE_ACCOUNT_FILE:?set GOOGLE_SERVICE_ACCOUNT_FILE in app/.env}
+    file: ./app/secrets/google-service-account.json

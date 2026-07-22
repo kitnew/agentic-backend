@@ -8,7 +8,7 @@ RUN uv sync --frozen --no-dev
 
 FROM python:3.14.6-slim AS runtime
 
-RUN useradd --uid 10001 --create-home appuser && mkdir -p /data/voice-audio && chown -R appuser:appuser /data
+RUN useradd --uid 10001 --create-home appuser
 WORKDIR /app
 RUN chown appuser:appuser /app
 COPY --from=build --chown=appuser:appuser /app/.venv /app/.venv
@@ -19,11 +19,12 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 USER appuser
-EXPOSE 8000 8001 8081
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 FROM runtime AS voice-agent
-RUN python -m app.voice_agent.server download-files
+EXPOSE 8081
+RUN python -m livekit.agents download-files
 CMD ["python", "-m", "app.voice_agent.server", "start"]
 
 FROM runtime AS api
+EXPOSE 8000

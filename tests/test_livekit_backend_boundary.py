@@ -8,22 +8,25 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.api.routes.voice_sessions import (
-    ExecuteLiveKitToolRequest,
-    PersistLiveKitMessageRequest,
     execute_livekit_tool,
     persist_livekit_message,
+)
+from app.main import app
+from app.contracts.livekit import (
+    ExecuteLiveKitToolRequest,
+    LiveKitBackendClaims,
+    PersistLiveKitMessageRequest,
 )
 from app.capabilities.router import CapabilityRouter
 from app.capabilities.schemas import CapabilityExecutionResult, CapabilityExecutionStatus
 from app.infrastructure.database import Base
 from app.infrastructure.models import MessageModel
 from app.tenants.loader import TenantConfigLoader
-from app.voice.session_token import VoiceSessionClaims
 
 
 def claims():
     now = int(time.time())
-    return VoiceSessionClaims(
+    return LiveKitBackendClaims(
         tenant_id="demo_restaurant",
         call_session_id="call-1",
         conversation_id="conversation-1",
@@ -31,7 +34,6 @@ def claims():
         timezone="Europe/Bratislava",
         iat=now,
         exp=now + 60,
-        mode="call",
     )
 
 
@@ -138,12 +140,32 @@ def test_unauthorized_tenant_capability_is_rejected():
         assert error.value.status_code == 403
 
 
-def test_production_has_no_langgraph_or_voice_agent_infrastructure_imports():
+def test_only_livekit_voice_routes_are_exposed():
+    paths = {route.path for route in app.routes}
+    assert {
+        "/api/v1/voice/livekit/sessions",
+        "/api/v1/voice/livekit/messages",
+        "/api/v1/voice/livekit/tools",
+    } <= paths
+    assert not paths & {
+        "/api/messages",
+        "/api/v1/messages",
+        "/api/conversations",
+        "/api/v1/conversations",
+        "/api/v1/voice/messages",
+        "/api/v1/voice/sessions",
+        "/api/v1/voice/stream",
+    }
+
+
+def test_production_has_no_legacy_agent_runtime_dependencies():
     app_root = Path(__file__).parents[1] / "app"
     production = "\n".join(path.read_text() for path in app_root.rglob("*.py"))
     voice_agent = "\n".join(
         path.read_text() for path in (app_root / "voice_agent").rglob("*.py")
     )
     assert "langgraph" not in production.lower()
+    assert "langchain" not in production.lower()
+    assert "app.agent_runtime" not in production
     assert "app.infrastructure" not in voice_agent
     assert "import redis" not in voice_agent

@@ -9,7 +9,8 @@ from livekit import api
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from app.api.routes.voice_sessions import CreateLiveKitSessionRequest, create_livekit_session
+from app.api.routes.voice_sessions import create_livekit_session
+from app.contracts.livekit import CreateLiveKitSessionRequest
 from app.infrastructure.database import Base
 from app.infrastructure.models import ConversationModel
 from app.tenants.loader import TenantConfigLoader

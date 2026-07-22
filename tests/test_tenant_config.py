@@ -6,8 +6,7 @@ import pytest
 import yaml
 
 from app.agent.prompts.loader import PromptLoader
-from app.agent_runtime.voice_turn_processor import build_voice_message_service
-from app.application.messages.process_incoming_message import ProcessIncomingMessage
+from app.agent.prompts.context import build_agent_context
 from app.capabilities.registry import CapabilityRegistry
 from app.tenants.loader import TenantConfigInvalidError, TenantConfigLoader
 
@@ -217,8 +216,7 @@ def test_unsupported_schema_version_is_rejected(tmp_path: Path):
 
 def test_penzion_grand_prompt_contains_each_safe_section_once():
     tenant = TenantConfigLoader().load("penzion_grand")
-    processor = ProcessIncomingMessage(None, None, None, None, None, None)
-    context = processor._build_agent_context(tenant, "test-conversation")
+    context = build_agent_context(tenant, "test-conversation")
 
     prompt = PromptLoader().build_system_prompt(context)
 
@@ -265,40 +263,15 @@ def test_penzion_grand_prompt_contains_each_safe_section_once():
 
 def test_prompt_current_time_comes_from_injected_per_turn_clock():
     tenant = TenantConfigLoader().load("penzion_grand")
-    processor = ProcessIncomingMessage(
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
+    context = build_agent_context(
+        tenant,
+        "test-conversation",
         clock=lambda: datetime(2026, 12, 31, 22, 30, tzinfo=timezone.utc),
     )
-
-    context = processor._build_agent_context(tenant, "test-conversation")
     prompt = PromptLoader().build_system_prompt(context)
 
     assert context["current_local_datetime"] == "2026-12-31T23:30:00+01:00"
     assert "current local datetime: 2026-12-31T23:30:00+01:00" in prompt
-
-
-def test_voice_service_uses_the_shared_message_processor(monkeypatch):
-    shared_runtime = object()
-    monkeypatch.setattr(
-        "app.agent_runtime.voice_turn_processor.get_agent_runtime", lambda: shared_runtime
-    )
-    service = build_voice_message_service(
-        message_repository=object(),
-        tenant_config_loader=TenantConfigLoader(),
-        capability_router=object(),
-        tool_call_repository=object(),
-        conversation_repository=object(),
-    )
-
-    processor = service.message_processor_factory()
-
-    assert isinstance(processor, ProcessIncomingMessage)
-    assert processor.agent_runtime is shared_runtime
 
 
 def test_tenant_config_rejects_unknown_provider(tmp_path: Path):

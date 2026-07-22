@@ -4,8 +4,6 @@ from datetime import date, datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.agent.tools import create_agent_tools
-from app.agent.tools.check_room_availability import CheckRoomAvailabilityArgs
 from app.application.capabilities.executor import BackendCapabilityExecutor
 from app.capabilities.providers.google_sheets import GoogleSheetsReservationProvider
 from app.capabilities.registry import CapabilityRegistry
@@ -506,23 +504,6 @@ def test_safe_result_is_all_that_is_persisted_and_tenant_id_is_trusted():
     assert persisted.input["tenant_id"] == "penzion_grand"
     assert "PRIVATE-GUEST" not in json.dumps(persisted.model_dump(mode="json"))
     assert "PRIVATE-GUEST" not in json.dumps(execution.result.model_dump(mode="json"))
-
-
-def test_tool_exposure_follows_tenant_capability_configuration():
-    loader = TenantConfigLoader()
-
-    grand_tools = create_agent_tools(tenant_context=loader.load("penzion_grand"))
-    demo_tools = create_agent_tools(tenant_context=loader.load("demo_restaurant"))
-
-    assert [tool.name for tool in grand_tools] == [
-        "submit_new_reservation_request",
-        "submit_reservation_change_request",
-        "submit_reservation_cancellation_request",
-        "check_room_availability",
-    ]
-    assert [tool.name for tool in demo_tools] == ["create_reservation"]
-    assert "tenant_id" not in CheckRoomAvailabilityArgs.model_fields
-    assert all(field.is_required() for field in CheckRoomAvailabilityArgs.model_fields.values())
 
 
 def test_google_sheets_client_read_boundary_is_one_read_only_request(monkeypatch):

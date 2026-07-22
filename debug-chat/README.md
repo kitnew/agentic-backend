@@ -1,44 +1,16 @@
-# Debug Chat
+# LiveKit Voice Debug Console
 
-Minimal browser UI for sending messages to the agentic backend and inspecting the full API response.
-
-It also includes a browser microphone debug control for the non-realtime voice message mode:
-
-record microphone audio -> upload to `/api/v1/voice/messages` -> show transcript/response -> play returned assistant audio.
+Browser-only debug UI for the production voice path. It requests a session from Backend Core,
+joins LiveKit, publishes microphone audio, and shows connection, transcript, tool, and latency
+events.
 
 ## Run
 
-From the repository root:
-
 ```bash
 python3 debug-chat/server.py
 ```
 
-Open http://127.0.0.1:8080.
-
-Optional environment variables:
-
-```bash
-BACKEND_URL=http://127.0.0.1:8000 API_PATH=/api/v1/messages DEBUG_CHAT_PORT=8080 python3 debug-chat/server.py
-```
-
-## Manual Voice Check
+Open <http://127.0.0.1:8080>. Set `BACKEND_URL` only when Backend Core is not available at
+`http://127.0.0.1:8000`; `DEBUG_CHAT_HOST` and `DEBUG_CHAT_PORT` control the local debug server.
 
 Microphone access requires localhost or HTTPS.
-
-1. Enable voice for the tenant, for example `voice.enabled: true` in `app/tenants/configs/demo_restaurant.yaml`.
-2. Start the backend:
-
-```bash
-.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-```
-
-3. Start the debug UI:
-
-```bash
-python3 debug-chat/server.py
-```
-
-4. Open http://127.0.0.1:8080, keep `Tenant ID` as `demo_restaurant`, and switch input mode from `Text` to `Voice`.
-5. Click `Start recording`, say `Ahoj`, then click `Stop recording`.
-6. Verify that transcript and assistant response appear, returned audio plays or can be played manually, and the `Conversation ID` field is reused for the next recording.

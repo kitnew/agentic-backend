@@ -3,7 +3,7 @@ import json
 from collections import defaultdict, deque
 from datetime import datetime
 
-from app.api.routes.messages import get_capability_executor
+from app.api.dependencies import get_capability_executor
 from app.application.capabilities.boundary import InProcessCapabilityExecutor
 from app.application.capabilities.executor import BackendCapabilityExecutor
 from app.application.capabilities.redis_executor import RedisCapabilityExecutor

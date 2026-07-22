@@ -1,270 +1,67 @@
-# agentic-backend
+# Agentic Backend
 
-## Setup and capability execution
+Voice-only hospitality agent built on LiveKit Agents.
 
-The application defaults to in-process capability execution, so Redis is not
-required for local development or tests.
-
-```bash
-uv sync --frozen
-uv run pytest -q
-uv run uvicorn app.main:app --reload
-```
-
-To use Redis Streams, start Redis and run the API, agent runtime, and worker with the same
-configuration:
-
-```bash
-export CAPABILITY_EXECUTION_MODE=redis
-export REDIS_URL=redis://localhost:6379/0
-uv run python -m app.workers.capability_worker
-uv run uvicorn app.main:app --reload
-uv run uvicorn app.agent_runtime.main:app --port 8001 --reload
-```
-
-Copy `.env.example` to the ignored `app/.env`. Outside Compose the database
-still defaults to SQLite; Compose overrides it with PostgreSQL.
-
-### Docker Compose
-
-The Compose stack uses one application image for the API, agent runtime, and
-capability worker. Redis and PostgreSQL are internal-only; API `8000` and runtime
-`8001` are published. Set a nonblank `POSTGRES_PASSWORD` and a unique
-`VOICE_SESSION_TOKEN_SECRET` of at least 32 bytes in `app/.env`, then run:
-
-```bash
-docker compose --env-file app/.env build
-docker compose --env-file app/.env up -d
-curl --fail http://localhost:8000/health
-curl --fail http://localhost:8001/health
-docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
-docker compose logs capability-worker
-docker compose exec -T api python scripts/capability_compose_smoke.py
-# Or run the host-side voice, capability, health, and restart smoke:
-.venv/bin/python scripts/compose_smoke.py
-```
-
-The smoke command uses two checked-in manual-provider tenants. It exercises the
-Redis executor, worker, existing router, correlated results, idempotency reuse,
-and concurrent tenant/session isolation without an external write.
-
-Verify that a restarted worker rejoins the group, inspect its logs, then stop
-the stack:
-
-```bash
-docker compose restart capability-worker
-docker compose exec -T redis redis-cli XINFO GROUPS capability:commands
-docker compose logs --since=5m capability-worker
-docker compose --env-file app/.env down
-```
-
-For a standalone image build:
-
-```bash
-docker build -t agentic-backend:local .
-```
-
-The production image installs only the frozen runtime environment with
-`uv sync --frozen --no-dev` and runs as a non-root user.
-
-PostgreSQL 18 stores its cluster in the `postgres-data` volume. API and agent
-runtime share only generated audio through `voice-audio-data`; the worker gets
-the same `DATABASE_URL` but does not currently open a SQL session. Startup keeps
-`Base.metadata.create_all` and serializes it with a PostgreSQL advisory lock.
-
-### Redis protocol and settings
-
-Defaults are shown in `.env.example`. The command stream is
-`capability:commands`, consumer group is `capability-workers`, and dead-letter
-stream is `capability:commands:dead-letter`. Results, completion records,
-idempotency records, locks, and attempt counters use the same command-stream
-prefix.
-
-`CAPABILITY_MAX_RETRIES=3` means one initial execution plus three retries with
-1, 2, and 4 second backoffs. Idle pending entries are reclaimed with
-`XAUTOCLAIM`; terminal result publication, cache writes, dead-lettering when
-needed, acknowledgment, stream deletion, and retry-counter deletion are one
-Redis transaction.
-
-Delivery is at-least-once. A worker crash or ambiguous provider response after
-an external side effect but before Redis records success can repeat that side
-effect. A caller-supplied idempotency key narrows this window but cannot provide
-provider-level exactly-once execution.
-
-## Voice Message Mode
-
-Voice mode is a universal, channel-independent request path for:
-
-audio input -> STT -> existing text agent pipeline -> TTS -> audio output
-
-It is not realtime voice. There is no WebRTC, streaming, interruption/barge-in, phone, SIP, or speech-to-speech support in this mode.
-
-### Flow
-
-`POST /api/v1/voice/messages` accepts multipart form data with `tenant_id`, `channel`, optional `conversation_id`, optional `external_user_id`, optional JSON `metadata`, and `audio_file`.
-
-The backend:
-
-1. Loads the tenant config and rejects the request unless `voice.enabled: true`.
-2. Validates the audio file content type and max size.
-3. Transcribes audio with the configured STT provider.
-4. Sends the transcript into the existing `ProcessIncomingMessage` text pipeline as `channel: voice` with `input_mode: voice` metadata.
-5. Synthesizes the agent text response with the configured TTS provider.
-6. Stores generated audio locally under `VOICE_AUDIO_STORAGE_DIR` and returns an `audio_url`.
-
-The LiveKit voice worker uses the native LiveKit LLM/tool loop; business side effects still route through Backend Core capabilities.
-
-### ElevenLabs Configuration
-
-Set the API key in the environment:
-
-```bash
-export ELEVENLABS_API_KEY="..."
-```
-
-Configure a tenant explicitly:
-
-```yaml
-voice:
-  enabled: true
-  max_file_size_bytes: 26214400
-
-  stt:
-    provider: elevenlabs
-    model: scribe_v2
-    language: sk
-    keyterms:
-      - rezervacia
-      - parkovanie
-      - terasa
-      - alergeny
-
-  tts:
-    provider: elevenlabs
-    model: eleven_flash_v2_5
-    voice_id: "YOUR_ELEVENLABS_VOICE_ID"
-    output_format: mp3_44100_128
-    language: sk
-
-  fallback:
-    send_text_if_tts_fails: true
-    continue_if_stt_metadata_missing: true
-```
-
-`voice.enabled` defaults to `false`, so existing tenant configs are not enabled for voice unless they opt in. If `voice.tts.voice_id` is empty, `ELEVENLABS_VOICE_ID` can be used as a runtime fallback.
-
-Generated files are served from `/api/v1/voice/audio/...` by default. Override storage with:
-
-```bash
-export VOICE_AUDIO_STORAGE_DIR="var/voice-audio"
-export VOICE_AUDIO_PUBLIC_BASE_URL="/api/v1/voice/audio"
-```
-
-FastAPI multipart parsing requires `python-multipart` in the runtime environment.
-
-## Minimal Voice WebSocket Stream
-
-`/api/v1/voice/stream` is a first-step realtime voice entrypoint. It accepts one
-WebSocket connection per voice call and creates an isolated in-process
-`VoiceSession` for that connection. It buffers audio chunks and processes one
-complete voice turn through the existing synchronous voice pipeline when the
-client commits the input audio. True streaming STT/TTS is intentionally not
-wired here yet.
-
-First issue a short-lived session through the API, then connect directly to the
-returned runtime URL using WebSocket subprotocols `voice-session` and the token:
+## Runtime topology
 
 ```text
-POST http://localhost:8000/api/v1/voice/sessions
-Sec-WebSocket-Protocol: voice-session, <session_token>
+browser or SIP participant
+  -> LiveKit
+  -> app.voice_agent
+  -> Backend Core LiveKit contracts
+  -> capability worker
+  -> tenant providers such as Google Sheets
 ```
 
-On connect, the server sends a `session_started` event containing a unique
-`call_session_id`. Clients can send JSON events, binary audio chunks, or JSON
-base64 audio chunks, then commit the buffered audio:
+The conversational runtime lives only in `app/voice_agent`. The FastAPI backend does not
+run an agent; it issues LiveKit sessions, persists final conversation messages, and executes
+capabilities through authenticated LiveKit-specific endpoints.
 
-```json
-{"type":"ping"}
-{"type":"audio_chunk","audio_base64":"ZmFrZS1hdWRpbw=="}
-{"type":"input_audio_commit","content_type":"audio/webm","filename":"turn.webm"}
-{"type":"session_end"}
-```
+## Services
 
-On commit, the server sends `processing_started`, transcript/assistant/audio
-events when available, and finally `turn_completed`. The existing REST voice
-pipeline remains unchanged.
+- `api`: backend core on port 8000
+- `voice-agent`: LiveKit Agents worker and health server on port 8081
+- `capability-worker`: Redis-backed capability execution
+- `postgres`: conversation and tool-call persistence
+- `redis`: capability command transport
 
-Manual smoke test:
+LiveKit itself is provided externally. Set both `LIVEKIT_INTERNAL_URL` and
+`LIVEKIT_PUBLIC_URL` to the configured LiveKit deployment.
+
+## Setup
 
 ```bash
-VOICE_SESSION_TOKEN_SECRET="replace-with-at-least-32-bytes" \
-AGENT_RUNTIME_PUBLIC_WS_URL="ws://localhost:8001/api/v1/voice/stream" \
-uvicorn app.main:app --reload
-VOICE_SESSION_TOKEN_SECRET="replace-with-at-least-32-bytes" \
-AGENT_RUNTIME_PUBLIC_WS_URL="ws://localhost:8001/api/v1/voice/stream" \
-uvicorn app.agent_runtime.main:app --port 8001 --reload
-.venv/bin/python scripts/voice_ws_smoke.py
-.venv/bin/python scripts/voice_ws_concurrency_smoke.py
+cp .env.example app/.env
+docker compose --env-file app/.env up --build --wait
 ```
 
-The dependency-free browser debug page at `http://127.0.0.1:8080` can issue a
-signed session through its local proxy and send repeated MediaRecorder batches
-over one WebSocket. It keeps the token only in memory and uses the
-`voice-session` subprotocol.
+Required credentials are documented in `.env.example`. Google Sheets credentials belong
+in `app/secrets/google-service-account.json`.
 
-Batch-turn processing runs the existing synchronous voice pipeline through a
-bounded in-process executor. Tune it with:
+## Backend contracts
+
+The supported voice boundary is under `/api/v1/voice/livekit`:
+
+- `POST /sessions`: create a room-scoped participant token and agent dispatch
+- `POST /messages`: persist a final LiveKit user or assistant message
+- `POST /tools`: execute an enabled tenant capability for a persisted user turn
+
+The worker-side client is `app/voice_agent/backend_client.py`; shared request, response,
+and authentication DTOs are in `app/contracts/livekit.py`.
+
+## Debug client
 
 ```bash
-export VOICE_WS_PROCESSING_MAX_WORKERS=4
-export VOICE_WS_PROCESSING_TIMEOUT_SECONDS=120
+python debug-chat/server.py
 ```
 
-Call-mode response streaming is opt-in. It streams assistant text and mono
-24 kHz signed 16-bit PCM audio while leaving REST and manual voice unchanged:
+Open <http://localhost:3000>. The client creates a LiveKit session through the backend and
+then sends microphone audio directly through LiveKit.
+
+## Verification
 
 ```bash
-export VOICE_RESPONSE_STREAMING_ENABLED=true
-export VOICE_RESPONSE_STREAM_MIN_CHARS=40
-export VOICE_RESPONSE_STREAM_MAX_CHARS=160
-export VOICE_RESPONSE_STREAM_FLUSH_TIMEOUT_SECONDS=0.4
-export VOICE_RESPONSE_STREAM_MAX_AUDIO_QUEUE_BYTES=524288
+uv run pytest -q
+node --test debug-chat/livekit-controller.test.js
+docker compose --env-file app/.env config --quiet
 ```
-
-### Curl Example
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/voice/messages" \
-  -F tenant_id="demo_restaurant" \
-  -F channel="browser" \
-  -F external_user_id="customer-123" \
-  -F metadata='{"source":"debug"}' \
-  -F audio_file=@"app/sample.webm;type=audio/webm"
-```
-
-Example response fields:
-
-```json
-{
-  "conversation_id": "...",
-  "transcript": "Chcem rezervaciu dnes vecer",
-  "response_text": "...",
-  "audio_url": "/api/v1/voice/audio/....mp3",
-  "metadata": {
-    "stt_provider": "elevenlabs",
-    "tts_provider": "elevenlabs",
-    "language": "sk",
-    "audio_duration_ms": 1200,
-    "content_type": "audio/webm",
-    "warnings": []
-  }
-}
-```
-
-### Current Limitations
-
-- Not realtime.
-- No streaming STT or TTS.
-- No interruption or barge-in.
-- No phone, SIP, WhatsApp, Telegram, or browser-specific logic.
-- Local audio storage is intentionally minimal; replace `LocalVoiceAudioStorage` with durable object storage before production use across multiple app instances.

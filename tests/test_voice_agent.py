@@ -515,7 +515,7 @@ def test_post_call_persistence_runs_once_from_livekit_shutdown(monkeypatch):
     monkeypatch.setattr(voice_server, "HospitalityAgent", lambda *_args: object())
     monkeypatch.setattr(
         voice_server,
-        "VoiceSessionTokenCodec",
+        "LiveKitBackendTokenCodec",
         lambda _secret: SimpleNamespace(encode=lambda _claims: "token"),
     )
     monkeypatch.setattr(

@@ -102,8 +102,11 @@ async def persist_post_call(
         ],
     )
     try:
+        if sheets is not None:
+            sheets.append_row(row)
+            return True
         await asyncio.wait_for(
-            asyncio.to_thread((sheets or GoogleSheetsClient()).append_row, row),
+            asyncio.to_thread(GoogleSheetsClient().append_row, row),
             timeout=SHEETS_TIMEOUT_SECONDS,
         )
     except Exception:
