@@ -91,3 +91,9 @@ uv run pytest -q
 node --test debug-chat/livekit-controller.test.js
 docker compose --env-file app/.env config --quiet
 ```
+
+## Production
+
+The bounded single-VM Docker Compose deployment is documented in
+[`docs/production-deployment.md`](docs/production-deployment.md). It uses
+`docker-compose.prod.yml` as an override and does not change the development command above.

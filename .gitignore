@@ -151,13 +151,16 @@ activemq-data/
 
 # Environments
 .env
+.env.production
 .envrc
 .venv
 secrets/
 *.json
 !debug-chat/package.json
 !debug-chat/package-lock.json
+!.env.production.example
 debug-chat/node_modules/
+backups/
 env/
 venv/
 ENV/
