@@ -16,6 +16,10 @@ env_value() {
   if [ -z "$value" ]; then
     value=$(awk -F= -v name="$name" '$1 == name { print substr($0, index($0, "=") + 1); exit }' "$ENV_FILE")
   fi
+  case "$value" in
+    \"*\") value=${value#\"}; value=${value%\"} ;;
+    \'*\') value=${value#\'}; value=${value%\'} ;;
+  esac
   printf '%s' "$value"
 }
 
@@ -63,7 +67,8 @@ docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required"
 
 for name in \
   APP_IMAGE_TAG LIVEKIT_SERVER_IMAGE CADDY_IMAGE \
-  API_DOMAIN DEBUG_CHAT_DOMAIN LIVEKIT_DOMAIN CADDY_EMAIL \
+  APP_ENV API_DOMAIN DEBUG_CHAT_DOMAIN LIVEKIT_DOMAIN CADDY_EMAIL \
+  DEBUG_CHAT_BASIC_AUTH_USER DEBUG_CHAT_BASIC_AUTH_HASH \
   POSTGRES_PASSWORD VOICE_SESSION_TOKEN_SECRET LIVEKIT_SESSION_AUTH_SECRET \
   LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_INTERNAL_URL LIVEKIT_PUBLIC_URL \
   LIVEKIT_NODE_IP AZURE_OPENAI_ENDPOINT AZURE_OPENAI_API_KEY ELEVENLABS_API_KEY \
@@ -71,6 +76,32 @@ for name in \
 do
   require_value "$name"
 done
+
+environment=$(env_value APP_ENV)
+case "$environment" in
+  production)
+    [ "$(env_value LIVEKIT_STAGING_AUTH_ENABLED)" = "false" ] ||
+      fail "LIVEKIT_STAGING_AUTH_ENABLED must be false in production"
+    ;;
+  staging)
+    [ "$(env_value LIVEKIT_STAGING_AUTH_ENABLED)" = "true" ] ||
+      fail "LIVEKIT_STAGING_AUTH_ENABLED must be true in staging"
+    for name in LIVEKIT_STAGING_AUTH_CREDENTIAL LIVEKIT_STAGING_ALLOWED_TENANTS
+    do
+      require_value "$name"
+    done
+    value=$(env_value LIVEKIT_STAGING_AUTH_CREDENTIAL)
+    [ "${#value}" -ge 32 ] ||
+      fail "LIVEKIT_STAGING_AUTH_CREDENTIAL must contain at least 32 characters"
+    ;;
+  *) fail "APP_ENV must be production or staging" ;;
+esac
+
+basic_auth_hash=$(env_value DEBUG_CHAT_BASIC_AUTH_HASH)
+case "$basic_auth_hash" in
+  '$2a$'*|'$2b$'*|'$2y$'*) ;;
+  *) fail "DEBUG_CHAT_BASIC_AUTH_HASH must be a Caddy-compatible bcrypt hash" ;;
+esac
 
 for name in POSTGRES_PASSWORD VOICE_SESSION_TOKEN_SECRET LIVEKIT_SESSION_AUTH_SECRET LIVEKIT_API_SECRET
 do

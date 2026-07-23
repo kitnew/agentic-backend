@@ -28,8 +28,47 @@ Replace every placeholder. Generate independent secrets with `openssl rand -hex 
 VM's public IPv4 address. Put the Google service-account JSON at the path configured by
 `GOOGLE_SERVICE_ACCOUNT_FILE`; it is mounted read-only as a Docker secret.
 
+Protect Debug Chat with a dedicated username and a Caddy bcrypt hash. Generate the hash
+interactively so the password is not stored in shell history:
+
+```bash
+docker run --rm -it caddy:2.11.4-alpine caddy hash-password
+```
+
+Set `DEBUG_CHAT_BASIC_AUTH_USER` and put the resulting hash in
+`DEBUG_CHAT_BASIC_AUTH_HASH`, enclosed in single quotes so Compose preserves `$`.
+Only the hash is passed to Caddy; never store the plaintext password in the environment.
+
 The real `.env.production`, credentials, certificates, backups, and Caddy state are ignored
 or stored outside Git.
+
+### Restricted staging Debug Chat
+
+This mechanism is only for explicitly authorized testing, not end-user authentication.
+For a staging VM, set:
+
+```dotenv
+APP_ENV=staging
+LIVEKIT_STAGING_AUTH_ENABLED=true
+LIVEKIT_STAGING_AUTH_CREDENTIAL=replace-with-an-independent-openssl-rand-hex-32-value
+LIVEKIT_STAGING_ALLOWED_TENANTS=tenant-id
+```
+
+The browser authenticates to Caddy, then calls only the Debug Chat server. That server adds
+the staging credential to its private Backend Core request. Backend Core validates the
+credential and independently enforces the same explicit tenant allowlist before issuing the
+existing short-lived LiveKit participant token. With one configured tenant, the rendered
+page contains only that tenant; crafted requests for any other tenant receive `403`.
+
+Disable access by setting `LIVEKIT_STAGING_AUTH_ENABLED=false` and updating `api` and
+`debug-chat`. Production must use `APP_ENV=production` and
+`LIVEKIT_STAGING_AUTH_ENABLED=false`; Backend Core then rejects staging and development
+debug credentials even if their values match.
+
+Rotate access by generating a new staging credential, updating the one environment value
+consumed by `api` and `debug-chat`, and running the deployment script. Rotate tester access
+separately by generating a new Caddy hash, updating the Basic Auth variables, and recreating
+`caddy`. Old credentials stop working after the corresponding containers are updated.
 
 ## Network
 
@@ -73,9 +112,55 @@ docker compose --project-name agentic-backend-prod --env-file .env.production \
   -f docker-compose.yml -f docker-compose.prod.yml stop
 ```
 
-Verify `https://$API_DOMAIN/health`, load `https://$DEBUG_CHAT_DOMAIN/`, and connect a
-LiveKit client to `wss://$LIVEKIT_DOMAIN`. Debug Chat is routed but the development auth
-bypass is disabled in production, so anonymous session creation is expected to return 401.
+Verify `https://$API_DOMAIN/health`, load `https://$DEBUG_CHAT_DOMAIN/` with the configured
+Basic Auth user, and connect a LiveKit client to `wss://$LIVEKIT_DOMAIN`.
+
+For a production environment, verify that a staging credential cannot authorize a session:
+
+```bash
+curl -i -X POST "https://$API_DOMAIN/api/v1/voice/livekit/sessions" \
+  -H 'Content-Type: application/json' \
+  -H "X-LiveKit-Staging-Auth: $LIVEKIT_STAGING_AUTH_CREDENTIAL" \
+  --data '{"tenant_id":"tenant-id"}'
+```
+
+The response must be `401`. The same request with
+`X-LiveKit-Debug-Auth: debug-chat` must also return `401`.
+
+For staging verification, an unauthenticated request to the Debug Chat hostname must return
+`401` from Caddy, a wrong Basic Auth password must return `401`, and a valid tester login
+must load the page:
+
+```bash
+curl -I "https://$DEBUG_CHAT_DOMAIN/"
+curl -I -u "$DEBUG_CHAT_BASIC_AUTH_USER:wrong" "https://$DEBUG_CHAT_DOMAIN/"
+curl -I -u "$DEBUG_CHAT_BASIC_AUTH_USER" "https://$DEBUG_CHAT_DOMAIN/"
+```
+
+Use browser developer tools to confirm the browser posts to
+`/debug/livekit-session` on the Debug Chat hostname and never sends
+`X-LiveKit-Staging-Auth`. To test backend credential rejection without changing the
+deployment, send an intentionally invalid value directly to the API session endpoint; it
+must return `401`:
+
+```bash
+curl -i -X POST "https://$API_DOMAIN/api/v1/voice/livekit/sessions" \
+  -H 'Content-Type: application/json' \
+  -H 'X-LiveKit-Staging-Auth: intentionally-invalid' \
+  --data '{"tenant_id":"tenant-id"}'
+```
+
+To test tenant rejection, submit a crafted POST through the authenticated hostname:
+
+```bash
+curl -i -u "$DEBUG_CHAT_BASIC_AUTH_USER" \
+  -H 'Content-Type: application/json' \
+  --data '{"tenant_id":"not-allowlisted"}' \
+  "https://$DEBUG_CHAT_DOMAIN/debug/livekit-session"
+```
+
+It must return `403` without contacting Backend Core. Inspect logs with the command above;
+staging records contain environment, tenant, and outcome, never credentials or tokens.
 
 ## PostgreSQL backup and restore
 

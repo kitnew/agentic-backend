@@ -47,6 +47,9 @@ class SessionAuthSettings:
     secret: str = ""
     debug_enabled: bool = False
     debug_tenant_ids: tuple[str, ...] = ()
+    staging_enabled: bool = False
+    staging_credential: str = ""
+    staging_tenant_ids: tuple[str, ...] = ()
     environment: str = "production"
 
     @classmethod
@@ -59,6 +62,15 @@ class SessionAuthSettings:
                 for value in _text("LIVEKIT_DEBUG_ALLOWED_TENANTS", "").split(",")
                 if value.strip()
             ),
+            staging_enabled=(
+                _text("LIVEKIT_STAGING_AUTH_ENABLED", "false").lower() == "true"
+            ),
+            staging_credential=_text("LIVEKIT_STAGING_AUTH_CREDENTIAL", ""),
+            staging_tenant_ids=tuple(
+                value.strip()
+                for value in _text("LIVEKIT_STAGING_ALLOWED_TENANTS", "").split(",")
+                if value.strip()
+            ),
             environment=_text("APP_ENV", "production").lower(),
         )
 
@@ -68,6 +80,15 @@ class SessionAuthSettings:
             self.debug_enabled
             and self.environment in {"development", "test"}
             and bool(self.debug_tenant_ids)
+        )
+
+    @property
+    def staging_available(self) -> bool:
+        return (
+            self.staging_enabled
+            and self.environment == "staging"
+            and len(self.staging_credential.encode()) >= 32
+            and bool(self.staging_tenant_ids)
         )
 
 

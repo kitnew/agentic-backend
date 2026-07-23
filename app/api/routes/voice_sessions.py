@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from datetime import datetime
 from time import perf_counter
@@ -64,6 +65,8 @@ from app.tenants.loader import TenantConfigInvalidError, TenantConfigLoader, Ten
 from app.agent.schemas.voice import (
     resolve_voice_turn_config,
 )
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -91,6 +94,11 @@ def create_livekit_session(
     caller: SessionAccessClaims = Depends(authenticate_session_access),
 ) -> LiveKitSessionResponse:
     if request.tenant_id not in caller.tenant_ids:
+        if caller.subject == "staging-debug-chat":
+            logger.warning(
+                "Staging session issuance environment=staging tenant=%s outcome=forbidden",
+                request.tenant_id,
+            )
         raise HTTPException(status_code=403, detail="Tenant access is forbidden")
     settings = LiveKitApiSettings.from_env()
     if not settings.enabled:
@@ -200,7 +208,7 @@ def create_livekit_session(
         )
         .to_jwt()
     )
-    return LiveKitSessionResponse(
+    response = LiveKitSessionResponse(
         call_session_id=call_session_id,
         conversation_id=conversation.id,
         room_name=room_name,
@@ -208,6 +216,12 @@ def create_livekit_session(
         participant_token=token,
         turn_config=turn_config,
     )
+    if caller.subject == "staging-debug-chat":
+        logger.info(
+            "Staging session issuance environment=staging tenant=%s outcome=issued",
+            request.tenant_id,
+        )
+    return response
 
 
 @router.post("/livekit/messages", response_model=PersistLiveKitMessageResponse)

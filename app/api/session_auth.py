@@ -1,3 +1,5 @@
+import hmac
+import logging
 import time
 
 from fastapi import Header, HTTPException
@@ -9,10 +11,13 @@ from app.contracts.livekit import (
 )
 from app.core.config import SessionAuthSettings
 
+logger = logging.getLogger(__name__)
+
 
 def authenticate_session_access(
     authorization: str = Header(default=""),
     x_livekit_debug_auth: str = Header(default=""),
+    x_livekit_staging_auth: str = Header(default=""),
 ) -> SessionAccessClaims:
     settings = SessionAuthSettings.from_env()
     if authorization:
@@ -37,6 +42,10 @@ def authenticate_session_access(
             exp=now + 300,
         )
     if x_livekit_debug_auth == "debug-chat":
+        logger.warning(
+            "Debug session authentication rejected environment=%s outcome=rejected",
+            settings.environment,
+        )
         raise HTTPException(
             status_code=401,
             detail=(
@@ -44,4 +53,25 @@ def authenticate_session_access(
                 "LIVEKIT_DEBUG_AUTH_ENABLED=true, and LIVEKIT_DEBUG_ALLOWED_TENANTS"
             ),
         )
+
+    if isinstance(x_livekit_staging_auth, str) and x_livekit_staging_auth:
+        if settings.staging_available and hmac.compare_digest(
+            x_livekit_staging_auth, settings.staging_credential
+        ):
+            now = int(time.time())
+            logger.info(
+                "Staging session authentication accepted environment=%s outcome=accepted",
+                settings.environment,
+            )
+            return SessionAccessClaims(
+                subject="staging-debug-chat",
+                tenant_ids=settings.staging_tenant_ids,
+                iat=now,
+                exp=now + 300,
+            )
+        logger.warning(
+            "Staging session authentication rejected environment=%s outcome=rejected",
+            settings.environment,
+        )
+        raise HTTPException(status_code=401, detail="Invalid staging session authentication")
     raise HTTPException(status_code=401, detail="Session authentication is required")
