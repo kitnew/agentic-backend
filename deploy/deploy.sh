@@ -10,6 +10,13 @@ fail() {
   exit 1
 }
 
+CHECK_ONLY=false
+case "${1:-}" in
+  "") ;;
+  --check) CHECK_ONLY=true ;;
+  *) fail "usage: $0 [--check]" ;;
+esac
+
 env_value() {
   name=$1
   value=$(printenv "$name" 2>/dev/null || true)
@@ -82,6 +89,10 @@ case "$environment" in
   production)
     [ "$(env_value LIVEKIT_STAGING_AUTH_ENABLED)" = "false" ] ||
       fail "LIVEKIT_STAGING_AUTH_ENABLED must be false in production"
+    [ -z "$(env_value LIVEKIT_STAGING_AUTH_CREDENTIAL)" ] ||
+      fail "LIVEKIT_STAGING_AUTH_CREDENTIAL must be empty in production"
+    [ -z "$(env_value LIVEKIT_STAGING_ALLOWED_TENANTS)" ] ||
+      fail "LIVEKIT_STAGING_ALLOWED_TENANTS must be empty in production"
     ;;
   staging)
     [ "$(env_value LIVEKIT_STAGING_AUTH_ENABLED)" = "true" ] ||
@@ -93,6 +104,11 @@ case "$environment" in
     value=$(env_value LIVEKIT_STAGING_AUTH_CREDENTIAL)
     [ "${#value}" -ge 32 ] ||
       fail "LIVEKIT_STAGING_AUTH_CREDENTIAL must contain at least 32 characters"
+    for name in VOICE_SESSION_TOKEN_SECRET LIVEKIT_SESSION_AUTH_SECRET LIVEKIT_API_SECRET
+    do
+      [ "$value" != "$(env_value "$name")" ] ||
+        fail "LIVEKIT_STAGING_AUTH_CREDENTIAL must be independent from $name"
+    done
     ;;
   *) fail "APP_ENV must be production or staging" ;;
 esac
@@ -108,6 +124,16 @@ do
   value=$(env_value "$name")
   [ "${#value}" -ge 32 ] || fail "$name must contain at least 32 characters"
 done
+
+voice_secret=$(env_value VOICE_SESSION_TOKEN_SECRET)
+session_secret=$(env_value LIVEKIT_SESSION_AUTH_SECRET)
+livekit_secret=$(env_value LIVEKIT_API_SECRET)
+[ "$voice_secret" != "$session_secret" ] ||
+  fail "VOICE_SESSION_TOKEN_SECRET and LIVEKIT_SESSION_AUTH_SECRET must be independent"
+[ "$voice_secret" != "$livekit_secret" ] ||
+  fail "VOICE_SESSION_TOKEN_SECRET and LIVEKIT_API_SECRET must be independent"
+[ "$session_secret" != "$livekit_secret" ] ||
+  fail "LIVEKIT_SESSION_AUTH_SECRET and LIVEKIT_API_SECRET must be independent"
 
 [ "$(env_value APP_IMAGE_TAG)" != "latest" ] || fail "APP_IMAGE_TAG must be immutable, not latest"
 for name in LIVEKIT_SERVER_IMAGE CADDY_IMAGE
@@ -133,6 +159,12 @@ esac
 [ -f "$credentials_path" ] || fail "Google service account file not found: $credentials_path"
 
 compose config --quiet
+
+if [ "$CHECK_ONLY" = true ]; then
+  echo "Deployment configuration is valid."
+  exit 0
+fi
+
 compose pull postgres redis livekit caddy
 compose build --pull api capability-worker voice-agent debug-chat
 

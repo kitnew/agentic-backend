@@ -23,13 +23,31 @@ cp .env.production.example .env.production
 chmod 600 .env.production
 ```
 
-Replace every placeholder. Generate independent secrets with `openssl rand -hex 32`.
-`LIVEKIT_PUBLIC_URL` must equal `wss://$LIVEKIT_DOMAIN`, and `LIVEKIT_NODE_IP` must be the
-VM's public IPv4 address. Put the Google service-account JSON at the path configured by
-`GOOGLE_SERVICE_ACCOUNT_FILE`; it is mounted read-only as a Docker secret.
+Do not copy `app/.env`: it is development-only and its LiveKit URLs and debug settings are
+not valid for this deployment.
 
-Protect Debug Chat with a dedicated username and a Caddy bcrypt hash. Generate the hash
-interactively so the password is not stored in shell history:
+Generate each shared secret independently. The following command prints ready-to-paste
+assignments but does not modify `.env.production`:
+
+```bash
+for name in POSTGRES_PASSWORD VOICE_SESSION_TOKEN_SECRET LIVEKIT_SESSION_AUTH_SECRET
+do
+  printf '%s=' "$name"
+  openssl rand -hex 32
+done
+```
+
+Generate the LiveKit API key and secret with the pinned server image:
+
+```bash
+docker run --rm livekit/livekit-server:v1.13.1 generate-keys
+```
+
+Copy its `API Key` into `LIVEKIT_API_KEY` and `API Secret` into
+`LIVEKIT_API_SECRET`. These are separate from both application authentication secrets.
+
+Protect Debug Chat with a chosen username and a Caddy bcrypt hash. Generate the hash
+interactively so the plaintext password is not stored in shell history:
 
 ```bash
 docker run --rm -it caddy:2.11.4-alpine caddy hash-password
@@ -39,20 +57,63 @@ Set `DEBUG_CHAT_BASIC_AUTH_USER` and put the resulting hash in
 `DEBUG_CHAT_BASIC_AUTH_HASH`, enclosed in single quotes so Compose preserves `$`.
 Only the hash is passed to Caddy; never store the plaintext password in the environment.
 
+Replace or verify these environment-specific values:
+
+| Variable | Required value |
+|---|---|
+| `APP_IMAGE_TAG` | immutable tag for this release; never `latest` |
+| `API_DOMAIN` | API DNS name pointing to the VM |
+| `DEBUG_CHAT_DOMAIN` | restricted Debug Chat DNS name pointing to the VM |
+| `LIVEKIT_DOMAIN` | LiveKit DNS name pointing to the VM |
+| `CADDY_EMAIL` | real ACME contact email |
+| `DEBUG_CHAT_BASIC_AUTH_USER` | chosen tester username |
+| `LIVEKIT_PUBLIC_URL` | exactly `wss://` followed by `LIVEKIT_DOMAIN` |
+| `LIVEKIT_NODE_IP` | public IPv4 address of the VM |
+| `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` | staging-scoped Azure credentials |
+| `ELEVENLABS_API_KEY` | staging-scoped ElevenLabs credential |
+| `GOOGLE_SERVICE_ACCOUNT_FILE` | existing JSON file path, readable by Docker |
+
+Keep `LIVEKIT_INTERNAL_URL=ws://livekit:7880`. The image repository names, pinned
+infrastructure images, PostgreSQL names, LiveKit port range, log rotation, and backup path
+already have usable defaults; change them only when the server layout requires it.
+
+The deployment script rejects empty values, example domains, placeholders, short/reused
+secrets, `latest` tags, invalid Caddy hashes, inconsistent LiveKit URLs, and a missing Google
+service-account file before it starts or updates containers.
+
+Validate the completed file without pulling images, building, or starting anything:
+
+```bash
+./deploy/deploy.sh --check
+```
+
+Fix the reported value and repeat until it prints `Deployment configuration is valid.`
+
 The real `.env.production`, credentials, certificates, backups, and Caddy state are ignored
 or stored outside Git.
 
 ### Restricted staging Debug Chat
 
 This mechanism is only for explicitly authorized testing, not end-user authentication.
-For a staging VM, set:
+For a staging VM, change the three mode/tenant values and generate a fourth independent
+secret:
+
+```bash
+printf 'LIVEKIT_STAGING_AUTH_CREDENTIAL='
+openssl rand -hex 32
+```
+
+Paste that output and set:
 
 ```dotenv
 APP_ENV=staging
 LIVEKIT_STAGING_AUTH_ENABLED=true
-LIVEKIT_STAGING_AUTH_CREDENTIAL=replace-with-an-independent-openssl-rand-hex-32-value
-LIVEKIT_STAGING_ALLOWED_TENANTS=tenant-id
+LIVEKIT_STAGING_AUTH_CREDENTIAL=<generated value>
+LIVEKIT_STAGING_ALLOWED_TENANTS=demo_restaurant
 ```
+
+Use a comma-separated list only when multiple tenants are intentionally authorized. Do not
+reuse `VOICE_SESSION_TOKEN_SECRET`, `LIVEKIT_SESSION_AUTH_SECRET`, or `LIVEKIT_API_SECRET`.
 
 The browser authenticates to Caddy, then calls only the Debug Chat server. That server adds
 the staging credential to its private Backend Core request. Backend Core validates the
@@ -61,7 +122,8 @@ existing short-lived LiveKit participant token. With one configured tenant, the 
 page contains only that tenant; crafted requests for any other tenant receive `403`.
 
 Disable access by setting `LIVEKIT_STAGING_AUTH_ENABLED=false` and updating `api` and
-`debug-chat`. Production must use `APP_ENV=production` and
+`debug-chat`; the credential and allowlist may then be empty. Production must use
+`APP_ENV=production` and
 `LIVEKIT_STAGING_AUTH_ENABLED=false`; Backend Core then rejects staging and development
 debug credentials even if their values match.
 

@@ -33,11 +33,13 @@ LiveKit itself is provided externally. Set both `LIVEKIT_INTERNAL_URL` and
 
 ```bash
 cp .env.example app/.env
+# Fill the blank provider/LiveKit values and generate each local secret independently:
+# openssl rand -hex 32
 docker compose --env-file app/.env up --build --wait
 ```
 
-Required credentials are documented in `.env.example`. Google Sheets credentials belong
-in `app/secrets/google-service-account.json`.
+Only blank values in `.env.example` need attention; Compose owns the remaining local
+defaults. Google Sheets credentials belong in `app/secrets/google-service-account.json`.
 
 ## Backend contracts
 
