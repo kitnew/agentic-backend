@@ -63,6 +63,21 @@ class ToolCallRepository:
         )
         return self._to_domain(row) if row else None
 
+    def latest_livekit_capability(
+        self, tenant_id: str, call_session_id: str, capability_name: str
+    ) -> ToolCall | None:
+        row = (
+            self.db.query(ToolCallModel)
+            .filter(
+                ToolCallModel.tenant_id == tenant_id,
+                ToolCallModel.call_session_id == call_session_id,
+                ToolCallModel.capability_name == capability_name,
+            )
+            .order_by(ToolCallModel.updated_at.desc(), ToolCallModel.created_at.desc())
+            .first()
+        )
+        return self._to_domain(row) if row else None
+
     def complete_livekit(
         self,
         tool_call_id: str,

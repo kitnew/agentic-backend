@@ -14,6 +14,48 @@ from app.voice_agent.backend_client import BackendCoreClient
 logger = logging.getLogger(__name__)
 
 
+async def execute_capability_with_announcement(
+    *,
+    context: RunContext,
+    capability_name: str,
+    tool_call_id: str,
+    announcement: str | None,
+    execute,
+    telemetry,
+) -> dict:
+    telemetry.emit(
+        "tool_call_started",
+        tool_call_id=tool_call_id,
+        capability=capability_name,
+        tool_name=capability_name,
+    )
+    telemetry.emit("announcement_configured", configured=bool(announcement))
+    if announcement:
+        telemetry.emit("announcement_started", capability=capability_name)
+        speech = context.session.say(
+            announcement,
+            allow_interruptions=False,
+            add_to_chat_ctx=False,
+        )
+        await speech
+        telemetry.emit("announcement_completed", capability=capability_name)
+    telemetry.emit("backend_request_started", capability=capability_name)
+    try:
+        result = await execute()
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        telemetry.emit("tool_call_failed", capability=capability_name)
+        raise
+    telemetry.emit(
+        "tool_call_completed",
+        tool_call_id=tool_call_id,
+        capability=capability_name,
+        status=result.get("status"),
+    )
+    return result
+
+
 class StableElevenLabsSTT(elevenlabs.STT):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -261,10 +303,6 @@ def build_function_tools(
 ):
     async def _execute(context: RunContext, definition, arguments: dict):
         capability = definition.backend_capability
-        if definition.argument_container:
-            arguments = {definition.argument_container: arguments}
-        if definition.inject_caller_number:
-            arguments = {**arguments, "caller_number": caller_number}
         turn = state.turns_by_speech.get(context.speech_handle.id)
         waited_for_commit = bool(turn and not turn.committed.is_set()) or bool(
             getattr(telemetry, "preemptive_generation_used", False)
@@ -296,20 +334,45 @@ def build_function_tools(
             await task
         if state.closed or context.speech_handle.interrupted:
             raise asyncio.CancelledError
+
+        if "use_inbound_caller_number" in definition.parameters.get("properties", {}):
+            use_inbound = arguments.pop("use_inbound_caller_number", False)
+            if use_inbound and not caller_number:
+                return {
+                    "status": "skipped",
+                    "message": "Trusted inbound caller number is unavailable.",
+                    "error": "inbound_caller_number_unavailable",
+                }
+            if use_inbound:
+                arguments["reservation_phone"] = caller_number
+
+        if definition.argument_container:
+            arguments = {definition.argument_container: arguments}
+        if definition.inject_caller_number:
+            arguments = {**arguments, "caller_number": caller_number}
+
         telemetry.set_turn_kind("tool_call")
-        telemetry.emit("tool_call_started", tool_call_id=context.function_call.call_id, capability=capability)
-        try:
-            result = await backend.execute_tool(
+
+        async def call_backend() -> dict:
+            return await backend.execute_tool(
                 capability=capability,
                 arguments=arguments,
                 turn_id=turn_id,
                 tool_call_id=context.function_call.call_id,
             )
+
+        try:
+            return await execute_capability_with_announcement(
+                context=context,
+                capability_name=capability,
+                tool_call_id=context.function_call.call_id,
+                announcement=definition.announcement,
+                execute=call_backend,
+                telemetry=telemetry,
+            )
         except Exception as exc:
             logger.exception("Backend Core tool call failed")
-            result = {"status": "failed", "error": str(exc)}
-        telemetry.emit("tool_call_completed", tool_call_id=context.function_call.call_id, capability=capability, status=result.get("status"))
-        return result
+            return {"status": "failed", "error": str(exc)}
 
     async def execute(context: RunContext, definition, arguments: dict):
         state.pending_tool_calls += 1
@@ -345,8 +408,21 @@ class HospitalityAgent(Agent):
         )
         if metadata.end_call_enabled:
             tools.append(GuardedEndCallTool(state))
+        caller_instructions = ""
+        if any(
+            "use_inbound_caller_number" in tool.parameters.get("properties", {})
+            for tool in metadata.tools
+        ):
+            caller_instructions = (
+                "\n\nA trusted inbound caller number is available: "
+                f"{caller_number}. Set use_inbound_caller_number to true only after the guest "
+                "consents under the tenant contact policy."
+                if caller_number
+                else "\n\nNo trusted inbound caller number is available. "
+                "Set use_inbound_caller_number to false."
+            )
         super().__init__(
-            instructions=metadata.instructions,
+            instructions=metadata.instructions + caller_instructions,
             chat_ctx=build_chat_context(metadata),
             tools=tools,
         )

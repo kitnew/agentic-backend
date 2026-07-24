@@ -1,6 +1,6 @@
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -30,12 +30,16 @@ from app.infrastructure.repositories.tool_call_repository import ToolCallReposit
 from app.tenants.loader import TenantConfigLoader
 
 
-def claims():
+def claims(
+    tenant_id="demo_restaurant",
+    call_session_id="call-1",
+    conversation_id="conversation-1",
+):
     now = int(time.time())
     return LiveKitBackendClaims(
-        tenant_id="demo_restaurant",
-        call_session_id="call-1",
-        conversation_id="conversation-1",
+        tenant_id=tenant_id,
+        call_session_id=call_session_id,
+        conversation_id=conversation_id,
         language="sk",
         timezone="Europe/Bratislava",
         iat=now,
@@ -61,14 +65,22 @@ class Executor:
         return "1-0"
 
 
-def active_call(db, *, status="active", finalization_status="pending"):
+def active_call(
+    db,
+    *,
+    tenant_id="demo_restaurant",
+    call_session_id="call-1",
+    conversation_id="conversation-1",
+    status="active",
+    finalization_status="pending",
+):
     now = __import__("datetime").datetime.now()
     db.add(
         CallSessionModel(
-            id="call-1",
-            tenant_id="demo_restaurant",
-            conversation_id="conversation-1",
-            livekit_room_name="voice-call-1",
+            id=call_session_id,
+            tenant_id=tenant_id,
+            conversation_id=conversation_id,
+            livekit_room_name=f"voice-{call_session_id}",
             status=status,
             finalization_status=finalization_status,
             started_at=now,
@@ -173,6 +185,262 @@ def test_native_tool_routes_through_backend_capability_executor_with_correlation
                 )
             )
         assert conflict.value.status_code == 409
+
+
+def _hotel_claims():
+    return claims("penzion_grand", "hotel-call", "hotel-conversation")
+
+
+def _persist_hotel_turn(db, *, turn_id="hotel-turn"):
+    active_call(
+        db,
+        tenant_id="penzion_grand",
+        call_session_id="hotel-call",
+        conversation_id="hotel-conversation",
+    )
+    return persist_livekit_message(
+        PersistLiveKitMessageRequest(
+            role="user",
+            content="Áno, rezerváciu potvrdzujem.",
+            turn_id=turn_id,
+            item_id=turn_id,
+        ),
+        _hotel_claims(),
+        db,
+    )
+
+
+def _seed_hotel_availability(
+    db,
+    message_id,
+    *,
+    check_in="2026-08-29",
+    check_out="2026-08-30",
+    allocated_room_type="three_bed",
+    status="available",
+    age=timedelta(),
+):
+    now = datetime.now() - age
+    availability_input = {
+        "check_in": check_in,
+        "check_out": check_out,
+        "room_type": "two_bed",
+        "room_count": 1,
+    }
+    output = {
+        "status": status,
+        "room_type": "two_bed",
+        "requested_room_type": "two_bed",
+        "allocated_room_type": (
+            allocated_room_type if status == "available" else None
+        ),
+        "fallback_applied": allocated_room_type != "two_bed",
+        "check_in": check_in,
+        "check_out": check_out,
+        "requested_rooms": 1,
+        "available_rooms": 1,
+    }
+    ToolCallRepository(db).create(
+        ToolCall(
+            id=f"availability-{check_in}",
+            tenant_id="penzion_grand",
+            message_id=message_id,
+            conversation_id="hotel-conversation",
+            call_session_id="hotel-call",
+            external_tool_call_id=f"availability-{check_in}",
+            request_fingerprint="availability",
+            capability_name="reservation.check_availability",
+            provider="google_sheets",
+            input=availability_input,
+            output=output,
+            response={"status": "success", "result": output},
+            status=ToolCallStatus.SUCCESS,
+            latency_ms=1,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+
+
+def _hotel_create_request(*, tool_call_id="create-1", check_in="2026-08-29"):
+    return ExecuteLiveKitToolRequest(
+        capability="reservation.create_request",
+        arguments={
+            "check_in": check_in,
+            "check_out": "2026-08-30",
+            "reservation_name": "Ján Novák",
+            "reservation_phone": "+421900111222",
+            "room_type": "two_bed",
+            "room_count": 1,
+            "confirmed": True,
+            "caller_number": "+421900111222",
+        },
+        turn_id="hotel-turn",
+        tool_call_id=tool_call_id,
+    )
+
+
+def test_hotel_creation_requires_matching_availability_and_uses_allocation():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    executor = Executor()
+    with Session(engine) as db:
+        message = _persist_hotel_turn(db)
+        _seed_hotel_availability(db, message["message_id"])
+        first = asyncio.run(
+            execute_livekit_tool(
+                _hotel_create_request(),
+                _hotel_claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+        duplicate = asyncio.run(
+            execute_livekit_tool(
+                _hotel_create_request(tool_call_id="create-2"),
+                _hotel_claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+
+        assert first.status == "success"
+        assert duplicate == first
+        assert len(executor.commands) == 1
+        assert executor.commands[0].payload["room_type"] == "three_bed"
+        assert executor.commands[0].payload["requested_room_type"] == "two_bed"
+        assert db.query(ToolCallModel).count() == 2
+
+
+def test_repeated_identical_availability_call_reuses_fresh_result():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    executor = Executor()
+    with Session(engine) as db:
+        message = _persist_hotel_turn(db)
+        _seed_hotel_availability(db, message["message_id"])
+        result = asyncio.run(
+            execute_livekit_tool(
+                ExecuteLiveKitToolRequest(
+                    capability="reservation.check_availability",
+                    arguments={
+                        "check_in": "2026-08-29",
+                        "check_out": "2026-08-30",
+                        "room_type": "two_bed",
+                        "room_count": 1,
+                    },
+                    turn_id="hotel-turn",
+                    tool_call_id="availability-repeated",
+                ),
+                _hotel_claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+
+        assert result.status == "success"
+        assert executor.commands == []
+        assert db.query(ToolCallModel).count() == 1
+
+
+@pytest.mark.parametrize(
+    ("seed", "tool_request", "error"),
+    [
+        (False, _hotel_create_request(), "availability_check_required"),
+        (
+            True,
+            _hotel_create_request(check_in="2026-08-28"),
+            "availability_check_required",
+        ),
+    ],
+)
+def test_hotel_creation_rejects_missing_or_changed_availability(
+    seed, tool_request, error
+):
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    executor = Executor()
+    with Session(engine) as db:
+        message = _persist_hotel_turn(db)
+        if seed:
+            _seed_hotel_availability(db, message["message_id"])
+        result = asyncio.run(
+            execute_livekit_tool(
+                tool_request,
+                _hotel_claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+
+        assert result.status == "skipped"
+        assert result.error == error
+        assert executor.commands == []
+
+
+def test_hotel_creation_rejects_expired_availability():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    executor = Executor()
+    with Session(engine) as db:
+        message = _persist_hotel_turn(db)
+        _seed_hotel_availability(
+            db, message["message_id"], age=timedelta(seconds=901)
+        )
+        result = asyncio.run(
+            execute_livekit_tool(
+                _hotel_create_request(),
+                _hotel_claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+
+        assert result.status == "skipped"
+        assert result.error == "availability_check_expired"
+        assert executor.commands == []
+
+
+def test_new_availability_request_invalidates_previous_success():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    executor = Executor()
+    with Session(engine) as db:
+        message = _persist_hotel_turn(db)
+        _seed_hotel_availability(
+            db, message["message_id"], age=timedelta(seconds=1)
+        )
+        _seed_hotel_availability(
+            db,
+            message["message_id"],
+            check_in="2026-08-30",
+            check_out="2026-08-31",
+            status="unavailable",
+        )
+        result = asyncio.run(
+            execute_livekit_tool(
+                _hotel_create_request(),
+                _hotel_claims(),
+                db,
+                TenantConfigLoader(),
+                CapabilityRouter(),
+                executor,
+            )
+        )
+
+        assert result.status == "skipped"
+        assert result.error == "availability_check_required"
+        assert executor.commands == []
 
 
 def test_unauthorized_tenant_capability_is_rejected():

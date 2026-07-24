@@ -1,6 +1,5 @@
 import logging
-from datetime import timedelta
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import perf_counter
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -289,6 +288,31 @@ async def execute_livekit_tool(
     if message is None or message.tenant_id != claims.tenant_id:
         raise HTTPException(status_code=409, detail="User turn has not been persisted")
     now = datetime.now()
+    duplicate = repository.latest_livekit_capability(
+        claims.tenant_id,
+        claims.call_session_id,
+        request.capability,
+    )
+    if duplicate and duplicate.input == request.arguments:
+        if duplicate.status == ToolCallStatus.PENDING:
+            return ExecuteLiveKitToolResponse(
+                status="pending",
+                message="Tool execution is already pending.",
+                tool_call_id=duplicate.id,
+            )
+        cache_success = request.capability == "reservation.create_request" or (
+            request.capability == "reservation.check_availability"
+            and now - (duplicate.updated_at or duplicate.created_at)
+            <= timedelta(
+                seconds=tenant.reservation.flow.availability_result_ttl_seconds
+            )
+        )
+        if (
+            cache_success
+            and duplicate.status == ToolCallStatus.SUCCESS
+            and duplicate.response
+        ):
+            return ExecuteLiveKitToolResponse.model_validate(duplicate.response)
     durable_call, created = repository.reserve_livekit(
         ToolCall(
             id=str(uuid4()),
@@ -319,6 +343,42 @@ async def execute_livekit_tool(
         )
 
     arguments = dict(request.arguments)
+    if (
+        request.capability == "reservation.create_request"
+        and tenant.reservation.flow.availability_before_guest_details
+    ):
+        availability = repository.latest_livekit_capability(
+            claims.tenant_id,
+            claims.call_session_id,
+            "reservation.check_availability",
+        )
+        availability_error = _matching_availability_error(
+            availability,
+            arguments,
+            now=now,
+            ttl_seconds=tenant.reservation.flow.availability_result_ttl_seconds,
+        )
+        if availability_error:
+            response = ExecuteLiveKitToolResponse(
+                status="skipped",
+                message="Pred rezerváciou treba znova úspešne overiť dostupnosť.",
+                error=availability_error,
+                tool_call_id=durable_call.id,
+            )
+            repository.complete_livekit(
+                durable_call.id,
+                status=ToolCallStatus.SKIPPED,
+                provider="validation",
+                output=None,
+                error=availability_error,
+                response=response.model_dump(mode="json"),
+                latency_ms=0,
+                updated_at=datetime.now(),
+            )
+            return response
+        availability_output = availability.output or {}
+        arguments["requested_room_type"] = arguments["room_type"]
+        arguments["room_type"] = availability_output["allocated_room_type"]
     if request.capability == "reservation.create_request":
         arguments["raw_message"] = message.content
     started_at = perf_counter()
@@ -422,3 +482,42 @@ async def finalize_livekit_call(
 
 def _livekit_message_id(call_session_id: str, role: str, item_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"livekit:{call_session_id}:{role}:{item_id}"))
+
+
+def _matching_availability_error(
+    availability: ToolCall | None,
+    arguments: dict,
+    *,
+    now: datetime,
+    ttl_seconds: int,
+) -> str | None:
+    if availability is None:
+        return "availability_check_required"
+    if availability.status != ToolCallStatus.SUCCESS:
+        return "availability_check_invalid"
+    checked_at = availability.updated_at or availability.created_at
+    if now - checked_at > timedelta(seconds=ttl_seconds):
+        return "availability_check_expired"
+    output = availability.output or {}
+    expected = {
+        "check_in": arguments.get("check_in"),
+        "check_out": arguments.get("check_out"),
+        "room_type": arguments.get("room_type"),
+        "room_count": arguments.get("room_count"),
+    }
+    actual = {
+        key: availability.input.get(key)
+        for key in ("check_in", "check_out", "room_type", "room_count")
+    }
+    if actual != expected:
+        return "availability_check_required"
+    if (
+        output.get("status") != "available"
+        or output.get("requested_room_type") != expected["room_type"]
+        or output.get("check_in") != expected["check_in"]
+        or output.get("check_out") != expected["check_out"]
+        or output.get("requested_rooms") != expected["room_count"]
+        or not output.get("allocated_room_type")
+    ):
+        return "availability_check_invalid"
+    return None

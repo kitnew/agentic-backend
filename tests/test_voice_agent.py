@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 from types import SimpleNamespace
 from uuid import uuid4
@@ -8,7 +9,11 @@ from livekit.agents import stt
 
 from app.agent.schemas.voice import VoiceTurnConfig
 from app.application.livekit_dispatch import resolve_runtime_tools, resolve_voice_id
-from app.contracts.livekit import LiveKitJobMetadata, SessionChatMessage
+from app.contracts.livekit import (
+    LiveKitJobMetadata,
+    RuntimeToolDefinition,
+    SessionChatMessage,
+)
 from app.tenants.loader import TenantConfigLoader
 from app.voice_agent.session_factory import (
     GuardedEndCallTool,
@@ -92,9 +97,12 @@ class Speech:
 
 
 class Backend:
-    def __init__(self):
+    def __init__(self, *, availability_status="available", allocated_room_type="two_bed"):
         self.messages = []
         self.tools = []
+        self.events = []
+        self.availability_status = availability_status
+        self.allocated_room_type = allocated_room_type
 
     async def persist_message(self, **payload):
         self.messages.append(payload)
@@ -102,7 +110,53 @@ class Backend:
 
     async def execute_tool(self, **payload):
         self.tools.append(payload)
-        return {"status": "success", "message": "available"}
+        self.events.append(f"tool:{payload['capability']}")
+        if payload["capability"] == "reservation.check_availability":
+            requested = payload["arguments"]["room_type"]
+            return {
+                "status": "success",
+                "message": self.availability_status,
+                "result": {
+                    "status": self.availability_status,
+                    "requested_room_type": requested,
+                    "allocated_room_type": (
+                        self.allocated_room_type
+                        if self.availability_status == "available"
+                        else None
+                    ),
+                },
+            }
+        return {"status": "success", "message": "submitted"}
+
+
+def tool_context(speech, call_id, events=None):
+    class Session:
+        def say(self, _text, **_kwargs):
+            class SpeechPlayback:
+                def __await__(self):
+                    async def wait():
+                        if events is not None:
+                            events.append(f"announcement:{call_id}")
+                    return wait().__await__()
+
+            return SpeechPlayback()
+
+    return SimpleNamespace(
+        function_call=SimpleNamespace(call_id=call_id),
+        speech_handle=speech,
+        session=Session(),
+    )
+
+
+async def invoke_tool(tool, state, speech_id, arguments, events=None):
+    speech = Speech(speech_id)
+    state.register_speech(speech)
+    task = asyncio.create_task(
+        tool._func(tool_context(speech, speech_id, events), arguments)
+    )
+    await asyncio.sleep(0)
+    state.commit_turn(f"turn-{speech_id}")
+    return await task
 
 
 def test_job_metadata_is_immutable_and_rejects_browser_fields():
@@ -149,9 +203,7 @@ def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation(
         telemetry,
     )
     assert [tool.info.name for tool in tools] == ["check_room_availability"]
-    context = SimpleNamespace(
-        function_call=SimpleNamespace(call_id="tool-1"), speech_handle=speech
-    )
+    context = tool_context(speech, "tool-1")
     async def run():
         task = asyncio.create_task(
             tools[0]._func(
@@ -175,7 +227,136 @@ def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation(
     assert backend.tools[0]["tool_call_id"] == "tool-1"
 
 
-def test_reservation_tool_injects_caller_number_from_call_context():
+def test_non_reservation_tool_runs_after_announcement_without_another_user_turn():
+    backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
+    definition = RuntimeToolDefinition(
+        public_name="look_up_policy",
+        description="Look up a property policy.",
+        announcement="Hneď to overím.",
+        parameters={
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+            "additionalProperties": False,
+        },
+        backend_capability="property.lookup",
+    )
+    tool = build_function_tools(
+        metadata(tools=(definition,)), backend, state, telemetry
+    )[0]
+
+    result = asyncio.run(
+        invoke_tool(tool, state, "policy-lookup", {"topic": "parking"}, backend.events)
+    )
+
+    assert result["status"] == "success"
+    assert backend.events == [
+        "announcement:policy-lookup",
+        "tool:property.lookup",
+    ]
+
+
+def test_tool_announcement_is_session_say_before_backend_and_not_prompt_text():
+    backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
+    definition = RuntimeToolDefinition(
+        public_name="look_up_policy",
+        description="Look up a property policy.",
+        announcement="Overím to.",
+        parameters={
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+            "additionalProperties": False,
+        },
+        backend_capability="property.lookup",
+    )
+    tool = build_function_tools(metadata(tools=(definition,)), backend, state, telemetry)[0]
+
+    asyncio.run(invoke_tool(tool, state, "policy-order", {"topic": "parking"}))
+
+    assert [event for event, _ in telemetry.events if event in {
+        "tool_call_started",
+        "announcement_started",
+        "announcement_completed",
+        "backend_request_started",
+        "tool_call_completed",
+    }] == [
+        "tool_call_started",
+        "announcement_started",
+        "announcement_completed",
+        "backend_request_started",
+        "tool_call_completed",
+    ]
+    assert "Before calling" not in tool.info.raw_schema["description"]
+
+
+def test_tool_without_announcement_executes_directly():
+    backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
+    definition = RuntimeToolDefinition(
+        public_name="look_up_policy",
+        description="Look up a property policy.",
+        parameters={
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+            "additionalProperties": False,
+        },
+        backend_capability="property.lookup",
+    )
+    tool = build_function_tools(metadata(tools=(definition,)), backend, state, telemetry)[0]
+
+    asyncio.run(invoke_tool(tool, state, "policy-direct", {"topic": "parking"}))
+
+    events = [event for event, _ in telemetry.events]
+    assert events.index("backend_request_started") < events.index("tool_call_completed")
+    assert "announcement_started" not in events
+
+
+def test_backend_failure_uses_normalized_result_and_failure_telemetry():
+    class FailingBackend(Backend):
+        async def execute_tool(self, **_payload):
+            raise RuntimeError("backend unavailable")
+
+    backend, state, telemetry = FailingBackend(), VoiceTurnState(), Telemetry()
+    definition = RuntimeToolDefinition(
+        public_name="look_up_policy",
+        description="Look up a property policy.",
+        announcement="Overím to.",
+        parameters={
+            "type": "object",
+            "properties": {"topic": {"type": "string"}},
+            "required": ["topic"],
+            "additionalProperties": False,
+        },
+        backend_capability="property.lookup",
+    )
+    tool = build_function_tools(metadata(tools=(definition,)), backend, state, telemetry)[0]
+
+    result = asyncio.run(invoke_tool(tool, state, "policy-failure", {"topic": "parking"}))
+
+    assert result == {"status": "failed", "error": "backend unavailable"}
+    assert "tool_call_failed" in [event for event, _ in telemetry.events]
+
+
+def test_generic_voice_runtime_has_no_tenant_reservation_fsm():
+    from app.voice_agent import session_factory
+
+    source = inspect.getsource(session_factory)
+    assert "penzion_grand" not in source
+    assert "ReservationStage" not in source
+    assert "collecting_guest_details" not in source
+
+
+@pytest.mark.parametrize(
+    ("use_inbound", "manual_phone", "expected_phone"),
+    [
+        (True, None, "+421900111222"),
+        (False, "+421900333444", "+421900333444"),
+    ],
+)
+def test_reservation_phone_respects_inbound_caller_consent(
+    use_inbound, manual_phone, expected_phone
+):
     backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
     speech = Speech()
     state.register_speech(speech)
@@ -189,9 +370,7 @@ def test_reservation_tool_injects_caller_number_from_call_context():
         telemetry,
         "+421900111222",
     )[0]
-    context = SimpleNamespace(
-        function_call=SimpleNamespace(call_id="tool-phone"), speech_handle=speech
-    )
+    context = tool_context(speech, "tool-phone")
 
     async def run():
         task = asyncio.create_task(
@@ -201,8 +380,8 @@ def test_reservation_tool_injects_caller_number_from_call_context():
                     "check_in": "2026-08-29",
                     "check_out": "2026-08-31",
                     "reservation_name": "Ján Novák",
-                    "reservation_phone": "+421900333444",
-                    "email": "jan@example.com",
+                    "reservation_phone": manual_phone,
+                    "use_inbound_caller_number": use_inbound,
                     "room_type": "two_bed",
                     "room_count": 1,
                     "confirmed": True,
@@ -216,7 +395,175 @@ def test_reservation_tool_injects_caller_number_from_call_context():
     asyncio.run(run())
     assert tool.info.name == "submit_new_reservation_request"
     assert backend.tools[0]["arguments"]["caller_number"] == "+421900111222"
-    assert backend.tools[0]["arguments"]["reservation_phone"] == "+421900333444"
+    assert backend.tools[0]["arguments"]["reservation_phone"] == expected_phone
+
+
+def test_missing_inbound_number_requires_manual_phone():
+    backend, state, telemetry = Backend(), VoiceTurnState(), Telemetry()
+    speech = Speech()
+    state.register_speech(speech)
+    tool = build_function_tools(
+        metadata(
+            tenant_id="penzion_grand",
+            tools=tools_for("penzion_grand", "reservation.create_request"),
+        ),
+        backend,
+        state,
+        telemetry,
+    )[0]
+
+    async def run():
+        task = asyncio.create_task(
+            tool._func(
+                tool_context(speech, "missing-phone"),
+                {
+                    "check_in": "2026-08-29",
+                    "check_out": "2026-08-31",
+                    "reservation_name": "Ján Novák",
+                    "reservation_phone": None,
+                    "use_inbound_caller_number": True,
+                    "room_type": "two_bed",
+                    "room_count": 1,
+                    "confirmed": True,
+                },
+            )
+        )
+        await asyncio.sleep(0)
+        state.commit_turn("turn-missing-phone")
+        return await task
+
+    result = asyncio.run(run())
+    assert result["error"] == "inbound_caller_number_unavailable"
+    assert backend.tools == []
+
+
+def test_announced_tools_continue_in_the_same_turn_for_arbitrary_capabilities():
+    backend = Backend()
+    state, telemetry = VoiceTurnState(), Telemetry()
+    tools = build_function_tools(
+        metadata(
+            tenant_id="penzion_grand",
+            tools=tools_for(
+                "penzion_grand",
+                "reservation.check_availability",
+                "reservation.create_request",
+            ),
+        ),
+        backend,
+        state,
+        telemetry,
+        "+421900111222",
+    )
+    availability_tool, reservation_tool = tools
+
+    async def invoke(tool, speech_id, call_id, arguments):
+        speech = Speech(speech_id)
+        state.register_speech(speech)
+        task = asyncio.create_task(
+            tool._func(tool_context(speech, call_id, backend.events), arguments)
+        )
+        await asyncio.sleep(0)
+        state.commit_turn(f"turn-{call_id}")
+        return await task
+
+    async def run():
+        await invoke(
+            availability_tool,
+            "availability-speech",
+            "availability",
+            {
+                "check_in": "2026-08-29",
+                "check_out": "2026-08-30",
+                "room_type": "two_bed",
+                "room_count": 1,
+            },
+        )
+        await invoke(
+            reservation_tool,
+            "reservation-speech",
+            "reservation",
+            {
+                "check_in": "2026-08-29",
+                "check_out": "2026-08-30",
+                "reservation_name": "Ján Novák",
+                "reservation_phone": None,
+                "use_inbound_caller_number": True,
+                "room_type": "two_bed",
+                "room_count": 1,
+                "confirmed": True,
+            },
+        )
+
+    asyncio.run(run())
+    assert backend.events == [
+        "announcement:availability",
+        "tool:reservation.check_availability",
+        "announcement:reservation",
+        "tool:reservation.create_request",
+    ]
+    assert backend.tools[1]["arguments"]["room_type"] == "two_bed"
+
+
+def test_generic_runtime_does_not_encode_reservation_availability_policy():
+    backend = Backend()
+    state, telemetry = VoiceTurnState(), Telemetry()
+    reservation_tool = build_function_tools(
+        metadata(
+            tenant_id="penzion_grand",
+            tools=tools_for("penzion_grand", "reservation.create_request"),
+        ),
+        backend,
+        state,
+        telemetry,
+    )[0]
+
+    result = asyncio.run(
+        invoke_tool(
+            reservation_tool,
+            state,
+            "reservation",
+            {
+                "check_in": "2026-08-29",
+                "check_out": "2026-08-30",
+                "reservation_name": "Ján Novák",
+                "reservation_phone": "+421900333444",
+                "use_inbound_caller_number": False,
+                "room_type": "two_bed",
+                "room_count": 1,
+                "confirmed": True,
+            },
+        )
+    )
+    assert result["status"] == "success"
+    assert [call["capability"] for call in backend.tools] == [
+        "reservation.create_request"
+    ]
+
+
+def test_caller_number_presence_changes_consent_instruction():
+    available = HospitalityAgent(
+        metadata(
+            tenant_id="penzion_grand",
+            tools=tools_for("penzion_grand", "reservation.create_request"),
+        ),
+        Backend(),
+        Telemetry(),
+        VoiceTurnState(),
+        "+421900111222",
+    )
+    hidden = HospitalityAgent(
+        metadata(
+            tenant_id="penzion_grand",
+            tools=tools_for("penzion_grand", "reservation.create_request"),
+        ),
+        Backend(),
+        Telemetry(),
+        VoiceTurnState(),
+    )
+
+    assert "A trusted inbound caller number is available" in available.instructions
+    assert "+421900111222" in available.instructions
+    assert "No trusted inbound caller number is available" in hidden.instructions
 
 
 def test_hospitality_agent_persists_only_the_canonical_committed_user_once():

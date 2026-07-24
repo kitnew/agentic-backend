@@ -30,7 +30,11 @@ def resolve_runtime_tools(tenant) -> tuple[RuntimeToolDefinition, ...]:
 
 
 def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
-    common = {"enabled": True, "backend_capability": capability}
+    common = {
+        "enabled": True,
+        "backend_capability": capability,
+        "announcement": config.get("announcement"),
+    }
     if capability == "reservation.check_availability":
         return RuntimeToolDefinition(
             **common,
@@ -45,7 +49,10 @@ def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
                 }
             ),
         )
-    if capability == "reservation.create_request" and config.get("row_format") == "penzion_grand":
+    if (
+        capability == "reservation.create_request"
+        and config.get("row_format") == "accommodation_request"
+    ):
         return RuntimeToolDefinition(
             **common,
             public_name="submit_new_reservation_request",
@@ -58,8 +65,12 @@ def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
                     "check_in": _date(),
                     "check_out": _date(),
                     "reservation_name": _text(),
-                    "reservation_phone": _text(),
-                    "email": _text(),
+                    "reservation_phone": {
+                        "type": ["string", "null"],
+                        "minLength": 1,
+                        "maxLength": 2_048,
+                    },
+                    "use_inbound_caller_number": {"type": "boolean"},
                     "room_type": _room_type(),
                     "room_count": {"type": "integer", "minimum": 1},
                     "confirmed": {"type": "boolean", "const": True},

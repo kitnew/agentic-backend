@@ -108,6 +108,11 @@ def test_backend_resolves_tools_for_every_existing_tenant():
     assert next(
         tool for tool in hotel if tool.backend_capability == "reservation.create_request"
     ).argument_container is None
+    hotel_create = next(
+        tool for tool in hotel if tool.backend_capability == "reservation.create_request"
+    )
+    assert "email" not in hotel_create.parameters["properties"]
+    assert "use_inbound_caller_number" in hotel_create.parameters["properties"]
 
     smoke_loader = TenantConfigLoader(
         Path(__file__).parents[1] / "smoke" / "tenants"

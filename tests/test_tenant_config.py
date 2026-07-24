@@ -250,6 +250,11 @@ def test_penzion_grand_prompt_contains_each_safe_section_once():
     assert "sheet_name" not in prompt
     assert "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI" not in prompt
     assert "submitted requests waiting for staff confirmation" in prompt
+    assert "Do not ask for an email address" in prompt
+    assert "first collect only check-in, check-out, requested room type, and room count" in prompt
+    assert "immediately call the availability tool in the same response" in prompt
+    assert "Collect reservation details only after they agree" in prompt
+    assert "Môžem použiť telefónne číslo, z ktorého voláte?" in prompt
     for unavailable_tool in (
         "get_availability",
         "send_reservation_email",
@@ -259,6 +264,20 @@ def test_penzion_grand_prompt_contains_each_safe_section_once():
         "transfer_to_number",
     ):
         assert unavailable_tool not in prompt
+
+
+def test_reservation_order_is_tenant_configured():
+    hotel = build_agent_context(
+        TenantConfigLoader().load("penzion_grand"), "hotel-conversation"
+    )["reservation_policy"]
+    restaurant = build_agent_context(
+        TenantConfigLoader().load("demo_restaurant"), "restaurant-conversation"
+    )["reservation_policy"]
+
+    assert "availability tool in the same response" in hotel
+    assert "guest or contact details before" in hotel
+    assert "availability tool in the same response" not in restaurant
+    assert "guest or contact details before" not in restaurant
 
 
 def test_prompt_current_time_comes_from_injected_per_turn_clock():

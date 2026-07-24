@@ -58,7 +58,7 @@ class InterruptionConfig(_VoiceConfigModel):
         description="Wait before treating an interruption as false. Lower decides sooner; higher allows slower speech but delays recovery. SDK seconds: false_interruption_timeout.",
     )
     resume_after_false_interruption: bool = Field(
-        False, description="Resume interrupted speech after a false interruption. SDK: resume_false_interruption."
+        True, description="Resume interrupted speech after a false interruption. SDK: resume_false_interruption."
     )
 
 

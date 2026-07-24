@@ -49,7 +49,7 @@ class GoogleSheetsReservationProvider:
         if capability_request.name in {
             "reservation.change_request",
             "reservation.cancel_request",
-        } or config.get("row_format") == "penzion_grand":
+        } or config.get("row_format") == "accommodation_request":
             return self._submit_reservation_request(tenant_context, capability_request)
         return self._create_reservation_request(tenant_context, capability_request)
 
@@ -81,11 +81,7 @@ class GoogleSheetsReservationProvider:
                 error="invalid_reservation_request",
             )
 
-        availability = None
-        if isinstance(request, NewReservationRequest) or (
-            isinstance(request, ReservationChangeRequest)
-            and request.affects_availability
-        ):
+        if isinstance(request, ReservationChangeRequest) and request.affects_availability:
             availability = self._check_availability(
                 tenant_context,
                 CapabilityRequest(
@@ -116,6 +112,9 @@ class GoogleSheetsReservationProvider:
                 )
 
         config = tenant_context.capabilities[capability_request.name].config
+        room_capacities = {
+            room.code: room.capacity for room in tenant_context.business_info.room_types
+        }
         rows = {
             "reservation.create_request": lambda value: [
                 value.check_in.isoformat(),
@@ -123,12 +122,15 @@ class GoogleSheetsReservationProvider:
                 value.reservation_name,
                 value.caller_number,
                 value.reservation_phone,
-                value.email,
-                {"two_bed": 2, "three_bed": 3, "four_bed": 4}[
-                    value.room_type
-                ],
-                value.room_count,
                 "",
+                room_capacities[value.room_type],
+                value.room_count,
+                (
+                    f"Allocated {value.room_type} at {value.requested_room_type} terms"
+                    if value.requested_room_type
+                    and value.requested_room_type != value.room_type
+                    else ""
+                ),
                 False,
             ],
             "reservation.change_request": lambda value: [
@@ -178,6 +180,19 @@ class GoogleSheetsReservationProvider:
                 "row_appended": True,
                 "updated_range": append_result.updated_range,
                 "updated_rows": append_result.updated_rows,
+                **(
+                    {
+                        "requested_room_type": request.requested_room_type
+                        or request.room_type,
+                        "allocated_room_type": request.room_type,
+                        "fallback_applied": bool(
+                            request.requested_room_type
+                            and request.requested_room_type != request.room_type
+                        ),
+                    }
+                    if isinstance(request, NewReservationRequest)
+                    else {}
+                ),
             },
         )
 
@@ -215,6 +230,26 @@ class GoogleSheetsReservationProvider:
                 )
             ).values
             result = self._calculate_availability(table, config, request)
+            if (
+                result.status == RoomAvailabilityStatus.UNAVAILABLE
+                and len(stay_nights(request.check_in, request.check_out)) == 1
+            ):
+                for fallback in config.one_night_room_type_fallbacks.get(
+                    request.room_type, []
+                ):
+                    fallback_result = self._calculate_availability(
+                        table, config, request.model_copy(update={"room_type": fallback})
+                    )
+                    if fallback_result.status == RoomAvailabilityStatus.AVAILABLE:
+                        result = fallback_result.model_copy(
+                            update={
+                                "room_type": request.room_type,
+                                "requested_room_type": request.room_type,
+                                "allocated_room_type": fallback,
+                                "fallback_applied": True,
+                            }
+                        )
+                        break
         except GoogleSheetsSourceDataError as exc:
             return self._availability_failure(capability_request.name, str(exc))
         except Exception as exc:
@@ -289,6 +324,9 @@ class GoogleSheetsReservationProvider:
             return RoomAvailabilityResult(
                 status=RoomAvailabilityStatus.DATA_NOT_COVERED,
                 room_type=request.room_type,
+                requested_room_type=request.room_type,
+                allocated_room_type=None,
+                fallback_applied=False,
                 check_in=request.check_in,
                 check_out=request.check_out,
                 requested_rooms=request.room_count,
@@ -306,6 +344,13 @@ class GoogleSheetsReservationProvider:
                 else RoomAvailabilityStatus.UNAVAILABLE
             ),
             room_type=request.room_type,
+            requested_room_type=request.room_type,
+            allocated_room_type=(
+                request.room_type
+                if available_rooms >= request.room_count
+                else None
+            ),
+            fallback_applied=False,
             check_in=request.check_in,
             check_out=request.check_out,
             requested_rooms=request.room_count,

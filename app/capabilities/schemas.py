@@ -49,6 +49,9 @@ class RoomAvailabilityRequest(BaseModel):
 class RoomAvailabilityResult(BaseModel):
     status: RoomAvailabilityStatus
     room_type: str
+    requested_room_type: str
+    allocated_room_type: str | None
+    fallback_applied: bool
     check_in: date
     check_out: date
     requested_rooms: int
@@ -59,13 +62,15 @@ class ReservationRequestBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reservation_name: str = Field(min_length=1)
-    caller_number: str = Field(min_length=1, strict=True)
+    caller_number: str | None = Field(default=None, min_length=1, strict=True)
     reservation_phone: str = Field(min_length=1, strict=True)
     confirmed: Literal[True]
 
     @field_validator("caller_number", "reservation_phone")
     @classmethod
-    def validate_phone(cls, value: str) -> str:
+    def validate_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         value = value.strip()
         digit_count = sum(character.isdigit() for character in value)
         if value.casefold() == "z volaného" or digit_count < 6:
@@ -74,16 +79,8 @@ class ReservationRequestBase(BaseModel):
 
 
 class NewReservationRequest(ReservationRequestBase, RoomAvailabilityRequest):
-    email: str = Field(min_length=1)
     room_type: Literal["two_bed", "three_bed", "four_bed"]
-
-    @field_validator("email")
-    @classmethod
-    def validate_email(cls, value: str) -> str:
-        value = value.strip()
-        if "@" not in value:
-            raise ValueError("email must contain @")
-        return value
+    requested_room_type: Literal["two_bed", "three_bed", "four_bed"] | None = None
 
 
 class ExistingReservationRequest(ReservationRequestBase):

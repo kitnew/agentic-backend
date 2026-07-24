@@ -127,6 +127,9 @@ def test_one_room_continuously_free_is_available():
     assert result.output == {
         "status": "available",
         "room_type": "two_bed",
+        "requested_room_type": "two_bed",
+        "allocated_room_type": "two_bed",
+        "fallback_applied": False,
         "check_in": "2026-08-10",
         "check_out": "2026-08-12",
         "requested_rooms": 1,
@@ -217,6 +220,31 @@ def test_one_night_stay_checks_exactly_one_date():
     assert stay_nights(date(2026, 8, 10), date(2026, 8, 11)) == (
         date(2026, 8, 10),
     )
+
+
+@pytest.mark.parametrize(
+    ("free_columns", "allocated_room_type", "fallback_applied"),
+    [
+        (["E"], "two_bed", False),
+        (["X", "Z"], "three_bed", True),
+        (["Z"], "four_bed", True),
+        ([], None, False),
+    ],
+)
+def test_one_night_double_uses_smallest_compatible_room(
+    free_columns, allocated_room_type, fallback_applied
+):
+    result = execute(
+        table(availability_row("2026-08-10", free_columns=free_columns)),
+        check_out="2026-08-11",
+    )
+
+    assert result.output["status"] == (
+        "available" if allocated_room_type else "unavailable"
+    )
+    assert result.output["requested_room_type"] == "two_bed"
+    assert result.output["allocated_room_type"] == allocated_room_type
+    assert result.output["fallback_applied"] is fallback_applied
 
 
 @pytest.mark.parametrize(
@@ -425,6 +453,16 @@ def test_penzion_grand_column_mapping_and_aggregates():
     first[1:4] = [0, 0, 0]
     second[1:4] = [999, 999, 999]
     assert execute(table(first, second)).output["status"] == "available"
+
+
+def test_room_fallbacks_must_reference_configured_room_types():
+    tenant_data = TenantConfigLoader().load("penzion_grand").model_dump()
+    tenant_data["capabilities"]["reservation.check_availability"]["config"][
+        "one_night_room_type_fallbacks"
+    ] = {"two_bed": ["suite"]}
+
+    with pytest.raises(ValidationError, match="fallbacks must reference configured"):
+        TenantContext.model_validate(tenant_data)
 
 
 @pytest.mark.parametrize(

@@ -49,7 +49,6 @@ def request(name, **changes):
             **common,
             "check_in": "2026-08-29",
             "check_out": "2026-08-31",
-            "email": "jan@example.com",
             "room_type": "two_bed",
             "room_count": 2,
         },
@@ -81,7 +80,7 @@ def routed(name, sheets, *, hour=12, **changes):
     ("room_type", "room_code"),
     [("two_bed", 2), ("three_bed", 3), ("four_bed", 4)],
 )
-def test_new_request_checks_exclusive_stay_and_maps_row_with_concrete_phones(
+def test_new_request_maps_row_without_implicitly_checking_availability(
     room_type, room_code
 ):
     sheets = Sheets()
@@ -90,7 +89,7 @@ def test_new_request_checks_exclusive_stay_and_maps_row_with_concrete_phones(
 
     assert result.status == "success"
     assert result.output["request_status"] == "submitted"
-    assert len(sheets.reads) == 1
+    assert sheets.reads == []
     assert sheets.appends[0].sheet_name == "reservations_new"
     assert sheets.appends[0].values == [
         "2026-08-29",
@@ -98,7 +97,7 @@ def test_new_request_checks_exclusive_stay_and_maps_row_with_concrete_phones(
         "Ján Novák",
         "+421900111222",
         "+421900333444",
-        "jan@example.com",
+        "",
         room_code,
         2,
         "",
@@ -151,20 +150,27 @@ def test_availability_affecting_change_reuses_availability_check():
     assert len(sheets.reads) == 1
 
 
-def test_unavailable_new_request_is_not_written():
-    sheets = Sheets(
-        [
-            ["header"] * 31,
-            ["2026-08-29"] + ["occupied"] * 30,
-            ["2026-08-30"] + ["occupied"] * 30,
-        ]
+def test_fallback_room_type_and_original_terms_are_written():
+    sheets = Sheets()
+
+    result = routed(
+        "reservation.create_request",
+        sheets,
+        room_type="three_bed",
+        requested_room_type="two_bed",
+        room_count=1,
     )
 
-    result = routed("reservation.create_request", sheets)
-
-    assert result.status == "skipped"
-    assert result.error == "requested_stay_not_available"
-    assert sheets.appends == []
+    assert result.status == "success"
+    assert sheets.reads == []
+    assert sheets.appends[0].values[6:9] == [
+        3,
+        1,
+        "Allocated three_bed at two_bed terms",
+    ]
+    assert result.output["allocated_room_type"] == "three_bed"
+    assert result.output["requested_room_type"] == "two_bed"
+    assert result.output["fallback_applied"] is True
 
 
 def test_cancellation_without_reason_writes_empty_note():

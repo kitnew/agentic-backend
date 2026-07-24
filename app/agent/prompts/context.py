@@ -26,7 +26,16 @@ def build_agent_context(
         "timezone": tenant.timezone,
         "agent_style_rules": tenant.agent.style_rules,
         "tenant_instructions": "\n\n".join(
-            part for part in (tenant.prompt.tenant_instructions, tenant.prompt.instructions) if part
+            part
+            for part in (
+                tenant.prompt.tenant_instructions,
+                tenant.prompt.instructions,
+                "When all required tool arguments are known, call the appropriate tool immediately. "
+                "Do not announce the tool action yourself. Any required user-facing announcement "
+                "is handled by the tool. Do not claim that an action is being performed unless you "
+                "call the corresponding tool.",
+            )
+            if part
         ),
         "tenant_identity": {
             "tenant_id": tenant.tenant_id,
@@ -109,6 +118,36 @@ def _reservation_policy(tenant: TenantContext) -> str:
         parts.append(
             "Reservation handling is request-only. Describe reservations as submitted requests "
             "waiting for staff confirmation. Do not describe them as confirmed reservations."
+        )
+    if reservation.flow.availability_before_guest_details:
+        parts.append(
+            "For a new accommodation reservation, first collect only check-in, check-out, "
+            "requested room type, and room count. As soon as they are known, immediately call "
+            "the availability tool in the same response. Do not ask for guest or contact "
+            "details before a successful availability result."
+        )
+    if reservation.flow.ask_to_continue_after_availability:
+        parts.append(
+            "After availability succeeds, first tell the guest a room is available and ask "
+            "whether they want to continue. Collect reservation details only after they agree."
+        )
+    if reservation.flow.require_final_confirmation:
+        parts.append(
+            "Summarize the final reservation details and require explicit guest confirmation "
+            "before submitting the reservation request."
+        )
+    if reservation.contact.email_required is False:
+        parts.append("Do not ask for an email address during the reservation flow.")
+    if reservation.contact.prefer_inbound_phone_with_consent:
+        consent_prompt = (
+            f' Ask exactly: "{reservation.contact.inbound_phone_consent_prompt}".'
+            if reservation.contact.inbound_phone_consent_prompt
+            else ""
+        )
+        parts.append(
+            "When trusted inbound caller metadata is available, ask permission to use that "
+            "number after the guest agrees to continue."
+            f"{consent_prompt} Use it only with consent; otherwise ask for another phone number."
         )
     return "\n".join(parts)
 

@@ -146,6 +146,8 @@ class TenantAvailabilityConfig(TenantModel):
     reject_past_check_in: bool = False
     past_check_in_responses: dict[str, str] = Field(default_factory=dict)
     date_formats: list[str] = Field(default_factory=lambda: ["%Y-%m-%d", "%d.%m.%Y"])
+    one_night_room_type_fallbacks: dict[str, list[str]] = Field(default_factory=dict)
+    announcement: str | None = None
 
     @field_validator("spreadsheet_id", "sheet_name")
     @classmethod
@@ -198,6 +200,11 @@ class TenantAvailabilityConfig(TenantModel):
             raise ValueError("date_formats must not be empty")
         if self.reject_past_check_in and not self.past_check_in_responses:
             raise ValueError("past check-in rejection requires localized responses")
+        for requested, fallbacks in self.one_night_room_type_fallbacks.items():
+            if requested not in self.room_type_columns or any(
+                fallback not in self.room_type_columns for fallback in fallbacks
+            ):
+                raise ValueError("room type fallbacks must reference configured room types")
         return self
 
 
@@ -232,12 +239,38 @@ class TenantReservationScheduleConfig(TenantModel):
     weekly: dict[str, TenantWeeklyScheduleDay] = Field(default_factory=dict)
 
 
+class TenantReservationFlowConfig(TenantModel):
+    availability_before_guest_details: bool = False
+    ask_to_continue_after_availability: bool = False
+    require_final_confirmation: bool = False
+    availability_result_ttl_seconds: int = Field(default=900, gt=0)
+
+
+class TenantReservationContactConfig(TenantModel):
+    email_required: bool | None = None
+    prefer_inbound_phone_with_consent: bool = False
+    inbound_phone_consent_prompt: str | None = None
+
+    @model_validator(mode="after")
+    def validate_inbound_phone_policy(self):
+        if (
+            self.prefer_inbound_phone_with_consent
+            and not self.inbound_phone_consent_prompt
+        ):
+            raise ValueError("inbound phone consent policy requires a prompt")
+        return self
+
+
 class TenantReservationConfig(TenantModel):
     enabled: bool = True
     mode: str = "request_only"
     requires_human_confirmation: bool = True
     can_confirm_reservation: bool = False
     required_fields: dict[str, TenantReservationFieldConfig] = Field(default_factory=dict)
+    flow: TenantReservationFlowConfig = Field(default_factory=TenantReservationFlowConfig)
+    contact: TenantReservationContactConfig = Field(
+        default_factory=TenantReservationContactConfig
+    )
     schedule: TenantReservationScheduleConfig = Field(default_factory=TenantReservationScheduleConfig)
     request_cutoff_local_time: time | None = None
     reject_at_or_after_cutoff: bool = True

@@ -73,6 +73,15 @@ reservation:
   mode: request_only
   requires_human_confirmation: true
   can_confirm_reservation: false
+  flow:
+    availability_before_guest_details: true
+    ask_to_continue_after_availability: true
+    require_final_confirmation: true
+    availability_result_ttl_seconds: 900
+  contact:
+    email_required: false
+    prefer_inbound_phone_with_consent: true
+    inbound_phone_consent_prompt: Môžem použiť telefónne číslo, z ktorého voláte?
   request_cutoff_local_time: "22:00"
   reject_at_or_after_cutoff: true
   cutoff_responses:
@@ -136,6 +145,11 @@ capabilities:
         two_bed: "E:W"
         three_bed: "X:Y"
         four_bed: "Z:AE"
+      one_night_room_type_fallbacks:
+        two_bed:
+          - three_bed
+          - four_bed
+      announcement: Hneď vám overím dostupnosť.
       free_cell_policy: blank
       stay_interval: check_in_inclusive_check_out_exclusive
       reject_past_check_in: true
@@ -151,7 +165,8 @@ capabilities:
     config:
       spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
       sheet_name: "reservations_new"
-      row_format: penzion_grand
+      row_format: accommodation_request
+      announcement: Výborne, teraz odošlem požiadavku na rezerváciu.
   reservation.change_request:
     enabled: true
     provider: google_sheets

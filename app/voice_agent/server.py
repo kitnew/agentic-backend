@@ -90,7 +90,7 @@ async def voice_agent(ctx: JobContext) -> None:
     backend = BackendCoreClient(settings.backend_url, backend_token)
     state = VoiceTurnState()
     session = build_session(settings, metadata, build_vad(metadata.turn_config))
-    caller_number = participant.attributes.get("sip.phoneNumber") or participant.identity
+    caller_number = participant.attributes.get("sip.phoneNumber") or None
     agent = HospitalityAgent(metadata, backend, telemetry, state, caller_number)
     persistence_tasks: set[asyncio.Task] = set()
     finalization_started = False
@@ -144,7 +144,7 @@ async def voice_agent(ctx: JobContext) -> None:
                     reason=_reason or None,
                     error=_reason if "error" in _reason.casefold() else None,
                     livekit_job_id=str(getattr(ctx.job, "id", "")) or None,
-                    caller_phone=str(caller_number),
+                    caller_phone=caller_number,
                 )
             except Exception:
                 logger.exception(

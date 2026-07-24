@@ -55,6 +55,7 @@ class RuntimeToolDefinition(ContractModel):
     enabled: bool = True
     inject_caller_number: bool = False
     argument_container: Identifier | None = None
+    announcement: ShortText | None = None
 
     @field_validator("parameters")
     @classmethod
