@@ -139,7 +139,28 @@ class TenantConfigLoader:
             self._validate_voice(tenant_context)
             tenant_contexts.append(tenant_context)
 
+        assignments: dict[str, str] = {}
+        for tenant in tenant_contexts:
+            for did in tenant.voice.inbound_dids:
+                if owner := assignments.get(did):
+                    raise TenantConfigInvalidError(
+                        f"Inbound DID {did} is assigned to both {owner} and {tenant.tenant_id}"
+                    )
+                assignments[did] = tenant.tenant_id
         return tenant_contexts
+
+    def find_by_inbound_did(self, did: str) -> TenantContext | None:
+        match = None
+        for config_path in sorted(self.configs_dir.glob("*.yaml")):
+            tenant = self.load(config_path.stem)
+            if did not in tenant.voice.inbound_dids:
+                continue
+            if match:
+                raise TenantConfigInvalidError(
+                    f"Inbound DID {did} is assigned to both {match.tenant_id} and {tenant.tenant_id}"
+                )
+            match = tenant
+        return match
 
     def _validate_capabilities(
         self,

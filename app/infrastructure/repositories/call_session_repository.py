@@ -18,6 +18,14 @@ class CallSessionRepository:
         row = query.with_for_update().first() if for_update else query.first()
         return CallSession.model_validate(row, from_attributes=True) if row else None
 
+    def get_by_sip_call_key(self, sip_call_key: str) -> CallSession | None:
+        row = (
+            self.db.query(CallSessionModel)
+            .filter(CallSessionModel.sip_call_key == sip_call_key)
+            .first()
+        )
+        return CallSession.model_validate(row, from_attributes=True) if row else None
+
     def save(self, call: CallSession) -> CallSession:
         row = self.db.query(CallSessionModel).filter(CallSessionModel.id == call.id).one()
         for field, value in call.model_dump(mode="python").items():

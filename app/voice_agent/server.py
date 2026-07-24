@@ -3,18 +3,22 @@ import json
 import logging
 import time
 
+from livekit import rtc
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, JobProcess, cli
 from livekit.plugins import silero
 
 from app.contracts.livekit import (
     LiveKitBackendClaims,
+    LiveKitBootstrapClaims,
     LiveKitBackendTokenCodec,
     LiveKitJobMetadata,
+    InboundSipBootstrapRequest,
 )
 from app.voice_agent.backend_client import BackendCoreClient
 from app.voice_agent.session_factory import HospitalityAgent, VoiceTurnState, build_session
 from app.voice_agent.settings import LiveKitSettings
 from app.voice_agent.telemetry import VoiceTelemetry
+from app.tenants.schemas import normalize_phone_number
 
 
 logger = logging.getLogger(__name__)
@@ -46,14 +50,100 @@ server = AgentServer(
 )
 
 
+def build_inbound_bootstrap_request(
+    room_name: str, participant
+) -> InboundSipBootstrapRequest:
+    attributes = participant.attributes
+    return InboundSipBootstrapRequest(
+        room_name=room_name,
+        participant_identity=participant.identity,
+        sip_call_id=attributes.get("sip.callID") or None,
+        sip_call_id_full=attributes.get("sip.callIDFull") or None,
+        sip_trunk_id=attributes.get("sip.trunkID") or None,
+        sip_rule_id=attributes.get("sip.ruleID") or None,
+        caller_number=(
+            normalize_phone_number(attributes["sip.phoneNumber"])
+            if attributes.get("sip.phoneNumber")
+            else None
+        ),
+        called_number=normalize_phone_number(
+            attributes.get("sip.trunkPhoneNumber") or ""
+        ),
+    )
+
+
 @server.rtc_session(agent_name=settings.agent_name)
 async def voice_agent(ctx: JobContext) -> None:
-    metadata = LiveKitJobMetadata.parse_job(ctx.job.metadata)
-    if ctx.room.name != f"voice-{metadata.call_session_id}":
-        raise ValueError("LiveKit room does not match job metadata")
-
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
     participant = await ctx.wait_for_participant()
+    is_sip = (
+        getattr(participant, "kind", None)
+        == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+    )
+    metadata = None
+    backend_token = None
+    request = None
+    if is_sip:
+        attributes = participant.attributes
+        logger.info(
+            "event=sip_participant_discovered room_name=%s participant_identity=%s "
+            "sip_call_id=%s trunk_id=%s rule_id=%s",
+            ctx.room.name,
+            participant.identity,
+            attributes.get("sip.callIDFull") or attributes.get("sip.callID"),
+            attributes.get("sip.trunkID"),
+            attributes.get("sip.ruleID"),
+        )
+        try:
+            request = build_inbound_bootstrap_request(ctx.room.name, participant)
+        except ValueError:
+            logger.exception(
+                "event=inbound_bootstrap_rejected room_name=%s participant_identity=%s "
+                "reason=invalid_sip_attributes",
+                ctx.room.name,
+                participant.identity,
+            )
+            return
+        now = int(time.time())
+        bootstrap_token = LiveKitBackendTokenCodec(
+            settings.session_token_secret
+        ).encode_bootstrap(
+            LiveKitBootstrapClaims(
+                iat=now,
+                exp=now + min(settings.backend_token_ttl_seconds, 300),
+            )
+        )
+        bootstrap = BackendCoreClient(settings.backend_url, bootstrap_token)
+        try:
+            logger.info(
+                "event=inbound_bootstrap_requested room_name=%s participant_identity=%s "
+                "sip_call_id=%s trunk_id=%s rule_id=%s",
+                ctx.room.name,
+                participant.identity,
+                request.sip_call_id_full or request.sip_call_id,
+                request.sip_trunk_id,
+                request.sip_rule_id,
+            )
+            response = await bootstrap.bootstrap_inbound(request)
+        except Exception:
+            logger.exception(
+                "event=inbound_bootstrap_failed room_name=%s participant_identity=%s "
+                "sip_call_id=%s trunk_id=%s rule_id=%s",
+                ctx.room.name,
+                participant.identity,
+                request.sip_call_id_full or request.sip_call_id,
+                request.sip_trunk_id,
+                request.sip_rule_id,
+            )
+            return
+        finally:
+            await bootstrap.aclose()
+        metadata = response.job_metadata
+        backend_token = response.backend_token
+    else:
+        metadata = LiveKitJobMetadata.parse_job(ctx.job.metadata)
+    if metadata.origin == "browser" and ctx.room.name != f"voice-{metadata.call_session_id}":
+        raise ValueError("LiveKit room does not match job metadata")
 
     async def publish(payload: dict) -> None:
         await ctx.room.local_participant.publish_data(
@@ -62,35 +152,52 @@ async def voice_agent(ctx: JobContext) -> None:
             topic="voice.telemetry",
         )
 
-    telemetry = VoiceTelemetry(
-        {
+    telemetry_context = {
             "tenant_id": metadata.tenant_id,
             "call_session_id": str(metadata.call_session_id),
             "conversation_id": str(metadata.conversation_id),
             "room_name": ctx.room.name,
             "participant_identity": participant.identity,
-        },
+    }
+    if is_sip:
+        telemetry_context.update(
+            {
+                "sip_call_id": participant.attributes.get("sip.callIDFull")
+                or participant.attributes.get("sip.callID"),
+                "trunk_id": participant.attributes.get("sip.trunkID"),
+                "rule_id": participant.attributes.get("sip.ruleID"),
+            }
+        )
+    telemetry = VoiceTelemetry(
+        telemetry_context,
         publisher=publish,
         configuration=metadata.turn_config,
     )
     telemetry.emit("room_connected")
     telemetry.emit("participant_connected")
-    now = int(time.time())
-    backend_token = LiveKitBackendTokenCodec(settings.session_token_secret).encode(
-        LiveKitBackendClaims(
-            tenant_id=metadata.tenant_id,
-            call_session_id=str(metadata.call_session_id),
-            conversation_id=str(metadata.conversation_id),
-            language=metadata.language,
-            timezone=metadata.timezone,
-            iat=now,
-            exp=now + settings.backend_token_ttl_seconds,
+    if is_sip:
+        telemetry.emit("sip_participant_discovered")
+    if backend_token is None:
+        now = int(time.time())
+        backend_token = LiveKitBackendTokenCodec(settings.session_token_secret).encode(
+            LiveKitBackendClaims(
+                tenant_id=metadata.tenant_id,
+                call_session_id=str(metadata.call_session_id),
+                conversation_id=str(metadata.conversation_id),
+                language=metadata.language,
+                timezone=metadata.timezone,
+                iat=now,
+                exp=now + settings.backend_token_ttl_seconds,
+            )
         )
-    )
     backend = BackendCoreClient(settings.backend_url, backend_token)
     state = VoiceTurnState()
     session = build_session(settings, metadata, build_vad(metadata.turn_config))
-    caller_number = participant.attributes.get("sip.phoneNumber") or None
+    caller_number = (
+        request.caller_number
+        if request is not None
+        else participant.attributes.get("sip.phoneNumber") or None
+    )
     agent = HospitalityAgent(metadata, backend, telemetry, state, caller_number)
     persistence_tasks: set[asyncio.Task] = set()
     finalization_started = False
@@ -135,6 +242,7 @@ async def voice_agent(ctx: JobContext) -> None:
         pending = [*state.user_persistence.values(), *persistence_tasks]
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
+        finalized = False
         if not finalization_started:
             finalization_started = True
             try:
@@ -146,6 +254,7 @@ async def voice_agent(ctx: JobContext) -> None:
                     livekit_job_id=str(getattr(ctx.job, "id", "")) or None,
                     caller_phone=caller_number,
                 )
+                finalized = True
             except Exception:
                 logger.exception(
                     "Backend Core call finalization request failed tenant_id=%s "
@@ -154,12 +263,15 @@ async def voice_agent(ctx: JobContext) -> None:
                     metadata.call_session_id,
                     metadata.conversation_id,
                 )
+        if is_sip and finalized:
+            telemetry.emit("sip_call_finalized")
         await session.aclose()
         await backend.aclose()
         await telemetry.aclose()
 
     ctx.add_shutdown_callback(cleanup)
     await session.start(agent=agent, room=ctx.room)
+    telemetry.emit("agent_session_started")
     if metadata.greeting:
         session.say(metadata.greeting, allow_interruptions=True, add_to_chat_ctx=False)
 

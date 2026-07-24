@@ -42,6 +42,9 @@ require_value() {
 }
 
 compose() {
+  if [ "$(env_value INBOUND_SIP_ENABLED)" = "true" ]; then
+    set -- --profile sip "$@"
+  fi
   docker compose \
     --project-name "$PROJECT_NAME" \
     --env-file "$ENV_FILE" \
@@ -73,7 +76,7 @@ docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required"
 [ -f "$ENV_FILE" ] || fail "missing $ENV_FILE; copy .env.production.example and replace placeholders"
 
 for name in \
-  APP_IMAGE_TAG LIVEKIT_SERVER_IMAGE CADDY_IMAGE \
+  APP_IMAGE_TAG LIVEKIT_SERVER_IMAGE LIVEKIT_SIP_IMAGE CADDY_IMAGE \
   APP_ENV API_DOMAIN DEBUG_CHAT_DOMAIN LIVEKIT_DOMAIN CADDY_EMAIL \
   DEBUG_CHAT_BASIC_AUTH_USER DEBUG_CHAT_BASIC_AUTH_HASH \
   POSTGRES_PASSWORD VOICE_SESSION_TOKEN_SECRET LIVEKIT_SESSION_AUTH_SECRET \
@@ -83,6 +86,37 @@ for name in \
 do
   require_value "$name"
 done
+
+sip_enabled=$(env_value INBOUND_SIP_ENABLED)
+case "$sip_enabled" in
+  false) ;;
+  true)
+    for name in \
+      LIVEKIT_SIP_DOMAIN LIVEKIT_SIP_EXTERNAL_IP LIVEKIT_SIP_PORT \
+      LIVEKIT_SIP_RTP_PORT_START LIVEKIT_SIP_RTP_PORT_END LIVEKIT_REDIS_ADDRESS \
+      LIVEKIT_SIP_INTERNAL_URL LIVEKIT_SIP_REDIS_ADDRESS LIVEKIT_SIP_HEALTH_PORT
+    do
+      require_value "$name"
+    done
+    [ "$(env_value LIVEKIT_INTERNAL_URL)" = "ws://livekit:7880" ] ||
+      fail "SIP requires LIVEKIT_INTERNAL_URL=ws://livekit:7880"
+    sip_port=$(env_value LIVEKIT_SIP_PORT)
+    health_port=$(env_value LIVEKIT_SIP_HEALTH_PORT)
+    rtp_start=$(env_value LIVEKIT_SIP_RTP_PORT_START)
+    rtp_end=$(env_value LIVEKIT_SIP_RTP_PORT_END)
+    case "$sip_port:$health_port:$rtp_start:$rtp_end" in
+      *[!0-9:]*|::*|:*:) fail "SIP, health, and RTP ports must be integers" ;;
+    esac
+    [ "$sip_port" -ge 1 ] && [ "$sip_port" -le 65535 ] ||
+      fail "LIVEKIT_SIP_PORT must be between 1 and 65535"
+    [ "$health_port" -ge 1 ] && [ "$health_port" -le 65535 ] ||
+      fail "LIVEKIT_SIP_HEALTH_PORT must be between 1 and 65535"
+    [ "$rtp_start" -ge 1 ] && [ "$rtp_start" -le "$rtp_end" ] &&
+      [ "$rtp_end" -le 65535 ] ||
+      fail "LIVEKIT_SIP_RTP_PORT_START/END must be an ordered range within 1-65535"
+    ;;
+  *) fail "INBOUND_SIP_ENABLED must be true or false" ;;
+esac
 
 environment=$(env_value APP_ENV)
 case "$environment" in
@@ -136,7 +170,7 @@ livekit_secret=$(env_value LIVEKIT_API_SECRET)
   fail "LIVEKIT_SESSION_AUTH_SECRET and LIVEKIT_API_SECRET must be independent"
 
 [ "$(env_value APP_IMAGE_TAG)" != "latest" ] || fail "APP_IMAGE_TAG must be immutable, not latest"
-for name in LIVEKIT_SERVER_IMAGE CADDY_IMAGE
+for name in LIVEKIT_SERVER_IMAGE LIVEKIT_SIP_IMAGE CADDY_IMAGE
 do
   value=$(env_value "$name")
   case "$value" in
@@ -166,6 +200,9 @@ if [ "$CHECK_ONLY" = true ]; then
 fi
 
 compose pull postgres redis livekit caddy
+if [ "$sip_enabled" = "true" ]; then
+  compose pull livekit-sip
+fi
 compose build --pull api capability-worker voice-agent debug-chat
 
 compose up -d postgres redis livekit
@@ -176,11 +213,17 @@ wait_healthy livekit
 compose run --rm --no-deps api \
   python -c 'from app.infrastructure.database import init_db; init_db()'
 
+if [ "$sip_enabled" = "false" ]; then
+  compose --profile sip stop livekit-sip
+fi
 compose up -d --remove-orphans
 for service in api voice-agent debug-chat caddy
 do
   wait_healthy "$service"
 done
 wait_healthy capability-worker
+if [ "$sip_enabled" = "true" ]; then
+  wait_healthy livekit-sip
+fi
 
 echo "Production stack is healthy."

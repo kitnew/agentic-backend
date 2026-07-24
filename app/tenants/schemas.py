@@ -308,8 +308,21 @@ class TenantVoiceFallbackConfig(TenantModel):
     continue_if_stt_metadata_missing: bool = True
 
 
+def normalize_phone_number(value: str) -> str:
+    value = value.strip()
+    if not re.fullmatch(r"(?:\+|00)?[0-9(). -]+", value):
+        raise ValueError("phone number must contain only digits and common separators")
+    digits = "".join(character for character in value if character.isdigit())
+    if value.startswith("00"):
+        digits = digits[2:]
+    if not 8 <= len(digits) <= 15:
+        raise ValueError("phone number must contain 8 to 15 digits")
+    return f"+{digits}"
+
+
 class TenantVoiceConfig(TenantModel):
     enabled: bool = False
+    inbound_dids: list[str] = Field(default_factory=list)
     end_call_enabled: bool = False
     max_file_size_bytes: int = 25 * 1024 * 1024
     supported_content_types: list[str] = Field(
@@ -333,6 +346,14 @@ class TenantVoiceConfig(TenantModel):
     tts: TenantVoiceTTSConfig = Field(default_factory=TenantVoiceTTSConfig)
     fallback: TenantVoiceFallbackConfig = Field(default_factory=TenantVoiceFallbackConfig)
     turn: VoiceTurnConfig = Field(default_factory=VoiceTurnConfig)
+
+    @field_validator("inbound_dids")
+    @classmethod
+    def validate_inbound_dids(cls, value: list[str]) -> list[str]:
+        normalized = [normalize_phone_number(number) for number in value]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("voice.inbound_dids must not contain duplicates")
+        return normalized
 
 
 class TenantContext(TenantModel):

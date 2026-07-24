@@ -57,6 +57,27 @@ def _ensure_sqlite_schema() -> None:
         }
         if "metadata" not in conversation_columns:
             connection.execute(text("ALTER TABLE conversations ADD COLUMN metadata JSON"))
+        call_columns = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(call_sessions)")).fetchall()
+        }
+        for name in (
+            "called_phone",
+            "sip_call_key",
+            "sip_call_id",
+            "sip_call_id_full",
+            "sip_participant_identity",
+            "sip_trunk_id",
+            "sip_rule_id",
+        ):
+            if name not in call_columns:
+                connection.execute(text(f"ALTER TABLE call_sessions ADD COLUMN {name} VARCHAR"))
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_call_sessions_sip_call_key "
+                "ON call_sessions (sip_call_key) WHERE sip_call_key IS NOT NULL"
+            )
+        )
 
 def get_db() -> Generator[Session, None, None]:
     """

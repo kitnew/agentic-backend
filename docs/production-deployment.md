@@ -2,7 +2,7 @@
 
 This deployment keeps the existing application boundaries and adds one production-only
 Compose override. It builds application images on the VM, runs one Caddy instance, and
-self-hosts LiveKit Server without SIP.
+self-hosts LiveKit Server with optional inbound SIP.
 
 ## Requirements
 
@@ -73,7 +73,9 @@ Replace or verify these environment-specific values:
 | `ELEVENLABS_API_KEY` | staging-scoped ElevenLabs credential |
 | `GOOGLE_SERVICE_ACCOUNT_FILE` | existing JSON file path, readable by Docker |
 
-Keep `LIVEKIT_INTERNAL_URL=ws://livekit:7880`. The image repository names, pinned
+Keep `LIVEKIT_INTERNAL_URL=ws://livekit:7880` for application containers. The
+host-networked SIP service separately uses `LIVEKIT_SIP_INTERNAL_URL=ws://127.0.0.1:7880`
+and `LIVEKIT_SIP_REDIS_ADDRESS=127.0.0.1:6379`. The image repository names, pinned
 infrastructure images, PostgreSQL names, LiveKit port range, log rotation, and backup path
 already have usable defaults; change them only when the server layout requires it.
 
@@ -142,13 +144,18 @@ separately by generating a new Caddy hash, updating the Basic Auth variables, an
 | 7881 | TCP | LiveKit ICE/TCP fallback |
 | 3478 | UDP | LiveKit embedded TURN/UDP |
 | 50000-50100 | UDP | LiveKit WebRTC media; configurable in `.env.production` |
+| 5060 | TCP/UDP | Optional LiveKit SIP signalling; configurable |
+| 10000-20000 | UDP | Optional LiveKit SIP RTP; configurable |
+| 8082 | TCP | Optional LiveKit SIP health endpoint; keep firewalled/private |
 
-PostgreSQL, Redis, API port 8000, Debug Chat port 8080, voice-agent health port 8081, and
-LiveKit signaling port 7880 remain private on the Compose network.
+PostgreSQL, API port 8000, Debug Chat port 8080, and voice-agent health port 8081 remain
+private on the Compose network. LiveKit port 7880 and Redis port 6379 are bound to host
+loopback only for the host-networked SIP service; Redis is never publicly exposed.
 
 Caddy owns TCP/UDP 443. TURN/TLS is intentionally not configured in this slice because it
 needs a separate certificate and L4 TLS termination strategy. TURN/UDP remains available on
-3478. SIP is not deployed.
+3478. SIP ports are opened only when inbound SIP is enabled; see
+[`inbound-livekit-sip.md`](inbound-livekit-sip.md).
 
 ## Deploy and operate
 

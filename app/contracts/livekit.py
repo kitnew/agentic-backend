@@ -86,6 +86,7 @@ class LiveKitJobMetadata(ContractModel):
     tts_model: Identifier
     tts_language: Annotated[str, Field(min_length=1, max_length=32)]
     turn_config: VoiceTurnConfig
+    origin: Literal["browser", "sip"] = "browser"
 
     @classmethod
     def parse_job(cls, raw: str) -> "LiveKitJobMetadata":
@@ -100,6 +101,38 @@ class PersistLiveKitMessageRequest(ContractModel):
     turn_id: Identifier
     item_id: Identifier
     interrupted: bool = False
+
+
+class InboundSipBootstrapRequest(ContractModel):
+    room_name: Identifier
+    participant_identity: Identifier
+    sip_call_id: Identifier | None = None
+    sip_call_id_full: Identifier | None = None
+    sip_trunk_id: Identifier | None = None
+    sip_rule_id: Identifier | None = None
+    caller_number: Annotated[str, Field(max_length=128)] | None = None
+    called_number: Annotated[str, Field(min_length=1, max_length=128)]
+
+    @model_validator(mode="after")
+    def validate_call_identifier(self):
+        if not self.sip_call_id_full and not self.sip_call_id:
+            raise ValueError("sip_call_id_full or sip_call_id is required")
+        return self
+
+    @property
+    def sip_call_key(self) -> str:
+        if self.sip_call_id_full:
+            return f"full:{self.sip_call_id_full}"
+        return f"livekit:{self.sip_call_id}"
+
+
+class InboundSipBootstrapResponse(ContractModel):
+    tenant_id: Identifier
+    call_session_id: Identifier
+    conversation_id: Identifier
+    reused: bool
+    job_metadata: LiveKitJobMetadata
+    backend_token: Annotated[str, Field(min_length=1, max_length=8_192)]
 
 
 class PersistLiveKitMessageResponse(ContractModel):
@@ -224,6 +257,13 @@ class LiveKitBackendClaims:
     channel: Literal["voice"] = "voice"
 
 
+@dataclass(frozen=True)
+class LiveKitBootstrapClaims:
+    iat: int
+    exp: int
+    audience: Literal["livekit-inbound-bootstrap"] = "livekit-inbound-bootstrap"
+
+
 class LiveKitBackendTokenCodec:
     def __init__(self, secret: str):
         if len(secret.encode()) < 32 or not secret.strip():
@@ -235,6 +275,39 @@ class LiveKitBackendTokenCodec:
         encoded = _b64(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode())
         signature = _b64(hmac.digest(self._secret, encoded.encode(), "sha256"))
         return f"{encoded}.{signature}"
+
+    def encode_bootstrap(self, claims: LiveKitBootstrapClaims) -> str:
+        payload = _b64(json.dumps(asdict(claims), separators=(",", ":"), sort_keys=True).encode())
+        signature = _b64(hmac.digest(self._secret, payload.encode(), "sha256"))
+        return f"{payload}.{signature}"
+
+    def decode_bootstrap(
+        self, token: str, *, now: int | None = None
+    ) -> LiveKitBootstrapClaims:
+        try:
+            payload_part, signature_part = token.split(".")
+            expected = hmac.digest(self._secret, payload_part.encode(), "sha256")
+            signature = _unb64(signature_part)
+            if _b64(signature) != signature_part or not hmac.compare_digest(
+                expected, signature
+            ):
+                raise InvalidLiveKitBackendToken("invalid token signature")
+            claims = LiveKitBootstrapClaims(**json.loads(_unb64(payload_part)))
+        except InvalidLiveKitBackendToken:
+            raise
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise InvalidLiveKitBackendToken("malformed token") from exc
+        current = int(time.time()) if now is None else now
+        if (
+            type(claims.iat) is not int
+            or type(claims.exp) is not int
+            or claims.audience != "livekit-inbound-bootstrap"
+            or claims.iat > current
+            or claims.exp <= current
+            or claims.exp <= claims.iat
+        ):
+            raise InvalidLiveKitBackendToken("invalid or expired token")
+        return claims
 
     def decode(self, token: str, *, now: int | None = None) -> LiveKitBackendClaims:
         try:

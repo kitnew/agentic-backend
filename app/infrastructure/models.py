@@ -1,7 +1,17 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Column, DateTime, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Index,
+    Integer,
+    JSON,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database import Base
@@ -29,6 +39,13 @@ class CallSessionModel(Base):
         CheckConstraint(
             "finalization_status IN ('pending', 'processing', 'completed', 'failed')"
         ),
+        Index(
+            "uq_call_sessions_sip_call_key",
+            "sip_call_key",
+            unique=True,
+            sqlite_where=text("sip_call_key IS NOT NULL"),
+            postgresql_where=text("sip_call_key IS NOT NULL"),
+        ),
     )
 
     id = Column(String, primary_key=True)
@@ -37,6 +54,13 @@ class CallSessionModel(Base):
     livekit_room_name = Column(String, nullable=False, unique=True)
     livekit_job_id = Column(String, nullable=True, unique=True)
     caller_phone = Column(String, nullable=True)
+    called_phone = Column(String, nullable=True)
+    sip_call_key = Column(String, nullable=True)
+    sip_call_id = Column(String, nullable=True, index=True)
+    sip_call_id_full = Column(String, nullable=True, index=True)
+    sip_participant_identity = Column(String, nullable=True)
+    sip_trunk_id = Column(String, nullable=True)
+    sip_rule_id = Column(String, nullable=True)
     status = Column(String, nullable=False, index=True)
     finalization_status = Column(String, nullable=False, index=True)
     started_at = Column(DateTime, nullable=False)

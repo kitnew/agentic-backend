@@ -12,6 +12,13 @@ class CallSession(BaseModel):
     livekit_room_name: str
     livekit_job_id: str | None = None
     caller_phone: str | None = None
+    called_phone: str | None = None
+    sip_call_key: str | None = None
+    sip_call_id: str | None = None
+    sip_call_id_full: str | None = None
+    sip_participant_identity: str | None = None
+    sip_trunk_id: str | None = None
+    sip_rule_id: str | None = None
     status: CallSessionStatus = CallSessionStatus.ACTIVE
     finalization_status: CallFinalizationStatus = CallFinalizationStatus.PENDING
     started_at: datetime

@@ -8,6 +8,8 @@ from app.contracts.livekit import (
     ExecuteLiveKitToolResponse,
     FinalizeLiveKitCallRequest,
     FinalizeLiveKitCallResponse,
+    InboundSipBootstrapRequest,
+    InboundSipBootstrapResponse,
     PersistLiveKitMessageRequest,
     PersistLiveKitMessageResponse,
 )
@@ -40,6 +42,21 @@ class BackendCoreClient:
             ),
         )
         return PersistLiveKitMessageResponse.model_validate(response).model_dump()
+
+    async def bootstrap_inbound(
+        self, request: InboundSipBootstrapRequest
+    ) -> InboundSipBootstrapResponse:
+        for attempt in range(3):
+            try:
+                response = await self._post(
+                    "/api/v1/voice/livekit/inbound-sessions", request
+                )
+                return InboundSipBootstrapResponse.model_validate(response)
+            except Exception:
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(0.1 * (attempt + 1))
+        raise RuntimeError("unreachable")
 
     async def execute_tool(
         self,

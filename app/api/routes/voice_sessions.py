@@ -4,6 +4,7 @@ from time import perf_counter
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from livekit import api
 
@@ -31,7 +32,10 @@ from app.contracts.livekit import (
     CreateLiveKitSessionRequest,
     ExecuteLiveKitToolResponse,
     ExecuteLiveKitToolRequest,
+    InboundSipBootstrapRequest,
+    InboundSipBootstrapResponse,
     LiveKitBackendClaims,
+    LiveKitBootstrapClaims,
     LiveKitBackendTokenCodec,
     LiveKitJobMetadata,
     LiveKitSessionResponse,
@@ -42,7 +46,7 @@ from app.contracts.livekit import (
     PersistLiveKitMessageRequest,
     PersistLiveKitMessageResponse,
 )
-from app.core.config import LiveKitApiSettings, VoiceBackendAuthSettings
+from app.core.config import InboundSipSettings, LiveKitApiSettings, VoiceBackendAuthSettings
 from app.application.call_sessions import (
     mark_finalization_enqueue_failed,
     mark_finalization_enqueued,
@@ -51,6 +55,8 @@ from app.application.call_sessions import (
 )
 from app.domain.call_sessions.entities import CallSession as DurableCallSession
 from app.domain.call_sessions.enums import CallFinalizationStatus, CallSessionStatus
+from app.domain.conversations.entities import Conversation
+from app.domain.conversations.enums import ConversationStatus
 from app.infrastructure.database import get_db
 from app.infrastructure.repositories.conversation_repository import ConversationRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
@@ -61,6 +67,7 @@ from app.domain.messages.enums import MessageRole, MessageStatus
 from app.domain.tool_calls.entities import ToolCall
 from app.domain.tool_calls.enums import ToolCallStatus
 from app.tenants.loader import TenantConfigInvalidError, TenantConfigLoader, TenantConfigNotFoundError
+from app.tenants.schemas import normalize_phone_number
 from app.agent.schemas.voice import (
     resolve_voice_turn_config,
 )
@@ -79,6 +86,68 @@ def _authenticate_livekit_backend(authorization: str = Header(default="")) -> Li
         )
     except ValueError as exc:
         raise HTTPException(status_code=401, detail="Invalid voice backend token") from exc
+
+
+def _authenticate_livekit_bootstrap(
+    authorization: str = Header(default=""),
+) -> LiveKitBootstrapClaims:
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token is required")
+    try:
+        return LiveKitBackendTokenCodec(
+            VoiceBackendAuthSettings.from_env().secret
+        ).decode_bootstrap(authorization.removeprefix("Bearer "))
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid voice bootstrap token") from exc
+
+
+def _build_job_metadata(
+    db: Session,
+    tenant,
+    *,
+    call_session_id: str,
+    conversation_id: str,
+    turn_config,
+    origin: str = "browser",
+) -> LiveKitJobMetadata:
+    context = build_agent_context(
+        tenant,
+        conversation_id,
+        metadata={
+            "call_session_id": call_session_id,
+            "channel": "voice",
+            "language": tenant.default_language,
+            "timezone": tenant.timezone,
+            "thread_id": conversation_id,
+        },
+    )
+    history = tuple(
+        SessionChatMessage(
+            role="user" if message.role == MessageRole.USER else "assistant",
+            content=message.content,
+        )
+        for message in MessageRepository(db).list_by_conversation_id(conversation_id)
+        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
+    )
+    return LiveKitJobMetadata(
+        tenant_id=tenant.tenant_id,
+        call_session_id=call_session_id,
+        conversation_id=conversation_id,
+        channel="voice",
+        language=tenant.default_language,
+        timezone=tenant.timezone,
+        instructions=PromptLoader().build_system_prompt(context),
+        greeting=tenant.agent.greeting_phrase,
+        tools=resolve_runtime_tools(tenant),
+        end_call_enabled=tenant.voice.end_call_enabled,
+        chat_history=history,
+        stt_language=tenant.voice.stt.language or tenant.default_language,
+        tts_voice_id=resolve_voice_id(tenant),
+        tts_model=tenant.voice.tts.model,
+        tts_language=tenant.voice.tts.language or tenant.default_language,
+        turn_config=turn_config,
+        origin=origin,
+    )
 
 
 @router.post(
@@ -148,41 +217,11 @@ def create_livekit_session(
             updated_at=now,
         )
     )
-    context = build_agent_context(
+    metadata = _build_job_metadata(
+        db,
         tenant,
-        conversation.id,
-        metadata={
-            "call_session_id": call_session_id,
-            "channel": "voice",
-            "language": tenant.default_language,
-            "timezone": tenant.timezone,
-            "thread_id": conversation.id,
-        },
-    )
-    history = tuple(
-        SessionChatMessage(
-            role="user" if message.role == MessageRole.USER else "assistant",
-            content=message.content,
-        )
-        for message in MessageRepository(db).list_by_conversation_id(conversation.id)
-        if message.role in {MessageRole.USER, MessageRole.ASSISTANT}
-    )
-    metadata = LiveKitJobMetadata(
-        tenant_id=request.tenant_id,
         call_session_id=call_session_id,
         conversation_id=conversation.id,
-        channel="voice",
-        language=tenant.default_language,
-        timezone=tenant.timezone,
-        instructions=PromptLoader().build_system_prompt(context),
-        greeting=tenant.agent.greeting_phrase,
-        tools=resolve_runtime_tools(tenant),
-        end_call_enabled=tenant.voice.end_call_enabled,
-        chat_history=history,
-        stt_language=tenant.voice.stt.language or tenant.default_language,
-        tts_voice_id=resolve_voice_id(tenant),
-        tts_model=tenant.voice.tts.model,
-        tts_language=tenant.voice.tts.language or tenant.default_language,
         turn_config=turn_config,
     ).model_dump_json()
     token = (
@@ -221,6 +260,216 @@ def create_livekit_session(
             request.tenant_id,
         )
     return response
+
+
+@router.post(
+    "/livekit/inbound-sessions",
+    response_model=InboundSipBootstrapResponse,
+)
+def bootstrap_inbound_livekit_session(
+    request: InboundSipBootstrapRequest,
+    db: Session = Depends(get_db),
+    loader: TenantConfigLoader = Depends(get_tenant_config_loader),
+    _caller: LiveKitBootstrapClaims = Depends(_authenticate_livekit_bootstrap),
+) -> InboundSipBootstrapResponse:
+    settings = InboundSipSettings.from_env()
+    try:
+        settings.validate()
+    except ValueError as exc:
+        logger.warning(
+            "event=inbound_bootstrap_rejected room_name=%s participant_identity=%s reason=configuration",
+            request.room_name,
+            request.participant_identity,
+        )
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    if not settings.enabled:
+        logger.warning(
+            "event=inbound_bootstrap_rejected room_name=%s participant_identity=%s "
+            "reason=disabled",
+            request.room_name,
+            request.participant_identity,
+        )
+        raise HTTPException(status_code=403, detail="Inbound SIP is disabled")
+    if settings.expected_trunk_id and request.sip_trunk_id != settings.expected_trunk_id:
+        logger.warning(
+            "event=inbound_bootstrap_rejected room_name=%s participant_identity=%s "
+            "sip_call_id=%s trunk_id=%s rule_id=%s reason=unexpected_trunk",
+            request.room_name,
+            request.participant_identity,
+            request.sip_call_id_full or request.sip_call_id,
+            request.sip_trunk_id,
+            request.sip_rule_id,
+        )
+        raise HTTPException(status_code=403, detail="Unexpected inbound SIP trunk")
+    if settings.expected_rule_id and request.sip_rule_id != settings.expected_rule_id:
+        logger.warning(
+            "event=inbound_bootstrap_rejected room_name=%s participant_identity=%s "
+            "sip_call_id=%s trunk_id=%s rule_id=%s reason=unexpected_rule",
+            request.room_name,
+            request.participant_identity,
+            request.sip_call_id_full or request.sip_call_id,
+            request.sip_trunk_id,
+            request.sip_rule_id,
+        )
+        raise HTTPException(status_code=403, detail="Unexpected inbound SIP dispatch rule")
+
+    try:
+        called_number = normalize_phone_number(request.called_number)
+        caller_number = (
+            normalize_phone_number(request.caller_number)
+            if request.caller_number
+            else None
+        )
+        tenant = loader.find_by_inbound_did(called_number)
+    except (ValueError, TenantConfigInvalidError) as exc:
+        logger.warning(
+            "event=inbound_bootstrap_rejected room_name=%s participant_identity=%s "
+            "sip_call_id=%s trunk_id=%s rule_id=%s reason=invalid_routing",
+            request.room_name,
+            request.participant_identity,
+            request.sip_call_id_full or request.sip_call_id,
+            request.sip_trunk_id,
+            request.sip_rule_id,
+        )
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not tenant or not tenant.enabled or not tenant.voice.enabled:
+        logger.warning(
+            "event=inbound_bootstrap_rejected room_name=%s participant_identity=%s "
+            "sip_call_id=%s trunk_id=%s rule_id=%s reason=unknown_or_disabled_did",
+            request.room_name,
+            request.participant_identity,
+            request.sip_call_id_full or request.sip_call_id,
+            request.sip_trunk_id,
+            request.sip_rule_id,
+        )
+        raise HTTPException(status_code=404, detail="Inbound phone number is unknown or disabled")
+
+    logger.info(
+        "event=inbound_bootstrap_requested room_name=%s participant_identity=%s "
+        "sip_call_id=%s tenant_id=%s trunk_id=%s rule_id=%s",
+        request.room_name,
+        request.participant_identity,
+        request.sip_call_id_full or request.sip_call_id,
+        tenant.tenant_id,
+        request.sip_trunk_id,
+        request.sip_rule_id,
+    )
+    logger.info(
+        "event=inbound_tenant_resolved room_name=%s sip_call_id=%s tenant_id=%s",
+        request.room_name,
+        request.sip_call_id_full or request.sip_call_id,
+        tenant.tenant_id,
+    )
+
+    call_repository = CallSessionRepository(db)
+    call = call_repository.get_by_sip_call_key(request.sip_call_key)
+    reused = call is not None
+    if call is None:
+        conversation_id = str(
+            uuid5(NAMESPACE_URL, f"livekit-sip-conversation:{request.sip_call_key}")
+        )
+        conversation_repository = ConversationRepository(db)
+        conversation = conversation_repository.get_by_id(conversation_id)
+        if conversation is None:
+            now = datetime.now()
+            try:
+                conversation_repository.create(
+                    Conversation(
+                        id=conversation_id,
+                        tenant_id=tenant.tenant_id,
+                        channel="voice",
+                        status=ConversationStatus.ACTIVE,
+                        metadata={"origin": "sip"},
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            except IntegrityError:
+                db.rollback()
+
+        now = datetime.now()
+        try:
+            call = call_repository.create(
+                DurableCallSession(
+                    id=str(uuid5(NAMESPACE_URL, f"livekit-sip-call:{request.sip_call_key}")),
+                    tenant_id=tenant.tenant_id,
+                    conversation_id=conversation_id,
+                    livekit_room_name=request.room_name,
+                    caller_phone=caller_number,
+                    called_phone=called_number,
+                    sip_call_key=request.sip_call_key,
+                    sip_call_id=request.sip_call_id,
+                    sip_call_id_full=request.sip_call_id_full,
+                    sip_participant_identity=request.participant_identity,
+                    sip_trunk_id=request.sip_trunk_id,
+                    sip_rule_id=request.sip_rule_id,
+                    status=CallSessionStatus.ACTIVE,
+                    finalization_status=CallFinalizationStatus.PENDING,
+                    started_at=now,
+                    updated_at=now,
+                )
+            )
+        except IntegrityError:
+            db.rollback()
+            call = call_repository.get_by_sip_call_key(request.sip_call_key)
+            reused = True
+        if call is None:
+            logger.error(
+                "event=inbound_bootstrap_failed room_name=%s sip_call_id=%s tenant_id=%s",
+                request.room_name,
+                request.sip_call_id_full or request.sip_call_id,
+                tenant.tenant_id,
+            )
+            raise HTTPException(status_code=409, detail="Inbound call bootstrap conflicted")
+
+    if (
+        call.tenant_id != tenant.tenant_id
+        or call.livekit_room_name != request.room_name
+        or call.sip_participant_identity != request.participant_identity
+    ):
+        raise HTTPException(status_code=409, detail="SIP call correlation conflicts")
+    turn_config = resolve_voice_turn_config(tenant.voice.turn)
+    metadata = _build_job_metadata(
+        db,
+        tenant,
+        call_session_id=call.id,
+        conversation_id=call.conversation_id,
+        turn_config=turn_config,
+        origin="sip",
+    )
+    now = int(datetime.now().timestamp())
+    auth = VoiceBackendAuthSettings.from_env()
+    token = LiveKitBackendTokenCodec(auth.secret).encode(
+        LiveKitBackendClaims(
+            tenant_id=tenant.tenant_id,
+            call_session_id=call.id,
+            conversation_id=call.conversation_id,
+            language=tenant.default_language,
+            timezone=tenant.timezone,
+            iat=now,
+            exp=now + auth.token_ttl_seconds,
+        )
+    )
+    logger.info(
+        "event=inbound_call_session_%s room_name=%s participant_identity=%s "
+        "sip_call_id=%s call_session_id=%s tenant_id=%s trunk_id=%s rule_id=%s",
+        "reused" if reused else "created",
+        request.room_name,
+        request.participant_identity,
+        request.sip_call_id_full or request.sip_call_id,
+        call.id,
+        tenant.tenant_id,
+        request.sip_trunk_id,
+        request.sip_rule_id,
+    )
+    return InboundSipBootstrapResponse(
+        tenant_id=tenant.tenant_id,
+        call_session_id=call.id,
+        conversation_id=call.conversation_id,
+        reused=reused,
+        job_metadata=metadata,
+        backend_token=token,
+    )
 
 
 @router.post("/livekit/messages", response_model=PersistLiveKitMessageResponse)

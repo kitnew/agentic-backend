@@ -1,3 +1,4 @@
+import ipaddress
 import os
 from math import isfinite
 from dataclasses import dataclass
@@ -95,10 +96,77 @@ class SessionAuthSettings:
 @dataclass(frozen=True)
 class VoiceBackendAuthSettings:
     secret: str = ""
+    token_ttl_seconds: int = 7200
 
     @classmethod
     def from_env(cls) -> "VoiceBackendAuthSettings":
-        return cls(secret=_text("VOICE_SESSION_TOKEN_SECRET", ""))
+        return cls(
+            secret=_text("VOICE_SESSION_TOKEN_SECRET", ""),
+            token_ttl_seconds=_number(
+                "LIVEKIT_BACKEND_TOKEN_TTL_SECONDS", cls.token_ttl_seconds, int
+            ),
+        )
+
+    def validate(self) -> None:
+        if len(self.secret.encode()) < 32 or self.token_ttl_seconds <= 0:
+            raise ValueError("voice backend authentication settings are invalid")
+
+
+@dataclass(frozen=True)
+class InboundSipSettings:
+    enabled: bool = False
+    environment: str = "production"
+    internal_url: str = "ws://livekit:7880"
+    redis_address: str = "redis:6379"
+    external_ip: str = ""
+    domain: str = ""
+    sip_port: int = 5060
+    rtp_port_start: int = 10000
+    rtp_port_end: int = 20000
+    expected_trunk_id: str = ""
+    expected_rule_id: str = ""
+
+    @classmethod
+    def from_env(cls) -> "InboundSipSettings":
+        return cls(
+            enabled=_text("INBOUND_SIP_ENABLED", "false").lower() == "true",
+            environment=_text("APP_ENV", "production").lower(),
+            internal_url=_text("LIVEKIT_INTERNAL_URL", cls.internal_url),
+            redis_address=_text("LIVEKIT_REDIS_ADDRESS", cls.redis_address),
+            external_ip=_text("LIVEKIT_SIP_EXTERNAL_IP", ""),
+            domain=_text("LIVEKIT_SIP_DOMAIN", ""),
+            sip_port=_number("LIVEKIT_SIP_PORT", cls.sip_port, int),
+            rtp_port_start=_number(
+                "LIVEKIT_SIP_RTP_PORT_START", cls.rtp_port_start, int
+            ),
+            rtp_port_end=_number("LIVEKIT_SIP_RTP_PORT_END", cls.rtp_port_end, int),
+            expected_trunk_id=_text("LIVEKIT_SIP_EXPECTED_TRUNK_ID", ""),
+            expected_rule_id=_text("LIVEKIT_SIP_EXPECTED_RULE_ID", ""),
+        )
+
+    def validate(self) -> None:
+        if not self.enabled:
+            return
+        if self.environment not in {"staging", "production"}:
+            raise ValueError("INBOUND_SIP_ENABLED is allowed only in staging or production")
+        parsed = urlparse(self.internal_url)
+        if parsed.scheme not in {"ws", "wss"} or not parsed.netloc or parsed.username:
+            raise ValueError("LIVEKIT_INTERNAL_URL must be an absolute ws:// or wss:// URL")
+        if ":" not in self.redis_address or "://" in self.redis_address:
+            raise ValueError("LIVEKIT_REDIS_ADDRESS must use host:port form")
+        try:
+            external_ip = ipaddress.ip_address(self.external_ip)
+        except ValueError as exc:
+            raise ValueError("LIVEKIT_SIP_EXTERNAL_IP must be a public deployment IP") from exc
+        if not external_ip.is_global:
+            raise ValueError("LIVEKIT_SIP_EXTERNAL_IP must be a public deployment IP")
+        if not self.domain or "://" in self.domain or "/" in self.domain:
+            raise ValueError("LIVEKIT_SIP_DOMAIN must be a DNS hostname")
+        if not 1 <= self.sip_port <= 65535:
+            raise ValueError("LIVEKIT_SIP_PORT must be a valid port")
+        if not 1 <= self.rtp_port_start <= self.rtp_port_end <= 65535:
+            raise ValueError("LIVEKIT_SIP_RTP_PORT_START/END must be a valid range")
+
 
 @dataclass(frozen=True)
 class DatabaseSettings:
