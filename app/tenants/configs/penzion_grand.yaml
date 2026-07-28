@@ -188,7 +188,7 @@ voice:
   enabled: true
   end_call_enabled: true
   inbound_dids:
-    - +421552301299
+    - "+421552301299"
   stt:
     provider: elevenlabs
     model: scribe_v2_realtime

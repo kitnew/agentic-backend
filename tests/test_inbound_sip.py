@@ -94,6 +94,13 @@ def test_api_startup_rejects_enabled_sip_without_tenant_did(monkeypatch):
     from app.main import lifespan
 
     configure(monkeypatch)
+    monkeypatch.setattr(
+        TenantConfigLoader,
+        "validate_all",
+        lambda self, provider_names: [
+            SimpleNamespace(voice=SimpleNamespace(inbound_dids=()))
+        ],
+    )
 
     async def start():
         async with lifespan(SimpleNamespace()):
