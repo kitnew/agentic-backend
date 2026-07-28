@@ -3,6 +3,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from backend_core.bootstrap.settings import Settings
+from backend_core.modules.tenants.models import Tenant  # noqa: F401
 from backend_core.platform.database.metadata import Base
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config

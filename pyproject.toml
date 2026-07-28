@@ -2,7 +2,9 @@
 name = "agent-platform-workspace"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+
+]
 
 [tool.uv]
 package = false
@@ -17,6 +19,7 @@ members = [
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "mypy>=2.3.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
