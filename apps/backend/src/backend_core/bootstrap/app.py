@@ -1,12 +1,24 @@
 from fastapi import FastAPI
-from backend_core.bootstrap.lifespan import lifespan
-from backend_core.interfaces.http import router
 
-def create_app() -> FastAPI:
+from backend_core.bootstrap.lifespan import lifespan
+from backend_core.bootstrap.settings import Settings
+from backend_core.interfaces.http import router
+from backend_core.platform.database import Database
+
+
+def create_app(
+    settings: Settings | None = None,
+    database: Database | None = None,
+) -> FastAPI:
+    if database is None:
+        settings = settings or Settings()  # type: ignore[call-arg]
+        database = Database(str(settings.database_url))
+
     app = FastAPI(
         title="Agent Platform Backend Core",
         lifespan=lifespan,
     )
+    app.state.database = database
 
     app.include_router(router)
 

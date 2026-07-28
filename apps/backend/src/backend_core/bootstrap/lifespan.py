@@ -1,14 +1,18 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    print("Starting lifespan")
+    logger.info("Backend Core started")
 
     try:
         yield
     finally:
-        print("Stopping lifespan")
+        await app.state.database.close()
+        logger.info("Backend Core stopped")
