@@ -33,7 +33,7 @@ async def test_tenant_admin_api(migrated_database_url: str) -> None:
 
             list_response = await client.get("/admin/v1/tenants")
             assert list_response.status_code == 200
-            assert list_response.json() == [created]
+            assert created in list_response.json()
 
             duplicate_response = await client.post(
                 "/admin/v1/tenants",

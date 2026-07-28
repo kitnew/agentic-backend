@@ -1,7 +1,6 @@
-from fastapi import APIRouter
-
 from backend_core.interfaces.http.health import router as health_router
 from backend_core.modules.tenants import router as tenants_router
+from fastapi import APIRouter
 
 router = APIRouter()
 

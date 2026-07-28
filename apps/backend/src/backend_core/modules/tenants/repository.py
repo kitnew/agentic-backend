@@ -1,9 +1,13 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend_core.modules.tenants.models import Tenant
+from backend_core.modules.tenants.models import (
+    ConfigRevisionStatus,
+    Tenant,
+    TenantConfigRevision,
+)
 
 
 class TenantRepository:
@@ -18,6 +22,11 @@ class TenantRepository:
     async def get(self, tenant_id: UUID) -> Tenant | None:
         return await self._session.get(Tenant, tenant_id)
 
+    async def get_for_update(self, tenant_id: UUID) -> Tenant | None:
+        return await self._session.scalar(
+            select(Tenant).where(Tenant.id == tenant_id).with_for_update()
+        )
+
     async def get_by_slug(self, slug: str) -> Tenant | None:
         return await self._session.scalar(select(Tenant).where(Tenant.slug == slug))
 
@@ -29,3 +38,66 @@ class TenantRepository:
             .limit(limit)
         )
         return list(tenants)
+
+
+class ConfigRevisionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, revision: TenantConfigRevision) -> TenantConfigRevision:
+        self._session.add(revision)
+        await self._session.flush()
+        return revision
+
+    async def flush(self) -> None:
+        await self._session.flush()
+
+    async def get(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+    ) -> TenantConfigRevision | None:
+        return await self._session.scalar(
+            select(TenantConfigRevision).where(
+                TenantConfigRevision.tenant_id == tenant_id,
+                TenantConfigRevision.id == revision_id,
+            )
+        )
+
+    async def get_for_update(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+    ) -> TenantConfigRevision | None:
+        return await self._session.scalar(
+            select(TenantConfigRevision)
+            .where(
+                TenantConfigRevision.tenant_id == tenant_id,
+                TenantConfigRevision.id == revision_id,
+            )
+            .with_for_update()
+        )
+
+    async def get_draft(self, tenant_id: UUID) -> TenantConfigRevision | None:
+        return await self._session.scalar(
+            select(TenantConfigRevision).where(
+                TenantConfigRevision.tenant_id == tenant_id,
+                TenantConfigRevision.status == ConfigRevisionStatus.DRAFT,
+            )
+        )
+
+    async def next_revision_number(self, tenant_id: UUID) -> int:
+        latest = await self._session.scalar(
+            select(func.max(TenantConfigRevision.revision_number)).where(
+                TenantConfigRevision.tenant_id == tenant_id
+            )
+        )
+        return (latest or 0) + 1
+
+    async def list(self, tenant_id: UUID) -> list[TenantConfigRevision]:
+        revisions = await self._session.scalars(
+            select(TenantConfigRevision)
+            .where(TenantConfigRevision.tenant_id == tenant_id)
+            .order_by(TenantConfigRevision.revision_number)
+        )
+        return list(revisions)
