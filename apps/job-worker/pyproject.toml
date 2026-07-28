@@ -1,0 +1,24 @@
+[project]
+name = "job-worker"
+version = "0.1.0"
+description = "Durable asynchronous jobs execution worker"
+authors = [
+    { name = "Nikita Chernysh", email = "h3s0y4mchik@gmail.com" }
+]
+requires-python = ">=3.14.6"
+dependencies = [
+    "contracts",
+    "httpx>=0.28.1",
+    "redis>=8.0.1",
+]
+
+[tool.uv.sources]
+contracts = { workspace = true }
+
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
+
+[project.scripts]
+up = "job_worker.main:main"

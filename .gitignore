@@ -224,18 +224,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# VS Code
-.vscode/
-*.db
-*.zip
-*.pyc
-
 # PyCharm
 .idea/
 
 # Agents
 AGENTS.md
-test_langgraph/
 
-#Debug
-node_modules/
+*.env*

@@ -1,0 +1,23 @@
+[project]
+name = "voice-agent"
+version = "0.1.0"
+description = "LiveKit voice agent runtime"
+authors = [
+    { name = "Nikita Chernysh", email = "h3s0y4mchik@gmail.com" }
+]
+requires-python = ">=3.14.6"
+dependencies = [
+    "contracts",
+    "httpx>=0.28.1",
+    "livekit-agents>=1.6.7",
+]
+
+[tool.uv.sources]
+contracts = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
+
+[project.scripts]
+up = "voice_agent.main:main"

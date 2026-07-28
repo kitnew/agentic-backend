@@ -1,0 +1,24 @@
+[project]
+name = "agent-platform-workspace"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "apps/backend",
+    "apps/job-worker",
+    "apps/voice-agent",
+    "packages/contracts",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.16.0",
+]
