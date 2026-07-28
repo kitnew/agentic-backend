@@ -1,1 +1,0 @@
-"""Application capability execution adapters."""
