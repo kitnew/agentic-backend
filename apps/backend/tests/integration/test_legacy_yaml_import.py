@@ -1,7 +1,9 @@
-from uuid import UUID, uuid4
+from collections.abc import Callable
+from uuid import UUID
 
 import pytest
 from backend_core.bootstrap import create_app
+from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.models import Tenant, TenantStatus
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
@@ -28,14 +30,25 @@ voice:
 @pytest.mark.asyncio
 async def test_legacy_yaml_import_and_internal_active_config(
     migrated_database_url: str,
+    app_settings: Settings,
+    admin_headers: dict[str, str],
+    service_token: Callable[..., str],
 ) -> None:
     database = Database(migrated_database_url)
-    app = create_app(database=database)
+    app = create_app(settings=app_settings, database=database)
     transport = ASGITransport(app=app)
-    actor_id = uuid4()
+    voice_token = service_token(
+        service="voice-agent",
+        scopes=["tenant-config:read"],
+        secret=app_settings.voice_agent_service_secret.get_secret_value(),
+    )
 
     try:
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers=admin_headers,
+        ) as client:
             tenant_response = await client.post(
                 "/admin/v1/tenants",
                 json={
@@ -50,7 +63,6 @@ async def test_legacy_yaml_import_and_internal_active_config(
 
             mismatch = await client.post(
                 import_url,
-                params={"created_by": str(actor_id)},
                 content=LEGACY_YAML.replace("legacy_hotel", "another_hotel"),
                 headers={"content-type": "application/yaml"},
             )
@@ -61,7 +73,6 @@ async def test_legacy_yaml_import_and_internal_active_config(
 
             draft_response = await client.post(
                 import_url,
-                params={"created_by": str(actor_id)},
                 content=LEGACY_YAML,
                 headers={"content-type": "application/yaml"},
             )
@@ -75,7 +86,12 @@ async def test_legacy_yaml_import_and_internal_active_config(
                 "business_type": "hotel",
             }
             assert imported["unsupported_fields"] == ["agent.tone", "voice"]
-            assert (await client.get(internal_config_url)).status_code == 404
+            assert (
+                await client.get(
+                    internal_config_url,
+                    headers={"Authorization": f"Bearer {voice_token}"},
+                )
+            ).status_code == 404
 
             revision_id = imported["revision"]["id"]
             publish_response = await client.post(
@@ -83,7 +99,10 @@ async def test_legacy_yaml_import_and_internal_active_config(
             )
             assert publish_response.status_code == 200
 
-            internal_response = await client.get(internal_config_url)
+            internal_response = await client.get(
+                internal_config_url,
+                headers={"Authorization": f"Bearer {voice_token}"},
+            )
             assert internal_response.status_code == 200
             internal_config = internal_response.json()
             admin_config = (
@@ -114,7 +133,7 @@ async def test_legacy_yaml_import_and_internal_active_config(
 
             published_import = await client.post(
                 import_url,
-                params={"created_by": str(actor_id), "publish": "true"},
+                params={"publish": "true"},
                 content=LEGACY_YAML,
                 headers={"content-type": "application/yaml"},
             )
@@ -128,6 +147,11 @@ async def test_legacy_yaml_import_and_internal_active_config(
                     .where(Tenant.id == tenant_id)
                     .values(status=TenantStatus.ARCHIVED)
                 )
-            assert (await client.get(internal_config_url)).status_code == 404
+            assert (
+                await client.get(
+                    internal_config_url,
+                    headers={"Authorization": f"Bearer {voice_token}"},
+                )
+            ).status_code == 404
     finally:
         await database.close()

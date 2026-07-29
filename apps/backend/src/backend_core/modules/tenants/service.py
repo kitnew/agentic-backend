@@ -98,7 +98,7 @@ class ConfigUseCases:
             revision_number=await self._revisions.next_revision_number(tenant_id),
             schema_version=schema_version,
             config=config,
-            created_by=data.created_by,
+            created_by=None,
             comment=data.comment,
         )
         try:

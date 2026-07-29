@@ -144,6 +144,6 @@ class TenantConfigRevision(Base):
         DateTime(timezone=True),
         nullable=True,
     )
-    created_by: Mapped[UUID] = mapped_column(Uuid)
+    created_by: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

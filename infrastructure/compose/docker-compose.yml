@@ -21,6 +21,10 @@ services:
       dockerfile: apps/backend/Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/backend
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+      INTERNAL_API_AUDIENCE: ${INTERNAL_API_AUDIENCE:-backend-core}
+      VOICE_AGENT_SERVICE_SECRET: ${VOICE_AGENT_SERVICE_SECRET:?set VOICE_AGENT_SERVICE_SECRET}
+      JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

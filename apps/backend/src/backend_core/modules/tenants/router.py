@@ -45,9 +45,14 @@ from backend_core.modules.tenants.service import (
     ConfigUseCases,
     TenantService,
 )
+from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import DatabaseSession
 
-router = APIRouter(prefix="/admin/v1/tenants", tags=["admin:tenants"])
+router = APIRouter(
+    prefix="/admin/v1/tenants",
+    tags=["admin:tenants"],
+    dependencies=[Depends(require_admin)],
+)
 internal_router = APIRouter(
     prefix="/internal/v1/tenants",
     tags=["internal:tenants"],
@@ -279,7 +284,6 @@ async def import_legacy_yaml(
             max_length=1_000_000,
         ),
     ],
-    created_by: Annotated[UUID, Query()],
     service: TenantServiceDependency,
     use_cases: ConfigUseCasesDependency,
     publish: Annotated[bool, Query()] = False,
@@ -295,7 +299,6 @@ async def import_legacy_yaml(
             tenant_id,
             CreateDraftRequest(
                 config=document.config,
-                created_by=created_by,
                 comment="Imported from legacy YAML",
             ),
         )
@@ -370,6 +373,7 @@ async def get_active_config(
 @internal_router.get(
     "/{tenant_id}/active-config",
     response_model=ActiveTenantConfig,
+    dependencies=[Depends(require_internal_scope("tenant-config:read"))],
 )
 async def get_internal_active_config(
     tenant_id: UUID,

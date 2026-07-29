@@ -47,13 +47,16 @@ class TenantResponse(BaseModel):
 
 
 class CreateDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     schema_version: Annotated[int | None, Field(gt=0)] = None
     config: dict[str, Any] | None = None
-    created_by: UUID
     comment: Annotated[str | None, Field(max_length=1000)] = None
 
 
 class UpdateDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     schema_version: Annotated[int | None, Field(gt=0)] = None
     config: dict[str, Any] | None = None
     comment: Annotated[str | None, Field(max_length=1000)] = None
@@ -83,7 +86,7 @@ class ConfigRevisionResponse(BaseModel):
     config: dict[str, Any]
     created_at: datetime
     published_at: datetime | None
-    created_by: UUID
+    created_by: UUID | None
     comment: str | None
     version: int
 

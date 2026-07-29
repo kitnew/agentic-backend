@@ -2,19 +2,28 @@ from uuid import UUID, uuid4
 
 import pytest
 from backend_core.bootstrap import create_app
+from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.models import Tenant, TenantStatus
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_tenant_admin_api(migrated_database_url: str) -> None:
+async def test_tenant_admin_api(
+    migrated_database_url: str,
+    app_settings: Settings,
+    admin_headers: dict[str, str],
+) -> None:
     database = Database(migrated_database_url)
-    app = create_app(database=database)
+    app = create_app(settings=app_settings, database=database)
     transport = ASGITransport(app=app)
 
     try:
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers=admin_headers,
+        ) as client:
             payload = {
                 "slug": "grand-hotel",
                 "display_name": "Grand Hotel",

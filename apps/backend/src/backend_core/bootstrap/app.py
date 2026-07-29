@@ -10,8 +10,8 @@ def create_app(
     settings: Settings | None = None,
     database: Database | None = None,
 ) -> FastAPI:
+    settings = settings or Settings()  # type: ignore[call-arg]
     if database is None:
-        settings = settings or Settings()  # type: ignore[call-arg]
         database = Database(str(settings.database_url))
 
     app = FastAPI(
@@ -19,6 +19,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.database = database
+    app.state.settings = settings
 
     app.include_router(router)
 

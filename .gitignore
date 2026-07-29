@@ -232,3 +232,4 @@ AGENTS.md
 .codebase-memory
 
 *.env*
+!**/.env.*.example

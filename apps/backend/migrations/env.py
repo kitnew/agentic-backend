@@ -1,8 +1,8 @@
 from asyncio import run
 from logging.config import fileConfig
+from os import environ
 
 from alembic import context
-from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.models import Tenant  # noqa: F401
 from backend_core.platform.database.metadata import Base
 from sqlalchemy import Connection, pool
@@ -18,7 +18,7 @@ target_metadata = Base.metadata
 
 def database_url() -> str:
     configured_url = config.get_main_option("sqlalchemy.url")
-    return configured_url or str(Settings().database_url)  # type: ignore[call-arg]
+    return configured_url or environ["DATABASE_URL"]
 
 
 def run_migrations_offline() -> None:

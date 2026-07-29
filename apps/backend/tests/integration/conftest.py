@@ -1,17 +1,24 @@
 import asyncio
 import os
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 import asyncpg  # type: ignore[import-untyped]
+import jwt
 import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from backend_core.bootstrap.settings import Settings
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).parents[2]
+ADMIN_TOKEN = "test-admin-token-with-at-least-32-characters"
+VOICE_AGENT_SECRET = "test-voice-agent-secret-with-at-least-32-characters"
+JOB_WORKER_SECRET = "test-job-worker-secret-with-at-least-32-characters"
 
 
 def dsn(url: URL) -> str:
@@ -62,3 +69,47 @@ async def migrated_database_url(
         yield isolated_database_url
     finally:
         await asyncio.to_thread(command.downgrade, alembic, "base")
+
+
+@pytest.fixture
+def app_settings(migrated_database_url: str) -> Settings:
+    return Settings.model_validate(
+        {
+            "database_url": migrated_database_url,
+            "admin_api_token": ADMIN_TOKEN,
+            "internal_api_audience": "backend-core",
+            "voice_agent_service_secret": VOICE_AGENT_SECRET,
+            "job_worker_service_secret": JOB_WORKER_SECRET,
+        }
+    )
+
+
+@pytest.fixture
+def admin_headers() -> dict[str, str]:
+    return {"Authorization": f"Bearer {ADMIN_TOKEN}"}
+
+
+@pytest.fixture
+def service_token():
+    def issue(
+        *,
+        service: str,
+        scopes: list[str],
+        secret: str,
+        audience: str = "backend-core",
+        issued_at: datetime | None = None,
+        expires_at: datetime | None = None,
+        subject: str | None = None,
+    ) -> str:
+        now = issued_at or datetime.now(UTC)
+        claims: dict[str, Any] = {
+            "sub": subject or f"{service}:test-instance",
+            "service": service,
+            "aud": audience,
+            "iat": now,
+            "exp": expires_at or now + timedelta(minutes=5),
+            "scopes": scopes,
+        }
+        return jwt.encode(claims, secret, algorithm="HS256")
+
+    return issue

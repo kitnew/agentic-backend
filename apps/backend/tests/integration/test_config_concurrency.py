@@ -1,8 +1,9 @@
 import asyncio
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from backend_core.bootstrap import create_app
+from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.models import TenantConfigRevision
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
@@ -28,14 +29,19 @@ def config_v1() -> dict[str, object]:
 @pytest.mark.asyncio
 async def test_concurrent_draft_creation_and_publication_are_serialized(
     migrated_database_url: str,
+    app_settings: Settings,
+    admin_headers: dict[str, str],
 ) -> None:
     database = Database(migrated_database_url)
-    app = create_app(database=database)
+    app = create_app(settings=app_settings, database=database)
     transport = ASGITransport(app=app)
-    actor_id = uuid4()
 
     try:
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers=admin_headers,
+        ) as client:
             tenant = await client.post(
                 "/admin/v1/tenants",
                 json={
@@ -53,7 +59,6 @@ async def test_concurrent_draft_creation_and_publication_are_serialized(
                         f"{config_url}/drafts",
                         json={
                             "config": config_v1(),
-                            "created_by": str(actor_id),
                             "comment": comment,
                         },
                     )
@@ -85,7 +90,7 @@ async def test_concurrent_draft_creation_and_publication_are_serialized(
                             revision_number=2,
                             schema_version=1,
                             config=config_v1(),
-                            created_by=actor_id,
+                            created_by=None,
                         )
                     )
                     await session.flush()
@@ -114,7 +119,7 @@ async def test_concurrent_draft_creation_and_publication_are_serialized(
 
             next_draft = await client.post(
                 f"{config_url}/drafts",
-                json={"created_by": str(actor_id)},
+                json={},
             )
             assert next_draft.status_code == 201
             assert next_draft.json()["revision_number"] == 2

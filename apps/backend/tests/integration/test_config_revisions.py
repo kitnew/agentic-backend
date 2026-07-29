@@ -1,7 +1,8 @@
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 from backend_core.bootstrap import create_app
+from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.models import Tenant
 from backend_core.platform.database import Database
 from contracts import TenantConfigV1
@@ -28,14 +29,21 @@ def config_v1(*, greeting: str = "Dobrý deň...") -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
+async def test_config_revision_lifecycle(
+    migrated_database_url: str,
+    app_settings: Settings,
+    admin_headers: dict[str, str],
+) -> None:
     database = Database(migrated_database_url)
-    app = create_app(database=database)
-    actor_id = uuid4()
+    app = create_app(settings=app_settings, database=database)
     transport = ASGITransport(app=app)
 
     try:
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers=admin_headers,
+        ) as client:
             tenant_response = await client.post(
                 "/admin/v1/tenants",
                 json={
@@ -53,7 +61,6 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
                 json={
                     "schema_version": 1,
                     "config": config_v1(),
-                    "created_by": str(actor_id),
                     "comment": "Initial config",
                 },
             )
@@ -73,7 +80,7 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
 
             second_draft_response = await client.post(
                 f"{config_url}/drafts",
-                json={"created_by": str(actor_id)},
+                json={},
             )
             assert second_draft_response.status_code == 409
 
@@ -113,7 +120,6 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             clone_response = await client.post(
                 f"{config_url}/drafts",
                 json={
-                    "created_by": str(actor_id),
                     "comment": "Second revision",
                 },
             )
@@ -126,7 +132,7 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
 
             duplicate_clone_response = await client.post(
                 f"{config_url}/drafts",
-                json={"created_by": str(actor_id)},
+                json={},
             )
             assert duplicate_clone_response.status_code == 409
 
@@ -217,7 +223,6 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
                 json={
                     "schema_version": 1,
                     "config": invalid_config,
-                    "created_by": str(actor_id),
                 },
             )
             assert invalid_draft_response.status_code == 201
