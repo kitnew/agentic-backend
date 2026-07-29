@@ -3,8 +3,8 @@ from uuid import UUID, uuid4
 import pytest
 from backend_core.bootstrap import create_app
 from backend_core.modules.tenants.models import Tenant
-from backend_core.modules.tenants.schemas import TenantConfigV1
 from backend_core.platform.database import Database
+from contracts import TenantConfigV1
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 from sqlalchemy import update

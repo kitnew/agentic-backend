@@ -2,6 +2,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import UUID
 
+from contracts import TenantConfigV1
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -27,7 +28,6 @@ from backend_core.modules.tenants.schemas import (
     ConfigRevisionCreate,
     ConfigRevisionUpdate,
     ConfigValidationError,
-    TenantConfigV1,
     TenantCreate,
 )
 
@@ -178,11 +178,26 @@ class ConfigUseCases:
         tenant = await self._tenants.get(tenant_id)
         if tenant is None:
             raise TenantNotFoundError
+        return await self._active_config(tenant)
+
+    async def get_internal_active_config(
+        self,
+        tenant_id: UUID,
+    ) -> tuple[TenantConfigRevision, TenantConfigV1]:
+        tenant = await self._tenants.get(tenant_id)
+        if tenant is None or not tenant.is_available_in_runtime:
+            raise TenantNotFoundError
+        return await self._active_config(tenant)
+
+    async def _active_config(
+        self,
+        tenant: Tenant,
+    ) -> tuple[TenantConfigRevision, TenantConfigV1]:
         if tenant.active_config_revision_id is None:
             raise ActiveConfigNotFoundError
 
         revision = await self._revision(
-            tenant_id,
+            tenant.id,
             tenant.active_config_revision_id,
         )
         if (

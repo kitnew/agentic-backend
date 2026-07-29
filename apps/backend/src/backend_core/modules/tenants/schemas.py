@@ -1,11 +1,8 @@
 from datetime import datetime
-from enum import StrEnum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import UUID
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend_core.modules.tenants.models import ConfigRevisionStatus, TenantStatus
 
@@ -25,51 +22,6 @@ BusinessType = Annotated[
         pattern=r"^[a-z][a-z0-9_]*$",
     ),
 ]
-
-
-class _StrictConfigModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
-class LocalizationConfig(_StrictConfigModel):
-    default_locale: Annotated[
-        str,
-        Field(pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$"),
-    ]
-    timezone: Annotated[str, Field(min_length=1, max_length=64)]
-
-    @field_validator("timezone")
-    @classmethod
-    def timezone_must_be_iana(cls, value: str) -> str:
-        try:
-            ZoneInfo(value)
-        except ZoneInfoNotFoundError as error:
-            raise PydanticCustomError(
-                "invalid_timezone",
-                "Unknown IANA timezone",
-            ) from error
-        return value
-
-
-class AgentConfig(_StrictConfigModel):
-    display_name: Annotated[str, Field(min_length=1, max_length=100)]
-    greeting: Annotated[str, Field(min_length=1, max_length=1000)]
-
-
-class ConversationScope(StrEnum):
-    PROPERTY_ONLY = "property_only"
-
-
-class ConversationConfig(_StrictConfigModel):
-    scope: ConversationScope
-
-
-class TenantConfigV1(_StrictConfigModel):
-    schema_version: Literal[1]
-    localization: LocalizationConfig
-    agent: AgentConfig
-    conversation: ConversationConfig
-    capabilities: dict[str, StrictBool] = Field(default_factory=dict)
 
 
 class TenantCreate(BaseModel):
@@ -140,9 +92,14 @@ class ConfigValidationResult(BaseModel):
     errors: list[ConfigValidationError] = Field(default_factory=list)
 
 
-class ActiveConfigRead(BaseModel):
-    tenant_id: UUID
-    revision_id: UUID
-    revision_number: int
-    published_at: datetime
-    config: TenantConfigV1
+class LegacyTenantIdentity(BaseModel):
+    legacy_id: str
+    display_name: str
+    business_type: str
+
+
+class LegacyConfigImportResult(BaseModel):
+    revision: ConfigRevisionRead
+    validation: ConfigValidationResult
+    source_tenant: LegacyTenantIdentity
+    unsupported_fields: list[str] = Field(default_factory=list)

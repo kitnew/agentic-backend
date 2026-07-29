@@ -1,7 +1,8 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from contracts import ActiveTenantConfig
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 
 from backend_core.modules.tenants.errors import (
     ActiveConfigNotFoundError,
@@ -13,16 +14,20 @@ from backend_core.modules.tenants.errors import (
     TenantNotFoundError,
     TenantSlugConflictError,
 )
+from backend_core.modules.tenants.legacy_yaml import (
+    LegacyYamlError,
+    parse_legacy_yaml,
+)
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
-    ActiveConfigRead,
     ConfigRevisionCreate,
     ConfigRevisionRead,
     ConfigRevisionUpdate,
     ConfigValidationResult,
+    LegacyConfigImportResult,
     TenantCreate,
     TenantRead,
 )
@@ -33,6 +38,10 @@ from backend_core.modules.tenants.service import (
 from backend_core.platform.database import DatabaseSession
 
 router = APIRouter(prefix="/admin/v1/tenants", tags=["admin:tenants"])
+internal_router = APIRouter(
+    prefix="/internal/v1/tenants",
+    tags=["internal:tenants"],
+)
 
 
 def get_tenant_service(session: DatabaseSession) -> TenantService:
@@ -197,6 +206,72 @@ async def publish_config_draft(
     return ConfigRevisionRead.model_validate(revision)
 
 
+@router.post(
+    "/{tenant_id}/config/import-yaml",
+    response_model=LegacyConfigImportResult,
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_legacy_yaml(
+    tenant_id: UUID,
+    raw_yaml: Annotated[
+        str,
+        Body(
+            media_type="application/yaml",
+            min_length=1,
+            max_length=1_000_000,
+        ),
+    ],
+    created_by: Annotated[UUID, Query()],
+    service: TenantServiceDependency,
+    use_cases: ConfigUseCasesDependency,
+    publish: Annotated[bool, Query()] = False,
+) -> LegacyConfigImportResult:
+    try:
+        document = parse_legacy_yaml(raw_yaml)
+        tenant = await service.get(tenant_id)
+        identity_errors = document.validate_tenant(tenant)
+        if identity_errors:
+            raise LegacyYamlError(identity_errors)
+
+        revision = await use_cases.create_config_draft(
+            tenant_id,
+            ConfigRevisionCreate(
+                config=document.config,
+                created_by=created_by,
+                comment="Imported from legacy YAML",
+            ),
+        )
+        validation_errors = await use_cases.validate_config_draft(
+            tenant_id,
+            revision.id,
+        )
+        if publish and not validation_errors:
+            revision = await use_cases.publish_config_draft(
+                tenant_id,
+                revision.id,
+            )
+    except LegacyYamlError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "message": "invalid legacy YAML",
+                "errors": [item.model_dump() for item in error.errors],
+            },
+        ) from error
+    except (TenantNotFoundError, ConfigRevisionError) as error:
+        raise config_http_exception(error) from error
+
+    return LegacyConfigImportResult(
+        revision=ConfigRevisionRead.model_validate(revision),
+        validation=ConfigValidationResult(
+            valid=not validation_errors,
+            errors=validation_errors,
+        ),
+        source_tenant=document.identity,
+        unsupported_fields=document.unsupported_fields,
+    )
+
+
 @router.get(
     "/{tenant_id}/config/revisions",
     response_model=list[ConfigRevisionRead],
@@ -214,18 +289,40 @@ async def list_config_revisions(
 
 @router.get(
     "/{tenant_id}/config/active",
-    response_model=ActiveConfigRead,
+    response_model=ActiveTenantConfig,
 )
 async def get_active_config(
     tenant_id: UUID,
     use_cases: ConfigUseCasesDependency,
-) -> ActiveConfigRead:
+) -> ActiveTenantConfig:
     try:
         revision, config = await use_cases.get_active_config(tenant_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
     assert revision.published_at is not None
-    return ActiveConfigRead(
+    return ActiveTenantConfig(
+        tenant_id=tenant_id,
+        revision_id=revision.id,
+        revision_number=revision.revision_number,
+        published_at=revision.published_at,
+        config=config,
+    )
+
+
+@internal_router.get(
+    "/{tenant_id}/active-config",
+    response_model=ActiveTenantConfig,
+)
+async def get_internal_active_config(
+    tenant_id: UUID,
+    use_cases: ConfigUseCasesDependency,
+) -> ActiveTenantConfig:
+    try:
+        revision, config = await use_cases.get_internal_active_config(tenant_id)
+    except (TenantNotFoundError, ConfigRevisionError) as error:
+        raise config_http_exception(error) from error
+    assert revision.published_at is not None
+    return ActiveTenantConfig(
         tenant_id=tenant_id,
         revision_id=revision.id,
         revision_number=revision.revision_number,
