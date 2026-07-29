@@ -11,6 +11,7 @@ from backend_core.modules.tenants.errors import (
     ActiveDraftExistsError,
     ConfigRevisionImmutableError,
     ConfigRevisionNotFoundError,
+    ConfigRevisionVersionConflictError,
     InvalidTenantConfigError,
     TenantNotFoundError,
     TenantSlugConflictError,
@@ -25,10 +26,10 @@ from backend_core.modules.tenants.repository import (
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
-    ConfigRevisionCreate,
-    ConfigRevisionUpdate,
-    ConfigValidationError,
-    TenantCreate,
+    CreateDraftRequest,
+    CreateTenantRequest,
+    UpdateDraftRequest,
+    ValidationIssue,
 )
 
 
@@ -36,7 +37,7 @@ class TenantService:
     def __init__(self, repository: TenantRepository) -> None:
         self._repository = repository
 
-    async def create(self, data: TenantCreate) -> Tenant:
+    async def create(self, data: CreateTenantRequest) -> Tenant:
         if await self._repository.get_by_slug(data.slug):
             raise TenantSlugConflictError
 
@@ -68,7 +69,7 @@ class ConfigUseCases:
     async def create_config_draft(
         self,
         tenant_id: UUID,
-        data: ConfigRevisionCreate,
+        data: CreateDraftRequest,
     ) -> TenantConfigRevision:
         tenant = await self._tenant_for_update(tenant_id)
         await self._ensure_no_draft(tenant_id)
@@ -109,11 +110,14 @@ class ConfigUseCases:
         self,
         tenant_id: UUID,
         revision_id: UUID,
-        data: ConfigRevisionUpdate,
+        data: UpdateDraftRequest,
+        expected_version: int,
     ) -> TenantConfigRevision:
         revision = await self._revision_for_update(tenant_id, revision_id)
         if revision.status is not ConfigRevisionStatus.DRAFT:
             raise ConfigRevisionImmutableError
+        if revision.version != expected_version:
+            raise ConfigRevisionVersionConflictError
 
         changes = data.model_dump(exclude_unset=True)
         if "config" in changes and "schema_version" not in changes:
@@ -123,14 +127,25 @@ class ConfigUseCases:
 
         for field, value in changes.items():
             setattr(revision, field, value)
+        revision.version += 1
         await self._revisions.flush()
+        return revision
+
+    async def get_config_draft(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+    ) -> TenantConfigRevision:
+        revision = await self._revision(tenant_id, revision_id)
+        if revision.status is not ConfigRevisionStatus.DRAFT:
+            raise ConfigRevisionImmutableError
         return revision
 
     async def validate_config_draft(
         self,
         tenant_id: UUID,
         revision_id: UUID,
-    ) -> list[ConfigValidationError]:
+    ) -> list[ValidationIssue]:
         revision = await self._revision(tenant_id, revision_id)
         if revision.status is not ConfigRevisionStatus.DRAFT:
             raise ConfigRevisionImmutableError
@@ -243,12 +258,12 @@ class ConfigUseCases:
     @staticmethod
     def _validate_config(
         revision: TenantConfigRevision,
-    ) -> tuple[TenantConfigV1 | None, list[ConfigValidationError]]:
+    ) -> tuple[TenantConfigV1 | None, list[ValidationIssue]]:
         if revision.schema_version != 1:
             return (
                 None,
                 [
-                    ConfigValidationError(
+                    ValidationIssue(
                         path="schema_version",
                         code="unsupported_schema_version",
                         message="Only schema_version 1 is supported",
@@ -261,7 +276,7 @@ class ConfigUseCases:
             return (
                 None,
                 [
-                    ConfigValidationError(
+                    ValidationIssue(
                         path=".".join(str(part) for part in item["loc"]),
                         code=item["type"],
                         message=item["msg"],
@@ -277,7 +292,7 @@ class ConfigUseCases:
             return (
                 None,
                 [
-                    ConfigValidationError(
+                    ValidationIssue(
                         path="schema_version",
                         code="schema_version_mismatch",
                         message="Config and revision schema versions differ",

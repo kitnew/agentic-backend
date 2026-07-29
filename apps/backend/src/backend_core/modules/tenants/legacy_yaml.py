@@ -7,8 +7,8 @@ from yaml import YAMLError
 
 from backend_core.modules.tenants.models import Tenant
 from backend_core.modules.tenants.schemas import (
-    ConfigValidationError,
     LegacyTenantIdentity,
+    ValidationIssue,
 )
 
 
@@ -39,7 +39,7 @@ class _LegacyConfig(_LegacyModel):
 
 
 class LegacyYamlError(Exception):
-    def __init__(self, errors: list[ConfigValidationError]) -> None:
+    def __init__(self, errors: list[ValidationIssue]) -> None:
         self.errors = errors
         super().__init__("invalid legacy YAML")
 
@@ -50,7 +50,7 @@ class LegacyYamlDocument:
     config: dict[str, Any]
     unsupported_fields: list[str]
 
-    def validate_tenant(self, tenant: Tenant) -> list[ConfigValidationError]:
+    def validate_tenant(self, tenant: Tenant) -> list[ValidationIssue]:
         expected = {
             "tenant_id": tenant.slug,
             "name": tenant.display_name,
@@ -62,7 +62,7 @@ class LegacyYamlDocument:
             "business_type": self.identity.business_type,
         }
         return [
-            ConfigValidationError(
+            ValidationIssue(
                 path=path,
                 code="tenant_identity_mismatch",
                 message=f"Expected {expected[path]!r}",
@@ -78,7 +78,7 @@ def parse_legacy_yaml(raw_yaml: str) -> LegacyYamlDocument:
     except YAMLError as error:
         raise LegacyYamlError(
             [
-                ConfigValidationError(
+                ValidationIssue(
                     path="$",
                     code="invalid_yaml",
                     message="YAML cannot be parsed",
@@ -91,7 +91,7 @@ def parse_legacy_yaml(raw_yaml: str) -> LegacyYamlDocument:
     except ValidationError as error:
         raise LegacyYamlError(
             [
-                ConfigValidationError(
+                ValidationIssue(
                     path=".".join(str(part) for part in item["loc"]) or "$",
                     code=item["type"],
                     message=item["msg"],

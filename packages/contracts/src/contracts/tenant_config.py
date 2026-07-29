@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -33,8 +34,12 @@ class AgentConfig(_TenantConfigModel):
     greeting: str = Field(min_length=1, max_length=1000)
 
 
+class ConversationScope(StrEnum):
+    PROPERTY_ONLY = "property_only"
+
+
 class ConversationConfig(_TenantConfigModel):
-    scope: Literal["property_only"]
+    scope: ConversationScope
 
 
 class TenantConfigV1(_TenantConfigModel):

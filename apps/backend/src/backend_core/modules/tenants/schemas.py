@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend_core.modules.tenants.models import ConfigRevisionStatus, TenantStatus
 
@@ -24,7 +24,7 @@ BusinessType = Annotated[
 ]
 
 
-class TenantCreate(BaseModel):
+class CreateTenantRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     slug: Slug
@@ -33,7 +33,7 @@ class TenantCreate(BaseModel):
     status: TenantStatus = TenantStatus.ACTIVE
 
 
-class TenantRead(BaseModel):
+class TenantResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -46,14 +46,14 @@ class TenantRead(BaseModel):
     updated_at: datetime
 
 
-class ConfigRevisionCreate(BaseModel):
+class CreateDraftRequest(BaseModel):
     schema_version: Annotated[int | None, Field(gt=0)] = None
     config: dict[str, Any] | None = None
     created_by: UUID
     comment: Annotated[str | None, Field(max_length=1000)] = None
 
 
-class ConfigRevisionUpdate(BaseModel):
+class UpdateDraftRequest(BaseModel):
     schema_version: Annotated[int | None, Field(gt=0)] = None
     config: dict[str, Any] | None = None
     comment: Annotated[str | None, Field(max_length=1000)] = None
@@ -65,8 +65,14 @@ class ConfigRevisionUpdate(BaseModel):
             raise ValueError("field cannot be null")
         return value
 
+    @model_validator(mode="after")
+    def at_least_one_change(self) -> UpdateDraftRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        return self
 
-class ConfigRevisionRead(BaseModel):
+
+class ConfigRevisionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -79,17 +85,18 @@ class ConfigRevisionRead(BaseModel):
     published_at: datetime | None
     created_by: UUID
     comment: str | None
+    version: int
 
 
-class ConfigValidationError(BaseModel):
+class ValidationIssue(BaseModel):
     path: str
     code: str
     message: str
 
 
-class ConfigValidationResult(BaseModel):
+class ValidateDraftResponse(BaseModel):
     valid: bool
-    errors: list[ConfigValidationError] = Field(default_factory=list)
+    errors: list[ValidationIssue] = Field(default_factory=list)
 
 
 class LegacyTenantIdentity(BaseModel):
@@ -98,8 +105,8 @@ class LegacyTenantIdentity(BaseModel):
     business_type: str
 
 
-class LegacyConfigImportResult(BaseModel):
-    revision: ConfigRevisionRead
-    validation: ConfigValidationResult
+class LegacyConfigImportResponse(BaseModel):
+    revision: ConfigRevisionResponse
+    validation: ValidateDraftResponse
     source_tenant: LegacyTenantIdentity
     unsupported_fields: list[str] = Field(default_factory=list)

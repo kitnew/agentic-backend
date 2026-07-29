@@ -62,6 +62,14 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             revision_1_id = UUID(draft_1["id"])
             assert draft_1["revision_number"] == 1
             assert draft_1["status"] == "draft"
+            assert draft_1["version"] == 1
+            assert draft_response.headers["etag"] == '"1"'
+
+            get_draft_response = await client.get(
+                f"{config_url}/drafts/{revision_1_id}"
+            )
+            assert get_draft_response.status_code == 200
+            assert get_draft_response.headers["etag"] == '"1"'
 
             second_draft_response = await client.post(
                 f"{config_url}/drafts",
@@ -74,6 +82,12 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             )
             assert validation_response.status_code == 200
             assert validation_response.json() == {"valid": True, "errors": []}
+
+            missing_if_match = await client.patch(
+                f"{config_url}/drafts/{revision_1_id}",
+                json={"comment": "Must include If-Match"},
+            )
+            assert missing_if_match.status_code == 422
 
             publish_response = await client.post(
                 f"{config_url}/drafts/{revision_1_id}/publish"
@@ -92,6 +106,7 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             immutable_response = await client.patch(
                 f"{config_url}/drafts/{revision_1_id}",
                 json={"comment": "Must not change"},
+                headers={"If-Match": '"1"'},
             )
             assert immutable_response.status_code == 409
 
@@ -107,6 +122,7 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             revision_2_id = UUID(draft_2["id"])
             assert draft_2["revision_number"] == 2
             assert draft_2["config"] == draft_1["config"]
+            assert draft_2["version"] == 1
 
             duplicate_clone_response = await client.post(
                 f"{config_url}/drafts",
@@ -120,8 +136,18 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
                     "schema_version": 2,
                     "config": {**config_v1(greeting="Ahoj"), "schema_version": 2},
                 },
+                headers={"If-Match": '"1"'},
             )
             assert invalid_update_response.status_code == 200
+            assert invalid_update_response.json()["version"] == 2
+            assert invalid_update_response.headers["etag"] == '"2"'
+
+            stale_update_response = await client.patch(
+                f"{config_url}/drafts/{revision_2_id}",
+                json={"comment": "Stale write"},
+                headers={"If-Match": '"1"'},
+            )
+            assert stale_update_response.status_code == 412
             invalid_validation = await client.post(
                 f"{config_url}/drafts/{revision_2_id}/validate"
             )
@@ -146,8 +172,11 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
                     "schema_version": 1,
                     "config": config_v1(greeting="Ahoj"),
                 },
+                headers={"If-Match": '"2"'},
             )
             assert valid_update_response.status_code == 200
+            assert valid_update_response.json()["version"] == 3
+            assert valid_update_response.headers["etag"] == '"3"'
 
             publish_2_response = await client.post(
                 f"{config_url}/drafts/{revision_2_id}/publish"

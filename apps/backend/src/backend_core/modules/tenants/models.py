@@ -103,6 +103,10 @@ class TenantConfigRevision(Base):
             "schema_version > 0",
             name="ck_tenant_config_revisions_schema_version_positive",
         ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_tenant_config_revisions_version_positive",
+        ),
         Index(
             "uq_tenant_config_revisions_one_draft",
             "tenant_id",
@@ -142,3 +146,4 @@ class TenantConfigRevision(Base):
     )
     created_by: Mapped[UUID] = mapped_column(Uuid)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

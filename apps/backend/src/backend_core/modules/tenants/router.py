@@ -2,7 +2,16 @@ from typing import Annotated
 from uuid import UUID
 
 from contracts import ActiveTenantConfig
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 
 from backend_core.modules.tenants.errors import (
     ActiveConfigNotFoundError,
@@ -10,6 +19,7 @@ from backend_core.modules.tenants.errors import (
     ConfigRevisionError,
     ConfigRevisionImmutableError,
     ConfigRevisionNotFoundError,
+    ConfigRevisionVersionConflictError,
     InvalidTenantConfigError,
     TenantNotFoundError,
     TenantSlugConflictError,
@@ -23,13 +33,13 @@ from backend_core.modules.tenants.repository import (
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
-    ConfigRevisionCreate,
-    ConfigRevisionRead,
-    ConfigRevisionUpdate,
-    ConfigValidationResult,
-    LegacyConfigImportResult,
-    TenantCreate,
-    TenantRead,
+    ConfigRevisionResponse,
+    CreateDraftRequest,
+    CreateTenantRequest,
+    LegacyConfigImportResponse,
+    TenantResponse,
+    UpdateDraftRequest,
+    ValidateDraftResponse,
 )
 from backend_core.modules.tenants.service import (
     ConfigUseCases,
@@ -87,6 +97,11 @@ def config_http_exception(
                 "errors": error.errors,
             },
         )
+    if isinstance(error, ConfigRevisionVersionConflictError):
+        return HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail="draft version does not match If-Match",
+        )
     if isinstance(error, ActiveDraftExistsError):
         detail = "tenant already has an active draft"
     elif isinstance(error, ConfigRevisionImmutableError):
@@ -96,11 +111,30 @@ def config_http_exception(
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
-@router.post("", response_model=TenantRead, status_code=status.HTTP_201_CREATED)
+def etag(version: int) -> str:
+    return f'"{version}"'
+
+
+def parse_if_match(value: str) -> int:
+    if len(value) < 3 or value[0] != '"' or value[-1] != '"':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='If-Match must be a quoted positive integer, for example "7"',
+        )
+    raw_version = value[1:-1]
+    if not raw_version.isdigit() or int(raw_version) < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='If-Match must be a quoted positive integer, for example "7"',
+        )
+    return int(raw_version)
+
+
+@router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(
-    data: TenantCreate,
+    data: CreateTenantRequest,
     service: TenantServiceDependency,
-) -> TenantRead:
+) -> TenantResponse:
     try:
         tenant = await service.create(data)
     except TenantSlugConflictError as error:
@@ -108,14 +142,14 @@ async def create_tenant(
             status_code=status.HTTP_409_CONFLICT,
             detail="tenant slug already exists",
         ) from error
-    return TenantRead.model_validate(tenant)
+    return TenantResponse.model_validate(tenant)
 
 
-@router.get("/{tenant_id}", response_model=TenantRead)
+@router.get("/{tenant_id}", response_model=TenantResponse)
 async def get_tenant(
     tenant_id: UUID,
     service: TenantServiceDependency,
-) -> TenantRead:
+) -> TenantResponse:
     try:
         tenant = await service.get(tenant_id)
     except TenantNotFoundError as error:
@@ -123,92 +157,116 @@ async def get_tenant(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="tenant not found",
         ) from error
-    return TenantRead.model_validate(tenant)
+    return TenantResponse.model_validate(tenant)
 
 
-@router.get("", response_model=list[TenantRead])
+@router.get("", response_model=list[TenantResponse])
 async def list_tenants(
     service: TenantServiceDependency,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 100,
-) -> list[TenantRead]:
+) -> list[TenantResponse]:
     tenants = await service.list(offset=offset, limit=limit)
-    return [TenantRead.model_validate(tenant) for tenant in tenants]
+    return [TenantResponse.model_validate(tenant) for tenant in tenants]
 
 
 @router.post(
     "/{tenant_id}/config/drafts",
-    response_model=ConfigRevisionRead,
+    response_model=ConfigRevisionResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_config_draft(
     tenant_id: UUID,
-    data: ConfigRevisionCreate,
+    data: CreateDraftRequest,
+    response: Response,
     use_cases: ConfigUseCasesDependency,
-) -> ConfigRevisionRead:
+) -> ConfigRevisionResponse:
     try:
         revision = await use_cases.create_config_draft(tenant_id, data)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
-    return ConfigRevisionRead.model_validate(revision)
+    response.headers["ETag"] = etag(revision.version)
+    return ConfigRevisionResponse.model_validate(revision)
+
+
+@router.get(
+    "/{tenant_id}/config/drafts/{revision_id}",
+    response_model=ConfigRevisionResponse,
+)
+async def get_config_draft(
+    tenant_id: UUID,
+    revision_id: UUID,
+    response: Response,
+    use_cases: ConfigUseCasesDependency,
+) -> ConfigRevisionResponse:
+    try:
+        revision = await use_cases.get_config_draft(tenant_id, revision_id)
+    except (TenantNotFoundError, ConfigRevisionError) as error:
+        raise config_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return ConfigRevisionResponse.model_validate(revision)
 
 
 @router.patch(
     "/{tenant_id}/config/drafts/{revision_id}",
-    response_model=ConfigRevisionRead,
+    response_model=ConfigRevisionResponse,
 )
 async def update_config_draft(
     tenant_id: UUID,
     revision_id: UUID,
-    data: ConfigRevisionUpdate,
+    data: UpdateDraftRequest,
+    response: Response,
     use_cases: ConfigUseCasesDependency,
-) -> ConfigRevisionRead:
+    if_match: Annotated[str, Header(alias="If-Match")],
+) -> ConfigRevisionResponse:
     try:
         revision = await use_cases.update_config_draft(
             tenant_id,
             revision_id,
             data,
+            parse_if_match(if_match),
         )
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
-    return ConfigRevisionRead.model_validate(revision)
+    response.headers["ETag"] = etag(revision.version)
+    return ConfigRevisionResponse.model_validate(revision)
 
 
 @router.post(
     "/{tenant_id}/config/drafts/{revision_id}/validate",
-    response_model=ConfigValidationResult,
+    response_model=ValidateDraftResponse,
 )
 async def validate_config_draft(
     tenant_id: UUID,
     revision_id: UUID,
     use_cases: ConfigUseCasesDependency,
-) -> ConfigValidationResult:
+) -> ValidateDraftResponse:
     try:
         errors = await use_cases.validate_config_draft(tenant_id, revision_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
-    return ConfigValidationResult(valid=not errors, errors=errors)
+    return ValidateDraftResponse(valid=not errors, errors=errors)
 
 
 @router.post(
     "/{tenant_id}/config/drafts/{revision_id}/publish",
-    response_model=ConfigRevisionRead,
+    response_model=ConfigRevisionResponse,
 )
 async def publish_config_draft(
     tenant_id: UUID,
     revision_id: UUID,
     use_cases: ConfigUseCasesDependency,
-) -> ConfigRevisionRead:
+) -> ConfigRevisionResponse:
     try:
         revision = await use_cases.publish_config_draft(tenant_id, revision_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
-    return ConfigRevisionRead.model_validate(revision)
+    return ConfigRevisionResponse.model_validate(revision)
 
 
 @router.post(
     "/{tenant_id}/config/import-yaml",
-    response_model=LegacyConfigImportResult,
+    response_model=LegacyConfigImportResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def import_legacy_yaml(
@@ -225,7 +283,7 @@ async def import_legacy_yaml(
     service: TenantServiceDependency,
     use_cases: ConfigUseCasesDependency,
     publish: Annotated[bool, Query()] = False,
-) -> LegacyConfigImportResult:
+) -> LegacyConfigImportResponse:
     try:
         document = parse_legacy_yaml(raw_yaml)
         tenant = await service.get(tenant_id)
@@ -235,7 +293,7 @@ async def import_legacy_yaml(
 
         revision = await use_cases.create_config_draft(
             tenant_id,
-            ConfigRevisionCreate(
+            CreateDraftRequest(
                 config=document.config,
                 created_by=created_by,
                 comment="Imported from legacy YAML",
@@ -261,9 +319,9 @@ async def import_legacy_yaml(
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
 
-    return LegacyConfigImportResult(
-        revision=ConfigRevisionRead.model_validate(revision),
-        validation=ConfigValidationResult(
+    return LegacyConfigImportResponse(
+        revision=ConfigRevisionResponse.model_validate(revision),
+        validation=ValidateDraftResponse(
             valid=not validation_errors,
             errors=validation_errors,
         ),
@@ -274,17 +332,17 @@ async def import_legacy_yaml(
 
 @router.get(
     "/{tenant_id}/config/revisions",
-    response_model=list[ConfigRevisionRead],
+    response_model=list[ConfigRevisionResponse],
 )
 async def list_config_revisions(
     tenant_id: UUID,
     use_cases: ConfigUseCasesDependency,
-) -> list[ConfigRevisionRead]:
+) -> list[ConfigRevisionResponse]:
     try:
         revisions = await use_cases.list_config_revisions(tenant_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
-    return [ConfigRevisionRead.model_validate(revision) for revision in revisions]
+    return [ConfigRevisionResponse.model_validate(revision) for revision in revisions]
 
 
 @router.get(
