@@ -204,6 +204,11 @@ class PromptBundleRevision(Base):
             "revision_number",
             name="uq_prompt_bundle_revisions_tenant_revision",
         ),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            name="uq_prompt_bundle_revisions_tenant_id_id",
+        ),
         CheckConstraint(
             "revision_number > 0",
             name="ck_prompt_bundle_revisions_revision_number_positive",

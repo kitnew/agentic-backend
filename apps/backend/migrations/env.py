@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from os import environ
 
 from alembic import context
+from backend_core.modules.calls.models import CallSession  # noqa: F401
 from backend_core.modules.tenants.models import Tenant  # noqa: F401
 from backend_core.platform.database.metadata import Base
 from sqlalchemy import Connection, pool

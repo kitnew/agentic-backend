@@ -78,23 +78,28 @@ class InboundRouteRepository:
     async def resolve(
         self,
         normalized_did: str,
+        *,
+        lock_tenant: bool = False,
     ) -> tuple[Tenant, TenantConfigRevision] | None:
-        row = (
-            await self._session.execute(
-                select(Tenant, TenantConfigRevision)
-                .join(InboundRoute, InboundRoute.tenant_id == Tenant.id)
-                .join(
-                    TenantConfigRevision,
-                    TenantConfigRevision.id == Tenant.active_config_revision_id,
-                )
-                .where(
-                    InboundRoute.normalized_did == normalized_did,
-                    InboundRoute.enabled.is_(True),
-                    Tenant.status == TenantStatus.ACTIVE,
-                    TenantConfigRevision.status == ConfigRevisionStatus.PUBLISHED,
-                    TenantConfigRevision.published_at.is_not(None),
-                )
+        query = (
+            select(Tenant, TenantConfigRevision)
+            .join(InboundRoute, InboundRoute.tenant_id == Tenant.id)
+            .join(
+                TenantConfigRevision,
+                TenantConfigRevision.id == Tenant.active_config_revision_id,
             )
+            .where(
+                InboundRoute.normalized_did == normalized_did,
+                InboundRoute.enabled.is_(True),
+                Tenant.status == TenantStatus.ACTIVE,
+                TenantConfigRevision.status == ConfigRevisionStatus.PUBLISHED,
+                TenantConfigRevision.published_at.is_not(None),
+            )
+        )
+        if lock_tenant:
+            query = query.with_for_update(of=Tenant)
+        row = (
+            await self._session.execute(query)
         ).one_or_none()
         return None if row is None else (row[0], row[1])
 
