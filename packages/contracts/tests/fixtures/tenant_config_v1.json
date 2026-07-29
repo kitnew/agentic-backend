@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "localization": {
+    "default_locale": "sk-SK",
+    "timezone": "Europe/Bratislava"
+  },
+  "agent": {
+    "display_name": "Amélia",
+    "greeting": "Dobrý deň..."
+  },
+  "conversation": {
+    "scope": "property_only"
+  },
+  "capabilities": {}
+}

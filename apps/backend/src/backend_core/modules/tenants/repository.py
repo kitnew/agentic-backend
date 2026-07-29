@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
     InboundRoute,
+    PromptBundleRevision,
+    PromptBundleRevisionStatus,
     Tenant,
     TenantConfigRevision,
     TenantStatus,
@@ -95,6 +97,69 @@ class InboundRouteRepository:
             )
         ).one_or_none()
         return None if row is None else (row[0], row[1])
+
+
+class PromptBundleRevisionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, revision: PromptBundleRevision) -> PromptBundleRevision:
+        self._session.add(revision)
+        await self._session.flush()
+        return revision
+
+    async def flush(self) -> None:
+        await self._session.flush()
+
+    async def get(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+    ) -> PromptBundleRevision | None:
+        return await self._session.scalar(
+            select(PromptBundleRevision).where(
+                PromptBundleRevision.tenant_id == tenant_id,
+                PromptBundleRevision.id == revision_id,
+            )
+        )
+
+    async def get_for_update(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+    ) -> PromptBundleRevision | None:
+        return await self._session.scalar(
+            select(PromptBundleRevision)
+            .where(
+                PromptBundleRevision.tenant_id == tenant_id,
+                PromptBundleRevision.id == revision_id,
+            )
+            .with_for_update()
+        )
+
+    async def get_draft(self, tenant_id: UUID) -> PromptBundleRevision | None:
+        return await self._session.scalar(
+            select(PromptBundleRevision).where(
+                PromptBundleRevision.tenant_id == tenant_id,
+                PromptBundleRevision.status == PromptBundleRevisionStatus.DRAFT,
+            )
+        )
+
+    async def next_revision_number(self, tenant_id: UUID) -> int:
+        latest = await self._session.scalar(
+            select(func.max(PromptBundleRevision.revision_number)).where(
+                PromptBundleRevision.tenant_id == tenant_id
+            )
+        )
+        return (latest or 0) + 1
+
+    async def list(self, tenant_id: UUID) -> list[PromptBundleRevision]:
+        revisions = await self._session.scalars(
+            select(PromptBundleRevision)
+            .where(PromptBundleRevision.tenant_id == tenant_id)
+            .order_by(PromptBundleRevision.revision_number)
+        )
+        return list(revisions)
 
 
 class ConfigRevisionRepository:

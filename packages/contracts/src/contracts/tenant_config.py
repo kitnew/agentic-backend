@@ -42,12 +42,23 @@ class ConversationConfig(_TenantConfigModel):
     scope: ConversationScope
 
 
-class TenantConfigV1(_TenantConfigModel):
-    schema_version: Literal[1]
+class _TenantConfigBase(_TenantConfigModel):
     localization: LocalizationConfig
     agent: AgentConfig
     conversation: ConversationConfig
     capabilities: dict[str, StrictBool] = Field(default_factory=dict)
+
+
+class TenantConfigV1(_TenantConfigBase):
+    schema_version: Literal[1]
+
+
+class TenantConfigV2(_TenantConfigBase):
+    schema_version: Literal[2]
+    prompt_bundle_revision_id: UUID
+
+
+TenantConfig = TenantConfigV1 | TenantConfigV2
 
 
 class ActiveTenantConfig(_TenantConfigModel):
@@ -55,4 +66,4 @@ class ActiveTenantConfig(_TenantConfigModel):
     revision_id: UUID
     revision_number: int
     published_at: datetime
-    config: TenantConfigV1
+    config: TenantConfig

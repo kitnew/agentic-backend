@@ -37,6 +37,12 @@ class ConfigRevisionStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class PromptBundleRevisionStatus(StrEnum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (
@@ -188,3 +194,60 @@ class InboundRoute(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class PromptBundleRevision(Base):
+    __tablename__ = "prompt_bundle_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "revision_number",
+            name="uq_prompt_bundle_revisions_tenant_revision",
+        ),
+        CheckConstraint(
+            "revision_number > 0",
+            name="ck_prompt_bundle_revisions_revision_number_positive",
+        ),
+        CheckConstraint(
+            "version > 0",
+            name="ck_prompt_bundle_revisions_version_positive",
+        ),
+        Index(
+            "uq_prompt_bundle_revisions_one_draft",
+            "tenant_id",
+            unique=True,
+            postgresql_where=text("status = 'draft'"),
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "tenants.id",
+            name="fk_prompt_bundle_revisions_tenant_id_tenants",
+            ondelete="CASCADE",
+        ),
+    )
+    revision_number: Mapped[int] = mapped_column(Integer)
+    status: Mapped[PromptBundleRevisionStatus] = mapped_column(
+        Enum(
+            PromptBundleRevisionStatus,
+            name="prompt_bundle_revision_status",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        default=PromptBundleRevisionStatus.DRAFT,
+        server_default=PromptBundleRevisionStatus.DRAFT.value,
+    )
+    system_instructions: Mapped[str] = mapped_column(Text)
+    tenant_instructions: Mapped[str] = mapped_column(Text)
+    knowledge_text: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")

@@ -22,6 +22,26 @@ class InboundRouteUnavailableError(Exception):
     pass
 
 
+class PromptBundleRevisionError(Exception):
+    pass
+
+
+class PromptBundleRevisionNotFoundError(PromptBundleRevisionError):
+    pass
+
+
+class PromptBundleActiveDraftExistsError(PromptBundleRevisionError):
+    pass
+
+
+class PromptBundleRevisionImmutableError(PromptBundleRevisionError):
+    pass
+
+
+class PromptBundleRevisionVersionConflictError(PromptBundleRevisionError):
+    pass
+
+
 class ConfigRevisionError(Exception):
     pass
 

@@ -2,10 +2,16 @@ import json
 from pathlib import Path
 
 import pytest
-from contracts import ActiveTenantConfig, ConversationScope, TenantConfigV1
+from contracts import (
+    ActiveTenantConfig,
+    ConversationScope,
+    TenantConfigV1,
+    TenantConfigV2,
+)
 from pydantic import ValidationError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tenant_config_v1.json"
+V2_FIXTURE = Path(__file__).parent / "fixtures" / "tenant_config_v2.json"
 
 
 def fixture_json() -> str:
@@ -23,6 +29,16 @@ def test_v1_fixture_remains_backward_compatible() -> None:
 
     assert config.schema_version == 1
     assert config.conversation.scope is ConversationScope.PROPERTY_ONLY
+
+
+def test_v2_json_round_trip_and_requires_prompt_revision() -> None:
+    config = TenantConfigV2.model_validate_json(V2_FIXTURE.read_text())
+
+    assert json.loads(config.model_dump_json()) == json.loads(V2_FIXTURE.read_text())
+    document = json.loads(V2_FIXTURE.read_text())
+    document.pop("prompt_bundle_revision_id")
+    with pytest.raises(ValidationError):
+        TenantConfigV2.model_validate_json(json.dumps(document))
 
 
 def test_v1_rejects_unknown_fields_and_schema_versions() -> None:

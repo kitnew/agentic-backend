@@ -2,7 +2,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import UUID
 
-from contracts import TenantConfigV1
+from contracts import TenantConfig, TenantConfigV1, TenantConfigV2
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -16,26 +16,35 @@ from backend_core.modules.tenants.errors import (
     InboundRouteNotFoundError,
     InboundRouteUnavailableError,
     InvalidTenantConfigError,
+    PromptBundleActiveDraftExistsError,
+    PromptBundleRevisionImmutableError,
+    PromptBundleRevisionNotFoundError,
+    PromptBundleRevisionVersionConflictError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
     InboundRoute,
+    PromptBundleRevision,
+    PromptBundleRevisionStatus,
     Tenant,
     TenantConfigRevision,
 )
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     InboundRouteRepository,
+    PromptBundleRevisionRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     CreateDraftRequest,
     CreateInboundRouteRequest,
+    CreatePromptBundleDraftRequest,
     CreateTenantRequest,
     UpdateDraftRequest,
     UpdateInboundRouteRequest,
+    UpdatePromptBundleDraftRequest,
     ValidationIssue,
 )
 
@@ -119,14 +128,91 @@ class InboundRouteService:
         return resolution
 
 
+class PromptBundleService:
+    def __init__(
+        self,
+        tenants: TenantRepository,
+        revisions: PromptBundleRevisionRepository,
+    ) -> None:
+        self._tenants = tenants
+        self._revisions = revisions
+
+    async def create_draft(
+        self,
+        tenant_id: UUID,
+        data: CreatePromptBundleDraftRequest,
+    ) -> PromptBundleRevision:
+        if await self._tenants.get_for_update(tenant_id) is None:
+            raise TenantNotFoundError
+        if await self._revisions.get_draft(tenant_id):
+            raise PromptBundleActiveDraftExistsError
+        revision = PromptBundleRevision(
+            tenant_id=tenant_id,
+            revision_number=await self._revisions.next_revision_number(tenant_id),
+            **data.model_dump(),
+        )
+        try:
+            return await self._revisions.add(revision)
+        except IntegrityError as error:
+            raise PromptBundleActiveDraftExistsError from error
+
+    async def update_draft(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+        data: UpdatePromptBundleDraftRequest,
+        expected_version: int,
+    ) -> PromptBundleRevision:
+        revision = await self._revision_for_update(tenant_id, revision_id)
+        if revision.status is not PromptBundleRevisionStatus.DRAFT:
+            raise PromptBundleRevisionImmutableError
+        if revision.version != expected_version:
+            raise PromptBundleRevisionVersionConflictError
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(revision, field, value)
+        revision.version += 1
+        await self._revisions.flush()
+        return revision
+
+    async def publish(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+    ) -> PromptBundleRevision:
+        revision = await self._revision_for_update(tenant_id, revision_id)
+        if revision.status is not PromptBundleRevisionStatus.DRAFT:
+            raise PromptBundleRevisionImmutableError
+        revision.status = PromptBundleRevisionStatus.PUBLISHED
+        revision.published_at = datetime.now(UTC)
+        await self._revisions.flush()
+        return revision
+
+    async def list(self, tenant_id: UUID) -> list[PromptBundleRevision]:
+        if await self._tenants.get(tenant_id) is None:
+            raise TenantNotFoundError
+        return await self._revisions.list(tenant_id)
+
+    async def _revision_for_update(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+    ) -> PromptBundleRevision:
+        revision = await self._revisions.get_for_update(tenant_id, revision_id)
+        if revision is None:
+            raise PromptBundleRevisionNotFoundError
+        return revision
+
+
 class ConfigUseCases:
     def __init__(
         self,
         tenants: TenantRepository,
         revisions: ConfigRevisionRepository,
+        prompt_bundles: PromptBundleRevisionRepository,
     ) -> None:
         self._tenants = tenants
         self._revisions = revisions
+        self._prompt_bundles = prompt_bundles
 
     async def create_config_draft(
         self,
@@ -211,7 +297,7 @@ class ConfigUseCases:
         revision = await self._revision(tenant_id, revision_id)
         if revision.status is not ConfigRevisionStatus.DRAFT:
             raise ConfigRevisionImmutableError
-        _, errors = self._validate_config(revision)
+        _, errors = await self._validate_config(revision)
         return errors
 
     async def publish_config_draft(
@@ -223,7 +309,7 @@ class ConfigUseCases:
         revision = await self._revision_for_update(tenant_id, revision_id)
         if revision.status is not ConfigRevisionStatus.DRAFT:
             raise ConfigRevisionImmutableError
-        _, errors = self._validate_config(revision)
+        _, errors = await self._validate_config(revision)
         if errors:
             raise InvalidTenantConfigError([error.model_dump() for error in errors])
 
@@ -251,7 +337,7 @@ class ConfigUseCases:
     async def get_active_config(
         self,
         tenant_id: UUID,
-    ) -> tuple[TenantConfigRevision, TenantConfigV1]:
+    ) -> tuple[TenantConfigRevision, TenantConfig]:
         tenant = await self._tenants.get(tenant_id)
         if tenant is None:
             raise TenantNotFoundError
@@ -260,7 +346,7 @@ class ConfigUseCases:
     async def get_internal_active_config(
         self,
         tenant_id: UUID,
-    ) -> tuple[TenantConfigRevision, TenantConfigV1]:
+    ) -> tuple[TenantConfigRevision, TenantConfig]:
         tenant = await self._tenants.get(tenant_id)
         if tenant is None or not tenant.is_available_in_runtime:
             raise TenantNotFoundError
@@ -269,7 +355,7 @@ class ConfigUseCases:
     async def _active_config(
         self,
         tenant: Tenant,
-    ) -> tuple[TenantConfigRevision, TenantConfigV1]:
+    ) -> tuple[TenantConfigRevision, TenantConfig]:
         if tenant.active_config_revision_id is None:
             raise ActiveConfigNotFoundError
 
@@ -282,7 +368,7 @@ class ConfigUseCases:
             or revision.published_at is None
         ):
             raise ActiveConfigNotFoundError
-        config, errors = self._validate_config(revision)
+        config, errors = await self._validate_config(revision)
         if config is None:
             raise InvalidTenantConfigError([error.model_dump() for error in errors])
         return revision, config
@@ -317,23 +403,27 @@ class ConfigUseCases:
         if await self._revisions.get_draft(tenant_id):
             raise ActiveDraftExistsError
 
-    @staticmethod
-    def _validate_config(
+    async def _validate_config(
+        self,
         revision: TenantConfigRevision,
-    ) -> tuple[TenantConfigV1 | None, list[ValidationIssue]]:
-        if revision.schema_version != 1:
+    ) -> tuple[TenantConfig | None, list[ValidationIssue]]:
+        if revision.schema_version not in (1, 2):
             return (
                 None,
                 [
                     ValidationIssue(
                         path="schema_version",
                         code="unsupported_schema_version",
-                        message="Only schema_version 1 is supported",
+                        message="Only schema_version 1 and 2 are supported",
                     )
                 ],
             )
         try:
-            config = TenantConfigV1.model_validate(revision.config)
+            config: TenantConfig
+            if revision.schema_version == 1:
+                config = TenantConfigV1.model_validate(revision.config)
+            else:
+                config = TenantConfigV2.model_validate(revision.config)
         except ValidationError as error:
             return (
                 None,
@@ -361,4 +451,31 @@ class ConfigUseCases:
                     )
                 ],
             )
+        if isinstance(config, TenantConfigV2):
+            prompt_revision = await self._prompt_bundles.get(
+                revision.tenant_id,
+                config.prompt_bundle_revision_id,
+            )
+            if prompt_revision is None:
+                return (
+                    None,
+                    [
+                        ValidationIssue(
+                            path="prompt_bundle_revision_id",
+                            code="prompt_bundle_revision_not_found",
+                            message="Prompt bundle revision does not belong to tenant",
+                        )
+                    ],
+                )
+            if prompt_revision.status is not PromptBundleRevisionStatus.PUBLISHED:
+                return (
+                    None,
+                    [
+                        ValidationIssue(
+                            path="prompt_bundle_revision_id",
+                            code="prompt_bundle_revision_not_published",
+                            message="Prompt bundle revision is not published",
+                        )
+                    ],
+                )
         return config, []

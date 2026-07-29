@@ -24,6 +24,11 @@ from backend_core.modules.tenants.errors import (
     InboundRouteNotFoundError,
     InboundRouteUnavailableError,
     InvalidTenantConfigError,
+    PromptBundleActiveDraftExistsError,
+    PromptBundleRevisionError,
+    PromptBundleRevisionImmutableError,
+    PromptBundleRevisionNotFoundError,
+    PromptBundleRevisionVersionConflictError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
@@ -34,25 +39,30 @@ from backend_core.modules.tenants.legacy_yaml import (
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     InboundRouteRepository,
+    PromptBundleRevisionRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     ConfigRevisionResponse,
     CreateDraftRequest,
     CreateInboundRouteRequest,
+    CreatePromptBundleDraftRequest,
     CreateTenantRequest,
     InboundRouteResponse,
     LegacyConfigImportResponse,
+    PromptBundleRevisionResponse,
     ResolveTenantRouteRequest,
     TenantResponse,
     TenantRouteResolutionResponse,
     UpdateDraftRequest,
     UpdateInboundRouteRequest,
+    UpdatePromptBundleDraftRequest,
     ValidateDraftResponse,
 )
 from backend_core.modules.tenants.service import (
     ConfigUseCases,
     InboundRouteService,
+    PromptBundleService,
     TenantService,
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
@@ -82,6 +92,7 @@ def get_config_use_cases(
     return ConfigUseCases(
         TenantRepository(session),
         ConfigRevisionRepository(session),
+        PromptBundleRevisionRepository(session),
     )
 
 
@@ -103,6 +114,21 @@ def get_inbound_route_service(
 InboundRouteServiceDependency = Annotated[
     InboundRouteService,
     Depends(get_inbound_route_service),
+]
+
+
+def get_prompt_bundle_service(
+    session: DatabaseSession,
+) -> PromptBundleService:
+    return PromptBundleService(
+        TenantRepository(session),
+        PromptBundleRevisionRepository(session),
+    )
+
+
+PromptBundleServiceDependency = Annotated[
+    PromptBundleService,
+    Depends(get_prompt_bundle_service),
 ]
 
 
@@ -138,6 +164,31 @@ def config_http_exception(
         detail = "published or archived revisions are immutable"
     else:
         detail = "config revision conflict"
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def prompt_bundle_http_exception(
+    error: TenantNotFoundError | PromptBundleRevisionError,
+) -> HTTPException:
+    if isinstance(
+        error,
+        (TenantNotFoundError, PromptBundleRevisionNotFoundError),
+    ):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="tenant or prompt bundle revision not found",
+        )
+    if isinstance(error, PromptBundleRevisionVersionConflictError):
+        return HTTPException(
+            status_code=status.HTTP_412_PRECONDITION_FAILED,
+            detail="prompt bundle version does not match If-Match",
+        )
+    if isinstance(error, PromptBundleActiveDraftExistsError):
+        detail = "tenant already has an active prompt bundle draft"
+    elif isinstance(error, PromptBundleRevisionImmutableError):
+        detail = "published or archived prompt bundle revisions are immutable"
+    else:
+        detail = "prompt bundle revision conflict"
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
@@ -276,6 +327,84 @@ async def update_inbound_route(
     ) as error:
         raise inbound_route_http_exception(error) from error
     return InboundRouteResponse.model_validate(route)
+
+
+@router.post(
+    "/{tenant_id}/prompt-bundle/drafts",
+    response_model=PromptBundleRevisionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_prompt_bundle_draft(
+    tenant_id: UUID,
+    data: CreatePromptBundleDraftRequest,
+    response: Response,
+    service: PromptBundleServiceDependency,
+) -> PromptBundleRevisionResponse:
+    try:
+        revision = await service.create_draft(tenant_id, data)
+    except (TenantNotFoundError, PromptBundleRevisionError) as error:
+        raise prompt_bundle_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return PromptBundleRevisionResponse.model_validate(revision)
+
+
+@router.patch(
+    "/{tenant_id}/prompt-bundle/drafts/{revision_id}",
+    response_model=PromptBundleRevisionResponse,
+)
+async def update_prompt_bundle_draft(
+    tenant_id: UUID,
+    revision_id: UUID,
+    data: UpdatePromptBundleDraftRequest,
+    response: Response,
+    service: PromptBundleServiceDependency,
+    if_match: Annotated[str, Header(alias="If-Match")],
+) -> PromptBundleRevisionResponse:
+    try:
+        revision = await service.update_draft(
+            tenant_id,
+            revision_id,
+            data,
+            parse_if_match(if_match),
+        )
+    except (TenantNotFoundError, PromptBundleRevisionError) as error:
+        raise prompt_bundle_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return PromptBundleRevisionResponse.model_validate(revision)
+
+
+@router.post(
+    "/{tenant_id}/prompt-bundle/drafts/{revision_id}/publish",
+    response_model=PromptBundleRevisionResponse,
+)
+async def publish_prompt_bundle_draft(
+    tenant_id: UUID,
+    revision_id: UUID,
+    service: PromptBundleServiceDependency,
+) -> PromptBundleRevisionResponse:
+    try:
+        revision = await service.publish(tenant_id, revision_id)
+    except (TenantNotFoundError, PromptBundleRevisionError) as error:
+        raise prompt_bundle_http_exception(error) from error
+    return PromptBundleRevisionResponse.model_validate(revision)
+
+
+@router.get(
+    "/{tenant_id}/prompt-bundle/revisions",
+    response_model=list[PromptBundleRevisionResponse],
+)
+async def list_prompt_bundle_revisions(
+    tenant_id: UUID,
+    service: PromptBundleServiceDependency,
+) -> list[PromptBundleRevisionResponse]:
+    try:
+        revisions = await service.list(tenant_id)
+    except TenantNotFoundError as error:
+        raise prompt_bundle_http_exception(error) from error
+    return [
+        PromptBundleRevisionResponse.model_validate(revision)
+        for revision in revisions
+    ]
 
 
 @router.post(

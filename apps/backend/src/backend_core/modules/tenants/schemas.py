@@ -4,7 +4,11 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from backend_core.modules.tenants.models import ConfigRevisionStatus, TenantStatus
+from backend_core.modules.tenants.models import (
+    ConfigRevisionStatus,
+    PromptBundleRevisionStatus,
+    TenantStatus,
+)
 
 Slug = Annotated[
     str,
@@ -104,6 +108,57 @@ class TenantRouteResolutionResponse(BaseModel):
     tenant_slug: str
     active_config_revision_id: UUID
     active_config_revision_number: int
+
+
+class CreatePromptBundleDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    system_instructions: Annotated[str, Field(min_length=1, max_length=100_000)]
+    tenant_instructions: Annotated[str, Field(max_length=100_000)] = ""
+    knowledge_text: Annotated[str, Field(max_length=1_000_000)] = ""
+
+
+class UpdatePromptBundleDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    system_instructions: (
+        Annotated[str, Field(min_length=1, max_length=100_000)] | None
+    ) = None
+    tenant_instructions: Annotated[str, Field(max_length=100_000)] | None = None
+    knowledge_text: Annotated[str, Field(max_length=1_000_000)] | None = None
+
+    @field_validator(
+        "system_instructions",
+        "tenant_instructions",
+        "knowledge_text",
+        mode="before",
+    )
+    @classmethod
+    def fields_cannot_be_cleared(cls, value: Any) -> Any:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
+
+    @model_validator(mode="after")
+    def at_least_one_change(self) -> UpdatePromptBundleDraftRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        return self
+
+
+class PromptBundleRevisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    revision_number: int
+    status: PromptBundleRevisionStatus
+    system_instructions: str
+    tenant_instructions: str
+    knowledge_text: str
+    created_at: datetime
+    published_at: datetime | None
+    version: int
 
 
 class CreateDraftRequest(BaseModel):

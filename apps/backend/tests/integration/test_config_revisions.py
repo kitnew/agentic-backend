@@ -139,8 +139,8 @@ async def test_config_revision_lifecycle(
             invalid_update_response = await client.patch(
                 f"{config_url}/drafts/{revision_2_id}",
                 json={
-                    "schema_version": 2,
-                    "config": {**config_v1(greeting="Ahoj"), "schema_version": 2},
+                    "schema_version": 3,
+                    "config": {**config_v1(greeting="Ahoj"), "schema_version": 3},
                 },
                 headers={"If-Match": '"1"'},
             )
@@ -164,7 +164,7 @@ async def test_config_revision_lifecycle(
                     {
                         "path": "schema_version",
                         "code": "unsupported_schema_version",
-                        "message": "Only schema_version 1 is supported",
+                        "message": "Only schema_version 1 and 2 are supported",
                     }
                 ],
             }
