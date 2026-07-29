@@ -5,8 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
+    InboundRoute,
     Tenant,
     TenantConfigRevision,
+    TenantStatus,
 )
 
 
@@ -38,6 +40,61 @@ class TenantRepository:
             .limit(limit)
         )
         return list(tenants)
+
+
+class InboundRouteRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(self, route: InboundRoute) -> InboundRoute:
+        self._session.add(route)
+        await self._session.flush()
+        return route
+
+    async def get(self, tenant_id: UUID, route_id: UUID) -> InboundRoute | None:
+        return await self._session.scalar(
+            select(InboundRoute).where(
+                InboundRoute.tenant_id == tenant_id,
+                InboundRoute.id == route_id,
+            )
+        )
+
+    async def list(self, tenant_id: UUID) -> list[InboundRoute]:
+        routes = await self._session.scalars(
+            select(InboundRoute)
+            .where(InboundRoute.tenant_id == tenant_id)
+            .order_by(InboundRoute.created_at, InboundRoute.id)
+        )
+        return list(routes)
+
+    async def flush(self) -> None:
+        await self._session.flush()
+
+    async def refresh(self, route: InboundRoute) -> None:
+        await self._session.refresh(route)
+
+    async def resolve(
+        self,
+        normalized_did: str,
+    ) -> tuple[Tenant, TenantConfigRevision] | None:
+        row = (
+            await self._session.execute(
+                select(Tenant, TenantConfigRevision)
+                .join(InboundRoute, InboundRoute.tenant_id == Tenant.id)
+                .join(
+                    TenantConfigRevision,
+                    TenantConfigRevision.id == Tenant.active_config_revision_id,
+                )
+                .where(
+                    InboundRoute.normalized_did == normalized_did,
+                    InboundRoute.enabled.is_(True),
+                    Tenant.status == TenantStatus.ACTIVE,
+                    TenantConfigRevision.status == ConfigRevisionStatus.PUBLISHED,
+                    TenantConfigRevision.published_at.is_not(None),
+                )
+            )
+        ).one_or_none()
+        return None if row is None else (row[0], row[1])
 
 
 class ConfigRevisionRepository:

@@ -11,7 +11,13 @@ from jwt import InvalidTokenError
 VOICE_AGENT = "voice-agent"
 JOB_WORKER = "job-worker"
 SERVICE_SCOPES = {
-    VOICE_AGENT: frozenset({"tenant-config:read", "call-session:create"}),
+    VOICE_AGENT: frozenset(
+        {
+            "tenant-config:read",
+            "tenant-routing:resolve",
+            "call-session:create",
+        }
+    ),
     JOB_WORKER: frozenset({"capability-result:write"}),
 }
 

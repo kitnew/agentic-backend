@@ -12,23 +12,30 @@ from backend_core.modules.tenants.errors import (
     ConfigRevisionImmutableError,
     ConfigRevisionNotFoundError,
     ConfigRevisionVersionConflictError,
+    InboundRouteDidConflictError,
+    InboundRouteNotFoundError,
+    InboundRouteUnavailableError,
     InvalidTenantConfigError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
+    InboundRoute,
     Tenant,
     TenantConfigRevision,
 )
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
+    InboundRouteRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     CreateDraftRequest,
+    CreateInboundRouteRequest,
     CreateTenantRequest,
     UpdateDraftRequest,
+    UpdateInboundRouteRequest,
     ValidationIssue,
 )
 
@@ -55,6 +62,61 @@ class TenantService:
 
     async def list(self, *, offset: int, limit: int) -> list[Tenant]:
         return await self._repository.list(offset=offset, limit=limit)
+
+
+class InboundRouteService:
+    def __init__(
+        self,
+        tenants: TenantRepository,
+        routes: InboundRouteRepository,
+    ) -> None:
+        self._tenants = tenants
+        self._routes = routes
+
+    async def create(
+        self,
+        tenant_id: UUID,
+        data: CreateInboundRouteRequest,
+    ) -> InboundRoute:
+        if await self._tenants.get(tenant_id) is None:
+            raise TenantNotFoundError
+        route = InboundRoute(tenant_id=tenant_id, **data.model_dump())
+        try:
+            return await self._routes.add(route)
+        except IntegrityError as error:
+            raise InboundRouteDidConflictError from error
+
+    async def list(self, tenant_id: UUID) -> list[InboundRoute]:
+        if await self._tenants.get(tenant_id) is None:
+            raise TenantNotFoundError
+        return await self._routes.list(tenant_id)
+
+    async def update(
+        self,
+        tenant_id: UUID,
+        route_id: UUID,
+        data: UpdateInboundRouteRequest,
+    ) -> InboundRoute:
+        route = await self._routes.get(tenant_id, route_id)
+        if route is None:
+            raise InboundRouteNotFoundError
+        for field, value in data.model_dump(exclude_unset=True).items():
+            setattr(route, field, value)
+        try:
+            await self._routes.flush()
+            await self._routes.refresh(route)
+        except IntegrityError as error:
+            raise InboundRouteDidConflictError from error
+        return route
+
+    async def resolve(
+        self,
+        normalized_did: str,
+    ) -> tuple[Tenant, TenantConfigRevision]:
+        resolution = await self._routes.resolve(normalized_did)
+        if resolution is None:
+            raise InboundRouteUnavailableError
+        return resolution
 
 
 class ConfigUseCases:

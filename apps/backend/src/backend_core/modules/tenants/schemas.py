@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -20,6 +20,14 @@ BusinessType = Annotated[
         min_length=1,
         max_length=64,
         pattern=r"^[a-z][a-z0-9_]*$",
+    ),
+]
+E164Did = Annotated[
+    str,
+    Field(
+        min_length=3,
+        max_length=16,
+        pattern=r"^\+[1-9][0-9]{1,14}$",
     ),
 ]
 
@@ -44,6 +52,58 @@ class TenantResponse(BaseModel):
     active_config_revision_id: UUID | None
     created_at: datetime
     updated_at: datetime
+
+
+class CreateInboundRouteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    normalized_did: E164Did
+    enabled: bool = True
+
+
+class UpdateInboundRouteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    normalized_did: E164Did | None = None
+    enabled: bool | None = None
+
+    @field_validator("normalized_did", "enabled", mode="before")
+    @classmethod
+    def fields_cannot_be_cleared(cls, value: Any) -> Any:
+        if value is None:
+            raise ValueError("field cannot be null")
+        return value
+
+    @model_validator(mode="after")
+    def at_least_one_change(self) -> UpdateInboundRouteRequest:
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be provided")
+        return self
+
+
+class InboundRouteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    normalized_did: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResolveTenantRouteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    channel: Literal["sip"]
+    called_number: E164Did
+
+
+class TenantRouteResolutionResponse(BaseModel):
+    tenant_id: UUID
+    tenant_slug: str
+    active_config_revision_id: UUID
+    active_config_revision_number: int
 
 
 class CreateDraftRequest(BaseModel):

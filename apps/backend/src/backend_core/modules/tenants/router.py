@@ -20,6 +20,9 @@ from backend_core.modules.tenants.errors import (
     ConfigRevisionImmutableError,
     ConfigRevisionNotFoundError,
     ConfigRevisionVersionConflictError,
+    InboundRouteDidConflictError,
+    InboundRouteNotFoundError,
+    InboundRouteUnavailableError,
     InvalidTenantConfigError,
     TenantNotFoundError,
     TenantSlugConflictError,
@@ -30,19 +33,26 @@ from backend_core.modules.tenants.legacy_yaml import (
 )
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
+    InboundRouteRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     ConfigRevisionResponse,
     CreateDraftRequest,
+    CreateInboundRouteRequest,
     CreateTenantRequest,
+    InboundRouteResponse,
     LegacyConfigImportResponse,
+    ResolveTenantRouteRequest,
     TenantResponse,
+    TenantRouteResolutionResponse,
     UpdateDraftRequest,
+    UpdateInboundRouteRequest,
     ValidateDraftResponse,
 )
 from backend_core.modules.tenants.service import (
     ConfigUseCases,
+    InboundRouteService,
     TenantService,
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
@@ -54,7 +64,7 @@ router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 internal_router = APIRouter(
-    prefix="/internal/v1/tenants",
+    prefix="/internal/v1",
     tags=["internal:tenants"],
 )
 
@@ -78,6 +88,21 @@ def get_config_use_cases(
 ConfigUseCasesDependency = Annotated[
     ConfigUseCases,
     Depends(get_config_use_cases),
+]
+
+
+def get_inbound_route_service(
+    session: DatabaseSession,
+) -> InboundRouteService:
+    return InboundRouteService(
+        TenantRepository(session),
+        InboundRouteRepository(session),
+    )
+
+
+InboundRouteServiceDependency = Annotated[
+    InboundRouteService,
+    Depends(get_inbound_route_service),
 ]
 
 
@@ -114,6 +139,29 @@ def config_http_exception(
     else:
         detail = "config revision conflict"
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def inbound_route_http_exception(
+    error: (
+        TenantNotFoundError
+        | InboundRouteNotFoundError
+        | InboundRouteDidConflictError
+    ),
+) -> HTTPException:
+    if isinstance(error, TenantNotFoundError):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="tenant not found",
+        )
+    if isinstance(error, InboundRouteNotFoundError):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="inbound route not found",
+        )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="DID is already assigned to an inbound route",
+    )
 
 
 def etag(version: int) -> str:
@@ -173,6 +221,61 @@ async def list_tenants(
 ) -> list[TenantResponse]:
     tenants = await service.list(offset=offset, limit=limit)
     return [TenantResponse.model_validate(tenant) for tenant in tenants]
+
+
+@router.post(
+    "/{tenant_id}/inbound-routes",
+    response_model=InboundRouteResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_inbound_route(
+    tenant_id: UUID,
+    data: CreateInboundRouteRequest,
+    service: InboundRouteServiceDependency,
+) -> InboundRouteResponse:
+    try:
+        route = await service.create(tenant_id, data)
+    except (
+        TenantNotFoundError,
+        InboundRouteDidConflictError,
+    ) as error:
+        raise inbound_route_http_exception(error) from error
+    return InboundRouteResponse.model_validate(route)
+
+
+@router.get(
+    "/{tenant_id}/inbound-routes",
+    response_model=list[InboundRouteResponse],
+)
+async def list_inbound_routes(
+    tenant_id: UUID,
+    service: InboundRouteServiceDependency,
+) -> list[InboundRouteResponse]:
+    try:
+        routes = await service.list(tenant_id)
+    except TenantNotFoundError as error:
+        raise inbound_route_http_exception(error) from error
+    return [InboundRouteResponse.model_validate(route) for route in routes]
+
+
+@router.patch(
+    "/{tenant_id}/inbound-routes/{route_id}",
+    response_model=InboundRouteResponse,
+)
+async def update_inbound_route(
+    tenant_id: UUID,
+    route_id: UUID,
+    data: UpdateInboundRouteRequest,
+    service: InboundRouteServiceDependency,
+) -> InboundRouteResponse:
+    try:
+        route = await service.update(tenant_id, route_id, data)
+    except (
+        InboundRouteNotFoundError,
+        InboundRouteDidConflictError,
+    ) as error:
+        raise inbound_route_http_exception(error) from error
+    return InboundRouteResponse.model_validate(route)
 
 
 @router.post(
@@ -371,7 +474,7 @@ async def get_active_config(
 
 
 @internal_router.get(
-    "/{tenant_id}/active-config",
+    "/tenants/{tenant_id}/active-config",
     response_model=ActiveTenantConfig,
     dependencies=[Depends(require_internal_scope("tenant-config:read"))],
 )
@@ -390,4 +493,28 @@ async def get_internal_active_config(
         revision_number=revision.revision_number,
         published_at=revision.published_at,
         config=config,
+    )
+
+
+@internal_router.post(
+    "/tenant-routing/resolve",
+    response_model=TenantRouteResolutionResponse,
+    dependencies=[Depends(require_internal_scope("tenant-routing:resolve"))],
+)
+async def resolve_tenant_route(
+    data: ResolveTenantRouteRequest,
+    service: InboundRouteServiceDependency,
+) -> TenantRouteResolutionResponse:
+    try:
+        tenant, revision = await service.resolve(data.called_number)
+    except InboundRouteUnavailableError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="inbound route unavailable",
+        ) from error
+    return TenantRouteResolutionResponse(
+        tenant_id=tenant.id,
+        tenant_slug=tenant.slug,
+        active_config_revision_id=revision.id,
+        active_config_revision_number=revision.revision_number,
     )

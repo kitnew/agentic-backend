@@ -10,6 +10,18 @@ class TenantSlugConflictError(Exception):
     pass
 
 
+class InboundRouteNotFoundError(Exception):
+    pass
+
+
+class InboundRouteDidConflictError(Exception):
+    pass
+
+
+class InboundRouteUnavailableError(Exception):
+    pass
+
+
 class ConfigRevisionError(Exception):
     pass
 
