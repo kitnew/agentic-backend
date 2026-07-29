@@ -5,6 +5,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic_core import PydanticCustomError
 
 from backend_core.modules.tenants.models import ConfigRevisionStatus, TenantStatus
 
@@ -43,7 +44,10 @@ class LocalizationConfig(_StrictConfigModel):
         try:
             ZoneInfo(value)
         except ZoneInfoNotFoundError as error:
-            raise ValueError("unknown IANA timezone") from error
+            raise PydanticCustomError(
+                "invalid_timezone",
+                "Unknown IANA timezone",
+            ) from error
         return value
 
 
@@ -91,13 +95,8 @@ class TenantRead(BaseModel):
 
 
 class ConfigRevisionCreate(BaseModel):
-    schema_version: Annotated[int, Field(gt=0)] = 1
-    config: dict[str, Any] = Field(default_factory=dict)
-    created_by: UUID
-    comment: Annotated[str | None, Field(max_length=1000)] = None
-
-
-class ConfigRevisionClone(BaseModel):
+    schema_version: Annotated[int | None, Field(gt=0)] = None
+    config: dict[str, Any] | None = None
     created_by: UUID
     comment: Annotated[str | None, Field(max_length=1000)] = None
 
@@ -130,8 +129,15 @@ class ConfigRevisionRead(BaseModel):
     comment: str | None
 
 
+class ConfigValidationError(BaseModel):
+    path: str
+    code: str
+    message: str
+
+
 class ConfigValidationResult(BaseModel):
-    valid: bool = True
+    valid: bool
+    errors: list[ConfigValidationError] = Field(default_factory=list)
 
 
 class ActiveConfigRead(BaseModel):

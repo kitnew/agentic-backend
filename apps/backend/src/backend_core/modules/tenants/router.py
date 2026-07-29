@@ -8,7 +8,6 @@ from backend_core.modules.tenants.errors import (
     ActiveDraftExistsError,
     ConfigRevisionError,
     ConfigRevisionImmutableError,
-    ConfigRevisionNotCloneableError,
     ConfigRevisionNotFoundError,
     InvalidTenantConfigError,
     TenantNotFoundError,
@@ -20,7 +19,6 @@ from backend_core.modules.tenants.repository import (
 )
 from backend_core.modules.tenants.schemas import (
     ActiveConfigRead,
-    ConfigRevisionClone,
     ConfigRevisionCreate,
     ConfigRevisionRead,
     ConfigRevisionUpdate,
@@ -29,7 +27,7 @@ from backend_core.modules.tenants.schemas import (
     TenantRead,
 )
 from backend_core.modules.tenants.service import (
-    ConfigRevisionService,
+    ConfigUseCases,
     TenantService,
 )
 from backend_core.platform.database import DatabaseSession
@@ -44,18 +42,18 @@ def get_tenant_service(session: DatabaseSession) -> TenantService:
 TenantServiceDependency = Annotated[TenantService, Depends(get_tenant_service)]
 
 
-def get_config_revision_service(
+def get_config_use_cases(
     session: DatabaseSession,
-) -> ConfigRevisionService:
-    return ConfigRevisionService(
+) -> ConfigUseCases:
+    return ConfigUseCases(
         TenantRepository(session),
         ConfigRevisionRepository(session),
     )
 
 
-ConfigRevisionServiceDependency = Annotated[
-    ConfigRevisionService,
-    Depends(get_config_revision_service),
+ConfigUseCasesDependency = Annotated[
+    ConfigUseCases,
+    Depends(get_config_use_cases),
 ]
 
 
@@ -84,8 +82,6 @@ def config_http_exception(
         detail = "tenant already has an active draft"
     elif isinstance(error, ConfigRevisionImmutableError):
         detail = "published or archived revisions are immutable"
-    elif isinstance(error, ConfigRevisionNotCloneableError):
-        detail = "a draft revision cannot be cloned"
     else:
         detail = "config revision conflict"
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
@@ -132,114 +128,100 @@ async def list_tenants(
 
 
 @router.post(
-    "/{tenant_id}/config-revisions/drafts",
+    "/{tenant_id}/config/drafts",
     response_model=ConfigRevisionRead,
     status_code=status.HTTP_201_CREATED,
 )
 async def create_config_draft(
     tenant_id: UUID,
     data: ConfigRevisionCreate,
-    service: ConfigRevisionServiceDependency,
+    use_cases: ConfigUseCasesDependency,
 ) -> ConfigRevisionRead:
     try:
-        revision = await service.create_draft(tenant_id, data)
-    except (TenantNotFoundError, ConfigRevisionError) as error:
-        raise config_http_exception(error) from error
-    return ConfigRevisionRead.model_validate(revision)
-
-
-@router.post(
-    "/{tenant_id}/config-revisions/{revision_id}/clone",
-    response_model=ConfigRevisionRead,
-    status_code=status.HTTP_201_CREATED,
-)
-async def clone_config_revision(
-    tenant_id: UUID,
-    revision_id: UUID,
-    data: ConfigRevisionClone,
-    service: ConfigRevisionServiceDependency,
-) -> ConfigRevisionRead:
-    try:
-        revision = await service.clone(tenant_id, revision_id, data)
+        revision = await use_cases.create_config_draft(tenant_id, data)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
     return ConfigRevisionRead.model_validate(revision)
 
 
 @router.patch(
-    "/{tenant_id}/config-revisions/{revision_id}",
+    "/{tenant_id}/config/drafts/{revision_id}",
     response_model=ConfigRevisionRead,
 )
-async def update_config_revision(
+async def update_config_draft(
     tenant_id: UUID,
     revision_id: UUID,
     data: ConfigRevisionUpdate,
-    service: ConfigRevisionServiceDependency,
+    use_cases: ConfigUseCasesDependency,
 ) -> ConfigRevisionRead:
     try:
-        revision = await service.update(tenant_id, revision_id, data)
+        revision = await use_cases.update_config_draft(
+            tenant_id,
+            revision_id,
+            data,
+        )
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
     return ConfigRevisionRead.model_validate(revision)
 
 
 @router.post(
-    "/{tenant_id}/config-revisions/{revision_id}/validate",
+    "/{tenant_id}/config/drafts/{revision_id}/validate",
     response_model=ConfigValidationResult,
 )
-async def validate_config_revision(
+async def validate_config_draft(
     tenant_id: UUID,
     revision_id: UUID,
-    service: ConfigRevisionServiceDependency,
+    use_cases: ConfigUseCasesDependency,
 ) -> ConfigValidationResult:
     try:
-        await service.validate(tenant_id, revision_id)
+        errors = await use_cases.validate_config_draft(tenant_id, revision_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
-    return ConfigValidationResult()
+    return ConfigValidationResult(valid=not errors, errors=errors)
 
 
 @router.post(
-    "/{tenant_id}/config-revisions/{revision_id}/publish",
+    "/{tenant_id}/config/drafts/{revision_id}/publish",
     response_model=ConfigRevisionRead,
 )
-async def publish_config_revision(
+async def publish_config_draft(
     tenant_id: UUID,
     revision_id: UUID,
-    service: ConfigRevisionServiceDependency,
+    use_cases: ConfigUseCasesDependency,
 ) -> ConfigRevisionRead:
     try:
-        revision = await service.publish(tenant_id, revision_id)
+        revision = await use_cases.publish_config_draft(tenant_id, revision_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
     return ConfigRevisionRead.model_validate(revision)
 
 
 @router.get(
-    "/{tenant_id}/config-revisions",
+    "/{tenant_id}/config/revisions",
     response_model=list[ConfigRevisionRead],
 )
 async def list_config_revisions(
     tenant_id: UUID,
-    service: ConfigRevisionServiceDependency,
+    use_cases: ConfigUseCasesDependency,
 ) -> list[ConfigRevisionRead]:
     try:
-        revisions = await service.list(tenant_id)
+        revisions = await use_cases.list_config_revisions(tenant_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
     return [ConfigRevisionRead.model_validate(revision) for revision in revisions]
 
 
 @router.get(
-    "/{tenant_id}/config-revisions/active",
+    "/{tenant_id}/config/active",
     response_model=ActiveConfigRead,
 )
 async def get_active_config(
     tenant_id: UUID,
-    service: ConfigRevisionServiceDependency,
+    use_cases: ConfigUseCasesDependency,
 ) -> ActiveConfigRead:
     try:
-        revision, config = await service.get_active(tenant_id)
+        revision, config = await use_cases.get_active_config(tenant_id)
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
     assert revision.published_at is not None

@@ -45,11 +45,11 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
                 },
             )
             tenant_id = UUID(tenant_response.json()["id"])
-            revisions_url = f"/admin/v1/tenants/{tenant_id}/config-revisions"
-            assert (await client.get(f"{revisions_url}/active")).status_code == 404
+            config_url = f"/admin/v1/tenants/{tenant_id}/config"
+            assert (await client.get(f"{config_url}/active")).status_code == 404
 
             draft_response = await client.post(
-                f"{revisions_url}/drafts",
+                f"{config_url}/drafts",
                 json={
                     "schema_version": 1,
                     "config": config_v1(),
@@ -64,19 +64,19 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             assert draft_1["status"] == "draft"
 
             second_draft_response = await client.post(
-                f"{revisions_url}/drafts",
+                f"{config_url}/drafts",
                 json={"created_by": str(actor_id)},
             )
             assert second_draft_response.status_code == 409
 
             validation_response = await client.post(
-                f"{revisions_url}/{revision_1_id}/validate"
+                f"{config_url}/drafts/{revision_1_id}/validate"
             )
             assert validation_response.status_code == 200
-            assert validation_response.json() == {"valid": True}
+            assert validation_response.json() == {"valid": True, "errors": []}
 
             publish_response = await client.post(
-                f"{revisions_url}/{revision_1_id}/publish"
+                f"{config_url}/drafts/{revision_1_id}/publish"
             )
             assert publish_response.status_code == 200
             assert publish_response.json()["status"] == "published"
@@ -90,13 +90,13 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             )
 
             immutable_response = await client.patch(
-                f"{revisions_url}/{revision_1_id}",
+                f"{config_url}/drafts/{revision_1_id}",
                 json={"comment": "Must not change"},
             )
             assert immutable_response.status_code == 409
 
             clone_response = await client.post(
-                f"{revisions_url}/{revision_1_id}/clone",
+                f"{config_url}/drafts",
                 json={
                     "created_by": str(actor_id),
                     "comment": "Second revision",
@@ -109,28 +109,39 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             assert draft_2["config"] == draft_1["config"]
 
             duplicate_clone_response = await client.post(
-                f"{revisions_url}/{revision_1_id}/clone",
+                f"{config_url}/drafts",
                 json={"created_by": str(actor_id)},
             )
             assert duplicate_clone_response.status_code == 409
 
             invalid_update_response = await client.patch(
-                f"{revisions_url}/{revision_2_id}",
+                f"{config_url}/drafts/{revision_2_id}",
                 json={
                     "schema_version": 2,
                     "config": {**config_v1(greeting="Ahoj"), "schema_version": 2},
                 },
             )
             assert invalid_update_response.status_code == 200
+            invalid_validation = await client.post(
+                f"{config_url}/drafts/{revision_2_id}/validate"
+            )
+            assert invalid_validation.status_code == 200
+            assert invalid_validation.json() == {
+                "valid": False,
+                "errors": [
+                    {
+                        "path": "schema_version",
+                        "code": "unsupported_schema_version",
+                        "message": "Only schema_version 1 is supported",
+                    }
+                ],
+            }
             assert (
-                await client.post(f"{revisions_url}/{revision_2_id}/validate")
-            ).status_code == 422
-            assert (
-                await client.post(f"{revisions_url}/{revision_2_id}/publish")
+                await client.post(f"{config_url}/drafts/{revision_2_id}/publish")
             ).status_code == 422
 
             valid_update_response = await client.patch(
-                f"{revisions_url}/{revision_2_id}",
+                f"{config_url}/drafts/{revision_2_id}",
                 json={
                     "schema_version": 1,
                     "config": config_v1(greeting="Ahoj"),
@@ -139,12 +150,12 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             assert valid_update_response.status_code == 200
 
             publish_2_response = await client.post(
-                f"{revisions_url}/{revision_2_id}/publish"
+                f"{config_url}/drafts/{revision_2_id}/publish"
             )
             assert publish_2_response.status_code == 200
             assert publish_2_response.json()["status"] == "published"
 
-            revisions = (await client.get(revisions_url)).json()
+            revisions = (await client.get(f"{config_url}/revisions")).json()
             assert [revision["revision_number"] for revision in revisions] == [1, 2]
             assert [revision["status"] for revision in revisions] == [
                 "archived",
@@ -158,16 +169,22 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
                 revision_2_id
             )
 
-            active_config_response = await client.get(f"{revisions_url}/active")
+            active_config_response = await client.get(f"{config_url}/active")
             assert active_config_response.status_code == 200
             active_config = active_config_response.json()
             assert active_config["revision_id"] == str(revision_2_id)
             assert active_config["revision_number"] == 2
             assert active_config["config"] == config_v1(greeting="Ahoj")
 
-            invalid_config = {**config_v1(), "prices": {}}
+            invalid_config = {
+                **config_v1(),
+                "localization": {
+                    "default_locale": "sk-SK",
+                    "timezone": "Mars/Olympus",
+                },
+            }
             invalid_draft_response = await client.post(
-                f"{revisions_url}/drafts",
+                f"{config_url}/drafts",
                 json={
                     "schema_version": 1,
                     "config": invalid_config,
@@ -176,11 +193,22 @@ async def test_config_revision_lifecycle(migrated_database_url: str) -> None:
             )
             assert invalid_draft_response.status_code == 201
             invalid_revision_id = invalid_draft_response.json()["id"]
+            invalid_validation = await client.post(
+                f"{config_url}/drafts/{invalid_revision_id}/validate"
+            )
+            assert invalid_validation.status_code == 200
+            assert invalid_validation.json() == {
+                "valid": False,
+                "errors": [
+                    {
+                        "path": "localization.timezone",
+                        "code": "invalid_timezone",
+                        "message": "Unknown IANA timezone",
+                    }
+                ],
+            }
             assert (
-                await client.post(f"{revisions_url}/{invalid_revision_id}/validate")
-            ).status_code == 422
-            assert (
-                await client.post(f"{revisions_url}/{invalid_revision_id}/publish")
+                await client.post(f"{config_url}/drafts/{invalid_revision_id}/publish")
             ).status_code == 422
 
             other_tenant_response = await client.post(

@@ -26,10 +26,6 @@ class ConfigRevisionImmutableError(ConfigRevisionError):
     pass
 
 
-class ConfigRevisionNotCloneableError(ConfigRevisionError):
-    pass
-
-
 class InvalidTenantConfigError(ConfigRevisionError):
     def __init__(self, errors: Sequence[Mapping[str, Any]]) -> None:
         self.errors = [dict(error) for error in errors]
