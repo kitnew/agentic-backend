@@ -219,7 +219,12 @@ def etag(version: int) -> str:
     return f'"{version}"'
 
 
-def parse_if_match(value: str) -> int:
+def parse_if_match(value: str | None) -> int:
+    if value is None:
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail="If-Match header is required",
+        )
     if len(value) < 3 or value[0] != '"' or value[-1] != '"':
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -358,7 +363,7 @@ async def update_prompt_bundle_draft(
     data: UpdatePromptBundleDraftRequest,
     response: Response,
     service: PromptBundleServiceDependency,
-    if_match: Annotated[str, Header(alias="If-Match")],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> PromptBundleRevisionResponse:
     try:
         revision = await service.update_draft(
@@ -454,7 +459,7 @@ async def update_config_draft(
     data: UpdateDraftRequest,
     response: Response,
     use_cases: ConfigUseCasesDependency,
-    if_match: Annotated[str, Header(alias="If-Match")],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> ConfigRevisionResponse:
     try:
         revision = await use_cases.update_config_draft(

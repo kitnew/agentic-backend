@@ -37,7 +37,16 @@ class CallSessionService:
         self._routes = routes
         self._prompt_bundles = prompt_bundles
 
-    async def create(self, data: CreateCallSessionRequest) -> CallSession:
+    async def create(
+        self,
+        data: CreateCallSessionRequest,
+    ) -> tuple[CallSession, bool]:
+        existing = await self._calls.get_by_provider_call(
+            data.provider,
+            data.provider_call_id,
+        )
+        if existing is not None:
+            return existing, False
         resolution = await self._routes.resolve(data.called_number, lock_tenant=True)
         if resolution is None:
             raise CallSessionRouteUnavailableError
@@ -68,7 +77,7 @@ class CallSessionService:
             room_name=data.room_name,
         )
         try:
-            return await self._calls.add(call)
+            return await self._calls.add_or_get(call)
         except IntegrityError as error:
             raise CallSessionConflictError from error
 

@@ -94,7 +94,7 @@ async def test_config_revision_lifecycle(
                 f"{config_url}/drafts/{revision_1_id}",
                 json={"comment": "Must include If-Match"},
             )
-            assert missing_if_match.status_code == 422
+            assert missing_if_match.status_code == 428
 
             publish_response = await client.post(
                 f"{config_url}/drafts/{revision_1_id}/publish"

@@ -92,11 +92,16 @@ async def test_inbound_route_management_and_resolution(
             tenant_id = UUID(str(tenant["id"]))
             routes_url = f"/admin/v1/tenants/{tenant_id}/inbound-routes"
 
-            invalid_did = await client.post(
-                routes_url,
-                json={"normalized_did": "00421552301299"},
-            )
-            assert invalid_did.status_code == 422
+            for invalid_value in (
+                "00421552301299",
+                "421552301299",
+                "+421 55 230 12 99",
+            ):
+                invalid_did = await client.post(
+                    routes_url,
+                    json={"normalized_did": invalid_value},
+                )
+                assert invalid_did.status_code == 422
 
             created_response = await client.post(
                 routes_url,

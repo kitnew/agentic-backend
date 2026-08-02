@@ -172,6 +172,20 @@ async def test_admin_and_internal_access_boundaries(
                     internal_url,
                     headers={"Authorization": f"Bearer {voice_token}"},
                 )
-            ).status_code == 200
+                ).status_code == 200
+
+            forged_scope_token = service_token(
+                service="voice-agent",
+                scopes=["tenant-config:read", "capability-result:write"],
+                secret=voice_secret,
+            )
+            assert (
+                await client.get(
+                    internal_url,
+                    headers={
+                        "Authorization": f"Bearer {forged_scope_token}",
+                    },
+                )
+            ).status_code == 401
     finally:
         await database.close()

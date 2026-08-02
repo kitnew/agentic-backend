@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Callable
 from uuid import uuid4
 
@@ -23,6 +24,13 @@ def config_v2(prompt_revision_id: str) -> dict[str, object]:
         "conversation": {"scope": "property_only"},
         "capabilities": {},
     }
+
+
+def config_v1() -> dict[str, object]:
+    config = config_v2(str(uuid4()))
+    config.pop("prompt_bundle_revision_id")
+    config["schema_version"] = 1
+    return config
 
 
 async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str]:
@@ -117,10 +125,24 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert (
                 await client.post(calls_url, json=payload, headers=worker_headers)
             ).status_code == 403
-            created_response = await client.post(
-                calls_url,
-                json=payload,
-                headers=voice_headers,
+            create_responses = await asyncio.gather(
+                *(
+                    client.post(
+                        calls_url,
+                        json=payload,
+                        headers=voice_headers,
+                    )
+                    for _ in range(2)
+                )
+            )
+            assert sorted(response.status_code for response in create_responses) == [
+                200,
+                201,
+            ]
+            created_response = next(
+                response
+                for response in create_responses
+                if response.status_code == 201
             )
             assert created_response.status_code == 201
             created = created_response.json()
@@ -135,12 +157,13 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert created["ended_at"] is None
             assert created["failure_reason"] is None
 
-            duplicate = await client.post(
+            replay = await client.post(
                 calls_url,
                 json={**payload, "room_name": "another-room"},
                 headers=voice_headers,
             )
-            assert duplicate.status_code == 409
+            assert replay.status_code == 200
+            assert replay.json() == created
 
             activated = await client.post(
                 f"{calls_url}/{call_id}/activate",
@@ -202,9 +225,57 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert (
                 await client.post(
                     calls_url,
-                    json={**payload, "called_number": "+421552301499"},
+                    json={
+                        **payload,
+                        "called_number": "+421552301499",
+                        "provider_call_id": "provider-call-missing-route",
+                    },
                     headers=voice_headers,
                 )
             ).status_code == 404
+
+            legacy_tenant = await client.post(
+                "/admin/v1/tenants",
+                json={
+                    "slug": "call-session-legacy-hotel",
+                    "display_name": "Call Session Legacy Hotel",
+                    "business_type": "hotel",
+                },
+            )
+            assert legacy_tenant.status_code == 201
+            legacy_tenant_id = legacy_tenant.json()["id"]
+            legacy_drafts_url = (
+                f"/admin/v1/tenants/{legacy_tenant_id}/config/drafts"
+            )
+            legacy_draft = await client.post(
+                legacy_drafts_url,
+                json={"config": config_v1()},
+            )
+            assert legacy_draft.status_code == 201
+            legacy_revision_id = legacy_draft.json()["id"]
+            assert (
+                await client.post(
+                    f"{legacy_drafts_url}/{legacy_revision_id}/publish"
+                )
+            ).status_code == 200
+            assert (
+                await client.post(
+                    f"/admin/v1/tenants/{legacy_tenant_id}/inbound-routes",
+                    json={"normalized_did": "+421552301411"},
+                )
+            ).status_code == 201
+            legacy_call = await client.post(
+                calls_url,
+                json={
+                    **payload,
+                    "called_number": "+421552301411",
+                    "provider_call_id": "provider-call-legacy-v1",
+                },
+                headers=voice_headers,
+            )
+            assert legacy_call.status_code == 409
+            assert legacy_call.json()["detail"]["code"] == (
+                "tenant_configuration_not_voice_ready"
+            )
     finally:
         await database.close()

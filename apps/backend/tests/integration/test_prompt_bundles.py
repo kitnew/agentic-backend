@@ -98,7 +98,7 @@ async def test_prompt_bundle_lifecycle_and_config_v2_reference(
                     f"{drafts_url}/{revision_id}",
                     json={"knowledge_text": "Missing If-Match"},
                 )
-            ).status_code == 422
+            ).status_code == 428
 
             updated = await client.patch(
                 f"{drafts_url}/{revision_id}",

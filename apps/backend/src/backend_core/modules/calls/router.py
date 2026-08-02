@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from backend_core.modules.calls.errors import (
     CallSessionConfigUnavailableError,
@@ -54,7 +54,10 @@ def call_http_exception(error: Exception) -> HTTPException:
     if isinstance(error, CallSessionConfigUnavailableError):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="inbound route has no voice-ready active config",
+            detail={
+                "code": "tenant_configuration_not_voice_ready",
+                "message": "tenant active configuration must be schema version 2 with a published prompt bundle",
+            },
         )
     return HTTPException(
         status_code=status.HTTP_409_CONFLICT,
@@ -71,15 +74,18 @@ def call_http_exception(error: Exception) -> HTTPException:
 async def create_call_session(
     data: CreateCallSessionRequest,
     service: CallSessionServiceDependency,
+    response: Response,
 ) -> CallSessionResponse:
     try:
-        return CallSessionResponse.model_validate(await service.create(data))
+        call, created = await service.create(data)
     except (
         CallSessionConfigUnavailableError,
         CallSessionConflictError,
         CallSessionRouteUnavailableError,
     ) as error:
         raise call_http_exception(error) from error
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return CallSessionResponse.model_validate(call)
 
 
 @router.post(
