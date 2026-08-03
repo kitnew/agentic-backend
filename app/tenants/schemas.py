@@ -322,7 +322,10 @@ def normalize_phone_number(value: str) -> str:
 
 class TenantVoiceConfig(TenantModel):
     enabled: bool = False
+    handoff: bool = False
     inbound_dids: list[str] = Field(default_factory=list)
+    outbound_dids: list[str] = Field(default_factory=list)
+    outbound_trunk_id: str = ""
     end_call_enabled: bool = False
     max_file_size_bytes: int = 25 * 1024 * 1024
     supported_content_types: list[str] = Field(
@@ -347,13 +350,22 @@ class TenantVoiceConfig(TenantModel):
     fallback: TenantVoiceFallbackConfig = Field(default_factory=TenantVoiceFallbackConfig)
     turn: VoiceTurnConfig = Field(default_factory=VoiceTurnConfig)
 
-    @field_validator("inbound_dids")
+    @field_validator("inbound_dids", "outbound_dids")
     @classmethod
-    def validate_inbound_dids(cls, value: list[str]) -> list[str]:
+    def validate_dids(cls, value: list[str], info) -> list[str]:
         normalized = [normalize_phone_number(number) for number in value]
         if len(normalized) != len(set(normalized)):
-            raise ValueError("voice.inbound_dids must not contain duplicates")
+            raise ValueError(f"voice.{info.field_name} must not contain duplicates")
         return normalized
+
+    @model_validator(mode="after")
+    def validate_handoff(self):
+        if self.handoff:
+            if len(self.outbound_dids) != 1:
+                raise ValueError("voice.handoff requires exactly one outbound_dids entry")
+            if not self.outbound_trunk_id.strip():
+                raise ValueError("voice.handoff requires outbound_trunk_id")
+        return self
 
 
 class TenantContext(TenantModel):

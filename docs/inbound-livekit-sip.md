@@ -11,6 +11,9 @@ Local `docker-compose.yml` has no SIP service. The production override defines
 `livekit-sip` under the `sip` profile; `deploy/deploy.sh` activates that profile only
 when `INBOUND_SIP_ENABLED=true`.
 
+For outbound human handoff from an inbound call, see
+[`human-handoff.md`](human-handoff.md).
+
 ## Configuration
 
 Set these in the staging or production environment:

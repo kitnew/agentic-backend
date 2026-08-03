@@ -81,6 +81,30 @@ def test_tenant_config_defaults_voice_disabled_when_omitted(tmp_path: Path):
     assert loaded.voice.enabled is False
 
 
+def test_human_handoff_is_configured_per_tenant(tmp_path: Path):
+    config = minimal_config()
+    config["voice"] = {
+        "enabled": True,
+        "handoff": True,
+        "outbound_dids": ["00 421 900 111 222"],
+        "outbound_trunk_id": "ST_outbound",
+    }
+
+    loaded = write_config(tmp_path, config).load("test")
+
+    assert loaded.voice.handoff is True
+    assert loaded.voice.outbound_dids == ["+421900111222"]
+    assert loaded.voice.outbound_trunk_id == "ST_outbound"
+
+
+def test_enabled_human_handoff_requires_one_destination_and_trunk(tmp_path: Path):
+    config = minimal_config()
+    config["voice"] = {"handoff": True}
+
+    with pytest.raises(TenantConfigInvalidError, match="exactly one outbound_dids"):
+        write_config(tmp_path, config).load("test")
+
+
 def test_default_locale_must_be_supported(tmp_path: Path):
     config = minimal_config()
     config["supported_locales"] = ["sk-SK"]

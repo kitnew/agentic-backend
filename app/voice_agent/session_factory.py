@@ -298,6 +298,35 @@ class GuardedEndCallTool(EndCallTool):
         return await super()._end_call(ctx)
 
 
+def build_human_handoff_tool(execute, state: VoiceTurnState):
+    async def runtime_tool(context: RunContext) -> str:
+        turn = state.turns_by_speech.get(context.speech_handle.id)
+        if turn is None or not await turn.wait_until_committed_or_cancelled():
+            return "Human handoff was not started because the user's turn is not final."
+        if state.closed or context.speech_handle.interrupted:
+            return "Human handoff was cancelled."
+        if state.pending_tool_calls:
+            return "Human handoff was not started because another tool is still running."
+        return await execute(context)
+
+    return function_tool(
+        runtime_tool,
+        raw_schema={
+            "name": "human_handoff",
+            "description": (
+                "Connect the caller to a human receptionist when the caller explicitly "
+                "asks to speak with a person. Use only for a direct human-connection "
+                "request, not for ordinary questions or unresolved tool work."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+    )
+
+
 def build_function_tools(
     metadata, backend: BackendCoreClient, state: VoiceTurnState, telemetry, caller_number=None
 ):
@@ -401,7 +430,13 @@ def build_function_tools(
 
 class HospitalityAgent(Agent):
     def __init__(
-        self, metadata, backend: BackendCoreClient, telemetry, state: VoiceTurnState, caller_number=None
+        self,
+        metadata,
+        backend: BackendCoreClient,
+        telemetry,
+        state: VoiceTurnState,
+        caller_number=None,
+        human_handoff=None,
     ):
         tools: list[llm.Tool | llm.Toolset] = list(
             build_function_tools(metadata, backend, state, telemetry, caller_number)
@@ -409,11 +444,18 @@ class HospitalityAgent(Agent):
         if metadata.end_call_enabled:
             tools.append(GuardedEndCallTool(state))
         caller_instructions = ""
+        if human_handoff:
+            tools.append(build_human_handoff_tool(human_handoff, state))
+            caller_instructions = (
+                "\n\nHuman handoff is available. If the caller explicitly asks to speak "
+                "with a person, use the human_handoff tool. This runtime instruction "
+                "supersedes older tenant text saying that human transfer is unavailable."
+            )
         if any(
             "use_inbound_caller_number" in tool.parameters.get("properties", {})
             for tool in metadata.tools
         ):
-            caller_instructions = (
+            caller_instructions += (
                 "\n\nA trusted inbound caller number is available: "
                 f"{caller_number}. Set use_inbound_caller_number to true only after the guest "
                 "consents under the tenant contact policy."

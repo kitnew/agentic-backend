@@ -110,6 +110,9 @@ features:
 
 voice:
   enabled: true
+  handoff: false
+  outbound_dids: []
+  outbound_trunk_id: ""
 
   stt:
     provider: elevenlabs

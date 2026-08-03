@@ -69,6 +69,11 @@ class LiveKitSettings:
             turn_debug_overrides_enabled=_bool("VOICE_TURN_DEBUG_OVERRIDES_ENABLED"),
         )
 
+    @property
+    def api_url(self) -> str:
+        parsed = urlparse(self.internal_url)
+        return parsed._replace(scheme="https" if parsed.scheme == "wss" else "http").geturl()
+
     def validate_api(self) -> None:
         if not self.api_key or len(self.api_secret.encode()) < 32:
             raise ValueError("LIVEKIT_API_KEY and a 32-byte LIVEKIT_API_SECRET are required")

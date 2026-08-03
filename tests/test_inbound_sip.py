@@ -166,6 +166,29 @@ def test_bootstrap_resolves_did_and_reuses_one_durable_session(
     assert call.tenant_id == "tenant_a"
 
 
+def test_bootstrap_carries_tenant_handoff_config_to_job_metadata(monkeypatch, tmp_path, db):
+    configure(monkeypatch)
+    tenant_loader(tmp_path, ("tenant_a", "+12025550123"))
+    config_path = tmp_path / "tenant_a.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["voice"].update(
+        {
+            "handoff": True,
+            "outbound_dids": ["+421900111222"],
+            "outbound_trunk_id": "ST_outbound",
+        }
+    )
+    config_path.write_text(yaml.safe_dump(config))
+    loader = TenantConfigLoader(configs_dir=tmp_path)
+    claims = LiveKitBootstrapClaims(iat=int(time.time()), exp=int(time.time()) + 60)
+
+    response = bootstrap_inbound_livekit_session(request(), db, loader, claims)
+
+    assert response.job_metadata.handoff is True
+    assert response.job_metadata.outbound_dids == ("+421900111222",)
+    assert response.job_metadata.outbound_trunk_id == "ST_outbound"
+
+
 def test_concurrent_bootstrap_returns_one_session(monkeypatch, tmp_path):
     configure(monkeypatch)
     tenant_loader(tmp_path, ("tenant_a", "+12025550123"))

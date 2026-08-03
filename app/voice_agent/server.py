@@ -2,8 +2,9 @@ import asyncio
 import json
 import logging
 import time
+from uuid import uuid4
 
-from livekit import rtc
+from livekit import api, rtc
 from livekit.agents import AgentServer, AutoSubscribe, JobContext, JobProcess, cli
 from livekit.plugins import silero
 
@@ -69,6 +70,18 @@ def build_inbound_bootstrap_request(
         called_number=normalize_phone_number(
             attributes.get("sip.trunkPhoneNumber") or ""
         ),
+    )
+
+
+def build_human_handoff_request(
+    room_name: str, phone_number: str, trunk_id: str, participant_identity: str
+) -> api.CreateSIPParticipantRequest:
+    return api.CreateSIPParticipantRequest(
+        sip_trunk_id=trunk_id,
+        sip_call_to=phone_number,
+        room_name=room_name,
+        participant_identity=participant_identity,
+        wait_until_answered=True,
     )
 
 
@@ -198,9 +211,80 @@ async def voice_agent(ctx: JobContext) -> None:
         if request is not None
         else participant.attributes.get("sip.phoneNumber") or None
     )
-    agent = HospitalityAgent(metadata, backend, telemetry, state, caller_number)
     persistence_tasks: set[asyncio.Task] = set()
     finalization_started = False
+    handoff_active = False
+    handoff_identity = None
+    handoff_ending = False
+
+    async def end_handoff(reason: str) -> None:
+        nonlocal handoff_ending
+        if handoff_ending:
+            return
+        handoff_ending = True
+        try:
+            await ctx.delete_room()
+        except Exception:
+            logger.exception("Human handoff room deletion failed room_name=%s", ctx.room.name)
+        ctx.shutdown(reason)
+
+    def handle_handoff_disconnect(disconnected) -> None:
+        if handoff_active and disconnected.identity in {participant.identity, handoff_identity}:
+            asyncio.create_task(
+                end_handoff("human handoff participant disconnected")
+            )
+
+    room_on = getattr(ctx.room, "on", None)
+    if room_on:
+        room_on("participant_disconnected")(handle_handoff_disconnect)
+
+    async def handoff_to_human(context) -> str:
+        nonlocal handoff_active, handoff_identity
+        if handoff_active:
+            return "Human handoff is already active."
+        identity = f"human-handoff-{uuid4().hex}"
+        client = api.LiveKitAPI(
+            url=settings.api_url,
+            api_key=settings.api_key,
+            api_secret=settings.api_secret,
+        )
+        try:
+            await client.sip.create_sip_participant(
+                build_human_handoff_request(
+                    ctx.room.name,
+                    metadata.outbound_dids[0],
+                    metadata.outbound_trunk_id,
+                    identity,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Human handoff outbound call failed room_name=%s participant_identity=%s",
+                ctx.room.name,
+                identity,
+            )
+            return "Human handoff could not be started."
+        finally:
+            await client.aclose()
+        handoff_identity = identity
+        handoff_active = True
+        telemetry.emit("human_handoff_started", participant_identity=identity)
+        context.session.shutdown(drain=True)
+        return "Human handoff started."
+
+    human_handoff = (
+        handoff_to_human
+        if is_sip and metadata.handoff
+        else None
+    )
+    agent = HospitalityAgent(
+        metadata,
+        backend,
+        telemetry,
+        state,
+        caller_number,
+        human_handoff,
+    )
 
     logger.info(
         "LiveKit session configuration preemptive_generation_enabled=%s "

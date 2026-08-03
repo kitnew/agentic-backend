@@ -80,6 +80,9 @@ class LiveKitJobMetadata(ContractModel):
     greeting: Annotated[str, Field(min_length=1, max_length=2_048)] | None = None
     tools: tuple[RuntimeToolDefinition, ...] = Field(default=(), max_length=32)
     end_call_enabled: bool = False
+    handoff: bool = False
+    outbound_dids: tuple[str, ...] = Field(default=(), max_length=8)
+    outbound_trunk_id: str = ""
     chat_history: tuple[SessionChatMessage, ...] = Field(default=(), max_length=200)
     stt_language: Annotated[str, Field(min_length=1, max_length=32)]
     tts_voice_id: Identifier

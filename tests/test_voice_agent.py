@@ -22,6 +22,7 @@ from app.voice_agent.session_factory import (
     TurnCommitState,
     VoiceTurnState,
     _PostFinalStream,
+    build_human_handoff_tool,
     build_function_tools,
     build_session,
 )
@@ -190,6 +191,59 @@ def test_session_factory_maps_milliseconds_and_stt_fields_to_sdk(monkeypatch):
     assert turn["interruption"]["min_duration"] == 0.2
     assert turn["preemptive_generation"] == {"enabled": False, "preemptive_tts": False}
     assert captured["llm"]["azure_deployment"] == "gpt-4o-mini"
+
+
+def test_livekit_settings_keeps_handoff_outside_environment_config():
+    settings = LiveKitSettings(
+        api_key="key",
+        api_secret="x" * 32,
+        elevenlabs_api_key="eleven",
+        azure_openai_endpoint="https://example.openai.azure.com",
+        azure_openai_api_key="azure-key",
+        session_token_secret="s" * 32,
+    )
+    settings.validate_worker()
+    assert settings.api_url == "http://livekit:7880"
+
+
+def test_human_handoff_request_uses_the_current_room_and_stored_trunk():
+    from app.voice_agent.server import build_human_handoff_request
+
+    request = build_human_handoff_request(
+        "voice-call",
+        "+421900111222",
+        "ST_outbound",
+        "human-handoff-1",
+    )
+    assert request.room_name == "voice-call"
+    assert request.sip_call_to == "+421900111222"
+    assert request.sip_trunk_id == "ST_outbound"
+    assert request.participant_identity == "human-handoff-1"
+    assert request.wait_until_answered is True
+
+
+def test_human_handoff_tool_runs_only_after_the_turn_is_committed():
+    state = VoiceTurnState()
+    speech = Speech("handoff-speech")
+    state.register_speech(speech)
+    calls = []
+
+    async def handoff(context):
+        calls.append(context)
+        return "Human handoff started."
+
+    tool = build_human_handoff_tool(handoff, state)
+    context = tool_context(speech, "handoff")
+
+    async def run():
+        task = asyncio.create_task(tool._func(context))
+        await asyncio.sleep(0)
+        assert calls == []
+        state.commit_turn("handoff-turn")
+        return await task
+
+    assert asyncio.run(run()) == "Human handoff started."
+    assert calls == [context]
 
 
 def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation():
