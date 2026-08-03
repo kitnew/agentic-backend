@@ -1,5 +1,6 @@
 import httpx
 from livekit import agents
+from livekit.agents import inference
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import elevenlabs, openai
 
@@ -38,7 +39,11 @@ def create_agent_session(
                 "min_silence_duration_ms": 500,
             },
         ),
-        vad=None,
+        vad=inference.VAD(
+            min_speech_duration=0.05,
+            min_silence_duration=0.25,
+            activation_threshold=0.5,
+        ),
         turn_handling={
             "turn_detection": "stt",
             "endpointing": {"mode": "fixed", "min_delay": 0.2, "max_delay": 1.0},

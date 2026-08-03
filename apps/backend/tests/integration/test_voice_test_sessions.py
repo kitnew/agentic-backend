@@ -82,6 +82,7 @@ class FakeLiveKit:
         self.fail_token = fail_token
         self.created: list[dict[str, str]] = []
         self.deleted: list[tuple[str, str]] = []
+        self.deleted_rooms: list[str] = []
         self.token_issuer = LiveKitAdapter(
             url=settings.livekit_url,
             api_key=settings.livekit_api_key.get_secret_value(),
@@ -90,6 +91,9 @@ class FakeLiveKit:
                 settings.livekit_participant_token_ttl_seconds
             ),
         )
+
+    async def start(self) -> None:
+        return None
 
     async def create_dispatch(
         self,
@@ -116,6 +120,9 @@ class FakeLiveKit:
 
     async def delete_dispatch(self, dispatch_id: str, room_name: str) -> None:
         self.deleted.append((dispatch_id, room_name))
+
+    async def delete_room(self, room_name: str) -> None:
+        self.deleted_rooms.append(room_name)
 
     def issue_participant_token(self, *, room_name: str, identity: str) -> str:
         if self.fail_token:
@@ -293,6 +300,7 @@ async def test_livekit_setup_failure_is_compensated_and_marks_call_failed(
             assert lifecycle.json()["status"] == "failed"
             assert lifecycle.json()["failure_reason"] == "livekit_setup_failed"
             assert bool(livekit.deleted) is (failure != "dispatch")
+            assert bool(livekit.deleted_rooms) is (failure != "dispatch")
     finally:
         await livekit.aclose()
         await database.close()

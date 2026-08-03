@@ -2,7 +2,17 @@ services:
   livekit:
     image: livekit/livekit-server:v1.13.1
     command:
-      ["--dev", "--bind", "0.0.0.0", "--keys", "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"]
+      [
+        "--dev",
+        "--bind",
+        "0.0.0.0",
+        "--node-ip",
+        "${LIVEKIT_NODE_IP:-127.0.0.1}",
+        "--udp-port",
+        "${LIVEKIT_UDP_PORT:-7882}",
+        "--keys",
+        "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}",
+      ]
     ports:
       - "7880:7880"
       - "7881:7881"

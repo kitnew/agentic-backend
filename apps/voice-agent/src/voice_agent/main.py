@@ -23,6 +23,20 @@ def log_user_transcript(event: object) -> None:
     )
 
 
+def log_session_metrics(event: object) -> None:
+    metrics = getattr(event, "metrics", None)
+    if metrics is None or getattr(metrics, "type", None) != "eou_metrics":
+        return
+    logger.info(
+        "Voice EOU metrics",
+        extra={
+            "end_of_utterance_delay": metrics.end_of_utterance_delay,
+            "transcription_delay": metrics.transcription_delay,
+            "on_user_turn_completed_delay": metrics.on_user_turn_completed_delay,
+        },
+    )
+
+
 def parse_metadata(raw_metadata: str) -> LiveKitJobMetadata:
     if not raw_metadata:
         raise ValueError("missing job metadata")
@@ -84,6 +98,7 @@ async def run_job(
 
         session.on("close", on_close)
         session.on("user_input_transcribed", log_user_transcript)
+        session.on("metrics_collected", log_session_metrics)
         await session.start(
             room=ctx.room,
             agent=agents.Agent(

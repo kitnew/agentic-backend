@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from livekit import api
 from livekit.protocol import agent_dispatch
+from livekit.protocol import room as room_proto
 
 
 class LiveKitAdapter:
@@ -29,6 +30,9 @@ class LiveKitAdapter:
             )
         return self._client
 
+    async def start(self) -> None:
+        _ = self.client
+
     async def create_dispatch(
         self,
         *,
@@ -47,6 +51,9 @@ class LiveKitAdapter:
 
     async def delete_dispatch(self, dispatch_id: str, room_name: str) -> None:
         await self.client.agent_dispatch.delete_dispatch(dispatch_id, room_name)
+
+    async def delete_room(self, room_name: str) -> None:
+        await self.client.room.delete_room(room_proto.DeleteRoomRequest(room=room_name))
 
     def issue_participant_token(self, *, room_name: str, identity: str) -> str:
         grants = api.VideoGrants(

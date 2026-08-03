@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    await app.state.livekit.start()
     logger.info("Backend Core started")
 
     try:

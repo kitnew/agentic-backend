@@ -180,6 +180,8 @@ async def create_test_voice_session(
         if dispatch_id is not None:
             with suppress(Exception):
                 await livekit.delete_dispatch(dispatch_id, call.room_name)
+            with suppress(Exception):
+                await livekit.delete_room(call.room_name)
         await fail_test_call(database, call.id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

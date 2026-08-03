@@ -152,7 +152,8 @@ async def test_provider_factory_uses_pinned_models_and_no_tools() -> None:
             "min_speech_duration_ms": 100,
             "min_silence_duration_ms": 500,
         }
-        assert session.vad is None
+        assert session.vad is not None
+        assert session.vad.model == "silero"
         assert session.turn_detection == "stt"
         assert session.tts._opts.model == "eleven_flash_v2_5"
         assert session.tts._opts.voice_id == "voice-id"
@@ -160,6 +161,12 @@ async def test_provider_factory_uses_pinned_models_and_no_tools() -> None:
         assert session._tools == []
         assert session.conn_options.stt_conn_options.timeout == 10.0
         assert session.conn_options.stt_conn_options.max_retry == 3
+        assert session.conn_options.llm_conn_options.timeout == 10.0
+        assert session.conn_options.llm_conn_options.max_retry == 3
+        assert session.conn_options.tts_conn_options.timeout == 10.0
+        assert session.conn_options.tts_conn_options.max_retry == 3
+        assert session.stt._opts.api_key == "eleven-key"
+        assert session.tts._opts.api_key == "eleven-key"
         assert tts_language("sk-SK") == "sk"
         with pytest.raises(ValueError):
             tts_language("en-US")
