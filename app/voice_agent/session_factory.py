@@ -299,7 +299,9 @@ class GuardedEndCallTool(EndCallTool):
 
 
 def build_human_handoff_tool(execute, state: VoiceTurnState):
-    async def runtime_tool(context: RunContext) -> str:
+    async def runtime_tool(
+        context: RunContext, raw_arguments: dict[str, object]
+    ) -> str:
         turn = state.turns_by_speech.get(context.speech_handle.id)
         if turn is None or not await turn.wait_until_committed_or_cancelled():
             return "Human handoff was not started because the user's turn is not final."

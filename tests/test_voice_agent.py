@@ -236,7 +236,7 @@ def test_human_handoff_tool_runs_only_after_the_turn_is_committed():
     context = tool_context(speech, "handoff")
 
     async def run():
-        task = asyncio.create_task(tool._func(context))
+        task = asyncio.create_task(tool._func(context, {}))
         await asyncio.sleep(0)
         assert calls == []
         state.commit_turn("handoff-turn")
