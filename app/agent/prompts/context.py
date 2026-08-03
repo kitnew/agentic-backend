@@ -59,7 +59,6 @@ def build_agent_context(
         "supported_operations": _supported_operations(tenant),
         "conversation_scope": _conversation_scope(tenant),
         "knowledge_base": tenant.prompt.knowledge_base,
-        "supplementary_guidance": tenant.prompt.supplementary_guidance,
     }
     for key in ("call_session_id", "channel", "language", "thread_id", "idempotency_key"):
         if (metadata or {}).get(key):

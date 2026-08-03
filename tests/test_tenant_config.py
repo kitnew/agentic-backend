@@ -222,8 +222,7 @@ def test_external_content_path_is_confined(
 def test_duplicate_content_references_are_rejected(tmp_path: Path):
     config = minimal_config()
     config["prompt"] = {
-        "knowledge_base_files": ["test/shared.md"],
-        "supplementary_files": ["test/shared.md"],
+        "knowledge_base_files": ["test/shared.md", "test/shared.md"],
     }
 
     with pytest.raises(TenantConfigInvalidError, match="duplicate prompt content"):
@@ -254,7 +253,7 @@ def test_penzion_grand_prompt_contains_each_safe_section_once():
     assert "<tenant_identity>" in prompt
     assert "<tenant_business_context>" in prompt
     assert "<tenant_knowledge_base>" in prompt
-    assert "<tenant_supplementary_guidance>" in prompt
+    assert "<tenant_supplementary_guidance>" not in prompt
     assert "make.com" not in prompt.lower()
     assert "webhook" not in prompt.lower()
     assert "Room availability checks: supported" in prompt

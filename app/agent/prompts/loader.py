@@ -33,10 +33,6 @@ class PromptLoader:
             self._section("tenant_identity", self._dump(context.get("tenant_identity"))),
             self._section("tenant_business_context", self._build_business_context(context)),
             self._section("tenant_knowledge_base", context.get("knowledge_base", "")),
-            self._section(
-                "tenant_supplementary_guidance",
-                "\n\n".join(context.get("supplementary_guidance") or []),
-            ),
         ]
 
         return "\n\n".join(part for part in prompt_parts if part)

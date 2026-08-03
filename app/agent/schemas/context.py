@@ -24,7 +24,6 @@ class AgentContext(TypedDict):
     supported_operations: NotRequired[str]
     conversation_scope: NotRequired[str]
     knowledge_base: NotRequired[str]
-    supplementary_guidance: NotRequired[list[str]]
     call_session_id: NotRequired[str]
     channel: NotRequired[str]
     language: NotRequired[str]

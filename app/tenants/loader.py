@@ -88,7 +88,6 @@ class TenantConfigLoader:
         references = [
             *([prompt.instructions_file] if prompt.instructions_file else []),
             *prompt.knowledge_base_files,
-            *prompt.supplementary_files,
         ]
         if len(references) != len(set(references)):
             raise TenantConfigInvalidError(
@@ -102,9 +101,6 @@ class TenantConfigLoader:
                 "knowledge_base": "\n\n".join(
                     loaded[path] for path in prompt.knowledge_base_files
                 ),
-                "supplementary_guidance": [
-                    loaded[path] for path in prompt.supplementary_files
-                ],
             }
         )
         return tenant_context.model_copy(update={"prompt": prompt})

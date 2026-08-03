@@ -27,8 +27,6 @@ prompt:
   instructions_file: penzion_grand/instructions.md
   knowledge_base_files:
     - penzion_grand/knowledge_base.md
-  supplementary_files:
-    - penzion_grand/room_recommendations.md
 
 business_info:
   property_name: Penzión Grand

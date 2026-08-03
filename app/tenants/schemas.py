@@ -35,10 +35,8 @@ class TenantPromptConfig(TenantModel):
     tenant_instructions: str = ""
     instructions_file: str | None = None
     knowledge_base_files: list[str] = Field(default_factory=list)
-    supplementary_files: list[str] = Field(default_factory=list)
     instructions: str = ""
     knowledge_base: str = ""
-    supplementary_guidance: list[str] = Field(default_factory=list)
 
 
 class TenantRoomTypeConfig(TenantModel):
