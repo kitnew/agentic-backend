@@ -184,12 +184,13 @@ post_call_transcript:
 
 voice:
   enabled: true
-  handoff: false
+  handoff: true
   end_call_enabled: true
   inbound_dids:
     - "+421552301299"
-  outbound_dids: []
-  outbound_trunk_id: ""
+  outbound_dids: 
+    - "+421011578111"
+  outbound_trunk_id: "ST_V958JJnzAuMC"
   stt:
     provider: elevenlabs
     model: scribe_v2_realtime
