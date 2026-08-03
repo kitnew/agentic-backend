@@ -93,7 +93,12 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
     transport = ASGITransport(app=app)
     voice_token = service_token(
         service="voice-agent",
-        scopes=["call-session:create", "call-session:write"],
+        scopes=[
+            "call-session:create",
+            "call-session:activate",
+            "call-session:complete",
+            "call-session:fail",
+        ],
         secret=app_settings.voice_agent_service_secret.get_secret_value(),
     )
     worker_token = service_token(

@@ -22,6 +22,7 @@ from backend_core.platform.database import Base
 
 class CallChannel(StrEnum):
     SIP = "sip"
+    WEB = "web"
 
 
 class CallDirection(StrEnum):
@@ -58,6 +59,11 @@ class CallSession(Base):
             "provider",
             "provider_call_id",
             name="uq_call_sessions_provider_call_id",
+        ),
+        UniqueConstraint(
+            "provider",
+            "provider_dispatch_id",
+            name="uq_call_sessions_provider_dispatch_id",
         ),
         CheckConstraint(
             """
@@ -101,6 +107,10 @@ class CallSession(Base):
     )
     provider: Mapped[str] = mapped_column(String(64))
     provider_call_id: Mapped[str] = mapped_column(String(255))
+    provider_dispatch_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     room_name: Mapped[str] = mapped_column(String(255))
     status: Mapped[CallSessionStatus] = mapped_column(
         Enum(

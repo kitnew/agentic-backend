@@ -14,5 +14,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.livekit.aclose()
         await app.state.database.close()
         logger.info("Backend Core stopped")

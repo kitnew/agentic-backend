@@ -11,6 +11,14 @@ class CallSessionRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def add(self, call: CallSession) -> CallSession:
+        self._session.add(call)
+        await self._session.flush()
+        return call
+
+    async def get(self, call_id: UUID) -> type[CallSession] | None:
+        return await self._session.get(CallSession, call_id)
+
     async def add_or_get(
         self,
         call: CallSession,

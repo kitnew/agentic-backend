@@ -10,6 +10,10 @@ dependencies = [
     "contracts",
     "httpx>=0.28.1",
     "livekit-agents>=1.6.7",
+    "livekit-plugins-elevenlabs==1.6.7",
+    "livekit-plugins-openai==1.6.7",
+    "pydantic-settings>=2.14.2",
+    "pyjwt>=2.13.0",
 ]
 
 [tool.uv.sources]

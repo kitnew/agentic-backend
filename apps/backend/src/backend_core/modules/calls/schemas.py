@@ -33,6 +33,22 @@ class FailCallSessionRequest(BaseModel):
     failure_reason: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
+class CreateTestVoiceSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: UUID
+
+
+class CreateTestVoiceSessionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    call_session_id: UUID
+    room_name: str
+    livekit_url: str
+    participant_identity: str
+    participant_token: str
+
+
 class CallSessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -44,6 +60,7 @@ class CallSessionResponse(BaseModel):
     direction: CallDirection
     provider: str
     provider_call_id: str
+    provider_dispatch_id: str | None
     room_name: str
     status: CallSessionStatus
     created_at: datetime

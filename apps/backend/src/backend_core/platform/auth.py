@@ -16,7 +16,10 @@ SERVICE_SCOPES = {
             "tenant-config:read",
             "tenant-routing:resolve",
             "call-session:create",
-            "call-session:write",
+            "call-session:runtime-context:read",
+            "call-session:activate",
+            "call-session:complete",
+            "call-session:fail",
         }
     ),
     JOB_WORKER: frozenset({"capability-result:write"}),

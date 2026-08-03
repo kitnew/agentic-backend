@@ -80,6 +80,12 @@ def app_settings(migrated_database_url: str) -> Settings:
             "internal_api_audience": "backend-core",
             "voice_agent_service_secret": VOICE_AGENT_SECRET,
             "job_worker_service_secret": JOB_WORKER_SECRET,
+            "livekit_url": "ws://livekit:7880",
+            "livekit_public_url": "ws://localhost:7880",
+            "livekit_api_key": "test-key",
+            "livekit_api_secret": "test-livekit-secret-with-at-least-32-characters",
+            "livekit_agent_name": "hospitality-voice-agent",
+            "livekit_participant_token_ttl_seconds": 600,
         }
     )
 

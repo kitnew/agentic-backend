@@ -34,6 +34,11 @@ def test_admin_and_service_credentials_must_be_distinct() -> None:
                 "admin_api_token": "separate-admin-token-with-at-least-32-characters",
                 "voice_agent_service_secret": shared_secret,
                 "job_worker_service_secret": shared_secret,
+                "livekit_url": "ws://livekit:7880",
+                "livekit_public_url": "ws://localhost:7880",
+                "livekit_api_key": "test-key",
+                "livekit_api_secret": "test-secret",
+                "livekit_agent_name": "test-agent",
             }
         )
 

@@ -1,0 +1,24 @@
+services:
+  livekit:
+    image: livekit/livekit-server:v1.13.1
+    command:
+      ["--dev", "--bind", "0.0.0.0", "--keys", "${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}"]
+    ports:
+      - "7880:7880"
+      - "7881:7881"
+      - "7882:7882/udp"
+
+  voice-agent:
+    depends_on:
+      livekit:
+        condition: service_started
+
+  debug-chat:
+    build:
+      context: ../..
+      dockerfile: apps/debug-chat/Dockerfile
+    ports:
+      - "${DEBUG_CHAT_PORT:-3000}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
