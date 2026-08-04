@@ -20,6 +20,7 @@ SERVICE_SCOPES = {
             "call-session:activate",
             "call-session:complete",
             "call-session:fail",
+            "conversation-message:append",
         }
     ),
     JOB_WORKER: frozenset({"capability-result:write"}),

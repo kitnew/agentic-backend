@@ -55,6 +55,14 @@ class CallSessionRepository:
             )
         )
 
+    async def get_by_admin_idempotency_key(
+        self,
+        key: str,
+    ) -> CallSession | None:
+        return await self._session.scalar(
+            select(CallSession).where(CallSession.admin_idempotency_key == key)
+        )
+
     async def get_for_update(self, call_id: UUID) -> CallSession | None:
         return await self._session.scalar(
             select(CallSession)

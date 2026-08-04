@@ -3,14 +3,15 @@ from uuid import UUID
 
 import jwt
 import pytest
+from contracts import LiveKitJobMetadata
+from httpx import ASGITransport, AsyncClient
+
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.service import CallSessionService
 from backend_core.platform.database import Database
 from backend_core.platform.livekit import LiveKitAdapter
-from contracts import LiveKitJobMetadata
-from httpx import ASGITransport, AsyncClient
 
 
 def config_v2(prompt_id: str, greeting: str) -> dict[str, object]:
@@ -301,6 +302,54 @@ async def test_livekit_setup_failure_is_compensated_and_marks_call_failed(
             assert lifecycle.json()["failure_reason"] == "livekit_setup_failed"
             assert bool(livekit.deleted) is (failure != "dispatch")
             assert bool(livekit.deleted_rooms) is (failure != "dispatch")
+    finally:
+        await livekit.aclose()
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_admin_test_session_idempotency_creates_one_conversation(
+    migrated_database_url: str,
+    app_settings: Settings,
+    admin_headers: dict[str, str],
+) -> None:
+    database = Database(migrated_database_url)
+    livekit = FakeLiveKit(database, app_settings)
+    app = create_app(settings=app_settings, database=database, livekit=livekit)  # type: ignore[arg-type]
+    transport = ASGITransport(app=app)
+
+    try:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers=admin_headers,
+        ) as client:
+            tenant_id = await create_voice_ready_tenant(
+                client,
+                "idempotent-test-session-hotel",
+            )
+            request_headers = {"Idempotency-Key": "test-session-1"}
+            first = await client.post(
+                "/admin/v1/voice/test-sessions",
+                json={"tenant_id": tenant_id},
+                headers=request_headers,
+            )
+            replay = await client.post(
+                "/admin/v1/voice/test-sessions",
+                json={"tenant_id": tenant_id},
+                headers=request_headers,
+            )
+            assert first.status_code == 201
+            assert replay.status_code == 200
+            assert replay.json()["call_session_id"] == first.json()["call_session_id"]
+            assert len(livekit.created) == 1
+
+            conversation = await client.get(
+                f"/admin/v1/calls/{first.json()['call_session_id']}/conversation"
+            )
+            assert conversation.status_code == 200
+            assert conversation.json()["status"] == "open"
+            assert conversation.json()["messages"] == []
     finally:
         await livekit.aclose()
         await database.close()

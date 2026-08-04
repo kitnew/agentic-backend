@@ -1,10 +1,12 @@
 from contextlib import suppress
+from hashlib import sha256
 from typing import Annotated
 from uuid import UUID, uuid4
 
 from contracts import (
     CallLifecycleResponse,
     CallLifecycleStatus,
+    ConversationPersistenceStatus,
     LiveKitJobMetadata,
     VoiceAgentRuntimeContext,
 )
@@ -21,12 +23,14 @@ from backend_core.modules.calls.models import CallSession
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.schemas import (
     CallSessionResponse,
+    CompleteCallSessionRequest,
     CreateCallSessionRequest,
     CreateTestVoiceSessionRequest,
     CreateTestVoiceSessionResponse,
     FailCallSessionRequest,
 )
 from backend_core.modules.calls.service import CallSessionService
+from backend_core.modules.conversations.router import build_conversation_service
 from backend_core.modules.tenants.errors import TenantNotFoundError
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
@@ -53,6 +57,7 @@ def build_call_session_service(session: AsyncSession) -> CallSessionService:
         PromptBundleRevisionRepository(session),
         TenantRepository(session),
         ConfigRevisionRepository(session),
+        build_conversation_service(session),
     )
 
 
@@ -82,6 +87,7 @@ async def fail_test_call(database: Database, call_id: UUID) -> None:
             await build_call_session_service(session).fail(
                 call_id,
                 "livekit_setup_failed",
+                ConversationPersistenceStatus.INCOMPLETE,
             )
 
 
@@ -141,12 +147,29 @@ async def create_call_session(
 async def create_test_voice_session(
     data: CreateTestVoiceSessionRequest,
     request: Request,
+    response: Response,
 ) -> CreateTestVoiceSessionResponse:
     database: Database = request.app.state.database
+    raw_idempotency_key = request.headers.get("Idempotency-Key")
+    idempotency_key = raw_idempotency_key.strip() if raw_idempotency_key else None
+    if idempotency_key is not None and not 1 <= len(idempotency_key) <= 255:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="invalid Idempotency-Key",
+        )
+    request_fingerprint = (
+        sha256(
+            f"admin-test-session:v1:{data.tenant_id}".encode()
+        ).hexdigest()
+        if idempotency_key is not None
+        else None
+    )
     try:
         async with database.transaction() as session:
-            call = await build_call_session_service(session).create_manual(
-                data.tenant_id
+            call, created = await build_call_session_service(session).create_manual(
+                data.tenant_id,
+                idempotency_key=idempotency_key,
+                request_fingerprint=request_fingerprint,
             )
     except TenantNotFoundError as error:
         raise HTTPException(
@@ -159,18 +182,25 @@ async def create_test_voice_session(
     livekit = request.app.state.livekit
     dispatch_id: str | None = None
     try:
-        dispatch_id = await livekit.create_dispatch(
-            agent_name=request.app.state.settings.livekit_agent_name,
-            room_name=call.room_name,
-            metadata=LiveKitJobMetadata(
-                call_session_id=call.id
-            ).model_dump_json(),
-        )
-        async with database.transaction() as session:
-            await build_call_session_service(session).set_dispatch(
-                call.id,
-                dispatch_id,
+        if call.provider_dispatch_id is None:
+            dispatch_id = await livekit.create_dispatch(
+                agent_name=request.app.state.settings.livekit_agent_name,
+                room_name=call.room_name,
+                metadata=LiveKitJobMetadata(
+                    call_session_id=call.id
+                ).model_dump_json(),
             )
+            try:
+                async with database.transaction() as session:
+                    call = await build_call_session_service(session).set_dispatch(
+                        call.id,
+                        dispatch_id,
+                    )
+            except CallSessionConflictError:
+                with suppress(Exception):
+                    await livekit.delete_dispatch(dispatch_id, call.room_name)
+                async with database.transaction() as session:
+                    call = await build_call_session_service(session).get(call.id)
         participant_identity = f"manual-test-{uuid4()}"
         participant_token = livekit.issue_participant_token(
             room_name=call.room_name,
@@ -191,6 +221,7 @@ async def create_test_voice_session(
             },
         ) from error
 
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return CreateTestVoiceSessionResponse(
         call_session_id=call.id,
         room_name=call.room_name,
@@ -254,9 +285,17 @@ async def activate_call_session(
 async def complete_call_session(
     call_id: UUID,
     service: CallSessionServiceDependency,
+    data: CompleteCallSessionRequest | None = None,
 ) -> CallSessionResponse:
     try:
-        return CallSessionResponse.model_validate(await service.complete(call_id))
+        return CallSessionResponse.model_validate(
+            await service.complete(
+                call_id,
+                data.conversation_status
+                if data is not None
+                else ConversationPersistenceStatus.COMPLETE,
+            )
+        )
     except (CallSessionNotFoundError, CallSessionConflictError) as error:
         raise call_http_exception(error) from error
 
@@ -272,7 +311,11 @@ async def fail_call_session(
     service: CallSessionServiceDependency,
 ) -> CallSessionResponse:
     try:
-        call = await service.fail(call_id, data.failure_reason)
+        call = await service.fail(
+            call_id,
+            data.failure_reason,
+            data.conversation_status,
+        )
     except (CallSessionNotFoundError, CallSessionConflictError) as error:
         raise call_http_exception(error) from error
     return CallSessionResponse.model_validate(call)

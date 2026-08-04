@@ -1,7 +1,13 @@
 from datetime import UTC, datetime
+from hashlib import sha256
 from uuid import UUID, uuid4
 
-from contracts import TenantConfigV2, VoiceAgentPrompt, VoiceAgentRuntimeContext
+from contracts import (
+    ConversationPersistenceStatus,
+    TenantConfigV2,
+    VoiceAgentPrompt,
+    VoiceAgentRuntimeContext,
+)
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -19,6 +25,8 @@ from backend_core.modules.calls.models import (
 )
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.schemas import CreateCallSessionRequest
+from backend_core.modules.conversations.errors import ConversationConflictError
+from backend_core.modules.conversations.service import ConversationService
 from backend_core.modules.tenants.errors import TenantNotFoundError
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
@@ -44,12 +52,14 @@ class CallSessionService:
         prompt_bundles: PromptBundleRevisionRepository,
         tenants: TenantRepository,
         configs: ConfigRevisionRepository,
+        conversations: ConversationService,
     ) -> None:
         self._calls = calls
         self._routes = routes
         self._prompt_bundles = prompt_bundles
         self._tenants = tenants
         self._configs = configs
+        self._conversations = conversations
 
     async def create(
         self,
@@ -82,11 +92,32 @@ class CallSessionService:
             room_name=data.room_name,
         )
         try:
-            return await self._calls.add_or_get(call)
+            call, created = await self._calls.add_or_get(call)
+            if created:
+                await self._conversations.create_for_call(call.id, call.tenant_id)
+            return call, created
         except IntegrityError as error:
             raise CallSessionConflictError from error
 
-    async def create_manual(self, tenant_id: UUID) -> CallSession:
+    async def create_manual(
+        self,
+        tenant_id: UUID,
+        *,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
+    ) -> tuple[CallSession, bool]:
+        if (idempotency_key is None) != (request_fingerprint is None):
+            raise CallSessionConflictError
+        if idempotency_key is not None:
+            existing = await self._calls.get_by_admin_idempotency_key(idempotency_key)
+            if existing is not None:
+                if (
+                    existing.tenant_id != tenant_id
+                    or existing.admin_request_fingerprint != request_fingerprint
+                    or existing.status is not CallSessionStatus.CREATED
+                ):
+                    raise CallSessionConflictError
+                return existing, False
         tenant = await self._tenants.get_for_update(tenant_id)
         if tenant is None:
             raise TenantNotFoundError
@@ -109,6 +140,11 @@ class CallSessionService:
 
         call_id = uuid4()
         room_name = f"call_{call_id}"
+        provider_call_id = (
+            f"manual:{sha256(idempotency_key.encode()).hexdigest()}"
+            if idempotency_key is not None
+            else room_name
+        )
         call = CallSession(
             id=call_id,
             tenant_id=tenant.id,
@@ -117,11 +153,23 @@ class CallSessionService:
             channel=CallChannel.WEB,
             direction=CallDirection.INBOUND,
             provider="livekit",
-            provider_call_id=room_name,
+            provider_call_id=provider_call_id,
             room_name=room_name,
+            admin_idempotency_key=idempotency_key,
+            admin_request_fingerprint=request_fingerprint,
         )
         try:
-            return await self._calls.add(call)
+            call, created = await self._calls.add_or_get(call)
+            if not created:
+                if (
+                    call.tenant_id != tenant_id
+                    or call.admin_request_fingerprint != request_fingerprint
+                    or call.status is not CallSessionStatus.CREATED
+                ):
+                    raise CallSessionConflictError
+                return call, False
+            await self._conversations.create_for_call(call.id, call.tenant_id)
+            return call, True
         except IntegrityError as error:
             raise CallSessionConflictError from error
 
@@ -206,28 +254,53 @@ class CallSessionService:
         await self._calls.flush()
         return call
 
-    async def complete(self, call_id: UUID) -> CallSession:
+    async def complete(
+        self,
+        call_id: UUID,
+        conversation_status: ConversationPersistenceStatus,
+    ) -> CallSession:
         call = await self._get_for_update(call_id)
         if call.status is CallSessionStatus.COMPLETED:
+            try:
+                await self._conversations.close_for_call(call_id, conversation_status)
+            except ConversationConflictError as error:
+                raise CallSessionConflictError from error
             return call
         if call.status is not CallSessionStatus.ACTIVE:
             raise CallSessionConflictError
+        try:
+            await self._conversations.close_for_call(call_id, conversation_status)
+        except ConversationConflictError as error:
+            raise CallSessionConflictError from error
         call.status = CallSessionStatus.COMPLETED
         call.ended_at = datetime.now(UTC)
         await self._calls.flush()
         return call
 
-    async def fail(self, call_id: UUID, reason: str) -> CallSession:
+    async def fail(
+        self,
+        call_id: UUID,
+        reason: str,
+        conversation_status: ConversationPersistenceStatus,
+    ) -> CallSession:
         call = await self._get_for_update(call_id)
         if call.status is CallSessionStatus.FAILED:
             if call.failure_reason != reason:
                 raise CallSessionConflictError
+            try:
+                await self._conversations.close_for_call(call_id, conversation_status)
+            except ConversationConflictError as error:
+                raise CallSessionConflictError from error
             return call
         if call.status not in (CallSessionStatus.CREATED, CallSessionStatus.ACTIVE):
             raise CallSessionConflictError
         call.status = CallSessionStatus.FAILED
         call.ended_at = datetime.now(UTC)
         call.failure_reason = reason
+        try:
+            await self._conversations.close_for_call(call_id, conversation_status)
+        except ConversationConflictError as error:
+            raise CallSessionConflictError from error
         await self._calls.flush()
         return call
 

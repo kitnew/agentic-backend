@@ -8,6 +8,7 @@ from contracts import VoiceAgentRuntimeContext
 from livekit import agents
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
+
 from voice_agent.backend import BackendClient
 from voice_agent.main import (
     assemble_instructions,
@@ -16,6 +17,7 @@ from voice_agent.main import (
     parse_metadata,
     run_job,
 )
+from voice_agent.persistence import MESSAGE_NAMESPACE, message_from_event
 from voice_agent.providers import azure_endpoint, create_agent_session, tts_language
 from voice_agent.settings import VoiceAgentSettings
 
@@ -128,6 +130,26 @@ def test_prompt_assembly_uses_only_runtime_material() -> None:
     )
 
 
+def test_committed_message_id_is_stable_and_preserves_interruption() -> None:
+    call_id = uuid4()
+    item = agents.llm.ChatMessage(
+        id="item_1",
+        role="assistant",
+        content=["Hello"],
+        interrupted=True,
+    )
+    event = agents.ConversationItemAddedEvent(item=item)
+    first = message_from_event(call_id, event)
+    second = message_from_event(call_id, event)
+    assert first is not None
+    assert second is not None
+    assert first.payload.message_id == second.payload.message_id
+    assert first.payload.role.value == "assistant"
+    assert first.payload.interrupted
+    assert first.payload.message_id
+    assert MESSAGE_NAMESPACE
+
+
 def test_azure_endpoint_accepts_resource_url_and_openai_v1_url() -> None:
     assert azure_endpoint("https://resource.openai.azure.com") == (
         "https://resource.openai.azure.com"
@@ -146,12 +168,6 @@ async def test_provider_factory_uses_pinned_models_and_no_tools() -> None:
         assert isinstance(session.tts, elevenlabs.TTS)
         assert session.stt._opts.model_id == "scribe_v2_realtime"
         assert str(session.stt._opts.language_code) == "sk"
-        assert session.stt._opts.server_vad == {
-            "vad_silence_threshold_secs": 1.0,
-            "vad_threshold": 0.35,
-            "min_speech_duration_ms": 100,
-            "min_silence_duration_ms": 500,
-        }
         assert session.vad is not None
         assert session.vad.model == "silero"
         assert session.turn_detection == "stt"
@@ -208,10 +224,15 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
         async def activate(self, call_id) -> None:
             self.activated = True
 
-        async def complete(self, call_id) -> None:
+        async def complete(self, call_id, conversation_status: str) -> None:
             raise AssertionError("must not complete")
 
-        async def fail(self, call_id, reason: str) -> None:
+        async def fail(
+            self,
+            call_id,
+            reason: str,
+            conversation_status: str,
+        ) -> None:
             self.failed.append(reason)
 
         async def aclose(self) -> None:

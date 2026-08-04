@@ -33,7 +33,7 @@ def create_agent_session(
             model="scribe_v2_realtime",
             language_code="slk",
             server_vad={
-                "vad_silence_threshold_secs": 1.0,
+                "vad_silence_threshold_secs": 0.5,
                 "vad_threshold": 0.35,
                 "min_speech_duration_ms": 100,
                 "min_silence_duration_ms": 500,
@@ -46,7 +46,7 @@ def create_agent_session(
         ),
         turn_handling={
             "turn_detection": "stt",
-            "endpointing": {"mode": "fixed", "min_delay": 0.2, "max_delay": 1.0},
+            "endpointing": {"mode": "fixed", "min_delay": 0.1, "max_delay": 0.7},
         },
         llm=openai.LLM.with_azure(
             model=settings.azure_openai_deployment,
@@ -55,7 +55,7 @@ def create_agent_session(
             api_version=settings.azure_openai_api_version,
             api_key=settings.azure_openai_api_key.get_secret_value(),
             timeout=httpx.Timeout(settings.provider_timeout_seconds),
-            temperature=0,
+            temperature=0
         ),
         tts=elevenlabs.TTS(
             api_key=settings.elevenlabs_api_key.get_secret_value(),

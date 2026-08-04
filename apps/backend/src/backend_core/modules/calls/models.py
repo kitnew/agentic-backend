@@ -65,6 +65,15 @@ class CallSession(Base):
             "provider_dispatch_id",
             name="uq_call_sessions_provider_dispatch_id",
         ),
+        UniqueConstraint(
+            "admin_idempotency_key",
+            name="uq_call_sessions_admin_idempotency_key",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "id",
+            name="uq_call_sessions_tenant_id_id",
+        ),
         CheckConstraint(
             """
             (status = 'created' AND started_at IS NULL AND ended_at IS NULL
@@ -109,6 +118,14 @@ class CallSession(Base):
     provider_call_id: Mapped[str] = mapped_column(String(255))
     provider_dispatch_id: Mapped[str | None] = mapped_column(
         String(255),
+        nullable=True,
+    )
+    admin_idempotency_key: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+    admin_request_fingerprint: Mapped[str | None] = mapped_column(
+        String(64),
         nullable=True,
     )
     room_name: Mapped[str] = mapped_column(String(255))

@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
+from contracts import ConversationPersistenceStatus
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend_core.modules.calls.models import (
@@ -31,6 +32,17 @@ class FailCallSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     failure_reason: Annotated[str, Field(min_length=1, max_length=4000)]
+    conversation_status: ConversationPersistenceStatus = (
+        ConversationPersistenceStatus.INCOMPLETE
+    )
+
+
+class CompleteCallSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_status: ConversationPersistenceStatus = (
+        ConversationPersistenceStatus.COMPLETE
+    )
 
 
 class CreateTestVoiceSessionRequest(BaseModel):

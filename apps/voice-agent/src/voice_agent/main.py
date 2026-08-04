@@ -6,6 +6,7 @@ from livekit import agents, rtc
 from pydantic import ValidationError
 
 from voice_agent.backend import BackendClient, CallFinalizer
+from voice_agent.persistence import ConversationPersistence
 from voice_agent.providers import create_agent_session
 from voice_agent.settings import VoiceAgentSettings
 
@@ -87,9 +88,13 @@ async def run_job(
     backend = BackendClient(settings)
     finalizer = CallFinalizer(backend, metadata.call_session_id)
     session: agents.AgentSession | None = None
+    persistence: ConversationPersistence | None = None
+    failure_reason: str | None = None
+    cancelled = False
     try:
         context = await backend.runtime_context(metadata.call_session_id)
         session = create_agent_session(settings, context.locale)
+        persistence = ConversationPersistence(backend, metadata.call_session_id)
         closed = asyncio.get_running_loop().create_future()
 
         def on_close(event: agents.CloseEvent) -> None:
@@ -97,6 +102,7 @@ async def run_job(
                 closed.set_result(event)
 
         session.on("close", on_close)
+        session.on("conversation_item_added", persistence.on_conversation_item_added)
         session.on("user_input_transcribed", log_user_transcript)
         session.on("metrics_collected", log_session_metrics)
         await session.start(
@@ -114,7 +120,7 @@ async def run_job(
                 timeout=settings.participant_wait_timeout_seconds,
             )
         except TimeoutError:
-            await finalizer.fail("participant_timeout")
+            failure_reason = "participant_timeout"
             await session.aclose()
             return
 
@@ -127,22 +133,37 @@ async def run_job(
                     raise
         close_event = await closed
         failure_reason = close_failure_reason(close_event.reason)
-        if failure_reason is None:
-            await finalizer.complete()
-        else:
-            await finalizer.fail(failure_reason)
     except asyncio.CancelledError:
-        await finalizer.fail("job_shutdown")
+        failure_reason = "job_shutdown"
+        cancelled = True
         if session is not None:
             await session.aclose()
-        raise
     except Exception:
         logger.exception("Voice Agent job failed", extra={"call_session_id": str(metadata.call_session_id)})
-        await finalizer.fail("provider_session_error")
+        failure_reason = "provider_session_error"
         if session is not None:
             await session.aclose()
     finally:
-        await backend.aclose()
+        if session is not None and persistence is not None:
+            off = getattr(session, "off", None)
+            if off is not None:
+                off("conversation_item_added", persistence.on_conversation_item_added)
+        conversation_complete = False
+        if persistence is not None:
+            try:
+                conversation_complete = await persistence.finish()
+            except Exception:
+                logger.exception("conversation persistence drain failed")
+        conversation_status = "complete" if conversation_complete else "incomplete"
+        try:
+            if failure_reason is None:
+                await finalizer.complete(conversation_status)
+            else:
+                await finalizer.fail(failure_reason, conversation_status)
+        finally:
+            await backend.aclose()
+    if cancelled:
+        raise asyncio.CancelledError
 
 
 async def entrypoint(ctx: agents.JobContext) -> None:
