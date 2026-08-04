@@ -153,7 +153,8 @@ activemq-data/
 .env
 .envrc
 .venv
-secrets/
+secrets/*.json
+!secrets/README.md
 *.json
 !debug-chat/package.json
 !debug-chat/package-lock.json
