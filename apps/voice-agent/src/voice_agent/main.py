@@ -1,8 +1,18 @@
 import asyncio
 import logging
+from typing import Any, cast
+from uuid import UUID
 
-from contracts import LiveKitJobMetadata, VoiceAgentRuntimeContext
+import httpx
+from contracts import (
+    CapabilityInvocationRequest,
+    CapabilityInvocationStatus,
+    LiveKitJobMetadata,
+    RuntimeCapabilityDefinition,
+    VoiceAgentRuntimeContext,
+)
 from livekit import agents, rtc
+from livekit.agents import llm
 from pydantic import ValidationError
 
 from voice_agent.backend import BackendClient, CallFinalizer
@@ -54,8 +64,62 @@ def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
             f"Locale: {context.locale}",
             f"Timezone: {context.timezone}",
             f"Conversation scope: {context.conversation_scope}",
+            "Use a capability tool when its inputs are known. Do not promise success before its result. reservation_submit_request submits a request; it never confirms a reservation.",
         )
         if part
+    )
+
+
+def capability_tool(
+    definition: RuntimeCapabilityDefinition,
+    backend: BackendClient,
+    call_id: UUID,
+) -> llm.RawFunctionTool:
+    async def invoke(
+        context: agents.RunContext[Any],
+        raw_arguments: dict[str, object],
+    ) -> dict[str, object]:
+        announcement = context.session.say(
+            definition.announcement,
+            allow_interruptions=False,
+            add_to_chat_ctx=False,
+        )
+        await announcement
+        try:
+            invocation = await backend.invoke_capability(
+                call_id,
+                CapabilityInvocationRequest(
+                    tool_call_id=context.function_call.call_id,
+                    capability=definition.tool_name,
+                    agent_input=raw_arguments,
+                ),
+            )
+            invocation = await backend.wait_for_capability(call_id, invocation)
+        except TimeoutError, httpx.HTTPError:
+            return {
+                "status": "request_submission_failed",
+                "error_code": "execution_timeout",
+                "message": "The reservation request could not be submitted yet",
+            }
+        if invocation.status is CapabilityInvocationStatus.SUCCEEDED:
+            assert invocation.semantic_result is not None
+            return invocation.semantic_result.model_dump(mode="json")
+        return {
+            "status": "request_submission_failed",
+            "error_code": invocation.error_code or "execution_failed",
+            "message": invocation.error_message
+            or "The reservation request could not be submitted",
+        }
+
+    return cast(
+        llm.RawFunctionTool,
+        agents.function_tool(
+            raw_schema={
+                "name": definition.tool_name,
+                "description": definition.description,
+                "parameters": definition.input_schema,
+            }
+        )(invoke),
     )
 
 
@@ -74,7 +138,7 @@ def close_failure_reason(reason: agents.CloseReason) -> str | None:
 async def on_request(request: agents.JobRequest) -> None:
     try:
         parse_metadata(request.job.metadata)
-    except (ValueError, ValidationError):
+    except ValueError, ValidationError:
         await request.reject(terminate=True)
         return
     await request.accept()
@@ -109,7 +173,10 @@ async def run_job(
             room=ctx.room,
             agent=agents.Agent(
                 instructions=assemble_instructions(context),
-                tools=[],
+                tools=[
+                    capability_tool(tool, backend, metadata.call_session_id)
+                    for tool in context.capabilities
+                ],
             ),
         )
         try:
@@ -139,7 +206,10 @@ async def run_job(
         if session is not None:
             await session.aclose()
     except Exception:
-        logger.exception("Voice Agent job failed", extra={"call_session_id": str(metadata.call_session_id)})
+        logger.exception(
+            "Voice Agent job failed",
+            extra={"call_session_id": str(metadata.call_session_id)},
+        )
         failure_reason = "provider_session_error"
         if session is not None:
             await session.aclose()

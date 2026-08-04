@@ -7,6 +7,9 @@ import httpx
 import jwt
 from contracts import (
     AppendConversationMessage,
+    CapabilityInvocationRequest,
+    CapabilityInvocationResponse,
+    CapabilityInvocationStatus,
     ConversationMessageResponse,
     VoiceAgentRuntimeContext,
 )
@@ -99,6 +102,55 @@ class BackendClient:
             "call-session:runtime-context:read",
         )
         return VoiceAgentRuntimeContext.model_validate(response.json())
+
+    async def invoke_capability(
+        self,
+        call_id: UUID,
+        request: CapabilityInvocationRequest,
+    ) -> CapabilityInvocationResponse:
+        response = await self.request(
+            "POST",
+            f"/internal/v1/calls/{call_id}/capability-invocations",
+            "capability-invocation:create",
+            json=request.model_dump(mode="json"),
+        )
+        return CapabilityInvocationResponse.model_validate(response.json())
+
+    async def capability_invocation(
+        self,
+        call_id: UUID,
+        invocation_id: UUID,
+    ) -> CapabilityInvocationResponse:
+        response = await self.request(
+            "GET",
+            f"/internal/v1/calls/{call_id}/capability-invocations/{invocation_id}",
+            "capability-invocation:read",
+        )
+        return CapabilityInvocationResponse.model_validate(response.json())
+
+    async def wait_for_capability(
+        self,
+        call_id: UUID,
+        invocation: CapabilityInvocationResponse,
+    ) -> CapabilityInvocationResponse:
+        terminal = {
+            CapabilityInvocationStatus.SUCCEEDED,
+            CapabilityInvocationStatus.FAILED,
+            CapabilityInvocationStatus.EXPIRED,
+        }
+        deadline = (
+            asyncio.get_running_loop().time()
+            + self._settings.capability_poll_timeout_seconds
+        )
+        while invocation.status not in terminal:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise TimeoutError("capability invocation did not complete in time")
+            await asyncio.sleep(
+                min(self._settings.capability_poll_interval_seconds, remaining)
+            )
+            invocation = await self.capability_invocation(call_id, invocation.id)
+        return invocation
 
     async def activate(self, call_id: UUID) -> None:
         await self.request(

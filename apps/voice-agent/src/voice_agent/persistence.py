@@ -68,7 +68,7 @@ class ConversationPersistence:
             return
         try:
             message = message_from_event(self._call_id, event)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             self._incomplete = True
             logger.warning("unsupported committed conversation item")
             return

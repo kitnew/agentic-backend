@@ -45,9 +45,7 @@ async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str
     assert tenant_response.status_code == 201
     tenant_id = tenant_response.json()["id"]
 
-    prompt_drafts_url = (
-        f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts"
-    )
+    prompt_drafts_url = f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts"
     prompt_draft = await client.post(
         prompt_drafts_url,
         json={"system_instructions": "You are a hotel assistant."},
@@ -55,9 +53,7 @@ async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str
     assert prompt_draft.status_code == 201
     prompt_revision_id = prompt_draft.json()["id"]
     assert (
-        await client.post(
-            f"{prompt_drafts_url}/{prompt_revision_id}/publish"
-        )
+        await client.post(f"{prompt_drafts_url}/{prompt_revision_id}/publish")
     ).status_code == 200
 
     config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
@@ -68,9 +64,7 @@ async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str
     assert config_draft.status_code == 201
     config_revision_id = config_draft.json()["id"]
     assert (
-        await client.post(
-            f"{config_drafts_url}/{config_revision_id}/publish"
-        )
+        await client.post(f"{config_drafts_url}/{config_revision_id}/publish")
     ).status_code == 200
 
     route = await client.post(
@@ -115,9 +109,11 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             base_url="http://test",
             headers=admin_headers,
         ) as client:
-            tenant_id, config_revision_id, prompt_revision_id = (
-                await prepare_voice_ready_tenant(client)
-            )
+            (
+                tenant_id,
+                config_revision_id,
+                prompt_revision_id,
+            ) = await prepare_voice_ready_tenant(client)
             calls_url = "/internal/v1/call-sessions"
             payload = {
                 "channel": "sip",
@@ -145,9 +141,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
                 201,
             ]
             created_response = next(
-                response
-                for response in create_responses
-                if response.status_code == 201
+                response for response in create_responses if response.status_code == 201
             )
             assert created_response.status_code == 201
             created = created_response.json()
@@ -249,9 +243,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             )
             assert legacy_tenant.status_code == 201
             legacy_tenant_id = legacy_tenant.json()["id"]
-            legacy_drafts_url = (
-                f"/admin/v1/tenants/{legacy_tenant_id}/config/drafts"
-            )
+            legacy_drafts_url = f"/admin/v1/tenants/{legacy_tenant_id}/config/drafts"
             legacy_draft = await client.post(
                 legacy_drafts_url,
                 json={"config": config_v1()},
@@ -259,9 +251,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert legacy_draft.status_code == 201
             legacy_revision_id = legacy_draft.json()["id"]
             assert (
-                await client.post(
-                    f"{legacy_drafts_url}/{legacy_revision_id}/publish"
-                )
+                await client.post(f"{legacy_drafts_url}/{legacy_revision_id}/publish")
             ).status_code == 200
             assert (
                 await client.post(

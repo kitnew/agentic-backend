@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from contracts.capability import RuntimeCapabilityDefinition
+
 
 class _VoiceModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -35,6 +37,7 @@ class VoiceAgentRuntimeContext(_VoiceModel):
     greeting: str = Field(min_length=1, max_length=1000)
     conversation_scope: str = Field(min_length=1, max_length=64)
     prompt: VoiceAgentPrompt
+    capabilities: list[RuntimeCapabilityDefinition] = Field(default_factory=list)
 
 
 class CallLifecycleResponse(_VoiceModel):

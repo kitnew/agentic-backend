@@ -109,9 +109,16 @@ def upgrade() -> None:
         sa.Column("sequence_number", sa.Integer(), nullable=False),
         sa.Column("role", message_role, nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("interrupted", sa.Boolean(), server_default=sa.false(), nullable=False),
+        sa.Column(
+            "interrupted", sa.Boolean(), server_default=sa.false(), nullable=False
+        ),
         sa.Column("source_created_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("persisted_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "persisted_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.CheckConstraint(
             "sequence_number > 0",
             name="ck_conversation_messages_sequence_positive",
@@ -140,10 +147,7 @@ def upgrade() -> None:
 
     bind = op.get_bind()
     rows = bind.execute(
-        sa.text(
-            "SELECT id, tenant_id, status, created_at, ended_at "
-            "FROM call_sessions"
-        )
+        sa.text("SELECT id, tenant_id, status, created_at, ended_at FROM call_sessions")
     ).mappings()
     for row in rows:
         terminal = row["status"] in {"completed", "failed"}

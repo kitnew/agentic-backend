@@ -1,0 +1,305 @@
+import asyncio
+from datetime import UTC, datetime
+from uuid import UUID
+
+import pytest
+from backend_core.bootstrap import create_app
+from backend_core.bootstrap.settings import Settings
+from backend_core.modules.calls.router import build_call_session_service
+from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.platform.database import Database
+from backend_core.platform.outbox import OutboxDispatcher
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
+
+
+def agent_schema() -> dict[str, object]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "guest_name": {
+                "type": "string",
+                "minLength": 1,
+                "x-canonical-field": "guest.name",
+            },
+            "check_in": {
+                "type": "string",
+                "format": "date",
+                "x-canonical-field": "stay.check_in",
+            },
+            "check_out": {
+                "type": "string",
+                "format": "date",
+                "x-canonical-field": "stay.check_out",
+            },
+        },
+        "required": ["guest_name", "check_in", "check_out"],
+        "additionalProperties": False,
+    }
+
+
+class FakeRedis:
+    def __init__(self) -> None:
+        self.jobs: list[tuple[str, dict[str, str]]] = []
+
+    async def xadd(self, stream: str, fields: dict[str, str]) -> str:
+        self.jobs.append((stream, fields))
+        return "1-0"
+
+
+@pytest.mark.asyncio
+async def test_invocation_outbox_duplicate_and_result_are_idempotent(
+    app_settings: Settings,
+    admin_headers: dict[str, str],
+    service_token,
+) -> None:
+    database = Database(str(app_settings.database_url))
+    app = create_app(settings=app_settings, database=database)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        tenant_response = await client.post(
+            "/admin/v1/tenants",
+            headers=admin_headers,
+            json={
+                "slug": "capability-test",
+                "display_name": "Capability Test",
+                "business_type": "hospitality",
+            },
+        )
+        assert tenant_response.status_code == 201
+        tenant_id = UUID(tenant_response.json()["id"])
+        prompt = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts",
+            headers=admin_headers,
+            json={"system_instructions": "Help the caller."},
+        )
+        prompt_id = prompt.json()["id"]
+        assert (
+            await client.post(
+                f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts/{prompt_id}/publish",
+                headers=admin_headers,
+            )
+        ).status_code == 200
+        connection = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/integration-connections",
+            headers=admin_headers,
+            json={
+                "key": "reservations",
+                "provider": "google_sheets",
+                "credential_ref": "capability-test-sheets",
+            },
+        )
+        assert connection.status_code == 201
+        other_tenant = await client.post(
+            "/admin/v1/tenants",
+            headers=admin_headers,
+            json={
+                "slug": "capability-other",
+                "display_name": "Capability Other",
+                "business_type": "hospitality",
+            },
+        )
+        assert other_tenant.status_code == 201
+        assert (
+            await client.patch(
+                f"/admin/v1/tenants/{other_tenant.json()['id']}/integration-connections/{connection.json()['id']}",
+                headers=admin_headers,
+                json={"status": "disabled"},
+            )
+        ).status_code == 404
+        connection_url = (
+            f"/admin/v1/tenants/{tenant_id}/integration-connections/"
+            f"{connection.json()['id']}"
+        )
+        assert (
+            await client.patch(
+                connection_url,
+                headers=admin_headers,
+                json={"status": "disabled"},
+            )
+        ).status_code == 200
+        config = {
+            "schema_version": 2,
+            "prompt_bundle_revision_id": prompt_id,
+            "localization": {"default_locale": "en", "timezone": "Europe/Bratislava"},
+            "agent": {"display_name": "Agent", "greeting": "Hello"},
+            "conversation": {"scope": "property_only"},
+            "capabilities": {
+                "reservation.submit_request": {
+                    "enabled": True,
+                    "semantic_version": 1,
+                    "description": "Submit a reservation request.",
+                    "announcement": "I will submit your reservation request now.",
+                    "agent_input_schema": agent_schema(),
+                    "business_policy": {},
+                    "execution": {
+                        "plan_type": "google_sheets.append_values.v1",
+                        "connection_id": connection.json()["id"],
+                        "spreadsheet_id": "sheet-id",
+                        "sheet_name": "Reservations",
+                        "append_range": "A:D",
+                        "value_input_option": "RAW",
+                        "idempotency": {
+                            "lookup_range": "A:A",
+                            "operation_id_column_index": 0,
+                        },
+                        "request_mapping": '{"rows": [[metadata.operation_id, business.guest.name, business.stay.check_in, business.stay.check_out]]}',
+                    },
+                    "validation_fixtures": [
+                        {
+                            "guest_name": "Fixture",
+                            "check_in": "2030-01-01",
+                            "check_out": "2030-01-02",
+                        },
+                        {
+                            "guest_name": "Fixture",
+                            "check_in": "2031-01-01",
+                            "check_out": "2031-01-02",
+                        },
+                    ],
+                }
+            },
+        }
+        draft = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/config/drafts",
+            headers=admin_headers,
+            json={"schema_version": 2, "config": config},
+        )
+        assert draft.status_code == 201
+        draft_id = draft.json()["id"]
+        validation = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/config/drafts/{draft_id}/validate",
+            headers=admin_headers,
+        )
+        assert validation.json()["errors"][0]["code"] == "connection_disabled"
+        assert (
+            await client.patch(
+                connection_url,
+                headers=admin_headers,
+                json={"status": "active"},
+            )
+        ).status_code == 200
+        validation = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/config/drafts/{draft_id}/validate",
+            headers=admin_headers,
+        )
+        assert validation.json() == {"valid": True, "errors": []}
+        assert (
+            await client.post(
+                f"/admin/v1/tenants/{tenant_id}/config/drafts/{draft_id}/publish",
+                headers=admin_headers,
+            )
+        ).status_code == 200
+
+        async with database.transaction() as session:
+            call, _ = await build_call_session_service(session).create_manual(tenant_id)
+            await build_call_session_service(session).activate(call.id)
+
+        voice_headers = {
+            "Authorization": "Bearer "
+            + service_token(
+                service="voice-agent",
+                scopes=["capability-invocation:create", "capability-invocation:read"],
+                secret=app_settings.voice_agent_service_secret.get_secret_value(),
+            )
+        }
+        request = {
+            "tool_call_id": "tool-call-1",
+            "capability": "reservation_submit_request",
+            "agent_input": {
+                "guest_name": "Alice",
+                "check_in": "2030-08-12",
+                "check_out": "2030-08-15",
+            },
+        }
+        first, second = await asyncio.gather(
+            client.post(
+                f"/internal/v1/calls/{call.id}/capability-invocations",
+                headers=voice_headers,
+                json=request,
+            ),
+            client.post(
+                f"/internal/v1/calls/{call.id}/capability-invocations",
+                headers=voice_headers,
+                json=request,
+            ),
+        )
+        assert {first.status_code, second.status_code} <= {200, 202}
+        assert first.json()["id"] == second.json()["id"]
+        invocation_id = UUID(first.json()["id"])
+        async with database.transaction() as session:
+            assert (
+                await session.scalar(
+                    select(func.count()).select_from(CapabilityInvocation)
+                )
+                == 1
+            )
+            assert (
+                await session.scalar(select(func.count()).select_from(OutboxMessage))
+                == 1
+            )
+            invocation = await session.get(CapabilityInvocation, invocation_id)
+            assert invocation is not None
+            assert invocation.execution_plan["rows"][0][1:] == [
+                "Alice",
+                "2030-08-12",
+                "2030-08-15",
+            ]
+            job_id = invocation.job_id
+
+        redis = FakeRedis()
+        dispatcher = OutboxDispatcher(database, redis, "capability:jobs", 1)  # type: ignore[arg-type]
+        assert await dispatcher.dispatch_once() == 1
+        assert await dispatcher.dispatch_once() == 0
+        assert len(redis.jobs) == 1
+
+        worker_headers = {
+            "Authorization": "Bearer "
+            + service_token(
+                service="job-worker",
+                scopes=["capability-result:write"],
+                secret=app_settings.job_worker_service_secret.get_secret_value(),
+            )
+        }
+        now = datetime.now(UTC).isoformat()
+        success = {
+            "job_id": str(job_id),
+            "capability_invocation_id": str(invocation_id),
+            "status": "succeeded",
+            "result": {
+                "result_type": "google_sheets.append_values.v1",
+                "status": "succeeded",
+                "updated_range": "Reservations!A42:D42",
+                "updated_rows": 1,
+                "deduplicated": False,
+            },
+            "attempt": 1,
+            "started_at": now,
+            "completed_at": now,
+        }
+        reported = await client.post(
+            "/internal/v1/capability-results",
+            headers=worker_headers,
+            json=success,
+        )
+        assert reported.json()["semantic_result"]["status"] == "request_submitted"
+        failed_replay = {
+            **success,
+            "status": "failed",
+            "result": None,
+            "error": {
+                "code": "provider_timeout",
+                "message": "timeout",
+                "transient": True,
+            },
+        }
+        replayed = await client.post(
+            "/internal/v1/capability-results",
+            headers=worker_headers,
+            json=failed_replay,
+        )
+        assert replayed.json()["status"] == "succeeded"
+
+    await database.close()

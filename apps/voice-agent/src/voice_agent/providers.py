@@ -55,7 +55,7 @@ def create_agent_session(
             api_version=settings.azure_openai_api_version,
             api_key=settings.azure_openai_api_key.get_secret_value(),
             timeout=httpx.Timeout(settings.provider_timeout_seconds),
-            temperature=0
+            temperature=0,
         ),
         tts=elevenlabs.TTS(
             api_key=settings.elevenlabs_api_key.get_secret_value(),

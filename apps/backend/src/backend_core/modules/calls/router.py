@@ -158,9 +158,7 @@ async def create_test_voice_session(
             detail="invalid Idempotency-Key",
         )
     request_fingerprint = (
-        sha256(
-            f"admin-test-session:v1:{data.tenant_id}".encode()
-        ).hexdigest()
+        sha256(f"admin-test-session:v1:{data.tenant_id}".encode()).hexdigest()
         if idempotency_key is not None
         else None
     )
@@ -186,9 +184,7 @@ async def create_test_voice_session(
             dispatch_id = await livekit.create_dispatch(
                 agent_name=request.app.state.settings.livekit_agent_name,
                 room_name=call.room_name,
-                metadata=LiveKitJobMetadata(
-                    call_session_id=call.id
-                ).model_dump_json(),
+                metadata=LiveKitJobMetadata(call_session_id=call.id).model_dump_json(),
             )
             try:
                 async with database.transaction() as session:
@@ -248,9 +244,7 @@ async def get_test_voice_session(
 @runtime_router.get(
     "/{call_id}/runtime-context",
     response_model=VoiceAgentRuntimeContext,
-    dependencies=[
-        Depends(require_internal_scope("call-session:runtime-context:read"))
-    ],
+    dependencies=[Depends(require_internal_scope("call-session:runtime-context:read"))],
 )
 async def get_call_runtime_context(
     call_id: UUID,

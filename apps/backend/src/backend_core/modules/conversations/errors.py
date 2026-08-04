@@ -12,4 +12,3 @@ class ConversationConflictError(ConversationError):
 
 class ConversationMessageConflictError(ConversationError):
     pass
-

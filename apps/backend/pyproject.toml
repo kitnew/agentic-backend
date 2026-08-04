@@ -12,6 +12,8 @@ dependencies = [
     "contracts",
     "fastapi>=0.140.13",
     "livekit-api>=1.2.0",
+    "jsonata-python>=0.7.0",
+    "jsonschema>=4.25.1",
     "pydantic-settings>=2.14.2",
     "pyjwt>=2.13.0",
     "pyyaml>=6.0.3",

@@ -3,15 +3,14 @@ from uuid import UUID
 
 import jwt
 import pytest
-from contracts import LiveKitJobMetadata
-from httpx import ASGITransport, AsyncClient
-
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.service import CallSessionService
 from backend_core.platform.database import Database
 from backend_core.platform.livekit import LiveKitAdapter
+from contracts import LiveKitJobMetadata
+from httpx import ASGITransport, AsyncClient
 
 
 def config_v2(prompt_id: str, greeting: str) -> dict[str, object]:
@@ -44,9 +43,7 @@ async def publish_prompt(
     )
     assert draft.status_code == 201
     prompt_id = draft.json()["id"]
-    assert (
-        await client.post(f"{drafts_url}/{prompt_id}/publish")
-    ).status_code == 200
+    assert (await client.post(f"{drafts_url}/{prompt_id}/publish")).status_code == 200
     return prompt_id
 
 
@@ -63,9 +60,7 @@ async def publish_config(
     )
     assert draft.status_code == 201
     config_id = draft.json()["id"]
-    assert (
-        await client.post(f"{drafts_url}/{config_id}/publish")
-    ).status_code == 200
+    assert (await client.post(f"{drafts_url}/{config_id}/publish")).status_code == 200
     return config_id
 
 
@@ -107,9 +102,7 @@ class FakeLiveKit:
             raise RuntimeError("dispatch rejected")
         parsed = LiveKitJobMetadata.model_validate_json(metadata)
         async with self.database.transaction() as session:
-            assert await CallSessionRepository(session).get(
-                parsed.call_session_id
-            )
+            assert await CallSessionRepository(session).get(parsed.call_session_id)
         self.created.append(
             {
                 "agent_name": agent_name,
@@ -208,9 +201,7 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
                 "canPublishSources": ["microphone"],
             }
 
-            lifecycle = await client.get(
-                f"/admin/v1/voice/test-sessions/{call_id}"
-            )
+            lifecycle = await client.get(f"/admin/v1/voice/test-sessions/{call_id}")
             assert lifecycle.status_code == 200
             assert set(lifecycle.json()) == {
                 "call_session_id",
@@ -238,11 +229,16 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
             assert runtime.json()["prompt"]["system_instructions"] == (
                 "Pinned system A"
             )
-            assert not {
-                "schema_version",
-                "capabilities",
-                "prompt_bundle_revision_id",
-            } & runtime.json().keys()
+            assert (
+                not {
+                    "schema_version",
+                    "prompt_bundle_revision_id",
+                    "spreadsheet_id",
+                    "request_mapping",
+                    "credential_ref",
+                }
+                & runtime.json().keys()
+            )
             assert (
                 await client.post(
                     f"/internal/v1/call-sessions/{call_id}/activate",
@@ -295,9 +291,7 @@ async def test_livekit_setup_failure_is_compensated_and_marks_call_failed(
             )
             assert response.status_code == 502
             call_id = response.json()["detail"]["call_session_id"]
-            lifecycle = await client.get(
-                f"/admin/v1/voice/test-sessions/{call_id}"
-            )
+            lifecycle = await client.get(f"/admin/v1/voice/test-sessions/{call_id}")
             assert lifecycle.json()["status"] == "failed"
             assert lifecycle.json()["failure_reason"] == "livekit_setup_failed"
             assert bool(livekit.deleted) is (failure != "dispatch")

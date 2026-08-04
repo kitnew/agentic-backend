@@ -2,9 +2,8 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
-
 from contracts import AppendConversationMessage, ConversationMessageRole
+from pydantic import ValidationError
 
 
 def test_append_conversation_message_round_trip() -> None:
@@ -15,7 +14,10 @@ def test_append_conversation_message_round_trip() -> None:
         interrupted=False,
         source_created_at=datetime.now(UTC),
     )
-    assert AppendConversationMessage.model_validate_json(payload.model_dump_json()) == payload
+    assert (
+        AppendConversationMessage.model_validate_json(payload.model_dump_json())
+        == payload
+    )
 
 
 def test_append_conversation_message_forbids_blank_and_extra_fields() -> None:
@@ -43,5 +45,5 @@ def test_append_conversation_message_rejects_naive_source_time() -> None:
             role="assistant",
             content="hello",
             interrupted=True,
-            source_created_at=datetime.now(),
+            source_created_at=datetime.now(UTC).replace(tzinfo=None),
         )

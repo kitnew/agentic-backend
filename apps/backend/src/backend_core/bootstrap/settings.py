@@ -1,6 +1,6 @@
 from typing import Annotated, Self
 
-from pydantic import Field, PostgresDsn, SecretStr, model_validator
+from pydantic import Field, PostgresDsn, RedisDsn, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Secret = Annotated[SecretStr, Field(min_length=32)]
@@ -26,6 +26,12 @@ class Settings(BaseSettings):
         int,
         Field(gt=0, le=600),
     ] = 600
+    redis_url: RedisDsn = RedisDsn("redis://redis:6379/0")
+    capability_job_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
+        "capability:jobs"
+    )
+    outbox_dispatch_enabled: bool = False
+    outbox_dispatch_interval_seconds: Annotated[float, Field(gt=0, le=60)] = 1.0
 
     @model_validator(mode="after")
     def credentials_must_be_distinct(self) -> Self:

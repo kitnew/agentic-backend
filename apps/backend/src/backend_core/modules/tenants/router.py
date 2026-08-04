@@ -13,6 +13,7 @@ from fastapi import (
     status,
 )
 
+from backend_core.modules.integrations.repository import IntegrationConnectionRepository
 from backend_core.modules.tenants.errors import (
     ActiveConfigNotFoundError,
     ActiveDraftExistsError,
@@ -93,6 +94,7 @@ def get_config_use_cases(
         TenantRepository(session),
         ConfigRevisionRepository(session),
         PromptBundleRevisionRepository(session),
+        IntegrationConnectionRepository(session),
     )
 
 
@@ -194,9 +196,7 @@ def prompt_bundle_http_exception(
 
 def inbound_route_http_exception(
     error: (
-        TenantNotFoundError
-        | InboundRouteNotFoundError
-        | InboundRouteDidConflictError
+        TenantNotFoundError | InboundRouteNotFoundError | InboundRouteDidConflictError
     ),
 ) -> HTTPException:
     if isinstance(error, TenantNotFoundError):
@@ -407,8 +407,7 @@ async def list_prompt_bundle_revisions(
     except TenantNotFoundError as error:
         raise prompt_bundle_http_exception(error) from error
     return [
-        PromptBundleRevisionResponse.model_validate(revision)
-        for revision in revisions
+        PromptBundleRevisionResponse.model_validate(revision) for revision in revisions
     ]
 
 

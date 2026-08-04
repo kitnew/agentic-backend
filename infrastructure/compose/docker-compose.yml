@@ -1,4 +1,17 @@
 services:
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   postgres:
     image: postgres:18-alpine
     environment:
@@ -31,10 +44,16 @@ services:
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET}
       LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:?set LIVEKIT_AGENT_NAME}
       LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS: ${LIVEKIT_PARTICIPANT_TOKEN_TTL_SECONDS:-600}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CAPABILITY_JOB_STREAM: ${CAPABILITY_JOB_STREAM:-capability:jobs}
+      OUTBOX_DISPATCH_ENABLED: "true"
+      OUTBOX_DISPATCH_INTERVAL_SECONDS: ${OUTBOX_DISPATCH_INTERVAL_SECONDS:-1}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test:
@@ -70,9 +89,34 @@ services:
       PROVIDER_TIMEOUT_SECONDS: ${PROVIDER_TIMEOUT_SECONDS:-10}
       PROVIDER_RETRY_LIMIT: ${PROVIDER_RETRY_LIMIT:-3}
       PARTICIPANT_WAIT_TIMEOUT_SECONDS: ${PARTICIPANT_WAIT_TIMEOUT_SECONDS:-300}
+      CAPABILITY_POLL_TIMEOUT_SECONDS: ${CAPABILITY_POLL_TIMEOUT_SECONDS:-30}
+      CAPABILITY_POLL_INTERVAL_SECONDS: ${CAPABILITY_POLL_INTERVAL_SECONDS:-0.5}
     depends_on:
       backend:
         condition: service_healthy
 
+  job-worker:
+    build:
+      context: ../..
+      dockerfile: apps/job-worker/Dockerfile
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      CAPABILITY_JOB_STREAM: ${CAPABILITY_JOB_STREAM:-capability:jobs}
+      CAPABILITY_JOB_CONSUMER_GROUP: ${CAPABILITY_JOB_CONSUMER_GROUP:-capability-workers}
+      CAPABILITY_JOB_DEAD_LETTER_STREAM: ${CAPABILITY_JOB_DEAD_LETTER_STREAM:-capability:jobs:dead-letter}
+      CAPABILITY_JOB_MAX_RETRIES: ${CAPABILITY_JOB_MAX_RETRIES:-3}
+      CAPABILITY_JOB_STALE_IDLE_MS: ${CAPABILITY_JOB_STALE_IDLE_MS:-30000}
+      BACKEND_CORE_URL: ${BACKEND_CORE_URL:-http://backend:8000}
+      INTERNAL_API_AUDIENCE: ${INTERNAL_API_AUDIENCE:-backend-core}
+      JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
+      GOOGLE_SHEETS_CREDENTIALS_JSON: ${GOOGLE_SHEETS_CREDENTIALS_JSON:-{}}
+      PROVIDER_TIMEOUT_SECONDS: ${PROVIDER_TIMEOUT_SECONDS:-10}
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres-data:
+  redis-data:

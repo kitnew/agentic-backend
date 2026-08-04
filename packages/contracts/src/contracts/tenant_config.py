@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -42,11 +42,46 @@ class ConversationConfig(_TenantConfigModel):
     scope: ConversationScope
 
 
+class CapabilityBusinessPolicy(_TenantConfigModel):
+    pass
+
+
+class GoogleSheetsExecutionIdempotency(_TenantConfigModel):
+    lookup_range: str = Field(min_length=1, max_length=255)
+    operation_id_column_index: int = Field(ge=0, le=1023)
+
+
+class GoogleSheetsAppendExecution(_TenantConfigModel):
+    plan_type: Literal["google_sheets.append_values.v1"]
+    connection_id: UUID
+    spreadsheet_id: str = Field(min_length=1, max_length=255)
+    sheet_name: str = Field(min_length=1, max_length=255)
+    append_range: str = Field(min_length=1, max_length=255)
+    value_input_option: Literal["RAW", "USER_ENTERED"] = "RAW"
+    idempotency: GoogleSheetsExecutionIdempotency
+    request_mapping: str = Field(min_length=1, max_length=20_000)
+
+
+class TenantCapabilityProfile(_TenantConfigModel):
+    enabled: StrictBool
+    semantic_version: int = Field(gt=0)
+    description: str = Field(min_length=1, max_length=1000)
+    announcement: str = Field(min_length=1, max_length=1000)
+    agent_input_schema: dict[str, Any]
+    business_policy: CapabilityBusinessPolicy = Field(
+        default_factory=CapabilityBusinessPolicy
+    )
+    execution: GoogleSheetsAppendExecution
+    validation_fixtures: list[dict[str, Any]] = Field(min_length=2, max_length=3)
+
+
 class _TenantConfigBase(_TenantConfigModel):
     localization: LocalizationConfig
     agent: AgentConfig
     conversation: ConversationConfig
-    capabilities: dict[str, StrictBool] = Field(default_factory=dict)
+    capabilities: dict[str, StrictBool | TenantCapabilityProfile] = Field(
+        default_factory=dict
+    )
 
 
 class TenantConfigV1(_TenantConfigBase):

@@ -55,9 +55,7 @@ async def test_prompt_bundle_lifecycle_and_config_v2_reference(
             headers=admin_headers,
         ) as client:
             tenant_id = await create_tenant(client, "prompt-bundle-hotel")
-            drafts_url = (
-                f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts"
-            )
+            drafts_url = f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts"
 
             assert (
                 await client.post(
@@ -117,10 +115,7 @@ async def test_prompt_bundle_lifecycle_and_config_v2_reference(
             ).status_code == 412
 
             publish_responses = await asyncio.gather(
-                *(
-                    client.post(f"{drafts_url}/{revision_id}/publish")
-                    for _ in range(2)
-                )
+                *(client.post(f"{drafts_url}/{revision_id}/publish") for _ in range(2))
             )
             assert sorted(response.status_code for response in publish_responses) == [
                 200,
@@ -163,9 +158,7 @@ async def test_prompt_bundle_lifecycle_and_config_v2_reference(
             )
             assert validation.json() == {"valid": True, "errors": []}
             assert (
-                await client.post(
-                    f"{config_url}/drafts/{config_revision_id}/publish"
-                )
+                await client.post(f"{config_url}/drafts/{config_revision_id}/publish")
             ).status_code == 200
             active = (await client.get(f"{config_url}/active")).json()
             assert active["config"]["schema_version"] == 2
@@ -178,9 +171,7 @@ async def test_prompt_bundle_lifecycle_and_config_v2_reference(
             )
             assert other_prompt.status_code == 201
             other_prompt_id = other_prompt.json()["id"]
-            other_config_url = (
-                f"/admin/v1/tenants/{other_tenant_id}/config/drafts"
-            )
+            other_config_url = f"/admin/v1/tenants/{other_tenant_id}/config/drafts"
             other_config = await client.post(
                 other_config_url,
                 json={
@@ -224,9 +215,7 @@ async def test_prompt_bundle_lifecycle_and_config_v2_reference(
                 ],
             }
             assert (
-                await client.post(
-                    f"{other_config_url}/{other_config_id}/publish"
-                )
+                await client.post(f"{other_config_url}/{other_config_id}/publish")
             ).status_code == 422
             assert (
                 await client.post(
@@ -235,9 +224,7 @@ async def test_prompt_bundle_lifecycle_and_config_v2_reference(
                 )
             ).status_code == 200
             assert (
-                await client.post(
-                    f"{other_config_url}/{other_config_id}/validate"
-                )
+                await client.post(f"{other_config_url}/{other_config_id}/validate")
             ).json() == {"valid": True, "errors": []}
     finally:
         await database.close()

@@ -20,7 +20,9 @@ from backend_core.modules.conversations.service import ConversationService
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import DatabaseSession
 
-internal_router = APIRouter(prefix="/internal/v1/calls", tags=["internal:conversations"])
+internal_router = APIRouter(
+    prefix="/internal/v1/calls", tags=["internal:conversations"]
+)
 admin_router = APIRouter(
     prefix="/admin/v1/calls",
     tags=["admin:conversations"],

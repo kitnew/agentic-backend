@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from contracts import (
     ConversationPersistenceStatus,
+    TenantCapabilityProfile,
     TenantConfigV2,
     VoiceAgentPrompt,
     VoiceAgentRuntimeContext,
@@ -25,6 +26,7 @@ from backend_core.modules.calls.models import (
 )
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.schemas import CreateCallSessionRequest
+from backend_core.modules.capabilities.domain import runtime_definition
 from backend_core.modules.conversations.errors import ConversationConflictError
 from backend_core.modules.conversations.service import ConversationService
 from backend_core.modules.tenants.errors import TenantNotFoundError
@@ -221,6 +223,11 @@ class CallSessionService:
                 tenant_instructions=prompt_revision.tenant_instructions,
                 knowledge_text=prompt_revision.knowledge_text,
             ),
+            capabilities=[
+                runtime_definition(key, profile)
+                for key, profile in config.capabilities.items()
+                if isinstance(profile, TenantCapabilityProfile) and profile.enabled
+            ],
         )
 
     async def _voice_config(

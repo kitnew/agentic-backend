@@ -98,9 +98,7 @@ class InboundRouteRepository:
         )
         if lock_tenant:
             query = query.with_for_update(of=Tenant)
-        row = (
-            await self._session.execute(query)
-        ).one_or_none()
+        row = (await self._session.execute(query)).one_or_none()
         return None if row is None else (row[0], row[1])
 
 

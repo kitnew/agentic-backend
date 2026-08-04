@@ -4,14 +4,14 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from contracts import VoiceAgentRuntimeContext
+from contracts import RuntimeCapabilityDefinition, VoiceAgentRuntimeContext
 from livekit import agents
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
-
 from voice_agent.backend import BackendClient
 from voice_agent.main import (
     assemble_instructions,
+    capability_tool,
     close_failure_reason,
     on_request,
     parse_metadata,
@@ -95,9 +95,7 @@ async def test_on_request_accepts_only_valid_metadata() -> None:
     assert rejected.terminated is True
     assert not rejected.accepted
 
-    accepted = Request(
-        f'{{"call_session_id":"{uuid4()}"}}'
-    )
+    accepted = Request(f'{{"call_session_id":"{uuid4()}"}}')
     await on_request(accepted)  # type: ignore[arg-type]
     assert accepted.accepted
     assert accepted.terminated is None
@@ -126,8 +124,41 @@ def test_prompt_assembly_uses_only_runtime_material() -> None:
     assert instructions == (
         "System prompt\n\nTenant prompt\n\nKnowledge\n\n"
         "Locale: sk-SK\n\nTimezone: Europe/Bratislava\n\n"
-        "Conversation scope: property_only"
+        "Conversation scope: property_only\n\n"
+        "Use a capability tool when its inputs are known. Do not promise success "
+        "before its result. reservation_submit_request submits a request; it never "
+        "confirms a reservation."
     )
+
+
+@pytest.mark.asyncio
+async def test_capability_timeout_returns_only_safe_semantics() -> None:
+    class Backend:
+        async def invoke_capability(self, call_id, request):
+            raise TimeoutError
+
+    class Session:
+        async def say(self, text, **kwargs):
+            return None
+
+    context = SimpleNamespace(
+        session=Session(), function_call=SimpleNamespace(call_id="tool-call")
+    )
+    definition = RuntimeCapabilityDefinition(
+        semantic_key="reservation.submit_request",
+        semantic_version=1,
+        tool_name="reservation_submit_request",
+        description="Submit a reservation request.",
+        announcement="I will submit your reservation request now.",
+        input_schema={"type": "object"},
+    )
+    tool = capability_tool(definition, Backend(), uuid4())  # type: ignore[arg-type]
+    result = await tool._func(context, {})  # type: ignore[attr-defined,arg-type]
+    assert result == {
+        "status": "request_submission_failed",
+        "error_code": "execution_timeout",
+        "message": "The reservation request could not be submitted yet",
+    }
 
 
 def test_committed_message_id_is_stable_and_preserves_interruption() -> None:

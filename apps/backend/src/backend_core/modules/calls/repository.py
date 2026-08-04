@@ -65,9 +65,7 @@ class CallSessionRepository:
 
     async def get_for_update(self, call_id: UUID) -> CallSession | None:
         return await self._session.scalar(
-            select(CallSession)
-            .where(CallSession.id == call_id)
-            .with_for_update()
+            select(CallSession).where(CallSession.id == call_id).with_for_update()
         )
 
     async def flush(self) -> None:

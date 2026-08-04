@@ -29,14 +29,20 @@ def runtime_context() -> dict[str, object]:
 def test_voice_contracts_round_trip_and_forbid_authoring_fields() -> None:
     payload = runtime_context()
     context = VoiceAgentRuntimeContext.model_validate(payload)
-    assert VoiceAgentRuntimeContext.model_validate_json(
-        context.model_dump_json()
-    ) == context
-    assert not {
-        "schema_version",
-        "capabilities",
-        "prompt_bundle_revision_id",
-    } & context.model_dump().keys()
+    assert (
+        VoiceAgentRuntimeContext.model_validate_json(context.model_dump_json())
+        == context
+    )
+    assert (
+        not {
+            "schema_version",
+            "prompt_bundle_revision_id",
+            "spreadsheet_id",
+            "request_mapping",
+            "credential_ref",
+        }
+        & context.model_dump().keys()
+    )
 
     with pytest.raises(ValidationError):
         VoiceAgentRuntimeContext.model_validate({**payload, "capabilities": {}})
@@ -59,9 +65,10 @@ def test_lifecycle_response_forbids_extra_fields() -> None:
         ended_at=None,
         failure_reason=None,
     )
-    assert CallLifecycleResponse.model_validate_json(
-        response.model_dump_json()
-    ) == response
+    assert (
+        CallLifecycleResponse.model_validate_json(response.model_dump_json())
+        == response
+    )
     with pytest.raises(ValidationError):
         CallLifecycleResponse.model_validate(
             {**response.model_dump(), "room_name": "secret"}

@@ -4,11 +4,10 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.platform.database import Database
+from httpx import ASGITransport, AsyncClient
 
 
 async def create_voice_ready_tenant(
@@ -116,9 +115,7 @@ async def test_conversation_append_is_ordered_idempotent_and_closes_with_call(
             assert call.status_code == 201
             call_id = call.json()["id"]
 
-            conversation = await client.get(
-                f"/admin/v1/calls/{call_id}/conversation"
-            )
+            conversation = await client.get(f"/admin/v1/calls/{call_id}/conversation")
             assert conversation.status_code == 200
             assert conversation.headers["cache-control"] == "no-store"
             assert conversation.json()["status"] == "open"
@@ -172,7 +169,9 @@ async def test_conversation_append_is_ordered_idempotent_and_closes_with_call(
                     for _ in range(2)
                 )
             )
-            assert sorted(response.json()["sequence_number"] for response in concurrent) == [
+            assert sorted(
+                response.json()["sequence_number"] for response in concurrent
+            ) == [
                 2,
                 3,
             ]
@@ -190,9 +189,7 @@ async def test_conversation_append_is_ordered_idempotent_and_closes_with_call(
             assert completed.status_code == 200
             assert completed.json()["status"] == "completed"
 
-            final = await client.get(
-                f"/admin/v1/calls/{call_id}/conversation"
-            )
+            final = await client.get(f"/admin/v1/calls/{call_id}/conversation")
             assert [
                 message["sequence_number"] for message in final.json()["messages"]
             ] == [1, 2, 3]

@@ -47,9 +47,7 @@ async def create_tenant(
         drafts_url = f"/admin/v1/tenants/{tenant['id']}/config/drafts"
         draft = await client.post(drafts_url, json={"config": config_v1()})
         assert draft.status_code == 201
-        published = await client.post(
-            f"{drafts_url}/{draft.json()['id']}/publish"
-        )
+        published = await client.post(f"{drafts_url}/{draft.json()['id']}/publish")
         assert published.status_code == 200
         tenant["active_revision"] = published.json()
     return tenant

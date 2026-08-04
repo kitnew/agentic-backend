@@ -3,7 +3,6 @@ from uuid import uuid4
 
 import pytest
 from livekit.agents import llm
-
 from voice_agent.persistence import ConversationPersistence
 
 

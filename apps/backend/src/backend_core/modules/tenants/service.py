@@ -2,10 +2,29 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from uuid import UUID
 
-from contracts import TenantConfig, TenantConfigV1, TenantConfigV2
+from contracts import (
+    TenantCapabilityProfile,
+    TenantConfig,
+    TenantConfigV1,
+    TenantConfigV2,
+)
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
+from backend_core.modules.capabilities.domain import (
+    CapabilityValidationError,
+    compile_plan,
+    definition,
+    normalize_input,
+    validate_agent_input,
+    validate_agent_schema,
+    validate_business_input,
+)
+from backend_core.modules.integrations.models import (
+    IntegrationConnectionStatus,
+    IntegrationProvider,
+)
+from backend_core.modules.integrations.repository import IntegrationConnectionRepository
 from backend_core.modules.tenants.errors import (
     ActiveConfigNotFoundError,
     ActiveDraftExistsError,
@@ -209,10 +228,12 @@ class ConfigUseCases:
         tenants: TenantRepository,
         revisions: ConfigRevisionRepository,
         prompt_bundles: PromptBundleRevisionRepository,
+        connections: IntegrationConnectionRepository,
     ) -> None:
         self._tenants = tenants
         self._revisions = revisions
         self._prompt_bundles = prompt_bundles
+        self._connections = connections
 
     async def create_config_draft(
         self,
@@ -478,4 +499,70 @@ class ConfigUseCases:
                         )
                     ],
                 )
+            capability_errors = await self._validate_capabilities(
+                revision.tenant_id,
+                config,
+            )
+            if capability_errors:
+                return None, capability_errors
         return config, []
+
+    async def _validate_capabilities(
+        self,
+        tenant_id: UUID,
+        config: TenantConfigV2,
+    ) -> list[ValidationIssue]:
+        errors: list[ValidationIssue] = []
+        for semantic_key, raw_profile in config.capabilities.items():
+            if not isinstance(raw_profile, TenantCapabilityProfile):
+                continue
+            path = f"capabilities.{semantic_key}"
+            try:
+                capability = definition(semantic_key, raw_profile.semantic_version)
+                validate_agent_schema(raw_profile.agent_input_schema, capability)
+                connection = await self._connections.get(
+                    tenant_id,
+                    raw_profile.execution.connection_id,
+                )
+                if connection is None:
+                    raise CapabilityValidationError(
+                        "connection_not_found",
+                        "Connection does not belong to tenant",
+                        "execution.connection_id",
+                    )
+                if connection.status is not IntegrationConnectionStatus.ACTIVE:
+                    raise CapabilityValidationError(
+                        "connection_disabled",
+                        "Connection must be active",
+                        "execution.connection_id",
+                    )
+                if connection.provider is not IntegrationProvider.GOOGLE_SHEETS:
+                    raise CapabilityValidationError(
+                        "connection_provider_mismatch",
+                        "Connection provider does not match plan type",
+                        "execution.connection_id",
+                    )
+                for index, fixture in enumerate(raw_profile.validation_fixtures):
+                    validate_agent_input(raw_profile.agent_input_schema, fixture)
+                    canonical = validate_business_input(
+                        normalize_input(raw_profile.agent_input_schema, fixture),
+                        config.localization.timezone,
+                        enforce_not_past=False,
+                    )
+                    compile_plan(
+                        raw_profile,
+                        canonical,
+                        operation_id=UUID("00000000-0000-0000-0000-000000000001"),
+                        call_id=UUID("00000000-0000-0000-0000-000000000002"),
+                        tool_call_id=f"publication-fixture-{index}",
+                        credential_ref=connection.credential_ref,
+                    )
+            except CapabilityValidationError as error:
+                errors.append(
+                    ValidationIssue(
+                        path=f"{path}.{error.path}".rstrip("."),
+                        code=error.code,
+                        message=error.message,
+                    )
+                )
+        return errors

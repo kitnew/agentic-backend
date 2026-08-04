@@ -1,0 +1,79 @@
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+import pytest
+from contracts import (
+    ExecutionPlan,
+    GoogleSheetsAppendValuesPlan,
+    IntegrationJob,
+    RuntimeCapabilityDefinition,
+    WorkerResultReport,
+)
+from pydantic import TypeAdapter, ValidationError
+
+
+def plan() -> GoogleSheetsAppendValuesPlan:
+    operation_id = uuid4()
+    return GoogleSheetsAppendValuesPlan(
+        plan_type="google_sheets.append_values.v1",
+        credential_ref="tenant-a-sheets",
+        spreadsheet_id="sheet",
+        sheet_name="Reservations",
+        append_range="A:G",
+        value_input_option="RAW",
+        rows=[[str(operation_id), "Alice", 2, True, None]],
+        idempotency={
+            "operation_id": operation_id,
+            "lookup_range": "A:A",
+            "operation_id_column_index": 0,
+        },
+    )
+
+
+def test_job_and_result_contracts_round_trip() -> None:
+    now = datetime.now(UTC)
+    job = IntegrationJob(
+        job_id=uuid4(),
+        capability_invocation_id=uuid4(),
+        tenant_id=uuid4(),
+        execution_plan=plan(),
+        created_at=now,
+        expires_at=now + timedelta(minutes=10),
+    )
+    assert IntegrationJob.model_validate_json(job.model_dump_json()) == job
+    report = WorkerResultReport(
+        job_id=job.job_id,
+        capability_invocation_id=job.capability_invocation_id,
+        status="succeeded",
+        result={
+            "result_type": "google_sheets.append_values.v1",
+            "status": "succeeded",
+            "updated_range": "Reservations!A2:E2",
+            "updated_rows": 1,
+            "deduplicated": False,
+        },
+        attempt=1,
+        started_at=now,
+        completed_at=now,
+    )
+    assert WorkerResultReport.model_validate_json(report.model_dump_json()) == report
+
+
+def test_plan_discriminator_rejects_unknown_plan() -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(ExecutionPlan).validate_python({"plan_type": "http.post_json.v1"})
+
+
+def test_runtime_capability_forbids_execution_details() -> None:
+    with pytest.raises(ValidationError):
+        RuntimeCapabilityDefinition.model_validate(
+            {
+                "semantic_key": "reservation.submit_request",
+                "semantic_version": 1,
+                "tool_name": "reservation_submit_request",
+                "description": "Submit a reservation request",
+                "announcement": "I will submit your request now",
+                "input_schema": {},
+                "spreadsheet_id": "secret-destination",
+            }
+        )
