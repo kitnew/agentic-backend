@@ -24,6 +24,7 @@ class TenantConfigLoader:
         "reservation.cancel_request",
         "reservation.change_request",
         "reservation.create_request",
+        "reservation.check_existing_reservation",
     }
     known_voice_providers = {"elevenlabs"}
 

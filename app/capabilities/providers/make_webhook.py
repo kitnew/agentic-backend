@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+from datetime import date
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
@@ -24,12 +25,7 @@ class MakeWebhookProvider:
             return self._failure(capability_request.name, "invalid_webhook_config")
         url = config.get("webhook_url")
         timeout = config.get("timeout_seconds", self.default_timeout_seconds)
-        payload = {
-            "tenant_id": tenant_context.tenant_id,
-            "capability": capability_request.name,
-            "input": capability_request.input,
-            "metadata": capability_request.metadata or {},
-        }
+        payload = _payload(tenant_context, capability_request)
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         api_key_env = config.get("webhook_api_key_env")
         if api_key_env and (api_key := os.getenv(api_key_env)):
@@ -122,3 +118,92 @@ def valid_webhook_config(config: dict[str, Any]) -> bool:
         and not isinstance(timeout, bool)
         and timeout > 0
     )
+
+
+def _payload(tenant_context: TenantContext, request: CapabilityRequest) -> Any:
+    if tenant_context.tenant_id != "penzion_grand":
+        return {
+            "tenant_id": tenant_context.tenant_id,
+            "capability": request.name,
+            "input": request.input,
+            "metadata": request.metadata or {},
+        }
+    return [_penzion_grand_payload(tenant_context, request)]
+
+
+def _penzion_grand_payload(
+    tenant_context: TenantContext, request: CapabilityRequest
+) -> dict[str, Any]:
+    values = request.input
+    caller_phone = values.get("caller_number") or values.get("phone")
+    guest_phone = values.get("reservation_phone") or values.get("UserID")
+    if request.name == "reservation.create_request":
+        return {
+            "guest_name": values.get("reservation_name") or values.get("guest_name"),
+            "phone": caller_phone,
+            "start_date": _date_text(values.get("check_in")),
+            "end_date": _date_text(values.get("check_out")),
+            "room_type": _room_type_code(tenant_context, values.get("room_type")),
+            "room_count": values.get("room_count"),
+            "userID": guest_phone,
+        }
+    if request.name == "reservation.change_request":
+        return {
+            "booked_name": values.get("reservation_name") or values.get("booked_name"),
+            "original_start_date": _date_text(
+                values.get("original_check_in") or values.get("original_start_date")
+            ),
+            "original_end_date": _date_text(
+                values.get("original_check_out") or values.get("original_end_date")
+            ),
+            "modification": values.get("change") or values.get("modification"),
+            "phone": caller_phone,
+            "UserID": guest_phone,
+        }
+    if request.name == "reservation.cancel_request":
+        return {
+            "booked_name": values.get("reservation_name") or values.get("booked_name"),
+            "original_start_date": _date_text(
+                values.get("original_check_in") or values.get("original_start_date")
+            ),
+            "original_end_date": _date_text(
+                values.get("original_check_out") or values.get("original_end_date")
+            ),
+            "notes": values.get("reason") or values.get("notes") or "",
+            "UserID": guest_phone,
+        }
+    if request.name == "reservation.check_availability":
+        return {
+            "start_date": _date_text(values.get("check_in") or values.get("start_date")),
+            "end_date": _date_text(values.get("check_out") or values.get("end_date")),
+            "room_count": str(values.get("room_count")),
+            "room_type": _room_type_code(tenant_context, values.get("room_type")),
+            "caller_id": caller_phone,
+        }
+    if request.name == "reservation.check_existing_reservation":
+        return {
+            "guest_name": values.get("guest_name") or values.get("reservation_name"),
+            "check_in": _date_text(values.get("check_in")),
+            "check_out": _date_text(values.get("check_out")),
+        }
+    return values
+
+
+def _date_text(value: Any) -> Any:
+    if isinstance(value, date):
+        return value.strftime("%d.%m.%Y")
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value).strftime("%d.%m.%Y")
+        except ValueError:
+            return value
+    return value
+
+
+def _room_type_code(tenant_context: TenantContext, value: Any) -> Any:
+    if value is None or (isinstance(value, str) and value.isdigit()):
+        return value
+    capacities = {
+        room.code: room.capacity for room in tenant_context.business_info.room_types
+    }
+    return str(capacities.get(value, value))

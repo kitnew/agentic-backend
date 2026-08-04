@@ -162,21 +162,29 @@ capabilities:
     provider: make_webhook
     config:
       webhook_url: "https://hook.eu1.make.com/kxds9ubbisper9y9qm5knr12ipvhljvv"
-      webhook_api_key_env: test123
+      webhook_api_key_env: MAKE_WEBHOOK_API_KEY
       row_format: accommodation_request
       announcement: Výborne, teraz odošlem požiadavku na rezerváciu.
   reservation.change_request:
-    enabled: true
-    provider: google_sheets
+    enabled: false
+    provider: make_webhook
     config:
-      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
-      sheet_name: "reservations_change"
+      webhook_url: ""
+      timeout_seconds: 15
+      announcement: Zmeny rezervácie odošlem personálu na spracovanie.
   reservation.cancel_request:
-    enabled: true
-    provider: google_sheets
+    enabled: false
+    provider: make_webhook
     config:
-      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
-      sheet_name: "reservations_cancel"
+      webhook_url: ""
+      timeout_seconds: 15
+      announcement: Zrušenie rezervácie odošlem personálu na spracovanie.
+  reservation.check_existing_reservation:
+    enabled: false
+    provider: make_webhook
+    config:
+      webhook_url: ""
+      timeout_seconds: 15
 
 post_call_transcript:
   spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"

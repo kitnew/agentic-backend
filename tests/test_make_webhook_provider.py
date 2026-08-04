@@ -33,6 +33,7 @@ def tenant_with_webhook(capability_name: str):
     capabilities = dict(tenant.capabilities)
     capabilities[capability_name] = capabilities[capability_name].model_copy(
         update={
+            "enabled": True,
             "provider": "make_webhook",
             "config": {"webhook_url": "https://make.example.test/hook"},
         }
@@ -79,9 +80,98 @@ def test_each_reservation_action_can_select_webhook_without_internal_execution(
     assert result.status == "success"
     assert result.provider == "make_webhook"
     assert result.output == {"request_id": "make-1"}
-    assert calls[0][0]["capability"] == name
+    assert isinstance(calls[0][0], list)
+    if name == "reservation.create_request":
+        assert calls[0][0] == [
+            {
+                "guest_name": "Ján Novák",
+                "phone": "+421900111222",
+                "start_date": "29.08.2026",
+                "end_date": "31.08.2026",
+                "room_type": "2",
+                "room_count": 2,
+                "userID": "+421900333444",
+            }
+        ]
     assert calls[0][1] == 15
     assert sheets.appends == []
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        (
+            "reservation.change_request",
+            {
+                "booked_name": "Ján Novák",
+                "original_start_date": "29.08.2026",
+                "original_end_date": "31.08.2026",
+                "modification": "Prosím o detskú postieľku.",
+                "phone": "+421900111222",
+                "UserID": "+421900333444",
+            },
+        ),
+        (
+            "reservation.cancel_request",
+            {
+                "booked_name": "Ján Novák",
+                "original_start_date": "29.08.2026",
+                "original_end_date": "31.08.2026",
+                "notes": "Zmena plánov",
+                "UserID": "+421900333444",
+            },
+        ),
+    ],
+)
+def test_penzion_grand_change_and_cancel_payloads(monkeypatch, name, expected):
+    calls = []
+
+    def fake_urlopen(http_request, timeout):
+        calls.append(json.loads(http_request.data))
+        return Response()
+
+    monkeypatch.setattr(
+        "app.capabilities.providers.make_webhook.urlopen", fake_urlopen
+    )
+    result = execute(tenant_with_webhook(name), Sheets(), request(name))
+
+    assert result.status == "success"
+    assert calls == [[expected]]
+
+
+def test_penzion_grand_existing_reservation_payload(monkeypatch):
+    calls = []
+
+    def fake_urlopen(http_request, timeout):
+        calls.append(json.loads(http_request.data))
+        return Response()
+
+    monkeypatch.setattr(
+        "app.capabilities.providers.make_webhook.urlopen", fake_urlopen
+    )
+    result = execute(
+        tenant_with_webhook("reservation.check_existing_reservation"),
+        Sheets(),
+        CapabilityRequest(
+            name="reservation.check_existing_reservation",
+            input={
+                "guest_name": "Anna Pasuchová",
+                "check_in": "2026-08-19",
+                "check_out": "2026-08-20",
+            },
+        ),
+    )
+
+    assert result.status == "success"
+    assert calls == [
+        [
+            {
+                "guest_name": "Anna Pasuchová",
+                "check_in": "19.08.2026",
+                "check_out": "20.08.2026",
+            }
+        ]
+    ]
 
 
 def test_webhook_failure_does_not_fall_back_to_google_sheets(monkeypatch):
@@ -267,7 +357,17 @@ def test_check_availability_can_be_explicitly_switched_to_webhook(monkeypatch):
 
     assert result.status == "success"
     assert result.provider == "make_webhook"
-    assert calls[0]["capability"] == "reservation.check_availability"
+    assert calls == [
+        [
+            {
+                "start_date": "29.08.2026",
+                "end_date": "31.08.2026",
+                "room_count": "1",
+                "room_type": "2",
+                "caller_id": None,
+            }
+        ]
+    ]
     assert sheets.reads == []
 
 

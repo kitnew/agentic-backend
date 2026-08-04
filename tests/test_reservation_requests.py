@@ -74,16 +74,23 @@ def routed(name, sheets, *, hour=12, **changes):
     tenant = TenantConfigLoader().load("penzion_grand")
     capabilities = dict(tenant.capabilities)
     config = dict(capabilities[name].config)
-    if name == "reservation.create_request":
-        config.update(
-            {
-                "spreadsheet_id": "test-spreadsheet",
-                "sheet_name": "reservations_new",
-                "row_format": "accommodation_request",
-            }
-        )
+    config.update(
+        {
+            "spreadsheet_id": "test-spreadsheet",
+            "sheet_name": {
+                "reservation.create_request": "reservations_new",
+                "reservation.change_request": "reservations_change",
+                "reservation.cancel_request": "reservations_cancel",
+            }[name],
+            **(
+                {"row_format": "accommodation_request"}
+                if name == "reservation.create_request"
+                else {}
+            ),
+        }
+    )
     capabilities[name] = capabilities[name].model_copy(
-        update={"provider": "google_sheets", "config": config}
+        update={"enabled": True, "provider": "google_sheets", "config": config}
     )
     tenant = tenant.model_copy(update={"capabilities": capabilities})
     return CapabilityRouter(
