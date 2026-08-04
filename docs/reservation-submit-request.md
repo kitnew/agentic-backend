@@ -17,11 +17,14 @@ curl -X POST "$BACKEND_URL/admin/v1/tenants/$TENANT_ID/integration-connections" 
   -d '{"key":"reservations","provider":"google_sheets","credential_ref":"tenant-a-sheets"}'
 ```
 
-Provide an allowlisted reference-to-service-account map to Job Worker. In production, inject this environment value from the deployment secret manager rather than committing it:
+Mount each Google service-account JSON file read-only into Job Worker and bind the opaque Backend `credential_ref` to its file path in deployment configuration. The path map contains no secret material and is never read from PostgreSQL:
 
 ```text
-GOOGLE_SHEETS_CREDENTIALS_JSON={"tenant-a-sheets":{"type":"service_account","project_id":"...","private_key_id":"...","private_key":"...","client_email":"...","client_id":"...","token_uri":"https://oauth2.googleapis.com/token"}}
+GOOGLE_SHEETS_CREDENTIAL_FILE_MAP={"tenant-a-sheets":"/run/secrets/tenant-a-google-service-account.json","tenant-b-sheets":"/run/secrets/tenant-b-google-service-account.json"}
+GOOGLE_SHEETS_CREDENTIAL_SECRETS_DIR=/run/secrets
 ```
+
+In Compose, bind the host/deployment secret directory to `/run/secrets:ro`. Adding a tenant means adding its mounted file and one map entry; Backend still stores only `tenant-a-sheets` or `tenant-b-sheets`. The Worker reads the selected file when resolving a token, so rotation does not require embedding JSON in an environment variable.
 
 Share the target test spreadsheet with the service-account `client_email`.
 
@@ -56,6 +59,10 @@ Use the published prompt-bundle revision and connection ID returned by the APIs:
       "business_policy": {},
       "execution": {
         "plan_type": "google_sheets.append_values.v1",
+        "mapping_language": "jsonata",
+        "mapping_contract_version": 1,
+        "mapping_engine": "jsonata-python",
+        "mapping_engine_version": "0.7.0",
         "connection_id": "00000000-0000-0000-0000-000000000020",
         "spreadsheet_id": "tenant-a-spreadsheet-id",
         "sheet_name": "Reservations",
@@ -105,6 +112,10 @@ Tenant B uses the same semantic capability and handler. Only its profile differs
       "business_policy": {},
       "execution": {
         "plan_type": "google_sheets.append_values.v1",
+        "mapping_language": "jsonata",
+        "mapping_contract_version": 1,
+        "mapping_engine": "jsonata-python",
+        "mapping_engine_version": "0.7.0",
         "connection_id": "00000000-0000-0000-0000-000000000021",
         "spreadsheet_id": "tenant-b-spreadsheet-id",
         "sheet_name": "Booking Requests",
@@ -133,3 +144,13 @@ Create the draft with `POST /admin/v1/tenants/{tenant_id}/config/drafts`, valida
 5. Confirm Backend and Worker logs contain IDs and statuses but no guest fields, rows, credential references, or credentials.
 
 The guarantee is at-least-once delivery plus Backend invocation uniqueness, one logical job ID, and provider lookup-before-append. Google Sheets does not provide an atomic lookup-and-append transaction, so two workers racing before either append can still create duplicate rows. The operation-ID column makes that residual race observable and repairable; this slice does not claim exactly-once delivery.
+
+## PII retention policy
+
+`canonical_input`, compiled Sheet rows, and undispatched Redis/outbox payloads are treated as personal data. Terminal invocation PII is purged after 30 days; the immutable semantic result, operation metadata, safe provider range, and status remain. Dispatched outbox rows are deleted after 7 days. Redis stream trimming is capped at 10,000 entries and runs only when the capability consumer group has no pending entries; the dead-letter stream is capped separately. Pending messages are never trimmed by maintenance. Configure these values with the `CAPABILITY_*_RETENTION_*` environment variables and grant database access only to the Backend service and approved operators.
+
+Google Sheets is an external operational destination, so its row retention/archival policy must be managed by the tenant operator; Backend cleanup deliberately does not delete provider rows.
+
+The Worker/Backend execution plan records the JSONata contract and engine identity (`jsonata-python` `0.7.0`). Mapping fixtures are executed at publication and in conformance tests so an engine upgrade cannot silently reinterpret an immutable revision.
+
+The provider timeout is 10 seconds, Voice Agent polling budget is 15 seconds, and job expiry is 10 minutes. If polling reaches its budget, Voice Agent returns `request_submission_pending` and does not submit again; the existing Backend job may still finish and its idempotent result is retained.

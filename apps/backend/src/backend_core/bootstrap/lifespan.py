@@ -22,6 +22,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             redis,
             app.state.settings.capability_job_stream,
             app.state.settings.outbox_dispatch_interval_seconds,
+            app.state.settings.capability_job_consumer_group,
+            app.state.settings.capability_job_dead_letter_stream,
+            app.state.settings.capability_invocation_pii_retention_seconds,
+            app.state.settings.capability_outbox_retention_seconds,
+            app.state.settings.capability_stream_maxlen,
+            app.state.settings.capability_retention_maintenance_interval_seconds,
         )
         dispatcher.start()
     logger.info("Backend Core started")

@@ -6,7 +6,8 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol, cast
+from pathlib import Path
+from typing import Protocol, cast
 from urllib.parse import quote
 
 import httpx
@@ -46,7 +47,8 @@ class Settings:
     backend_url: str
     backend_audience: str
     service_secret: str
-    credential_map_json: str
+    credential_file_map_json: str
+    credential_secrets_dir: str = "/run/secrets"
     provider_timeout_seconds: float = 10.0
     max_retries: int = 3
     stale_idle_ms: int = 30_000
@@ -70,44 +72,58 @@ class Settings:
             backend_url=os.environ["BACKEND_CORE_URL"].rstrip("/"),
             backend_audience=os.getenv("INTERNAL_API_AUDIENCE", "backend-core"),
             service_secret=os.environ["JOB_WORKER_SERVICE_SECRET"],
-            credential_map_json=os.environ["GOOGLE_SHEETS_CREDENTIALS_JSON"],
+            credential_file_map_json=os.getenv("GOOGLE_SHEETS_CREDENTIAL_FILE_MAP", "{}"),
+            credential_secrets_dir=os.getenv(
+                "GOOGLE_SHEETS_CREDENTIAL_SECRETS_DIR", "/run/secrets"
+            ),
             provider_timeout_seconds=float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "10")),
             max_retries=int(os.getenv("CAPABILITY_JOB_MAX_RETRIES", "3")),
             stale_idle_ms=int(os.getenv("CAPABILITY_JOB_STALE_IDLE_MS", "30000")),
         )
 
 
-class EnvironmentCredentialResolver:
-    def __init__(self, encoded_map: str) -> None:
+class MountedSecretFileCredentialResolver:
+    def __init__(self, encoded_map: str, secrets_dir: str = "/run/secrets") -> None:
         try:
             value = json.loads(encoded_map)
         except json.JSONDecodeError as error:
             raise ValueError(
-                "GOOGLE_SHEETS_CREDENTIALS_JSON must be valid JSON"
+                "GOOGLE_SHEETS_CREDENTIAL_FILE_MAP must be valid JSON"
             ) from error
         if not isinstance(value, dict):
-            raise TypeError("GOOGLE_SHEETS_CREDENTIALS_JSON must be an object")
-        self._credentials: dict[str, dict[str, Any]] = {}
-        for key, credential in value.items():
+            raise TypeError("GOOGLE_SHEETS_CREDENTIAL_FILE_MAP must be an object")
+        root = Path(secrets_dir).resolve()
+        if not root.is_absolute():
+            raise ValueError("credential secrets directory must be absolute")
+        self._credential_files: dict[str, Path] = {}
+        for key, credential_path in value.items():
             if not isinstance(key, str) or not re.fullmatch(
                 r"[a-z][a-z0-9_.-]{0,127}", key
             ):
                 raise ValueError("credential map contains an invalid reference")
-            if not isinstance(credential, dict):
-                raise TypeError("credential map values must be service account objects")
-            self._credentials[key] = credential
+            if not isinstance(credential_path, str):
+                raise TypeError("credential map values must be file paths")
+            path = Path(credential_path)
+            if not path.is_absolute():
+                raise ValueError("credential file paths must be absolute")
+            resolved = path.resolve(strict=False)
+            try:
+                resolved.relative_to(root)
+            except ValueError as error:
+                raise ValueError("credential file must be under the secrets directory") from error
+            self._credential_files[key] = resolved
 
     async def access_token(self, reference: str) -> str:
-        credential = self._credentials.get(reference)
-        if credential is None:
+        credential_path = self._credential_files.get(reference)
+        if credential_path is None:
             raise ExecutionError(
                 "credential_resolution_failed",
                 "Credential reference could not be resolved",
                 transient=False,
             )
         try:
-            credentials = service_account.Credentials.from_service_account_info(
-                credential,
+            credentials = service_account.Credentials.from_service_account_file(
+                str(credential_path),
                 scopes=[SHEETS_SCOPE],
             )
             await asyncio.to_thread(credentials.refresh, GoogleAuthRequest())
@@ -145,6 +161,7 @@ class GoogleSheetsAppendValuesHandler:
         token = await self._credentials.access_token(plan.credential_ref)
         headers = {"Authorization": f"Bearer {token}"}
         lookup = self._range(plan.sheet_name, plan.idempotency.lookup_range)
+        lookup_started = time.perf_counter()
         try:
             response = await self._client.get(
                 self._values_url(plan.spreadsheet_id, lookup),
@@ -158,6 +175,16 @@ class GoogleSheetsAppendValuesHandler:
                 if len(row) > column and str(row[column]) == str(
                     plan.idempotency.operation_id
                 ):
+                    logger.info(
+                        "capability_provider_idempotency_lookup_completed",
+                        extra={
+                            "plan_type": plan.plan_type,
+                            "latency_ms": round(
+                                (time.perf_counter() - lookup_started) * 1000
+                            ),
+                            "found": True,
+                        },
+                    )
                     return GoogleSheetsAppendValuesResult(
                         result_type=plan.plan_type,
                         status="succeeded",
@@ -165,7 +192,16 @@ class GoogleSheetsAppendValuesHandler:
                         updated_rows=1,
                         deduplicated=True,
                     )
+            logger.info(
+                "capability_provider_idempotency_lookup_completed",
+                extra={
+                    "plan_type": plan.plan_type,
+                    "latency_ms": round((time.perf_counter() - lookup_started) * 1000),
+                    "found": False,
+                },
+            )
             target = self._range(plan.sheet_name, plan.append_range)
+            append_started = time.perf_counter()
             response = await self._client.post(
                 f"{self._values_url(plan.spreadsheet_id, target)}:append",
                 headers=headers,
@@ -189,6 +225,14 @@ class GoogleSheetsAppendValuesHandler:
                     "Google Sheets returned an invalid append result",
                     transient=False,
                 )
+            logger.info(
+                "capability_provider_append_completed",
+                extra={
+                    "plan_type": plan.plan_type,
+                    "latency_ms": round((time.perf_counter() - append_started) * 1000),
+                    "status": "succeeded",
+                },
+            )
             return GoogleSheetsAppendValuesResult(
                 result_type=plan.plan_type,
                 status="succeeded",
@@ -349,6 +393,7 @@ class CapabilityWorker:
                 "tenant_id": str(job.tenant_id),
                 "invocation_id": str(job.capability_invocation_id),
                 "job_id": str(job.job_id),
+                "redis_message_id": message_id,
                 "plan_type": job.execution_plan.plan_type,
                 "attempt": job.attempt,
                 "latency_ms": round((started - job.created_at).total_seconds() * 1000),
@@ -394,6 +439,17 @@ class CapabilityWorker:
                     self._settings.stream,
                     {"job": retried.model_dump_json()},
                 )
+                logger.info(
+                    "capability_job_requeued",
+                    extra={
+                        "tenant_id": str(job.tenant_id),
+                        "invocation_id": str(job.capability_invocation_id),
+                        "job_id": str(job.job_id),
+                        "redis_message_id": message_id,
+                        "plan_type": job.execution_plan.plan_type,
+                        "attempt": retried.attempt,
+                    },
+                )
                 await self._redis.xack(
                     self._settings.stream, self._settings.group, message_id
                 )
@@ -426,6 +482,7 @@ class CapabilityWorker:
                 extra={
                     "invocation_id": str(job.capability_invocation_id),
                     "job_id": str(job.job_id),
+                    "redis_message_id": message_id,
                 },
             )
             return
@@ -483,7 +540,9 @@ async def run_worker(settings: Settings) -> None:
         httpx.AsyncClient(timeout=settings.provider_timeout_seconds) as provider_client,
         httpx.AsyncClient(timeout=10.0) as backend_client,
     ):
-        credentials = EnvironmentCredentialResolver(settings.credential_map_json)
+        credentials = MountedSecretFileCredentialResolver(
+            settings.credential_file_map_json, settings.credential_secrets_dir
+        )
         worker = CapabilityWorker(
             settings,
             redis,

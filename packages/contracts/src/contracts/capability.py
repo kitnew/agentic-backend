@@ -38,6 +38,10 @@ class GoogleSheetsIdempotency(_Contract):
 
 class GoogleSheetsAppendValuesPlan(_Contract):
     plan_type: Literal["google_sheets.append_values.v1"]
+    mapping_language: Literal["jsonata"] = "jsonata"
+    mapping_contract_version: Literal[1] = 1
+    mapping_engine: Literal["jsonata-python"] = "jsonata-python"
+    mapping_engine_version: Literal["0.7.0"] = "0.7.0"
     credential_ref: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
     spreadsheet_id: str = Field(min_length=1, max_length=255)
     sheet_name: str = Field(min_length=1, max_length=255)

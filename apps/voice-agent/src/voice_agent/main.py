@@ -95,7 +95,13 @@ def capability_tool(
                 ),
             )
             invocation = await backend.wait_for_capability(call_id, invocation)
-        except TimeoutError, httpx.HTTPError:
+        except TimeoutError:
+            return {
+                "status": "request_submission_pending",
+                "error_code": "execution_timeout",
+                "message": "The request is still being processed; I could not confirm submission yet",
+            }
+        except httpx.HTTPError:
             return {
                 "status": "request_submission_failed",
                 "error_code": "execution_timeout",

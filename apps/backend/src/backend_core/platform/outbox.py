@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
+import time
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from contracts import CapabilityInvocationStatus
 from redis.asyncio import Redis
@@ -10,6 +11,7 @@ from redis.exceptions import RedisError
 from sqlalchemy import select
 
 from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.modules.capabilities.retention import CapabilityRetentionService
 from backend_core.platform.database import Database
 
 logger = logging.getLogger(__name__)
@@ -22,11 +24,24 @@ class OutboxDispatcher:
         redis: Redis,
         stream: str,
         interval_seconds: float,
+        consumer_group: str = "capability-workers",
+        dead_letter_stream: str | None = None,
+        invocation_retention_seconds: int = 30 * 24 * 60 * 60,
+        outbox_retention_seconds: int = 7 * 24 * 60 * 60,
+        stream_maxlen: int = 10_000,
+        maintenance_interval_seconds: int = 3600,
     ) -> None:
         self._database = database
         self._redis = redis
         self._stream = stream
+        self._consumer_group = consumer_group
+        self._dead_letter_stream = dead_letter_stream or f"{stream}:dead-letter"
         self._interval = interval_seconds
+        self._invocation_retention = timedelta(seconds=invocation_retention_seconds)
+        self._outbox_retention = timedelta(seconds=outbox_retention_seconds)
+        self._stream_maxlen = stream_maxlen
+        self._maintenance_interval = maintenance_interval_seconds
+        self._last_maintenance = 0.0
         self._task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -43,6 +58,12 @@ class OutboxDispatcher:
         while True:
             try:
                 await self.dispatch_once()
+                if (
+                    time.monotonic() - self._last_maintenance
+                    >= self._maintenance_interval
+                ):
+                    await self.maintenance_once()
+                    self._last_maintenance = time.monotonic()
             except Exception:
                 logger.exception("capability outbox dispatch failed")
             await asyncio.sleep(self._interval)
@@ -116,3 +137,30 @@ class OutboxDispatcher:
                     },
                 )
         return dispatched
+
+    async def maintenance_once(self) -> tuple[int, int]:
+        async with self._database.transaction() as session:
+            result = await CapabilityRetentionService(session).purge_once(
+                invocation_retention=self._invocation_retention,
+                outbox_retention=self._outbox_retention,
+            )
+        await self._trim_streams()
+        return result
+
+    async def _trim_streams(self) -> None:
+        try:
+            pending = await self._redis.xpending(self._stream, self._consumer_group)
+            pending_count = (
+                pending["pending"] if isinstance(pending, dict) else pending[0]
+            )
+            if pending_count == 0:
+                await self._redis.xtrim(
+                    self._stream, maxlen=self._stream_maxlen, approximate=True
+                )
+            await self._redis.xtrim(
+                self._dead_letter_stream,
+                maxlen=self._stream_maxlen,
+                approximate=True,
+            )
+        except RedisError:
+            logger.exception("capability Redis retention maintenance failed")

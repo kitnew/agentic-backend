@@ -38,6 +38,10 @@ SEMANTIC_VERSION = 1
 TOOL_NAME = "reservation_submit_request"
 MAX_MAPPING_INPUT_BYTES = 64_000
 MAX_MAPPING_OUTPUT_BYTES = 64_000
+MAPPING_LANGUAGE = "jsonata"
+MAPPING_CONTRACT_VERSION = 1
+MAPPING_ENGINE = "jsonata-python"
+MAPPING_ENGINE_VERSION = "0.7.0"
 
 
 @dataclass(frozen=True)
@@ -402,6 +406,10 @@ def compile_plan(
         )
     return GoogleSheetsAppendValuesPlan(
         plan_type=execution.plan_type,
+        mapping_language=execution.mapping_language,
+        mapping_contract_version=execution.mapping_contract_version,
+        mapping_engine=execution.mapping_engine,
+        mapping_engine_version=execution.mapping_engine_version,
         credential_ref=credential_ref,
         spreadsheet_id=execution.spreadsheet_id,
         sheet_name=execution.sheet_name,

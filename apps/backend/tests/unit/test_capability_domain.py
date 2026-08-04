@@ -68,6 +68,10 @@ def profile(mapping: str, *, phone: bool = False) -> TenantCapabilityProfile:
             "agent_input_schema": schema(phone=phone),
             "execution": {
                 "plan_type": "google_sheets.append_values.v1",
+                "mapping_language": "jsonata",
+                "mapping_contract_version": 1,
+                "mapping_engine": "jsonata-python",
+                "mapping_engine_version": "0.7.0",
                 "connection_id": str(uuid4()),
                 "spreadsheet_id": "sheet",
                 "sheet_name": "Reservations",

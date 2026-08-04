@@ -4,9 +4,9 @@ import httpx
 import pytest
 from contracts import GoogleSheetsAppendValuesPlan
 from job_worker.worker import (
-    EnvironmentCredentialResolver,
     ExecutionError,
     GoogleSheetsAppendValuesHandler,
+    MountedSecretFileCredentialResolver,
 )
 
 
@@ -36,12 +36,12 @@ def plan() -> GoogleSheetsAppendValuesPlan:
 
 @pytest.mark.asyncio
 async def test_credential_refs_are_allowlisted() -> None:
-    resolver = EnvironmentCredentialResolver("{}")
+    resolver = MountedSecretFileCredentialResolver("{}")
     with pytest.raises(ExecutionError) as captured:
         await resolver.access_token("unknown")
     assert captured.value.code == "credential_resolution_failed"
     with pytest.raises(ValueError, match="invalid reference"):
-        EnvironmentCredentialResolver('{"ENV NAME": {}}')
+        MountedSecretFileCredentialResolver('{"ENV NAME": {}}')
 
 
 @pytest.mark.asyncio

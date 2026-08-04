@@ -53,6 +53,10 @@ class GoogleSheetsExecutionIdempotency(_TenantConfigModel):
 
 class GoogleSheetsAppendExecution(_TenantConfigModel):
     plan_type: Literal["google_sheets.append_values.v1"]
+    mapping_language: Literal["jsonata"]
+    mapping_contract_version: Literal[1]
+    mapping_engine: Literal["jsonata-python"]
+    mapping_engine_version: Literal["0.7.0"]
     connection_id: UUID
     spreadsheet_id: str = Field(min_length=1, max_length=255)
     sheet_name: str = Field(min_length=1, max_length=255)

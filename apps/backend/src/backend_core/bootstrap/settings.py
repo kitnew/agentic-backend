@@ -30,8 +30,22 @@ class Settings(BaseSettings):
     capability_job_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
         "capability:jobs"
     )
+    capability_job_consumer_group: Annotated[
+        str, Field(min_length=1, max_length=255)
+    ] = "capability-workers"
+    capability_job_dead_letter_stream: Annotated[
+        str, Field(min_length=1, max_length=255)
+    ] = "capability:jobs:dead-letter"
     outbox_dispatch_enabled: bool = False
     outbox_dispatch_interval_seconds: Annotated[float, Field(gt=0, le=60)] = 1.0
+    capability_invocation_pii_retention_seconds: Annotated[int, Field(gt=0)] = (
+        30 * 24 * 60 * 60
+    )
+    capability_outbox_retention_seconds: Annotated[int, Field(gt=0)] = 7 * 24 * 60 * 60
+    capability_stream_maxlen: Annotated[int, Field(gt=0)] = 10_000
+    capability_retention_maintenance_interval_seconds: Annotated[int, Field(gt=0)] = (
+        3600
+    )
 
     @model_validator(mode="after")
     def credentials_must_be_distinct(self) -> Self:

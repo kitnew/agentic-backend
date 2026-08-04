@@ -155,9 +155,9 @@ async def test_capability_timeout_returns_only_safe_semantics() -> None:
     tool = capability_tool(definition, Backend(), uuid4())  # type: ignore[arg-type]
     result = await tool._func(context, {})  # type: ignore[attr-defined,arg-type]
     assert result == {
-        "status": "request_submission_failed",
+        "status": "request_submission_pending",
         "error_code": "execution_timeout",
-        "message": "The reservation request could not be submitted yet",
+        "message": "The request is still being processed; I could not confirm submission yet",
     }
 
 

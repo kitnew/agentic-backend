@@ -1,5 +1,5 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -7,9 +7,11 @@ from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.modules.calls.router import build_call_session_service
 from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.modules.capabilities.retention import CapabilityRetentionService
 from backend_core.platform.database import Database
 from backend_core.platform.outbox import OutboxDispatcher
 from httpx import ASGITransport, AsyncClient
+from redis.exceptions import RedisError
 from sqlalchemy import func, select
 
 
@@ -40,11 +42,15 @@ def agent_schema() -> dict[str, object]:
 
 
 class FakeRedis:
-    def __init__(self) -> None:
+    def __init__(self, *, raise_after_publish: bool = False) -> None:
         self.jobs: list[tuple[str, dict[str, str]]] = []
+        self.raise_after_publish = raise_after_publish
 
     async def xadd(self, stream: str, fields: dict[str, str]) -> str:
         self.jobs.append((stream, fields))
+        if self.raise_after_publish:
+            self.raise_after_publish = False
+            raise RedisError("connection lost after publish")
         return "1-0"
 
 
@@ -136,6 +142,10 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
                     "business_policy": {},
                     "execution": {
                         "plan_type": "google_sheets.append_values.v1",
+                        "mapping_language": "jsonata",
+                        "mapping_contract_version": 1,
+                        "mapping_engine": "jsonata-python",
+                        "mapping_engine_version": "0.7.0",
                         "connection_id": connection.json()["id"],
                         "spreadsheet_id": "sheet-id",
                         "sheet_name": "Reservations",
@@ -249,11 +259,12 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             ]
             job_id = invocation.job_id
 
-        redis = FakeRedis()
+        redis = FakeRedis(raise_after_publish=True)
         dispatcher = OutboxDispatcher(database, redis, "capability:jobs", 1)  # type: ignore[arg-type]
-        assert await dispatcher.dispatch_once() == 1
         assert await dispatcher.dispatch_once() == 0
-        assert len(redis.jobs) == 1
+        assert await dispatcher.dispatch_once() == 1
+        assert len(redis.jobs) == 2
+        assert redis.jobs[0][1]["job"] == redis.jobs[1][1]["job"]
 
         worker_headers = {
             "Authorization": "Bearer "
@@ -301,5 +312,23 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             json=failed_replay,
         )
         assert replayed.json()["status"] == "succeeded"
+
+        async with database.transaction() as session:
+            invocation = await session.get(CapabilityInvocation, invocation_id)
+            outbox = await session.scalar(select(OutboxMessage))
+            assert invocation is not None and outbox is not None
+            old = datetime.now(UTC) - timedelta(days=31)
+            invocation.completed_at = old
+            outbox.dispatched_at = old
+            await session.flush()
+            purged, deleted = await CapabilityRetentionService(session).purge_once(
+                invocation_retention=timedelta(days=30),
+                outbox_retention=timedelta(days=7),
+            )
+            assert purged == 1
+            assert deleted == 1
+            assert invocation.canonical_input == {}
+            assert invocation.execution_plan == {}
+            assert invocation.semantic_result is not None
 
     await database.close()
