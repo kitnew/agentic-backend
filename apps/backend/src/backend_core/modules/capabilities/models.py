@@ -96,6 +96,49 @@ class CapabilityInvocation(Base):
     )
 
 
+class CapabilityConfirmation(Base):
+    __tablename__ = "capability_confirmations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("tenant_id", "call_id"),
+            ("call_sessions.tenant_id", "call_sessions.id"),
+            name="fk_capability_confirmations_call_same_tenant",
+        ),
+        ForeignKeyConstraint(
+            ("tenant_id", "tenant_config_revision_id"),
+            ("tenant_config_revisions.tenant_id", "tenant_config_revisions.id"),
+            name="fk_capability_confirmations_config_same_tenant",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "call_id",
+            "tool_call_id",
+            name="uq_capability_confirmations_call_tool",
+        ),
+        Index("ix_capability_confirmations_expires_at", "expires_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id"))
+    call_id: Mapped[UUID] = mapped_column(Uuid)
+    tool_call_id: Mapped[str] = mapped_column(String(255))
+    semantic_key: Mapped[str] = mapped_column(String(128))
+    semantic_version: Mapped[int] = mapped_column(Integer)
+    tenant_config_revision_id: Mapped[UUID] = mapped_column(Uuid)
+    canonical_input: Mapped[dict[str, object]] = mapped_column(JSONB)
+    agent_input: Mapped[dict[str, object]] = mapped_column(JSONB)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    invocation_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending_confirmation")
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class OutboxMessage(Base):
     __tablename__ = "outbox_messages"
     __table_args__ = (

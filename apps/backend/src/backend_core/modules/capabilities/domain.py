@@ -28,8 +28,11 @@ from jsonschema.exceptions import (  # type: ignore[import-untyped]
 CANONICAL_FIELDS = {
     "guest.name": "string",
     "guest.phone": "string",
+    "guest.email": "string",
     "stay.check_in": "string",
     "stay.check_out": "string",
+    "allocation.room_type": "integer",
+    "allocation.room_count": "integer",
     "notes": "string",
 }
 SEMANTIC_REQUIRED_FIELDS = frozenset({"guest.name", "stay.check_in", "stay.check_out"})
@@ -279,8 +282,9 @@ def _set_nested(target: dict[str, Any], dotted: str, value: Any) -> None:
 
 def normalize_input(schema: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
     normalized: dict[str, Any] = {
-        "guest": {"name": None, "phone": None},
+        "guest": {"name": None, "phone": None, "email": None},
         "stay": {"check_in": None, "check_out": None},
+        "allocation": {"room_type": None, "room_count": None},
         "notes": None,
         "custom": {},
     }
@@ -346,6 +350,29 @@ def validate_business_input(
                 "guest.phone",
             )
         value["guest"]["phone"] = compact
+    email = value["guest"].get("email")
+    if email is not None and (not isinstance(email, str) or not email.strip()):
+        raise CapabilityValidationError(
+            "business_policy_rejected",
+            "Email must be a non-empty string",
+            "guest.email",
+        )
+    if isinstance(email, str):
+        value["guest"]["email"] = email.strip()
+    room_type = value["allocation"].get("room_type")
+    if room_type is not None and room_type not in {2, 3, 4}:
+        raise CapabilityValidationError(
+            "business_policy_rejected",
+            "Room type must be 2, 3 or 4",
+            "allocation.room_type",
+        )
+    room_count = value["allocation"].get("room_count")
+    if room_count is not None and (type(room_count) is not int or room_count < 1):
+        raise CapabilityValidationError(
+            "business_policy_rejected",
+            "Room count must be an integer >= 1",
+            "allocation.room_count",
+        )
     return value
 
 
@@ -379,6 +406,7 @@ def compile_plan(
     call_id: UUID,
     tool_call_id: str,
     credential_ref: str,
+    caller_phone: str = "",
     mapping_engine: MappingEngine | None = None,
 ) -> GoogleSheetsAppendValuesPlan:
     execution: GoogleSheetsAppendExecution = profile.execution
@@ -387,6 +415,7 @@ def compile_plan(
         "metadata": {
             "operation_id": str(operation_id),
             "source": "voice_agent",
+            "caller_phone": caller_phone,
             "call_id": str(call_id),
             "tool_call_id": tool_call_id,
         },
@@ -450,4 +479,5 @@ def runtime_definition(
         description=profile.description,
         announcement=profile.announcement,
         input_schema=schema,
+        requires_confirmation=profile.business_policy.requires_final_confirmation,
     )

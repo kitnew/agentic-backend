@@ -86,7 +86,9 @@ def profile(mapping: str, *, phone: bool = False) -> TenantCapabilityProfile:
 
 
 def compile_row(
-    capability: TenantCapabilityProfile, payload: dict[str, object]
+    capability: TenantCapabilityProfile,
+    payload: dict[str, object],
+    caller_phone: str = "",
 ) -> list[object]:
     validate_agent_schema(
         capability.agent_input_schema, definition("reservation.submit_request", 1)
@@ -104,6 +106,7 @@ def compile_row(
         call_id=uuid4(),
         tool_call_id="tool-call",
         credential_ref="tenant-sheets",
+        caller_phone=caller_phone,
     )
     return plan.rows[0]
 
@@ -149,6 +152,121 @@ def test_two_tenant_profiles_compile_with_the_same_code() -> None:
         .get("x-canonical-field")
         is None
     )  # type: ignore[index,union-attr]
+
+
+def test_pension_grand_row_keeps_phone_types_and_operation_marker() -> None:
+    grand_schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+            "guest_name": {"type": "string", "x-canonical-field": "guest.name"},
+            "reservation_phone": {
+                "type": "string",
+                "x-canonical-field": "guest.phone",
+            },
+            "email": {
+                "type": "string",
+                "format": "email",
+                "x-canonical-field": "guest.email",
+            },
+            "check_in": {
+                "type": "string",
+                "format": "date",
+                "x-canonical-field": "stay.check_in",
+            },
+            "check_out": {
+                "type": "string",
+                "format": "date",
+                "x-canonical-field": "stay.check_out",
+            },
+            "room_type": {
+                "type": "integer",
+                "enum": [2, 3, 4],
+                "x-canonical-field": "allocation.room_type",
+            },
+            "room_count": {
+                "type": "integer",
+                "minimum": 1,
+                "x-canonical-field": "allocation.room_count",
+            },
+        },
+        "required": [
+            "guest_name",
+            "reservation_phone",
+            "check_in",
+            "check_out",
+            "room_type",
+            "room_count",
+        ],
+        "additionalProperties": False,
+    }
+    grand = TenantCapabilityProfile.model_validate(
+        {
+            "enabled": True,
+            "semantic_version": 1,
+            "description": "Submit a reservation request.",
+            "announcement": "I will submit your reservation request now.",
+            "agent_input_schema": grand_schema,
+            "business_policy": {"requires_caller_phone": True},
+            "execution": {
+                "plan_type": "google_sheets.append_values.v1",
+                "mapping_language": "jsonata",
+                "mapping_contract_version": 1,
+                "mapping_engine": "jsonata-python",
+                "mapping_engine_version": "0.7.0",
+                "connection_id": str(uuid4()),
+                "spreadsheet_id": "sheet",
+                "sheet_name": "reservations_new",
+                "append_range": "A:K",
+                "value_input_option": "RAW",
+                "idempotency": {"lookup_range": "K:K", "operation_id_column_index": 10},
+                "request_mapping": '{"rows": [[business.stay.check_in, business.stay.check_out, business.guest.name, metadata.caller_phone, business.guest.phone, business.guest.email ? business.guest.email : "", business.allocation.room_type, business.allocation.room_count, "", false, metadata.operation_id]]}',
+            },
+            "validation_fixtures": [
+                {
+                    "guest_name": "Fixture",
+                    "reservation_phone": "+421900000000",
+                    "check_in": "2030-01-01",
+                    "check_out": "2030-01-02",
+                    "room_type": 4,
+                    "room_count": 1,
+                },
+                {
+                    "guest_name": "Fixture",
+                    "reservation_phone": "+421900000001",
+                    "check_in": "2031-01-01",
+                    "check_out": "2031-01-02",
+                    "room_type": 2,
+                    "room_count": 1,
+                },
+            ],
+        }
+    )
+    row = compile_row(
+        grand,
+        {
+            "guest_name": "Nikita Černý",
+            "reservation_phone": "+421944015686",
+            "check_in": "2026-08-08",
+            "check_out": "2026-08-09",
+            "room_type": 4,
+            "room_count": 1,
+        },
+        "+421944015686",
+    )
+    assert row == [
+        "2026-08-08",
+        "2026-08-09",
+        "Nikita Černý",
+        "+421944015686",
+        "+421944015686",
+        "",
+        4,
+        1,
+        "",
+        False,
+        "00000000-0000-0000-0000-000000000001",
+    ]
 
 
 def test_schema_rejects_remote_refs_and_duplicate_canonical_fields() -> None:

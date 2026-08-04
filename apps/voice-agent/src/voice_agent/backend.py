@@ -7,6 +7,8 @@ import httpx
 import jwt
 from contracts import (
     AppendConversationMessage,
+    CapabilityConfirmationConfirmRequest,
+    CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
@@ -113,6 +115,30 @@ class BackendClient:
             f"/internal/v1/calls/{call_id}/capability-invocations",
             "capability-invocation:create",
             json=request.model_dump(mode="json"),
+        )
+        return CapabilityInvocationResponse.model_validate(response.json())
+
+    async def prepare_confirmation(
+        self, call_id: UUID, request: CapabilityInvocationRequest
+    ) -> CapabilityConfirmationResponse:
+        response = await self.request(
+            "POST",
+            f"/internal/v1/calls/{call_id}/capability-confirmations",
+            "capability-confirmation:create",
+            json=request.model_dump(mode="json"),
+        )
+        return CapabilityConfirmationResponse.model_validate(response.json())
+
+    async def confirm_capability(
+        self, call_id: UUID, confirmation_id: UUID, tool_call_id: str
+    ) -> CapabilityInvocationResponse:
+        response = await self.request(
+            "POST",
+            f"/internal/v1/calls/{call_id}/capability-confirmations/{confirmation_id}/confirm",
+            "capability-confirmation:confirm",
+            json=CapabilityConfirmationConfirmRequest(
+                tool_call_id=tool_call_id
+            ).model_dump(mode="json"),
         )
         return CapabilityInvocationResponse.model_validate(response.json())
 

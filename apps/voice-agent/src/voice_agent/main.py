@@ -75,6 +75,8 @@ def capability_tool(
     backend: BackendClient,
     call_id: UUID,
 ) -> llm.RawFunctionTool:
+    pending_confirmation: dict[str, object] = {}
+
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
@@ -86,14 +88,33 @@ def capability_tool(
         )
         await announcement
         try:
-            invocation = await backend.invoke_capability(
-                call_id,
-                CapabilityInvocationRequest(
-                    tool_call_id=context.function_call.call_id,
-                    capability=definition.tool_name,
-                    agent_input=raw_arguments,
-                ),
+            request = CapabilityInvocationRequest(
+                tool_call_id=context.function_call.call_id,
+                capability=definition.tool_name,
+                agent_input=raw_arguments,
             )
+            pending_id = pending_confirmation.get("id")
+            if not definition.requires_confirmation:
+                invocation = await backend.invoke_capability(call_id, request)
+            elif (
+                pending_id is not None
+                and pending_confirmation.get("agent_input") == raw_arguments
+            ):
+                invocation = await backend.confirm_capability(
+                    call_id, UUID(str(pending_id)), context.function_call.call_id
+                )
+                pending_confirmation.clear()
+            else:
+                confirmation = await backend.prepare_confirmation(call_id, request)
+                pending_confirmation.update(
+                    {"id": confirmation.id, "agent_input": dict(raw_arguments)}
+                )
+                return {
+                    "status": confirmation.status,
+                    "confirmation_id": str(confirmation.id),
+                    "summary": confirmation.summary,
+                    "message": "Please confirm these reservation details before submission.",
+                }
             invocation = await backend.wait_for_capability(call_id, invocation)
         except TimeoutError:
             return {

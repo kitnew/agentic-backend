@@ -107,10 +107,83 @@ async def test_missing_operation_appends_compiled_rows() -> None:
     assert result.deduplicated is False
     assert result.updated_range == "Reservations!A42:D42"
     assert [request.method for request in requests] == ["GET", "POST"]
-    assert requests[1].read() == (
-        b'{"majorDimension":"ROWS","values":[["00000000-0000-0000-0000-000000000001",'
-        b'"Alice","2026-08-12","2026-08-15"]]}'
+
+
+@pytest.mark.asyncio
+async def test_reservations_new_preserves_phone_strings_and_hidden_operation_column() -> (
+    None
+):
+    operation = plan().idempotency.operation_id
+    reservation_plan = plan().model_copy(
+        update={
+            "append_range": "A:K",
+            "rows": [
+                [
+                    "2026-08-08",
+                    "2026-08-09",
+                    "Nikita Černý",
+                    "+421944015686",
+                    "+421944015686",
+                    "",
+                    4,
+                    1,
+                    "",
+                    False,
+                    str(operation),
+                ]
+            ],
+            "idempotency": plan().idempotency.model_copy(
+                update={"lookup_range": "K:K", "operation_id_column_index": 10}
+            ),
+        }
     )
+    requests: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"values": []})
+        return httpx.Response(
+            200,
+            json={
+                "updates": {
+                    "updatedRange": "reservations_new!A42:K42",
+                    "updatedRows": 1,
+                }
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        result = await GoogleSheetsAppendValuesHandler(Credentials(), client).execute(
+            reservation_plan
+        )
+    assert result.deduplicated is False
+    assert requests[1].content and b"+421944015686" in requests[1].content
+    assert b'"4"' not in requests[1].content
+
+
+@pytest.mark.asyncio
+async def test_missing_operation_appends_compiled_rows_payload() -> None:
+    requests: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"values": []})
+        return httpx.Response(
+            200,
+            json={
+                "updates": {"updatedRange": "Reservations!A42:D42", "updatedRows": 1}
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        result = await GoogleSheetsAppendValuesHandler(Credentials(), client).execute(
+            plan()
+        )  # type: ignore[arg-type]
+    assert result.deduplicated is False
+    assert result.updated_range == "Reservations!A42:D42"
+    assert [request.method for request in requests] == ["GET", "POST"]
 
 
 @pytest.mark.asyncio

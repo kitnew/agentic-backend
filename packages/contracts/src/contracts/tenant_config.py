@@ -43,7 +43,10 @@ class ConversationConfig(_TenantConfigModel):
 
 
 class CapabilityBusinessPolicy(_TenantConfigModel):
-    pass
+    requires_final_confirmation: bool = False
+    requires_availability_proof: bool = False
+    requires_caller_phone: bool = False
+    availability_proof_ttl_seconds: int | None = Field(default=None, ge=1, le=86400)
 
 
 class GoogleSheetsExecutionIdempotency(_TenantConfigModel):

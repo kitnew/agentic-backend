@@ -4,7 +4,11 @@ from contracts import CapabilityInvocationStatus
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.modules.capabilities.models import (
+    CapabilityConfirmation,
+    CapabilityInvocation,
+    OutboxMessage,
+)
 
 
 class CapabilityRetentionService:
@@ -42,6 +46,12 @@ class CapabilityRetentionService:
             delete(OutboxMessage).where(
                 OutboxMessage.dispatched_at.is_not(None),
                 OutboxMessage.dispatched_at < outbox_cutoff,
+            )
+        )
+        await self._session.execute(
+            delete(CapabilityConfirmation).where(
+                CapabilityConfirmation.created_at < invocation_cutoff,
+                CapabilityConfirmation.status.in_(["consumed", "expired", "cancelled"]),
             )
         )
         return (

@@ -25,6 +25,7 @@ class CreateCallSessionRequest(BaseModel):
     called_number: E164Did
     provider: ProviderName
     provider_call_id: Annotated[str, Field(min_length=1, max_length=255)]
+    caller_phone_e164: E164Did | None = None
     room_name: Annotated[str, Field(min_length=1, max_length=255)]
 
 
@@ -72,6 +73,7 @@ class CallSessionResponse(BaseModel):
     direction: CallDirection
     provider: str
     provider_call_id: str
+    caller_phone_e164: str | None
     provider_dispatch_id: str | None
     room_name: str
     status: CallSessionStatus

@@ -4,6 +4,8 @@ This capability records a reservation request for later confirmation. It never m
 
 Backend Core owns the semantic definition, validation, canonical input, immutable plan compilation, invocation state, and outbox. Job Worker owns Google credentials, lookup-before-append, provider retries, and typed technical results. Voice Agent receives only the tool name, description, announcement, input schema, and semantic result.
 
+Tenants that set `business_policy.requires_final_confirmation` use the Backend-owned confirmation lifecycle: `POST /internal/v1/calls/{call_id}/capability-confirmations` creates an opaque snapshot, and `POST /internal/v1/calls/{call_id}/capability-confirmations/{confirmation_id}/confirm` atomically consumes it with the invocation and outbox transaction. `check_availability` remains deferred.
+
 `jsonschema` provides Draft 2020-12 validation. `jsonata-python` is the maintained pure-Python JSONata evaluator; it receives and returns JSON-compatible values only and has no registered host functions. `google-auth` resolves service-account credentials in Job Worker.
 
 ## Credential setup
@@ -101,15 +103,18 @@ Tenant B uses the same semantic capability and handler. Only its profile differs
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "guest_name": {"type": "string", "minLength": 1, "description": "Name of the guest", "x-canonical-field": "guest.name"},
-          "phone": {"type": "string", "minLength": 1, "description": "Guest phone number", "x-canonical-field": "guest.phone"},
+          "guest_name": {"type": "string", "minLength": 1, "description": "Full name of the guest", "x-canonical-field": "guest.name"},
+          "reservation_phone": {"type": "string", "minLength": 1, "description": "Confirmed reservation contact phone", "x-canonical-field": "guest.phone"},
+          "email": {"type": "string", "format": "email", "description": "Guest email", "x-canonical-field": "guest.email"},
           "check_in": {"type": "string", "format": "date", "description": "Arrival date", "x-canonical-field": "stay.check_in"},
-          "check_out": {"type": "string", "format": "date", "description": "Departure date", "x-canonical-field": "stay.check_out"}
+          "check_out": {"type": "string", "format": "date", "description": "Departure date", "x-canonical-field": "stay.check_out"},
+          "room_type": {"type": "integer", "enum": [2, 3, 4], "x-canonical-field": "allocation.room_type"},
+          "room_count": {"type": "integer", "minimum": 1, "x-canonical-field": "allocation.room_count"}
         },
-        "required": ["guest_name", "phone", "check_in", "check_out"],
+        "required": ["guest_name", "reservation_phone", "check_in", "check_out", "room_type", "room_count"],
         "additionalProperties": false
       },
-      "business_policy": {},
+      "business_policy": {"requires_final_confirmation": true, "requires_availability_proof": false, "requires_caller_phone": true},
       "execution": {
         "plan_type": "google_sheets.append_values.v1",
         "mapping_language": "jsonata",
@@ -119,14 +124,14 @@ Tenant B uses the same semantic capability and handler. Only its profile differs
         "connection_id": "00000000-0000-0000-0000-000000000021",
         "spreadsheet_id": "tenant-b-spreadsheet-id",
         "sheet_name": "Booking Requests",
-        "append_range": "A:G",
+        "append_range": "A:K",
         "value_input_option": "RAW",
-        "idempotency": {"lookup_range": "A:A", "operation_id_column_index": 0},
-        "request_mapping": "{\"rows\": [[metadata.operation_id, business.stay.check_in, business.stay.check_out, business.guest.name, business.guest.phone, \"new\", \"voice_agent\"]]}"
+        "idempotency": {"lookup_range": "K:K", "operation_id_column_index": 10},
+        "request_mapping": "{\"rows\": [[business.stay.check_in, business.stay.check_out, business.guest.name, metadata.caller_phone, business.guest.phone, $exists(business.guest.email) ? business.guest.email : \"\", business.allocation.room_type, business.allocation.room_count, \"\", false, metadata.operation_id]]}"
       },
       "validation_fixtures": [
-        {"guest_name": "Fixture Guest", "phone": "+421900000000", "check_in": "2030-01-01", "check_out": "2030-01-02"},
-        {"guest_name": "Fixture Guest", "phone": "+421900000001", "check_in": "2031-01-01", "check_out": "2031-01-02"}
+        {"guest_name": "Fixture Guest", "reservation_phone": "+421900000000", "check_in": "2030-01-01", "check_out": "2030-01-02", "room_type": 4, "room_count": 1},
+        {"guest_name": "Fixture Guest", "reservation_phone": "+421900000001", "check_in": "2031-01-01", "check_out": "2031-01-02", "room_type": 4, "room_count": 1}
       ]
     }
   }
@@ -136,6 +141,8 @@ Tenant B uses the same semantic capability and handler. Only its profile differs
 Create the draft with `POST /admin/v1/tenants/{tenant_id}/config/drafts`, validate it with `POST .../{revision_id}/validate`, then publish it with `POST .../{revision_id}/publish`. Publication is local and has no Google side effect.
 
 ## Manual Google Sheet smoke test
+
+For `reservations_new`, keep columns A:J as business data and add a hidden technical column K named `operation_id`. Configure `append_range` as `A:K`, `lookup_range` as `K:K`, and `operation_id_column_index` as `10`. The Worker never interprets the business columns; it only uses K for provider-side duplicate detection.
 
 1. Put the service-account map in the Job Worker secret environment and start PostgreSQL, Redis, Backend, Job Worker, LiveKit, and Voice Agent.
 2. Create an active integration connection, create/validate/publish one of the configurations above, and start a new call so it pins that revision.

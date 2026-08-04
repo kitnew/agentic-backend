@@ -116,6 +116,7 @@ class CallSession(Base):
     )
     provider: Mapped[str] = mapped_column(String(64))
     provider_call_id: Mapped[str] = mapped_column(String(255))
+    caller_phone_e164: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider_dispatch_id: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,

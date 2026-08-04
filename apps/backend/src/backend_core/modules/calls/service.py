@@ -91,6 +91,7 @@ class CallSessionService:
             direction=CallDirection.INBOUND,
             provider=data.provider,
             provider_call_id=data.provider_call_id,
+            caller_phone_e164=data.caller_phone_e164,
             room_name=data.room_name,
         )
         try:

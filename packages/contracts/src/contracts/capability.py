@@ -28,6 +28,7 @@ class RuntimeCapabilityDefinition(_Contract):
     description: str = Field(min_length=1, max_length=1000)
     announcement: str = Field(min_length=1, max_length=1000)
     input_schema: dict[str, object]
+    requires_confirmation: bool = False
 
 
 class GoogleSheetsIdempotency(_Contract):
@@ -130,6 +131,17 @@ class CapabilityInvocationRequest(_Contract):
     tool_call_id: str = Field(min_length=1, max_length=255)
     capability: str = Field(min_length=1, max_length=128)
     agent_input: dict[str, object]
+
+
+class CapabilityConfirmationConfirmRequest(_Contract):
+    tool_call_id: str = Field(min_length=1, max_length=255)
+
+
+class CapabilityConfirmationResponse(_Contract):
+    id: UUID
+    status: Literal["confirmation_required"] = "confirmation_required"
+    summary: dict[str, object]
+    expires_at: datetime
 
 
 class ReservationRequestSubmitted(_Contract):

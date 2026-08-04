@@ -556,6 +556,7 @@ class ConfigUseCases:
                         call_id=UUID("00000000-0000-0000-0000-000000000002"),
                         tool_call_id=f"publication-fixture-{index}",
                         credential_ref=connection.credential_ref,
+                        caller_phone="+421900000000",
                     )
             except CapabilityValidationError as error:
                 errors.append(

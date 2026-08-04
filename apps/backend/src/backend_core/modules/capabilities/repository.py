@@ -4,7 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.modules.capabilities.models import (
+    CapabilityConfirmation,
+    CapabilityInvocation,
+    OutboxMessage,
+)
 
 
 class CapabilityInvocationRepository:
@@ -50,3 +54,31 @@ class CapabilityInvocationRepository:
 
     async def flush(self) -> None:
         await self._session.flush()
+
+    async def get_confirmation(
+        self, confirmation_id: UUID, *, for_update: bool = False
+    ) -> CapabilityConfirmation | None:
+        query = select(CapabilityConfirmation).where(
+            CapabilityConfirmation.id == confirmation_id
+        )
+        if for_update:
+            query = query.with_for_update()
+        return await self._session.scalar(query)
+
+    async def get_confirmation_by_tool_call(
+        self, tenant_id: UUID, call_id: UUID, tool_call_id: str
+    ) -> CapabilityConfirmation | None:
+        return await self._session.scalar(
+            select(CapabilityConfirmation).where(
+                CapabilityConfirmation.tenant_id == tenant_id,
+                CapabilityConfirmation.call_id == call_id,
+                CapabilityConfirmation.tool_call_id == tool_call_id,
+            )
+        )
+
+    async def add_confirmation(
+        self, confirmation: CapabilityConfirmation
+    ) -> CapabilityConfirmation:
+        self._session.add(confirmation)
+        await self._session.flush()
+        return confirmation

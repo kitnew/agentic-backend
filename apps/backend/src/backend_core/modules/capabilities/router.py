@@ -3,6 +3,8 @@ from typing import Annotated
 from uuid import UUID
 
 from contracts import (
+    CapabilityConfirmationConfirmRequest,
+    CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
     WorkerResultReport,
@@ -62,6 +64,46 @@ def http_error(error: CapabilityValidationError) -> HTTPException:
     return HTTPException(
         code, {"code": error.code, "path": error.path, "message": error.message}
     )
+
+
+@voice_router.post(
+    "/{call_id}/capability-confirmations",
+    response_model=CapabilityConfirmationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_internal_scope("capability-confirmation:create"))],
+)
+async def prepare_confirmation(
+    call_id: UUID,
+    data: CapabilityInvocationRequest,
+    invocations: Service,
+) -> CapabilityConfirmationResponse:
+    try:
+        return await invocations.prepare_confirmation(call_id, data)
+    except CapabilityValidationError as error:
+        raise http_error(error) from error
+
+
+@voice_router.post(
+    "/{call_id}/capability-confirmations/{confirmation_id}/confirm",
+    response_model=CapabilityInvocationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_internal_scope("capability-confirmation:confirm"))],
+)
+async def confirm_capability(
+    call_id: UUID,
+    confirmation_id: UUID,
+    data: CapabilityConfirmationConfirmRequest,
+    invocations: Service,
+    response: Response,
+) -> CapabilityInvocationResponse:
+    try:
+        invocation, created = await invocations.confirm(
+            call_id, confirmation_id, data.tool_call_id
+        )
+    except CapabilityValidationError as error:
+        raise http_error(error) from error
+    response.status_code = status.HTTP_202_ACCEPTED if created else status.HTTP_200_OK
+    return invocation_response(invocation)
 
 
 @voice_router.post(

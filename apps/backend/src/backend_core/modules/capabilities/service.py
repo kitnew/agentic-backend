@@ -1,8 +1,12 @@
+import json
 import logging
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from typing import Any
 from uuid import UUID, uuid4
 
 from contracts import (
+    CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
@@ -26,7 +30,11 @@ from backend_core.modules.capabilities.domain import (
     validate_agent_input,
     validate_business_input,
 )
-from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.modules.capabilities.models import (
+    CapabilityConfirmation,
+    CapabilityInvocation,
+    OutboxMessage,
+)
 from backend_core.modules.capabilities.repository import CapabilityInvocationRepository
 from backend_core.modules.conversations.repository import ConversationRepository
 from backend_core.modules.integrations.models import (
@@ -60,8 +68,169 @@ class CapabilityInvocationService:
         self._configs = configs
         self._connections = connections
 
-    async def invoke(
+    async def _validate_request(
         self, call_id: UUID, request: CapabilityInvocationRequest
+    ) -> tuple[Any, Any, TenantCapabilityProfile, Any, dict[str, object]]:
+        call = await self._calls.get(call_id)
+        if call is None:
+            raise CapabilityValidationError("call_not_found", "Call does not exist")
+        tenant = await self._tenants.get(call.tenant_id)
+        if tenant is None or tenant.status is not TenantStatus.ACTIVE:
+            raise CapabilityValidationError("tenant_inactive", "Tenant is not active")
+        if call.status is not CallSessionStatus.ACTIVE:
+            raise CapabilityValidationError(
+                "call_not_active", "Call does not allow capability execution"
+            )
+        revision = await self._configs.get(
+            call.tenant_id, call.tenant_config_revision_id
+        )
+        if revision is None or revision.status is not ConfigRevisionStatus.PUBLISHED:
+            raise CapabilityValidationError(
+                "configuration_invalid", "Pinned configuration is unavailable"
+            )
+        config = TenantConfigV2.model_validate(revision.config)
+        profile = config.capabilities.get(SEMANTIC_KEY)
+        if not isinstance(profile, TenantCapabilityProfile) or not profile.enabled:
+            raise CapabilityValidationError(
+                "capability_disabled", "Capability is disabled"
+            )
+        semantic = definition(SEMANTIC_KEY, profile.semantic_version)
+        if request.capability not in {semantic.semantic_key, semantic.tool_name}:
+            raise CapabilityValidationError(
+                "capability_not_found", "Capability is not available"
+            )
+        validate_agent_input(profile.agent_input_schema, request.agent_input)
+        canonical = validate_business_input(
+            normalize_input(profile.agent_input_schema, request.agent_input),
+            config.localization.timezone,
+        )
+        if (
+            profile.business_policy.requires_caller_phone
+            and call.caller_phone_e164 is None
+        ):
+            raise CapabilityValidationError(
+                "caller_phone_unavailable",
+                "Caller phone is required for reservation submission",
+                "metadata.caller_phone",
+            )
+        return call, revision, profile, semantic, canonical
+
+    async def prepare_confirmation(
+        self, call_id: UUID, request: CapabilityInvocationRequest
+    ) -> CapabilityConfirmationResponse:
+        call, revision, profile, semantic, canonical = await self._validate_request(
+            call_id, request
+        )
+        if not profile.business_policy.requires_final_confirmation:
+            raise CapabilityValidationError(
+                "confirmation_not_required", "Capability does not require confirmation"
+            )
+        payload_hash = sha256(
+            f"{revision.id}:{semantic.semantic_key}:{semantic.semantic_version}:".encode()
+            + json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        existing = await self._invocations.get_confirmation_by_tool_call(
+            call.tenant_id, call.id, request.tool_call_id
+        )
+        if (
+            existing is not None
+            and existing.status == "pending_confirmation"
+            and existing.expires_at > datetime.now(UTC)
+        ):
+            return CapabilityConfirmationResponse(
+                id=existing.id,
+                summary=canonical,
+                expires_at=existing.expires_at,
+            )
+        now = datetime.now(UTC)
+        if existing is not None:
+            existing.canonical_input = canonical
+            existing.agent_input = request.agent_input
+            existing.payload_hash = payload_hash
+            existing.status = "pending_confirmation"
+            existing.invocation_id = None
+            existing.consumed_at = None
+            existing.expires_at = now + timedelta(minutes=10)
+            await self._invocations.flush()
+            return CapabilityConfirmationResponse(
+                id=existing.id,
+                summary=canonical,
+                expires_at=existing.expires_at,
+            )
+        confirmation = CapabilityConfirmation(
+            tenant_id=call.tenant_id,
+            call_id=call.id,
+            tool_call_id=request.tool_call_id,
+            semantic_key=semantic.semantic_key,
+            semantic_version=semantic.semantic_version,
+            tenant_config_revision_id=revision.id,
+            canonical_input=canonical,
+            agent_input=request.agent_input,
+            payload_hash=payload_hash,
+            status="pending_confirmation",
+            expires_at=now + timedelta(minutes=10),
+        )
+        await self._invocations.add_confirmation(confirmation)
+        return CapabilityConfirmationResponse(
+            id=confirmation.id,
+            summary=canonical,
+            expires_at=confirmation.expires_at,
+        )
+
+    async def confirm(
+        self, call_id: UUID, confirmation_id: UUID, tool_call_id: str
+    ) -> tuple[CapabilityInvocation, bool]:
+        confirmation = await self._invocations.get_confirmation(
+            confirmation_id, for_update=True
+        )
+        if confirmation is None or confirmation.call_id != call_id:
+            raise CapabilityValidationError(
+                "confirmation_not_found", "Confirmation was not found"
+            )
+        if confirmation.status == "consumed" and confirmation.invocation_id is not None:
+            invocation = await self._invocations.get(confirmation.invocation_id)
+            if invocation is not None:
+                return invocation, False
+        if confirmation.status != "pending_confirmation":
+            raise CapabilityValidationError(
+                "confirmation_conflict", "Confirmation is no longer usable"
+            )
+        if confirmation.expires_at <= datetime.now(UTC):
+            confirmation.status = "expired"
+            raise CapabilityValidationError(
+                "confirmation_expired", "Confirmation has expired"
+            )
+        request = CapabilityInvocationRequest(
+            tool_call_id=tool_call_id,
+            capability=confirmation.semantic_key,
+            agent_input=confirmation.agent_input,
+        )
+        _, revision, _, semantic, canonical = await self._validate_request(
+            call_id, request
+        )
+        payload_hash = sha256(
+            f"{revision.id}:{semantic.semantic_key}:{semantic.semantic_version}:".encode()
+            + json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if payload_hash != confirmation.payload_hash:
+            confirmation.status = "cancelled"
+            raise CapabilityValidationError(
+                "confirmation_conflict", "Confirmation snapshot has changed"
+            )
+        invocation, created = await self.invoke(
+            call_id, request, skip_confirmation=True
+        )
+        confirmation.status = "consumed"
+        confirmation.invocation_id = invocation.id
+        confirmation.consumed_at = datetime.now(UTC)
+        return invocation, created
+
+    async def invoke(
+        self,
+        call_id: UUID,
+        request: CapabilityInvocationRequest,
+        *,
+        skip_confirmation: bool = False,
     ) -> tuple[CapabilityInvocation, bool]:
         call = await self._calls.get(call_id)
         if call is None:
@@ -113,6 +282,23 @@ class CapabilityInvocationService:
             normalize_input(profile.agent_input_schema, request.agent_input),
             config.localization.timezone,
         )
+        if (
+            profile.business_policy.requires_caller_phone
+            and call.caller_phone_e164 is None
+        ):
+            raise CapabilityValidationError(
+                "caller_phone_unavailable",
+                "Caller phone is required for reservation submission",
+                "metadata.caller_phone",
+            )
+        if (
+            profile.business_policy.requires_final_confirmation
+            and not skip_confirmation
+        ):
+            raise CapabilityValidationError(
+                "confirmation_required",
+                "Reservation confirmation is required before submission",
+            )
         logger.info(
             "capability_input_validated",
             extra={
@@ -153,6 +339,7 @@ class CapabilityInvocationService:
             call_id=call.id,
             tool_call_id=request.tool_call_id,
             credential_ref=connection.credential_ref,
+            caller_phone=call.caller_phone_e164 or "",
         )
         job = IntegrationJob(
             job_id=job_id,

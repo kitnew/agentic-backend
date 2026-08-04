@@ -1,4 +1,6 @@
 from contracts.capability import (
+    CapabilityConfirmationConfirmRequest,
+    CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
@@ -47,6 +49,8 @@ __all__ = [
     "CallLifecycleResponse",
     "CallLifecycleStatus",
     "CapabilityBusinessPolicy",
+    "CapabilityConfirmationConfirmRequest",
+    "CapabilityConfirmationResponse",
     "CapabilityInvocationRequest",
     "CapabilityInvocationResponse",
     "CapabilityInvocationStatus",
