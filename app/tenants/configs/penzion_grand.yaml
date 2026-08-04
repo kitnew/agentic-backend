@@ -159,10 +159,10 @@ capabilities:
         - "%d.%m.%Y"
   reservation.create_request:
     enabled: true
-    provider: google_sheets
+    provider: make_webhook
     config:
-      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
-      sheet_name: "reservations_new"
+      webhook_url: "https://hook.eu1.make.com/kxds9ubbisper9y9qm5knr12ipvhljvv"
+      webhook_api_key_env: test123
       row_format: accommodation_request
       announcement: Výborne, teraz odošlem požiadavku na rezerváciu.
   reservation.change_request:

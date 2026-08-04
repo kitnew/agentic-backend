@@ -4,6 +4,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from app.capabilities.providers.make_webhook import valid_webhook_config
 from app.tenants.schemas import TenantContext
 
 
@@ -187,6 +188,14 @@ class TenantConfigLoader:
                     f"google_sheets capability {capability_name} in tenant config "
                     f"{tenant_context.tenant_id} requires spreadsheet_id and sheet_name"
                 )
+
+            if capability_config.enabled and capability_config.provider == "make_webhook":
+                if not valid_webhook_config(capability_config.config):
+                    raise TenantConfigInvalidError(
+                        f"make_webhook capability {capability_name} in tenant config "
+                        f"{tenant_context.tenant_id} requires an http(s) webhook_url "
+                        "and positive timeout_seconds"
+                    )
 
     def _validate_voice(self, tenant_context: TenantContext) -> None:
         if not tenant_context.voice.enabled:

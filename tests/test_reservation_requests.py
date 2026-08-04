@@ -71,9 +71,24 @@ def request(name, **changes):
 def routed(name, sheets, *, hour=12, **changes):
     registry = CapabilityRegistry()
     registry.providers["google_sheets"] = GoogleSheetsReservationProvider(sheets)
+    tenant = TenantConfigLoader().load("penzion_grand")
+    capabilities = dict(tenant.capabilities)
+    config = dict(capabilities[name].config)
+    if name == "reservation.create_request":
+        config.update(
+            {
+                "spreadsheet_id": "test-spreadsheet",
+                "sheet_name": "reservations_new",
+                "row_format": "accommodation_request",
+            }
+        )
+    capabilities[name] = capabilities[name].model_copy(
+        update={"provider": "google_sheets", "config": config}
+    )
+    tenant = tenant.model_copy(update={"capabilities": capabilities})
     return CapabilityRouter(
         registry, clock=lambda: datetime(2026, 7, 21, hour, tzinfo=timezone.utc)
-    ).execute(TenantConfigLoader().load("penzion_grand"), request(name, **changes))
+    ).execute(tenant, request(name, **changes))
 
 
 @pytest.mark.parametrize(

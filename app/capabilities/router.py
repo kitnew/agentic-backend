@@ -60,6 +60,13 @@ class CapabilityRouter:
         if validation_error:
             return validation_error
 
+        if capability_config.provider == "make_webhook":
+            availability_guard = self._availability_guard(
+                tenant_context, capability_request
+            )
+            if availability_guard:
+                return availability_guard
+
         provider = self.registry.get(capability_config.provider)
         if not provider:
             return CapabilityResult(
@@ -70,6 +77,56 @@ class CapabilityRouter:
             )
 
         return provider.execute(tenant_context, capability_request)
+
+    def _availability_guard(
+        self,
+        tenant_context: TenantContext,
+        request: CapabilityRequest,
+    ) -> CapabilityResult | None:
+        if request.name != "reservation.change_request":
+            return None
+        try:
+            validated = ReservationChangeRequest.model_validate(
+                {
+                    field: request.input[field]
+                    for field in ReservationChangeRequest.model_fields
+                    if field in request.input
+                }
+            )
+        except ValidationError:
+            return None
+        if not validated.affects_availability:
+            return None
+
+        availability = self.execute(
+            tenant_context,
+            CapabilityRequest(
+                name="reservation.check_availability",
+                input={
+                    "check_in": validated.check_in,
+                    "check_out": validated.check_out,
+                    "room_type": validated.room_type,
+                    "room_count": validated.room_count,
+                },
+                metadata=request.metadata,
+            ),
+        )
+        if availability.status == CapabilityStatus.SUCCESS and (
+            availability.output or {}
+        ).get("status") == "available":
+            return None
+        return CapabilityResult(
+            name=request.name,
+            status=(
+                CapabilityStatus.FAILED
+                if availability.status == CapabilityStatus.FAILED
+                else CapabilityStatus.SKIPPED
+            ),
+            provider=availability.provider,
+            user_message=availability.user_message,
+            error=availability.error or "requested_stay_not_available",
+            output=availability.output,
+        )
 
     def _validate_request(
         self,
@@ -137,16 +194,28 @@ class CapabilityRouter:
             return None
 
         config = tenant_context.availability_config
-        if not config or availability_request.room_type not in config.room_type_columns:
+        availability_capability = tenant_context.capabilities.get(
+            "reservation.check_availability"
+        )
+        if (
+            (
+                not config
+                and (
+                    not availability_capability
+                    or availability_capability.provider != "make_webhook"
+                )
+            )
+            or (config and availability_request.room_type not in config.room_type_columns)
+        ):
             return self._validation_error(
                 request.name,
                 "unsupported_room_type",
                 "Tento typ izby nie je možné overiť.",
             )
         if (
-            config.reject_past_check_in
-            and availability_request.check_in
-            < local_now.date()
+            config
+            and config.reject_past_check_in
+            and availability_request.check_in < local_now.date()
         ):
             locale = (request.metadata or {}).get("language")
             return self._validation_error(

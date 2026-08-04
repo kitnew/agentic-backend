@@ -440,6 +440,8 @@ class TenantContext(TenantModel):
             )
         if not enabled:
             return self
+        if capability.provider == "make_webhook":
+            return self
         if capability.provider != "google_sheets":
             raise ValueError("availability checking requires the google_sheets provider")
         config = TenantAvailabilityConfig.model_validate(capability.config)
@@ -467,6 +469,10 @@ class TenantContext(TenantModel):
     @property
     def availability_config(self) -> TenantAvailabilityConfig | None:
         capability = self.capabilities.get("reservation.check_availability")
-        if not capability or not capability.enabled:
+        if (
+            not capability
+            or not capability.enabled
+            or capability.provider != "google_sheets"
+        ):
             return None
         return TenantAvailabilityConfig.model_validate(capability.config)

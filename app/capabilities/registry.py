@@ -2,6 +2,7 @@ from typing import Protocol
 
 from app.capabilities.providers.disabled import DisabledProvider
 from app.capabilities.providers.google_sheets import GoogleSheetsReservationProvider
+from app.capabilities.providers.make_webhook import MakeWebhookProvider
 from app.capabilities.providers.manual import ManualReservationProvider
 from app.capabilities.schemas import CapabilityRequest, CapabilityResult
 from app.tenants.schemas import TenantContext
@@ -23,6 +24,7 @@ class CapabilityRegistry:
         self.providers: dict[str, CapabilityProvider] = {
             "disabled": DisabledProvider(),
             "google_sheets": GoogleSheetsReservationProvider(),
+            "make_webhook": MakeWebhookProvider(),
             "manual": ManualReservationProvider(),
         }
 

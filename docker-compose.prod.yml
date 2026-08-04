@@ -30,6 +30,7 @@ services:
       LIVEKIT_SIP_RTP_PORT_END: ${LIVEKIT_SIP_RTP_PORT_END:-20000}
       LIVEKIT_SIP_EXPECTED_TRUNK_ID: ${LIVEKIT_SIP_EXPECTED_TRUNK_ID:-}
       LIVEKIT_SIP_EXPECTED_RULE_ID: ${LIVEKIT_SIP_EXPECTED_RULE_ID:-}
+      MAKE_WEBHOOK_API_KEY: ${MAKE_WEBHOOK_API_KEY:-}
     depends_on:
       livekit:
         condition: service_healthy
@@ -40,6 +41,8 @@ services:
     <<: *production-service
     image: ${WORKER_IMAGE_REPOSITORY:-agentic-capability-worker}:${APP_IMAGE_TAG:?set APP_IMAGE_TAG in .env.production}
     volumes: !reset []
+    environment:
+      MAKE_WEBHOOK_API_KEY: ${MAKE_WEBHOOK_API_KEY:-}
     stop_signal: SIGTERM
     stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-2m}
 
