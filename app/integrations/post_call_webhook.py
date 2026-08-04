@@ -3,21 +3,20 @@ import os
 import aiohttp
 
 
-RECORDING_BASE64_PLACEHOLDER = "[recording_base64_saved_to_file]"
-
-
 async def send_post_call_webhook(
     config,
     payload: dict,
     *,
     session=None,
     timeout_seconds: float = 15,
+    idempotency_key: str | None = None,
 ) -> None:
     if not config.webhook_url:
         return
     headers = {
         "Content-Type": "application/json",
-        "Idempotency-Key": f"post-call:{payload['call_session_id']}",
+        "Idempotency-Key": idempotency_key
+        or f"post-call:{payload['data']['conversation_id']}:{payload['type']}",
     }
     if config.webhook_api_key_env:
         api_key = os.getenv(config.webhook_api_key_env, "")

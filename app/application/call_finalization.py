@@ -22,7 +22,6 @@ from app.integrations.livekit_recording import (
     wait_for_recording,
 )
 from app.integrations.post_call_webhook import (
-    RECORDING_BASE64_PLACEHOLDER,
     send_post_call_webhook,
 )
 from app.tenants.loader import TenantConfigLoader
@@ -42,6 +41,24 @@ def format_transcript(messages) -> str:
         if content:
             lines.append(f"{'Hosť' if message.role == MessageRole.USER else 'Agent'}: {content}")
     return "\n".join(lines)
+
+
+def format_elevenlabs_transcript(messages) -> list[dict[str, str]]:
+    entries = []
+    for message in messages:
+        if message.role not in {MessageRole.USER, MessageRole.ASSISTANT}:
+            continue
+        if message.role == MessageRole.ASSISTANT and (message.metadata or {}).get("interrupted"):
+            continue
+        content = " ".join((message.content or "").split())
+        if content:
+            entries.append(
+                {
+                    "role": "agent" if message.role == MessageRole.ASSISTANT else "user",
+                    "message": content,
+                }
+            )
+    return entries
 
 
 async def finalize_call(
@@ -69,15 +86,45 @@ async def finalize_call(
     repository.save(call)
     try:
         messages = MessageRepository(db).list_by_conversation_id(call.conversation_id)
-        transcript = format_transcript(
+        call_messages = [
             message
             for message in messages
             if (message.metadata or {}).get("call_session_id") == call.id
-        )
+        ]
+        transcript = format_transcript(call_messages)
+        elevenlabs_transcript = format_elevenlabs_transcript(call_messages)
         summary = await asyncio.wait_for(
             (summary_client or AzureSummaryClient()).summarize(transcript), timeout=10
         )
         tenant = (tenant_loader or TenantConfigLoader()).load(call.tenant_id)
+        webhook_config = tenant.post_call_transcript
+        delivery_error = None
+        async def deliver_webhook(config, payload):
+            if webhook_sender:
+                await webhook_sender(config, payload)
+            else:
+                await send_post_call_webhook(
+                    config,
+                    payload,
+                    idempotency_key=f"post-call:{call.id}:{payload['type']}",
+                )
+
+        if webhook_config and webhook_config.webhook_url and not call.post_call_transcription_sent:
+            try:
+                await deliver_webhook(
+                    webhook_config,
+                    _transcription_event(call, elevenlabs_transcript, summary),
+                )
+                call.post_call_transcription_sent = True
+                repository.save(call)
+            except Exception as exc:
+                delivery_error = exc
+                logger.exception(
+                    "Post-call transcription webhook failed call_session_id=%s "
+                    "conversation_id=%s",
+                    call.id,
+                    call.conversation_id,
+                )
         recording = None
         recording_client_owned = False
         if call.recording_egress_id:
@@ -107,10 +154,7 @@ async def finalize_call(
                     else "base64"
                 )
                 if delivery_mode == "base64":
-                    recording = {
-                        **save_base64_file(handle),
-                        "content": RECORDING_BASE64_PLACEHOLDER,
-                    }
+                    recording = save_base64_file(handle)
                 else:
                     base_url = tenant.post_call_transcript.recording_public_base_url
                     recording = {
@@ -121,24 +165,30 @@ async def finalize_call(
             finally:
                 if recording_client_owned:
                     await recording_client.aclose()
-        if tenant.post_call_transcript and tenant.post_call_transcript.webhook_url:
+        if webhook_config and webhook_config.webhook_url:
             if recording is None:
-                raise RuntimeError("Post-call webhook requires a completed recording")
-            payload = {
-                "tenant_id": call.tenant_id,
-                "call_session_id": call.id,
-                "room_name": call.livekit_room_name,
-                "caller_phone": call.caller_phone,
-                "outcome": call.status.value,
-                "reason": call.terminal_reason,
-                "transcript": transcript,
-                "summary": summary,
-                "recording": recording,
-            }
-            await (webhook_sender or send_post_call_webhook)(
-                tenant.post_call_transcript,
-                payload,
-            )
+                delivery_error = delivery_error or RuntimeError(
+                    "Post-call audio webhook requires a completed recording"
+                )
+            elif not call.post_call_audio_sent:
+                try:
+                    await deliver_webhook(
+                        webhook_config,
+                        _audio_event(call, tenant, recording),
+                    )
+                    call.post_call_audio_sent = True
+                    repository.save(call)
+                except Exception as exc:
+                    delivery_error = delivery_error or exc
+                    logger.exception(
+                        "Post-call audio webhook failed call_session_id=%s "
+                        "conversation_id=%s egress_id=%s",
+                        call.id,
+                        call.conversation_id,
+                        call.recording_egress_id,
+                    )
+        if delivery_error:
+            raise delivery_error
         updated_range = None
         if config := tenant.post_call_transcript:
             if db.bind and db.bind.dialect.name == "postgresql":
@@ -192,3 +242,36 @@ def _result(call) -> dict:
         "finalization_status": call.finalization_status.value,
         "transcript_sheet_range": call.transcript_sheet_range,
     }
+
+
+def _transcription_event(call, transcript, summary) -> dict:
+    return {
+        "type": "post_call_transcription",
+        "data": {
+            "analysis": {"transcript_summary": summary},
+            "transcript": transcript,
+            "conversation_initiation_client_data": {
+                "dynamic_variables": {
+                    "system__time": call.started_at.isoformat(),
+                }
+            },
+            "user_id": call.caller_phone,
+            "conversation_id": call.conversation_id,
+        },
+    }
+
+
+def _audio_event(call, tenant, recording) -> dict:
+    agent = getattr(tenant, "agent", None)
+    data = {
+        "agent_id": getattr(agent, "profile", "hospitality-voice"),
+        "agent_name": getattr(agent, "display_name", None)
+        or getattr(tenant, "name", "hospitality-voice"),
+        "conversation_id": call.conversation_id,
+        "user_id": call.caller_phone,
+    }
+    if tenant.post_call_transcript.recording_delivery_mode == "base64":
+        data["full_audio"] = recording["content"]
+    else:
+        data["recording_url"] = recording["url"]
+    return {"type": "post_call_audio", "data": data}

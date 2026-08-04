@@ -148,9 +148,11 @@ async def wait_for_recording(
 def save_base64_file(handle: RecordingHandle) -> dict[str, str]:
     # ponytail: shared local volume for the first rollout; add S3 upload when external retention is required.
     encoded_path = handle.path.with_suffix(handle.path.suffix + ".base64.txt")
-    encoded_path.write_text(base64.b64encode(handle.path.read_bytes()).decode("ascii"), encoding="ascii")
+    content = base64.b64encode(handle.path.read_bytes()).decode("ascii")
+    encoded_path.write_text(content, encoding="ascii")
     return {
         "filename": handle.path.name,
         "content_type": mimetypes.guess_type(handle.path.name)[0] or "audio/ogg",
         "base64_file": str(encoded_path),
+        "content": content,
     }

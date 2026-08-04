@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     DateTime,
@@ -54,6 +55,8 @@ class CallSessionModel(Base):
     livekit_room_name = Column(String, nullable=False, unique=True)
     livekit_job_id = Column(String, nullable=True, unique=True)
     recording_egress_id = Column(String, nullable=True, unique=True)
+    post_call_transcription_sent = Column(Boolean, nullable=False, default=False)
+    post_call_audio_sent = Column(Boolean, nullable=False, default=False)
     caller_phone = Column(String, nullable=True)
     called_phone = Column(String, nullable=True)
     sip_call_key = Column(String, nullable=True)

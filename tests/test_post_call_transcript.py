@@ -7,7 +7,11 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.application.call_finalization import finalize_call, format_transcript
+from app.application.call_finalization import (
+    finalize_call,
+    format_elevenlabs_transcript,
+    format_transcript,
+)
 from app.domain.call_sessions.entities import CallSession
 from app.domain.call_sessions.enums import CallFinalizationStatus, CallSessionStatus
 from app.domain.messages.entities import Message
@@ -16,6 +20,7 @@ from app.infrastructure.database import Base
 from app.infrastructure.repositories.call_session_repository import CallSessionRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
 from app.integrations.google_sheets.schemas import GoogleSheetsAppendRowResult
+from app.integrations.post_call_webhook import send_post_call_webhook
 
 
 class Summary:
@@ -107,6 +112,40 @@ def test_transcript_uses_only_final_persisted_messages():
         )
 
 
+def test_elevenlabs_transcript_maps_roles_and_excludes_non_messages():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        seed(db)
+        messages = MessageRepository(db).list_by_conversation_id("conversation-1")
+        messages.extend(
+            [
+                Message(
+                    id="system-1", tenant_id="penzion_grand", conversation_id="conversation-1",
+                    channel="voice", role=MessageRole.SYSTEM, content="system prompt",
+                    status=MessageStatus.PROCESSED, metadata={"call_session_id": "call-1"},
+                    created_at=datetime(2026, 7, 22, 20, 16),
+                ),
+                Message(
+                    id="tool-1", tenant_id="penzion_grand", conversation_id="conversation-1",
+                    channel="voice", role=MessageRole.TOOL, content="tool result",
+                    status=MessageStatus.PROCESSED, metadata={"call_session_id": "call-1"},
+                    created_at=datetime(2026, 7, 22, 20, 17),
+                ),
+                Message(
+                    id="empty-1", tenant_id="penzion_grand", conversation_id="conversation-1",
+                    channel="voice", role=MessageRole.USER, content="  \n",
+                    status=MessageStatus.PROCESSED, metadata={"call_session_id": "call-1"},
+                    created_at=datetime(2026, 7, 22, 20, 18),
+                ),
+            ]
+        )
+        assert format_elevenlabs_transcript(messages) == [
+            {"role": "user", "message": "Dobrý deň, chcem izbu."},
+            {"role": "agent", "message": "Žiadosť bola odoslaná."},
+        ]
+
+
 def test_finalization_maps_row_preserves_phone_and_is_idempotent():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
@@ -176,7 +215,53 @@ class RecordingClient:
         self.egress = RecordingEgress()
 
 
-def test_finalization_saves_base64_and_sends_one_placeholder_webhook(tmp_path, monkeypatch):
+class WebhookResponse:
+    status = 200
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+class WebhookSession:
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, *, json, headers):
+        self.calls.append((url, json, headers))
+        return WebhookResponse()
+
+
+def test_post_call_events_use_same_webhook_with_distinct_idempotency_keys(monkeypatch):
+    monkeypatch.setenv("POST_CALL_WEBHOOK_KEY", "test-key")
+    config = SimpleNamespace(
+        webhook_url="https://make.example.test/post-call",
+        webhook_api_key_env="POST_CALL_WEBHOOK_KEY",
+    )
+    session = WebhookSession()
+    for event_type in ("post_call_transcription", "post_call_audio"):
+        asyncio.run(
+            send_post_call_webhook(
+                config,
+                {
+                    "type": event_type,
+                    "data": {"conversation_id": "conversation-1"},
+                },
+                session=session,
+            )
+        )
+
+    assert [call[0] for call in session.calls] == [config.webhook_url] * 2
+    assert [call[2]["Idempotency-Key"] for call in session.calls] == [
+        "post-call:conversation-1:post_call_transcription",
+        "post-call:conversation-1:post_call_audio",
+    ]
+    assert all(call[2]["x-make-apikey"] == "test-key" for call in session.calls)
+
+
+def test_finalization_sends_separate_base64_events_and_is_idempotent(tmp_path, monkeypatch):
     monkeypatch.setenv("LIVEKIT_RECORDING_DIR", str(tmp_path))
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
@@ -193,7 +278,12 @@ def test_finalization_saves_base64_and_sends_one_placeholder_webhook(tmp_path, m
         recording_delivery_mode="base64",
         recording_public_base_url=None,
     )
-    tenant = SimpleNamespace(timezone="Europe/Bratislava", post_call_transcript=config)
+    tenant = SimpleNamespace(
+        timezone="Europe/Bratislava",
+        name="Penzión Grand",
+        agent=SimpleNamespace(profile="hotel_assistant", display_name="Amélia"),
+        post_call_transcript=config,
+    )
     with Session(engine) as db:
         seed(db)
         call = CallSessionRepository(db).get("call-1")
@@ -224,11 +314,28 @@ def test_finalization_saves_base64_and_sends_one_placeholder_webhook(tmp_path, m
             )
         )
     assert first == second
-    assert len(sent) == 1
-    assert sent[0]["transcript"]
-    assert sent[0]["summary"]
-    assert sent[0]["recording"]["content"] == "[recording_base64_saved_to_file]"
-    assert Path(sent[0]["recording"]["base64_file"]).read_text() == "cmVjb3JkZWQgYXVkaW8="
+    assert [payload["type"] for payload in sent] == [
+        "post_call_transcription",
+        "post_call_audio",
+    ]
+    transcription, audio = sent
+    assert transcription["data"]["analysis"]["transcript_summary"]
+    assert transcription["data"]["transcript"] == [
+        {"role": "user", "message": "Dobrý deň, chcem izbu."},
+        {"role": "agent", "message": "Žiadosť bola odoslaná."},
+    ]
+    assert transcription["data"]["conversation_initiation_client_data"]["dynamic_variables"]["system__time"] == "2026-07-22T20:15:00"
+    assert transcription["data"]["user_id"] == "+421900111222"
+    assert transcription["data"]["conversation_id"] == "conversation-1"
+    assert audio["data"]["conversation_id"] == "conversation-1"
+    assert audio["data"]["user_id"] == "+421900111222"
+    assert audio["data"]["agent_id"] == "hotel_assistant"
+    assert audio["data"]["agent_name"] == "Amélia"
+    assert audio["data"]["full_audio"] == "cmVjb3JkZWQgYXVkaW8="
+    with Session(engine) as db:
+        call = CallSessionRepository(db).get("call-1")
+    assert call.post_call_transcription_sent is True
+    assert call.post_call_audio_sent is True
 
 
 def test_finalization_uses_recording_url_mode(tmp_path, monkeypatch):
@@ -266,7 +373,9 @@ def test_finalization_uses_recording_url_mode(tmp_path, monkeypatch):
                 webhook_sender=send,
             )
         )
-    assert sent[0]["recording"]["url"] == "https://records.example.test/calls/call-1.ogg"
+    assert sent[0]["type"] == "post_call_transcription"
+    assert sent[1]["type"] == "post_call_audio"
+    assert sent[1]["data"]["recording_url"] == "https://records.example.test/calls/call-1.ogg"
 
 
 def test_recording_failure_marks_finalization_failed_without_webhook(tmp_path, monkeypatch):
@@ -310,4 +419,66 @@ def test_recording_failure_marks_finalization_failed_without_webhook(tmp_path, m
                 )
             )
         assert CallSessionRepository(db).get("call-1").finalization_status == CallFinalizationStatus.FAILED
-    assert sent == []
+    assert [payload["type"] for payload in sent] == ["post_call_transcription"]
+
+
+def test_failed_event_does_not_suppress_other_event_and_retry_is_per_event(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVEKIT_RECORDING_DIR", str(tmp_path))
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    attempted = []
+    fail_transcription = True
+
+    async def send(_config, payload):
+        nonlocal fail_transcription
+        attempted.append(payload["type"])
+        if payload["type"] == "post_call_transcription" and fail_transcription:
+            fail_transcription = False
+            raise RuntimeError("transcription unavailable")
+
+    config = SimpleNamespace(
+        spreadsheet_id="sheet",
+        sheet_name="transcripts",
+        webhook_url="https://make.example.test/post-call",
+        webhook_api_key_env=None,
+        recording_delivery_mode="base64",
+        recording_public_base_url=None,
+    )
+    tenant = SimpleNamespace(timezone="Europe/Bratislava", post_call_transcript=config)
+    with Session(engine) as db:
+        seed(db)
+        call = CallSessionRepository(db).get("call-1")
+        call.recording_egress_id = "egress-1"
+        CallSessionRepository(db).save(call)
+        Path(tmp_path, "call-1.ogg").write_bytes(b"recorded audio")
+        with pytest.raises(RuntimeError, match="transcription unavailable"):
+            asyncio.run(
+                finalize_call(
+                    db,
+                    "call-1",
+                    summary_client=Summary(),
+                    sheets=Sheets(),
+                    tenant_loader=SimpleNamespace(load=lambda _tenant_id: tenant),
+                    recording_client=RecordingClient(),
+                    webhook_sender=send,
+                )
+            )
+        asyncio.run(
+            finalize_call(
+                db,
+                "call-1",
+                summary_client=Summary(),
+                sheets=Sheets(),
+                tenant_loader=SimpleNamespace(load=lambda _tenant_id: tenant),
+                recording_client=RecordingClient(),
+                webhook_sender=send,
+            )
+        )
+        call = CallSessionRepository(db).get("call-1")
+    assert attempted == [
+        "post_call_transcription",
+        "post_call_audio",
+        "post_call_transcription",
+    ]
+    assert call.post_call_transcription_sent is True
+    assert call.post_call_audio_sent is True

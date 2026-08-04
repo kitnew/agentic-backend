@@ -73,6 +73,14 @@ def _ensure_sqlite_schema() -> None:
         ):
             if name not in call_columns:
                 connection.execute(text(f"ALTER TABLE call_sessions ADD COLUMN {name} VARCHAR"))
+        for name in ("post_call_transcription_sent", "post_call_audio_sent"):
+            if name not in call_columns:
+                connection.execute(
+                    text(
+                        f"ALTER TABLE call_sessions ADD COLUMN {name} BOOLEAN "
+                        "NOT NULL DEFAULT 0"
+                    )
+                )
         connection.execute(
             text(
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_call_sessions_sip_call_key "

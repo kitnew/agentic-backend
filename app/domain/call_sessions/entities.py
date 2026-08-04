@@ -12,6 +12,8 @@ class CallSession(BaseModel):
     livekit_room_name: str
     livekit_job_id: str | None = None
     recording_egress_id: str | None = None
+    post_call_transcription_sent: bool = False
+    post_call_audio_sent: bool = False
     caller_phone: str | None = None
     called_phone: str | None = None
     sip_call_key: str | None = None
