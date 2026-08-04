@@ -53,6 +53,7 @@ class CallSessionModel(Base):
     conversation_id = Column(String, nullable=False, index=True)
     livekit_room_name = Column(String, nullable=False, unique=True)
     livekit_job_id = Column(String, nullable=True, unique=True)
+    recording_egress_id = Column(String, nullable=True, unique=True)
     caller_phone = Column(String, nullable=True)
     called_phone = Column(String, nullable=True)
     sip_call_key = Column(String, nullable=True)

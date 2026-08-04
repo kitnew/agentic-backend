@@ -181,6 +181,7 @@ capabilities:
 post_call_transcript:
   spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
   sheet_name: "transcripts"
+  recording_delivery_mode: base64
 
 voice:
   enabled: true

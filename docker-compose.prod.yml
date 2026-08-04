@@ -11,7 +11,6 @@ services:
     <<: *production-service
     image: ${APP_IMAGE_REPOSITORY:-agentic-backend}:${APP_IMAGE_TAG:?set APP_IMAGE_TAG in .env.production}
     ports: !reset []
-    volumes: !reset []
     environment:
       APP_ENV: ${APP_ENV:-production}
       LIVEKIT_DEBUG_AUTH_ENABLED: "false"
@@ -40,9 +39,16 @@ services:
   capability-worker:
     <<: *production-service
     image: ${WORKER_IMAGE_REPOSITORY:-agentic-capability-worker}:${APP_IMAGE_TAG:?set APP_IMAGE_TAG in .env.production}
-    volumes: !reset []
     environment:
       MAKE_WEBHOOK_API_KEY: ${MAKE_WEBHOOK_API_KEY:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_INTERNAL_URL: ws://livekit:7880
+      LIVEKIT_RECORDING_DIR: /recordings
+      LIVEKIT_RECORDING_TIMEOUT_SECONDS: ${LIVEKIT_RECORDING_TIMEOUT_SECONDS:-20}
+      LIVEKIT_RECORDING_POLL_SECONDS: ${LIVEKIT_RECORDING_POLL_SECONDS:-0.5}
+    volumes:
+      - recordings-data:/recordings
     stop_signal: SIGTERM
     stop_grace_period: ${WORKER_STOP_GRACE_PERIOD:-2m}
 
@@ -55,6 +61,13 @@ services:
       LIVEKIT_INTERNAL_URL: ws://livekit:7880
       BACKEND_INTERNAL_URL: http://api:8000
       INBOUND_SIP_ENABLED: ${INBOUND_SIP_ENABLED:-false}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+      LIVEKIT_RECORDING_DIR: /recordings
+      LIVEKIT_RECORDING_TIMEOUT_SECONDS: ${LIVEKIT_RECORDING_TIMEOUT_SECONDS:-20}
+      LIVEKIT_RECORDING_POLL_SECONDS: ${LIVEKIT_RECORDING_POLL_SECONDS:-0.5}
+    volumes:
+      - recordings-data:/recordings
     depends_on:
       api:
         condition: service_healthy
@@ -126,6 +139,30 @@ services:
       interval: 10s
       timeout: 3s
       retries: 12
+    stop_signal: SIGTERM
+    stop_grace_period: 1m
+
+  livekit-egress:
+    <<: *production-service
+    image: ${LIVEKIT_EGRESS_IMAGE:-livekit/egress:v1.9.0}
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: ${LIVEKIT_API_KEY:?set LIVEKIT_API_KEY in .env.production}
+        api_secret: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET in .env.production}
+        ws_url: ws://livekit:7880
+        insecure: true
+        redis:
+          address: ${LIVEKIT_REDIS_ADDRESS:-redis:6379}
+        health_port: 8083
+    volumes:
+      - recordings-data:/recordings
+    depends_on:
+      livekit:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     stop_signal: SIGTERM
     stop_grace_period: 1m
 
@@ -221,6 +258,7 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  recordings-data:
 
 secrets:
   google-service-account:

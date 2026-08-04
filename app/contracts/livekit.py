@@ -183,6 +183,7 @@ class FinalizeLiveKitCallRequest(ContractModel):
     reason: Annotated[str, Field(max_length=2_048)] | None = None
     error: Annotated[str, Field(max_length=8_192)] | None = None
     livekit_job_id: Identifier | None = None
+    recording_egress_id: Identifier | None = None
     caller_phone: Annotated[str, Field(max_length=128)] | None = None
 
 

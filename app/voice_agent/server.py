@@ -20,6 +20,12 @@ from app.voice_agent.session_factory import HospitalityAgent, VoiceTurnState, bu
 from app.voice_agent.settings import LiveKitSettings
 from app.voice_agent.telemetry import VoiceTelemetry
 from app.tenants.schemas import normalize_phone_number
+from app.voice_agent.recording import (
+    RecordingHandle,
+    RecordingSettings,
+    start_room_recording,
+    stop_and_wait_recording,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -204,6 +210,27 @@ async def voice_agent(ctx: JobContext) -> None:
             )
         )
     backend = BackendCoreClient(settings.backend_url, backend_token)
+    recording: RecordingHandle | None = None
+    try:
+        recording = await start_room_recording(
+            ctx.room.name,
+            str(metadata.call_session_id),
+            settings=RecordingSettings.from_env(),
+        )
+        logger.info(
+            "event=recording_started tenant_id=%s call_session_id=%s room_name=%s egress_id=%s",
+            metadata.tenant_id,
+            metadata.call_session_id,
+            ctx.room.name,
+            recording.egress_id,
+        )
+    except Exception:
+        logger.exception(
+            "event=recording_start_failed tenant_id=%s call_session_id=%s room_name=%s",
+            metadata.tenant_id,
+            metadata.call_session_id,
+            ctx.room.name,
+        )
     state = VoiceTurnState()
     session = build_session(settings, metadata, build_vad(metadata.turn_config))
     caller_number = (
@@ -326,6 +353,28 @@ async def voice_agent(ctx: JobContext) -> None:
         pending = [*state.user_persistence.values(), *persistence_tasks]
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
+        if recording is not None:
+            try:
+                await stop_and_wait_recording(
+                    recording,
+                    settings=RecordingSettings.from_env(),
+                )
+                logger.info(
+                    "event=recording_completed tenant_id=%s call_session_id=%s room_name=%s egress_id=%s",
+                    metadata.tenant_id,
+                    metadata.call_session_id,
+                    ctx.room.name,
+                    recording.egress_id,
+                )
+            except Exception:
+                logger.exception(
+                    "event=recording_finalize_failed tenant_id=%s call_session_id=%s "
+                    "room_name=%s egress_id=%s",
+                    metadata.tenant_id,
+                    metadata.call_session_id,
+                    ctx.room.name,
+                    recording.egress_id,
+                )
         finalized = False
         if not finalization_started:
             finalization_started = True
@@ -336,6 +385,7 @@ async def voice_agent(ctx: JobContext) -> None:
                     reason=_reason or None,
                     error=_reason if "error" in _reason.casefold() else None,
                     livekit_job_id=str(getattr(ctx.job, "id", "")) or None,
+                    recording_egress_id=recording.egress_id if recording else None,
                     caller_phone=caller_number,
                 )
                 finalized = True

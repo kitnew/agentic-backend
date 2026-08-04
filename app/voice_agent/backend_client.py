@@ -85,7 +85,8 @@ class BackendCoreClient:
         reason: str | None,
         error: str | None,
         livekit_job_id: str | None,
-        caller_phone: str | None,
+        recording_egress_id: str | None = None,
+        caller_phone: str | None = None,
     ) -> dict:
         request = FinalizeLiveKitCallRequest(
             call_session_id=call_session_id,
@@ -93,6 +94,7 @@ class BackendCoreClient:
             reason=reason,
             error=error,
             livekit_job_id=livekit_job_id,
+            recording_egress_id=recording_egress_id,
             caller_phone=caller_phone,
         )
         for attempt in range(3):

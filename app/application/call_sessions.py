@@ -47,6 +47,7 @@ def prepare_finalization(
         call.terminal_reason = request.reason
         call.terminal_error = request.error
         call.livekit_job_id = request.livekit_job_id or call.livekit_job_id
+        call.recording_egress_id = request.recording_egress_id or call.recording_egress_id
         call.caller_phone = request.caller_phone or call.caller_phone
     if call.finalization_status == CallFinalizationStatus.COMPLETED:
         return call, None

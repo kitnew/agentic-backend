@@ -2,6 +2,7 @@ import re
 from datetime import time
 from decimal import Decimal
 from typing import Any, Literal
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -209,6 +210,10 @@ class TenantAvailabilityConfig(TenantModel):
 class TenantPostCallTranscriptConfig(TenantModel):
     spreadsheet_id: str
     sheet_name: str
+    webhook_url: str | None = None
+    webhook_api_key_env: str | None = None
+    recording_delivery_mode: Literal["base64", "recording_url"] = "base64"
+    recording_public_base_url: str | None = None
 
     @field_validator("spreadsheet_id", "sheet_name")
     @classmethod
@@ -216,6 +221,21 @@ class TenantPostCallTranscriptConfig(TenantModel):
         if not value.strip():
             raise ValueError("must not be empty")
         return value
+
+    @field_validator("webhook_url", "recording_public_base_url")
+    @classmethod
+    def validate_http_url(cls, value: str | None) -> str | None:
+        if value is not None:
+            parsed = urlparse(value)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("must be an absolute http(s) URL")
+        return value
+
+    @model_validator(mode="after")
+    def validate_recording_url(self):
+        if self.recording_delivery_mode == "recording_url" and not self.recording_public_base_url:
+            raise ValueError("recording_url delivery requires recording_public_base_url")
+        return self
 
 
 class TenantReservationFieldConfig(TenantModel):

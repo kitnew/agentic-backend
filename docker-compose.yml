@@ -12,6 +12,12 @@ x-backend-environment: &backend-environment
   CAPABILITY_PENDING_IDLE_SECONDS: ${CAPABILITY_PENDING_IDLE_SECONDS:-60}
   CAPABILITY_WORKER_CONCURRENCY: ${CAPABILITY_WORKER_CONCURRENCY:-4}
   MAKE_WEBHOOK_API_KEY: ${MAKE_WEBHOOK_API_KEY:-}
+  LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+  LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
+  LIVEKIT_INTERNAL_URL: ${LIVEKIT_INTERNAL_URL:-ws://livekit:7880}
+  LIVEKIT_RECORDING_DIR: ${LIVEKIT_RECORDING_DIR:-/recordings}
+  LIVEKIT_RECORDING_TIMEOUT_SECONDS: ${LIVEKIT_RECORDING_TIMEOUT_SECONDS:-20}
+  LIVEKIT_RECORDING_POLL_SECONDS: ${LIVEKIT_RECORDING_POLL_SECONDS:-0.5}
 
 x-backend: &backend
   build:
@@ -51,6 +57,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - recordings-data:/recordings
       - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
       - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
     healthcheck:
@@ -76,6 +83,7 @@ services:
     secrets:
       - google-service-account
     volumes:
+      - recordings-data:/recordings
       - ./smoke/tenants/smoke_manual_a.yaml:/app/app/tenants/configs/smoke_manual_a.yaml:ro
       - ./smoke/tenants/smoke_manual_b.yaml:/app/app/tenants/configs/smoke_manual_b.yaml:ro
     stop_grace_period: 2m
@@ -109,6 +117,8 @@ services:
       ELEVENLABS_REALTIME_STT_MODEL: ${ELEVENLABS_REALTIME_STT_MODEL:-scribe_v2_realtime}
     ports:
       - "8081:8081"
+    volumes:
+      - recordings-data:/recordings
     depends_on:
       api:
         condition: service_healthy
@@ -150,6 +160,7 @@ services:
 volumes:
   redis-data:
   postgres-data:
+  recordings-data:
 
 secrets:
   google-service-account:

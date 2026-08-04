@@ -1,7 +1,9 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from livekit import api
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -12,7 +14,21 @@ from app.infrastructure.repositories.message_repository import MessageRepository
 from app.integrations.google_sheets.client import GoogleSheetsClient
 from app.integrations.google_sheets.schemas import GoogleSheetsAppendRowRequest
 from app.integrations.summary import AzureSummaryClient
+from app.integrations.livekit_recording import (
+    RecordingHandle,
+    RecordingSettings,
+    recording_path,
+    save_base64_file,
+    wait_for_recording,
+)
+from app.integrations.post_call_webhook import (
+    RECORDING_BASE64_PLACEHOLDER,
+    send_post_call_webhook,
+)
 from app.tenants.loader import TenantConfigLoader
+
+
+logger = logging.getLogger(__name__)
 
 
 def format_transcript(messages) -> str:
@@ -35,6 +51,8 @@ async def finalize_call(
     summary_client=None,
     sheets=None,
     tenant_loader=None,
+    recording_client=None,
+    webhook_sender=None,
 ) -> dict:
     repository = CallSessionRepository(db)
     call = repository.get(call_session_id, for_update=True)
@@ -60,6 +78,67 @@ async def finalize_call(
             (summary_client or AzureSummaryClient()).summarize(transcript), timeout=10
         )
         tenant = (tenant_loader or TenantConfigLoader()).load(call.tenant_id)
+        recording = None
+        recording_client_owned = False
+        if call.recording_egress_id:
+            recording_settings = RecordingSettings.from_env()
+            recording_client_owned = recording_client is None
+            recording_client = recording_client or api.LiveKitAPI(
+                url=recording_settings.api_url,
+                api_key=recording_settings.api_key,
+                api_secret=recording_settings.api_secret,
+            )
+            handle = RecordingHandle(
+                egress_id=call.recording_egress_id,
+                room_name=call.livekit_room_name,
+                path=recording_path(recording_settings.output_dir, call.id),
+            )
+            try:
+                await wait_for_recording(
+                    handle,
+                    client=recording_client,
+                    settings=recording_settings,
+                )
+                if not handle.path.is_file():
+                    raise RuntimeError(f"Recording file not found: {handle.path}")
+                delivery_mode = (
+                    tenant.post_call_transcript.recording_delivery_mode
+                    if tenant.post_call_transcript
+                    else "base64"
+                )
+                if delivery_mode == "base64":
+                    recording = {
+                        **save_base64_file(handle),
+                        "content": RECORDING_BASE64_PLACEHOLDER,
+                    }
+                else:
+                    base_url = tenant.post_call_transcript.recording_public_base_url
+                    recording = {
+                        "filename": handle.path.name,
+                        "content_type": "audio/ogg",
+                        "url": f"{base_url.rstrip('/')}/{handle.path.name}",
+                    }
+            finally:
+                if recording_client_owned:
+                    await recording_client.aclose()
+        if tenant.post_call_transcript and tenant.post_call_transcript.webhook_url:
+            if recording is None:
+                raise RuntimeError("Post-call webhook requires a completed recording")
+            payload = {
+                "tenant_id": call.tenant_id,
+                "call_session_id": call.id,
+                "room_name": call.livekit_room_name,
+                "caller_phone": call.caller_phone,
+                "outcome": call.status.value,
+                "reason": call.terminal_reason,
+                "transcript": transcript,
+                "summary": summary,
+                "recording": recording,
+            }
+            await (webhook_sender or send_post_call_webhook)(
+                tenant.post_call_transcript,
+                payload,
+            )
         updated_range = None
         if config := tenant.post_call_transcript:
             if db.bind and db.bind.dialect.name == "postgresql":
@@ -91,6 +170,12 @@ async def finalize_call(
         repository.save(call)
         return _result(call)
     except Exception as exc:
+        logger.exception(
+            "Post-call finalization failed call_session_id=%s room_name=%s egress_id=%s",
+            call_session_id,
+            getattr(call, "livekit_room_name", None),
+            getattr(call, "recording_egress_id", None),
+        )
         db.rollback()
         call = repository.get(call_session_id, for_update=True)
         if call is not None:

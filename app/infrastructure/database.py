@@ -69,6 +69,7 @@ def _ensure_sqlite_schema() -> None:
             "sip_participant_identity",
             "sip_trunk_id",
             "sip_rule_id",
+            "recording_egress_id",
         ):
             if name not in call_columns:
                 connection.execute(text(f"ALTER TABLE call_sessions ADD COLUMN {name} VARCHAR"))

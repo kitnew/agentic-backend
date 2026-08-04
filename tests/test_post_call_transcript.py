@@ -1,6 +1,9 @@
 import asyncio
 from datetime import datetime
 from threading import Lock
+from pathlib import Path
+from types import SimpleNamespace
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -159,3 +162,152 @@ def test_concurrent_finalization_attempts_append_one_row(tmp_path):
 
     asyncio.run(run_both())
     assert len(sheets.rows) == 1
+
+
+class RecordingEgress:
+    async def list_egress(self, _request):
+        return SimpleNamespace(
+            items=[SimpleNamespace(status="EGRESS_COMPLETE", error="", details="")]
+        )
+
+
+class RecordingClient:
+    def __init__(self):
+        self.egress = RecordingEgress()
+
+
+def test_finalization_saves_base64_and_sends_one_placeholder_webhook(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVEKIT_RECORDING_DIR", str(tmp_path))
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    sent = []
+
+    async def send(config, payload):
+        sent.append(payload)
+
+    config = SimpleNamespace(
+        spreadsheet_id="sheet",
+        sheet_name="transcripts",
+        webhook_url="https://make.example.test/post-call",
+        webhook_api_key_env=None,
+        recording_delivery_mode="base64",
+        recording_public_base_url=None,
+    )
+    tenant = SimpleNamespace(timezone="Europe/Bratislava", post_call_transcript=config)
+    with Session(engine) as db:
+        seed(db)
+        call = CallSessionRepository(db).get("call-1")
+        call.recording_egress_id = "egress-1"
+        CallSessionRepository(db).save(call)
+        Path(tmp_path, "call-1.ogg").write_bytes(b"recorded audio")
+        sheets = Sheets()
+        first = asyncio.run(
+            finalize_call(
+                db,
+                "call-1",
+                summary_client=Summary(),
+                sheets=sheets,
+                tenant_loader=SimpleNamespace(load=lambda _tenant_id: tenant),
+                recording_client=RecordingClient(),
+                webhook_sender=send,
+            )
+        )
+        second = asyncio.run(
+            finalize_call(
+                db,
+                "call-1",
+                summary_client=Summary(),
+                sheets=sheets,
+                tenant_loader=SimpleNamespace(load=lambda _tenant_id: tenant),
+                recording_client=RecordingClient(),
+                webhook_sender=send,
+            )
+        )
+    assert first == second
+    assert len(sent) == 1
+    assert sent[0]["transcript"]
+    assert sent[0]["summary"]
+    assert sent[0]["recording"]["content"] == "[recording_base64_saved_to_file]"
+    assert Path(sent[0]["recording"]["base64_file"]).read_text() == "cmVjb3JkZWQgYXVkaW8="
+
+
+def test_finalization_uses_recording_url_mode(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVEKIT_RECORDING_DIR", str(tmp_path))
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    sent = []
+
+    async def send(_config, payload):
+        sent.append(payload)
+
+    config = SimpleNamespace(
+        spreadsheet_id="sheet",
+        sheet_name="transcripts",
+        webhook_url="https://make.example.test/post-call",
+        webhook_api_key_env=None,
+        recording_delivery_mode="recording_url",
+        recording_public_base_url="https://records.example.test/calls",
+    )
+    tenant = SimpleNamespace(timezone="Europe/Bratislava", post_call_transcript=config)
+    with Session(engine) as db:
+        seed(db)
+        call = CallSessionRepository(db).get("call-1")
+        call.recording_egress_id = "egress-1"
+        CallSessionRepository(db).save(call)
+        Path(tmp_path, "call-1.ogg").write_bytes(b"recorded audio")
+        asyncio.run(
+            finalize_call(
+                db,
+                "call-1",
+                summary_client=Summary(),
+                sheets=Sheets(),
+                tenant_loader=SimpleNamespace(load=lambda _tenant_id: tenant),
+                recording_client=RecordingClient(),
+                webhook_sender=send,
+            )
+        )
+    assert sent[0]["recording"]["url"] == "https://records.example.test/calls/call-1.ogg"
+
+
+def test_recording_failure_marks_finalization_failed_without_webhook(tmp_path, monkeypatch):
+    monkeypatch.setenv("LIVEKIT_RECORDING_DIR", str(tmp_path))
+    monkeypatch.setenv("LIVEKIT_RECORDING_TIMEOUT_SECONDS", "0.01")
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    sent = []
+
+    async def send(_config, payload):
+        sent.append(payload)
+
+    config = SimpleNamespace(
+        spreadsheet_id="sheet",
+        sheet_name="transcripts",
+        webhook_url="https://make.example.test/post-call",
+        webhook_api_key_env=None,
+        recording_delivery_mode="base64",
+        recording_public_base_url=None,
+    )
+    tenant = SimpleNamespace(timezone="Europe/Bratislava", post_call_transcript=config)
+    class ActiveEgress:
+        async def list_egress(self, _request):
+            return SimpleNamespace(items=[SimpleNamespace(status="EGRESS_ACTIVE")])
+
+    with Session(engine) as db:
+        seed(db)
+        call = CallSessionRepository(db).get("call-1")
+        call.recording_egress_id = "egress-1"
+        CallSessionRepository(db).save(call)
+        with pytest.raises(asyncio.TimeoutError):
+            asyncio.run(
+                finalize_call(
+                    db,
+                    "call-1",
+                    summary_client=Summary(),
+                    sheets=Sheets(),
+                    tenant_loader=SimpleNamespace(load=lambda _tenant_id: tenant),
+                    recording_client=SimpleNamespace(egress=ActiveEgress()),
+                    webhook_sender=send,
+                )
+            )
+        assert CallSessionRepository(db).get("call-1").finalization_status == CallFinalizationStatus.FAILED
+    assert sent == []
