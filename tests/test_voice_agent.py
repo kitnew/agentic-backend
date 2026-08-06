@@ -223,7 +223,7 @@ def test_human_handoff_request_uses_the_current_room_and_stored_trunk():
 
 
 def test_human_handoff_tool_runs_only_after_the_turn_is_committed():
-    state = VoiceTurnState()
+    state, telemetry = VoiceTurnState(), Telemetry()
     speech = Speech("handoff-speech")
     state.register_speech(speech)
     calls = []
@@ -232,7 +232,7 @@ def test_human_handoff_tool_runs_only_after_the_turn_is_committed():
         calls.append(context)
         return "Human handoff started."
 
-    tool = build_human_handoff_tool(handoff, state)
+    tool = build_human_handoff_tool(handoff, state, telemetry)
     context = tool_context(speech, "handoff")
 
     async def run():
@@ -244,6 +244,15 @@ def test_human_handoff_tool_runs_only_after_the_turn_is_committed():
 
     assert asyncio.run(run()) == "Human handoff started."
     assert calls == [context]
+    assert [event for event, _ in telemetry.events if event in {
+        "announcement_started",
+        "announcement_completed",
+        "backend_request_started",
+    }] == [
+        "announcement_started",
+        "announcement_completed",
+        "backend_request_started",
+    ]
 
 
 def test_native_tools_wait_for_exact_committed_speech_and_propagate_correlation():

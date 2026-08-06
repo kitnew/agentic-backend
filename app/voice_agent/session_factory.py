@@ -22,7 +22,7 @@ async def execute_capability_with_announcement(
     announcement: str | None,
     execute,
     telemetry,
-) -> dict:
+):
     telemetry.emit(
         "tool_call_started",
         tool_call_id=tool_call_id,
@@ -51,7 +51,7 @@ async def execute_capability_with_announcement(
         "tool_call_completed",
         tool_call_id=tool_call_id,
         capability=capability_name,
-        status=result.get("status"),
+        status=result.get("status") if isinstance(result, dict) else None,
     )
     return result
 
@@ -298,7 +298,7 @@ class GuardedEndCallTool(EndCallTool):
         return await super()._end_call(ctx)
 
 
-def build_human_handoff_tool(execute, state: VoiceTurnState):
+def build_human_handoff_tool(execute, state: VoiceTurnState, telemetry):
     async def runtime_tool(
         context: RunContext, raw_arguments: dict[str, object]
     ) -> str:
@@ -309,7 +309,14 @@ def build_human_handoff_tool(execute, state: VoiceTurnState):
             return "Human handoff was cancelled."
         if state.pending_tool_calls:
             return "Human handoff was not started because another tool is still running."
-        return await execute(context)
+        return await execute_capability_with_announcement(
+            context=context,
+            capability_name="human_handoff",
+            tool_call_id=context.function_call.call_id,
+            announcement="Prepojím vás s pracovníkom recepcie. Prosím, zostaňte na linke.",
+            execute=lambda: execute(context),
+            telemetry=telemetry,
+        )
 
     return function_tool(
         runtime_tool,
@@ -447,7 +454,7 @@ class HospitalityAgent(Agent):
             tools.append(GuardedEndCallTool(state))
         caller_instructions = ""
         if human_handoff:
-            tools.append(build_human_handoff_tool(human_handoff, state))
+            tools.append(build_human_handoff_tool(human_handoff, state, telemetry))
             caller_instructions = (
                 "\n\nHuman handoff is available. If the caller explicitly asks to speak "
                 "with a person, use the human_handoff tool. This runtime instruction "
