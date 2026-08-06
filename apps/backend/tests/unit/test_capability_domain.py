@@ -13,7 +13,7 @@ from backend_core.modules.capabilities.domain import (
     validate_agent_schema,
     validate_business_input,
 )
-from contracts import TenantCapabilityProfile
+from contracts import ManagedWebhookExecution, TenantCapabilityProfile
 
 
 def schema(*, phone: bool = False) -> dict[str, object]:
@@ -115,6 +115,42 @@ def test_registry_is_code_owned_and_has_one_capability() -> None:
     assert set(REGISTRY) == {("reservation.submit_request", 1)}
     with pytest.raises(CapabilityValidationError):
         definition("reservation.create", 1)
+
+
+def test_managed_webhook_plan_contains_payload_not_provider_details() -> None:
+    capability = profile(
+        '{"check_in": business.stay.check_in, "guest_name": business.guest.name}'
+    ).model_copy(
+        update={
+            "execution": ManagedWebhookExecution(
+                plan_type="managed_webhook.post_json.v1",
+                connection_id=uuid4(),
+                mapping_language="jsonata",
+                mapping_contract_version=1,
+                mapping_engine="jsonata-python",
+                mapping_engine_version="0.7.0",
+                request_mapping='{"check_in": business.stay.check_in, "guest_name": business.guest.name}',
+                timeout_seconds=10,
+            )
+        }
+    )
+    plan = compile_plan(
+        capability,
+        {
+            "guest": {"name": "Alice", "phone": None, "email": None},
+            "stay": {"check_in": "2026-08-12", "check_out": "2026-08-15"},
+            "allocation": {"room_type": None, "room_count": None},
+            "notes": None,
+            "custom": {},
+        },
+        operation_id=UUID("00000000-0000-0000-0000-000000000001"),
+        call_id=uuid4(),
+        tool_call_id="tool-call",
+        credential_ref="penzion-grand-reservation-submit",
+    )
+    assert plan.plan_type == "managed_webhook.post_json.v1"
+    assert plan.payload == {"check_in": "2026-08-12", "guest_name": "Alice"}
+    assert not hasattr(plan, "url")
 
 
 def test_two_tenant_profiles_compile_with_the_same_code() -> None:

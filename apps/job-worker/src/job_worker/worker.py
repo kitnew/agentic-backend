@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -8,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, cast
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 import jwt
@@ -16,6 +17,10 @@ from contracts import (
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsAppendValuesResult,
     IntegrationJob,
+    ManagedWebhookFailureResponse,
+    ManagedWebhookPostJsonPlan,
+    ManagedWebhookPostJsonResult,
+    ManagedWebhookSuccessResponse,
     WorkerError,
     WorkerResultReport,
 )
@@ -48,6 +53,8 @@ class Settings:
     backend_audience: str
     service_secret: str
     credential_file_map_json: str
+    managed_webhook_map_json: str = "{}"
+    allow_insecure_webhooks: bool = False
     credential_secrets_dir: str = "/run/secrets"
     provider_timeout_seconds: float = 10.0
     max_retries: int = 3
@@ -72,7 +79,14 @@ class Settings:
             backend_url=os.environ["BACKEND_CORE_URL"].rstrip("/"),
             backend_audience=os.getenv("INTERNAL_API_AUDIENCE", "backend-core"),
             service_secret=os.environ["JOB_WORKER_SERVICE_SECRET"],
-            credential_file_map_json=os.getenv("GOOGLE_SHEETS_CREDENTIAL_FILE_MAP", "{}"),
+            credential_file_map_json=os.getenv(
+                "GOOGLE_SHEETS_CREDENTIAL_FILE_MAP", "{}"
+            ),
+            managed_webhook_map_json=os.getenv("MANAGED_WEBHOOK_CONNECTION_MAP", "{}"),
+            allow_insecure_webhooks=os.getenv(
+                "ALLOW_INSECURE_MANAGED_WEBHOOKS", "false"
+            ).lower()
+            == "true",
             credential_secrets_dir=os.getenv(
                 "GOOGLE_SHEETS_CREDENTIAL_SECRETS_DIR", "/run/secrets"
             ),
@@ -110,7 +124,9 @@ class MountedSecretFileCredentialResolver:
             try:
                 resolved.relative_to(root)
             except ValueError as error:
-                raise ValueError("credential file must be under the secrets directory") from error
+                raise ValueError(
+                    "credential file must be under the secrets directory"
+                ) from error
             self._credential_files[key] = resolved
 
     async def access_token(self, reference: str) -> str:
@@ -142,8 +158,241 @@ class MountedSecretFileCredentialResolver:
         return credentials.token
 
 
+class ManagedWebhookConnectionResolver:
+    def __init__(self, encoded_map: str, secrets_dir: str = "/run/secrets") -> None:
+        try:
+            value = json.loads(encoded_map)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                "MANAGED_WEBHOOK_CONNECTION_MAP must be valid JSON"
+            ) from error
+        if not isinstance(value, dict):
+            raise TypeError("MANAGED_WEBHOOK_CONNECTION_MAP must be an object")
+        root = Path(secrets_dir).resolve()
+        self._connections: dict[str, dict[str, object]] = {}
+        for reference, raw in value.items():
+            if not isinstance(reference, str) or not re.fullmatch(
+                r"[a-z][a-z0-9_.-]{0,127}", reference
+            ):
+                raise ValueError("managed webhook map contains an invalid reference")
+            if not isinstance(raw, dict):
+                raise TypeError("managed webhook connection values must be objects")
+            url_file = self._safe_path(raw.get("url_file"), root)
+            api_key_file = self._safe_path(raw.get("api_key_file"), root)
+            header = raw.get("api_key_header", "x-api-key")
+            if not isinstance(header, str) or not re.fullmatch(
+                r"[A-Za-z0-9-]{1,64}", header
+            ):
+                raise ValueError("managed webhook API key header is invalid")
+            allowed_hosts = raw.get("allowed_hosts", [])
+            if not isinstance(allowed_hosts, list) or not all(
+                isinstance(host, str) and host for host in allowed_hosts
+            ):
+                raise ValueError("managed webhook allowed_hosts must be a string list")
+            self._connections[reference] = {
+                "url_file": url_file,
+                "api_key_file": api_key_file,
+                "api_key_header": header,
+                "allowed_hosts": set(allowed_hosts),
+            }
+
+    @staticmethod
+    def _safe_path(value: object, root: Path) -> Path:
+        if not isinstance(value, str) or not value:
+            raise TypeError("managed webhook secret file is required")
+        path = Path(value)
+        if not path.is_absolute():
+            raise ValueError("managed webhook secret file must be absolute")
+        resolved = path.resolve(strict=False)
+        try:
+            resolved.relative_to(root)
+        except ValueError as error:
+            raise ValueError(
+                "managed webhook secret file must be under secrets directory"
+            ) from error
+        return resolved
+
+    def resolve(self, reference: str) -> tuple[str, str, str, set[str]]:
+        connection = self._connections.get(reference)
+        if connection is None:
+            raise ExecutionError(
+                "connection_resolution_failed",
+                "Managed webhook connection could not be resolved",
+                transient=False,
+            )
+        try:
+            url = Path(str(connection["url_file"])).read_text(encoding="utf-8").strip()
+            api_key = (
+                Path(str(connection["api_key_file"]))
+                .read_text(encoding="utf-8")
+                .strip()
+            )
+        except OSError as error:
+            raise ExecutionError(
+                "credential_resolution_failed",
+                "Managed webhook credentials could not be loaded",
+                transient=False,
+            ) from error
+        if not url or not api_key:
+            raise ExecutionError(
+                "credential_resolution_failed",
+                "Managed webhook credentials are empty",
+                transient=False,
+            )
+        return (
+            url,
+            api_key,
+            str(connection["api_key_header"]),
+            connection["allowed_hosts"],  # type: ignore[return-value]
+        )
+
+
 class CredentialResolver(Protocol):
     async def access_token(self, reference: str) -> str: ...
+
+
+class ManagedWebhookPostJsonHandler:
+    def __init__(
+        self,
+        connections: ManagedWebhookConnectionResolver,
+        client: httpx.AsyncClient,
+        *,
+        allow_insecure: bool = False,
+    ) -> None:
+        self._connections = connections
+        self._client = client
+        self._allow_insecure = allow_insecure
+
+    async def execute(
+        self, plan: ManagedWebhookPostJsonPlan
+    ) -> ManagedWebhookPostJsonResult:
+        url, api_key, header, allowed_hosts = self._connections.resolve(
+            plan.connection_ref
+        )
+        parsed = urlparse(url)
+        if parsed.scheme != "https" and not self._allow_insecure:
+            raise ExecutionError(
+                "provider_permanent_error",
+                "Managed webhook requires HTTPS",
+                transient=False,
+            )
+        if not parsed.hostname or parsed.username or parsed.password:
+            raise ExecutionError(
+                "provider_permanent_error",
+                "Managed webhook URL is invalid",
+                transient=False,
+            )
+        if not self._allow_insecure and parsed.hostname not in allowed_hosts:
+            try:
+                address = ipaddress.ip_address(parsed.hostname)
+            except ValueError:
+                address = None
+            if address is not None and (
+                address.is_private or address.is_loopback or address.is_link_local
+            ):
+                raise ExecutionError(
+                    "provider_permanent_error",
+                    "Managed webhook destination is not allowed",
+                    transient=False,
+                )
+        envelope = {
+            "contract_version": 1,
+            "operation_id": str(plan.operation_id),
+            "capability": plan.capability.model_dump(mode="json"),
+            "payload": plan.payload,
+        }
+        encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded.encode()) > 64_000:
+            raise ExecutionError(
+                "request_too_large",
+                "Managed webhook request is too large",
+                transient=False,
+            )
+        try:
+            response = await self._client.post(
+                url,
+                headers={header: api_key, "Content-Type": "application/json"},
+                content=encoded.encode(),
+                timeout=plan.timeout_seconds,
+                follow_redirects=False,
+            )
+        except httpx.TimeoutException as error:
+            raise ExecutionError(
+                "provider_timeout", "Managed webhook timed out", transient=True
+            ) from error
+        except httpx.TransportError as error:
+            raise ExecutionError(
+                "provider_transient_error",
+                "Managed webhook transport failed",
+                transient=True,
+            ) from error
+        if len(response.content) > 64_000:
+            raise ExecutionError(
+                "response_too_large",
+                "Managed webhook response is too large",
+                transient=False,
+            )
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type.lower():
+            raise ExecutionError(
+                "response_contract_invalid",
+                "Managed webhook response must be JSON",
+                transient=False,
+            )
+        if (
+            response.status_code == 429
+            or response.status_code in {408}
+            or response.status_code >= 500
+        ):
+            raise ExecutionError(
+                "provider_transient_error",
+                "Managed webhook returned a retryable error",
+                transient=True,
+            )
+        if response.status_code in {400, 401, 403, 404, 410}:
+            raise ExecutionError(
+                "provider_permanent_error",
+                "Managed webhook rejected the request",
+                transient=False,
+            )
+        if response.status_code < 200 or response.status_code >= 300:
+            raise ExecutionError(
+                "provider_permanent_error",
+                "Managed webhook returned an unsupported status",
+                transient=False,
+            )
+        try:
+            raw = response.json()
+            if raw.get("status") == "failed":
+                failure = ManagedWebhookFailureResponse.model_validate(raw)
+                raise ExecutionError(
+                    failure.error.code,
+                    failure.error.message,
+                    transient=failure.error.retryable,
+                )
+            success = ManagedWebhookSuccessResponse.model_validate(raw)
+        except ExecutionError:
+            raise
+        except Exception as error:
+            raise ExecutionError(
+                "response_contract_invalid",
+                "Managed webhook response contract is invalid",
+                transient=False,
+            ) from error
+        if success.operation_id != plan.operation_id:
+            raise ExecutionError(
+                "operation_id_mismatch",
+                "Managed webhook operation ID mismatch",
+                transient=False,
+            )
+        return ManagedWebhookPostJsonResult(
+            result_type="managed_webhook.post_json.v1",
+            status="succeeded",
+            operation_id=success.operation_id,
+            reference=success.result.reference,
+            deduplicated=success.result.deduplicated,
+            data=success.result.data,
+        )
 
 
 class GoogleSheetsAppendValuesHandler:
@@ -327,11 +576,13 @@ class CapabilityWorker:
         redis: Redis,
         backend: BackendClient,
         sheets: GoogleSheetsAppendValuesHandler,
+        webhooks: ManagedWebhookPostJsonHandler | None = None,
     ) -> None:
         self._settings = settings
         self._redis = redis
         self._backend = backend
         self._sheets = sheets
+        self._webhooks = webhooks
 
     async def run(self) -> None:
         try:
@@ -400,7 +651,10 @@ class CapabilityWorker:
             },
         )
         try:
-            if job.execution_plan.plan_type != "google_sheets.append_values.v1":
+            if job.execution_plan.plan_type not in {
+                "google_sheets.append_values.v1",
+                "managed_webhook.post_json.v1",
+            }:
                 raise ExecutionError(
                     "unknown_plan_type",
                     "Execution plan type is unsupported",
@@ -417,7 +671,17 @@ class CapabilityWorker:
                     "attempt": job.attempt,
                 },
             )
-            result = await self._sheets.execute(job.execution_plan)
+            result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult
+            if job.execution_plan.plan_type == "google_sheets.append_values.v1":
+                result = await self._sheets.execute(job.execution_plan)
+            elif self._webhooks is not None:
+                result = await self._webhooks.execute(job.execution_plan)
+            else:
+                raise ExecutionError(
+                    "unknown_plan_type",
+                    "Webhook handler is unavailable",
+                    transient=False,
+                )
             logger.info(
                 "capability_provider_call_completed",
                 extra={
@@ -471,7 +735,11 @@ class CapabilityWorker:
             attempt=job.attempt,
             started_at=started,
             completed_at=datetime.now(UTC),
-            provider_reference=result.updated_range,
+            provider_reference=(
+                result.updated_range
+                if isinstance(result, GoogleSheetsAppendValuesResult)
+                else result.reference
+            ),
             trace_context=job.trace_context,
         )
         try:
@@ -543,11 +811,19 @@ async def run_worker(settings: Settings) -> None:
         credentials = MountedSecretFileCredentialResolver(
             settings.credential_file_map_json, settings.credential_secrets_dir
         )
+        webhooks = ManagedWebhookPostJsonHandler(
+            ManagedWebhookConnectionResolver(
+                settings.managed_webhook_map_json, settings.credential_secrets_dir
+            ),
+            provider_client,
+            allow_insecure=settings.allow_insecure_webhooks,
+        )
         worker = CapabilityWorker(
             settings,
             redis,
             BackendClient(settings, backend_client),
             GoogleSheetsAppendValuesHandler(credentials, provider_client),
+            webhooks,
         )
         try:
             await worker.run()

@@ -8,10 +8,13 @@ from zoneinfo import ZoneInfo
 
 import jsonata  # type: ignore[import-untyped]
 from contracts import (
-    GoogleSheetsAppendExecution,
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsAppendValuesResult,
     GoogleSheetsIdempotency,
+    ManagedWebhookCapability,
+    ManagedWebhookExecution,
+    ManagedWebhookPostJsonPlan,
+    ManagedWebhookPostJsonResult,
     ReservationRequestSubmitted,
     RuntimeCapabilityDefinition,
     TenantCapabilityProfile,
@@ -408,24 +411,43 @@ def compile_plan(
     credential_ref: str,
     caller_phone: str = "",
     mapping_engine: MappingEngine | None = None,
-) -> GoogleSheetsAppendValuesPlan:
-    execution: GoogleSheetsAppendExecution = profile.execution
+) -> GoogleSheetsAppendValuesPlan | ManagedWebhookPostJsonPlan:
+    execution = profile.execution
     source = {
         "business": canonical_input,
         "metadata": {
             "operation_id": str(operation_id),
+            "invocation_id": str(operation_id),
             "source": "voice_agent",
             "caller_phone": caller_phone,
             "call_id": str(call_id),
             "tool_call_id": tool_call_id,
         },
     }
-    rows = mapped_rows(
-        (mapping_engine or JsonataMappingEngine()).evaluate(
-            execution.request_mapping,
-            source,
-        )
+    mapped = (mapping_engine or JsonataMappingEngine()).evaluate(
+        execution.request_mapping,
+        source,
     )
+    if isinstance(execution, ManagedWebhookExecution):
+        reserved = {"contract_version", "operation_id", "capability"}
+        if reserved.intersection(mapped):
+            raise CapabilityValidationError(
+                "mapping_reserved_field",
+                "Webhook mapping cannot define authoritative envelope fields",
+                "execution.request_mapping",
+            )
+        return ManagedWebhookPostJsonPlan(
+            plan_type=execution.plan_type,
+            connection_ref=credential_ref,
+            operation_id=operation_id,
+            capability=ManagedWebhookCapability(
+                semantic_key=SEMANTIC_KEY,
+                semantic_version=profile.semantic_version,
+            ),
+            payload=mapped,
+            timeout_seconds=execution.timeout_seconds,
+        )
+    rows = mapped_rows(mapped)
     index = execution.idempotency.operation_id_column_index
     if any(len(row) <= index or row[index] != str(operation_id) for row in rows):
         raise CapabilityValidationError(
@@ -454,10 +476,14 @@ def compile_plan(
 
 
 def semantic_result(
-    result: GoogleSheetsAppendValuesResult,
+    result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult,
 ) -> ReservationRequestSubmitted:
     return ReservationRequestSubmitted(
-        request_reference=result.updated_range,
+        request_reference=(
+            result.updated_range
+            if isinstance(result, GoogleSheetsAppendValuesResult)
+            else result.reference
+        ),
         deduplicated=result.deduplicated,
     )
 

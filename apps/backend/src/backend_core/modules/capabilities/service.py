@@ -12,6 +12,8 @@ from contracts import (
     CapabilityInvocationStatus,
     GoogleSheetsAppendValuesResult,
     IntegrationJob,
+    ManagedWebhookExecution,
+    ManagedWebhookPostJsonResult,
     ReservationRequestSubmitted,
     TenantCapabilityProfile,
     TenantConfigV2,
@@ -316,9 +318,14 @@ class CapabilityInvocationService:
             raise CapabilityValidationError(
                 "connection_not_found", "Integration connection was not found"
             )
+        expected_provider = (
+            IntegrationProvider.MANAGED_WEBHOOK
+            if isinstance(profile.execution, ManagedWebhookExecution)
+            else IntegrationProvider.GOOGLE_SHEETS
+        )
         if (
             connection.status is not IntegrationConnectionStatus.ACTIVE
-            or connection.provider is not IntegrationProvider.GOOGLE_SHEETS
+            or connection.provider is not expected_provider
         ):
             raise CapabilityValidationError(
                 "connection_disabled", "Integration connection is unavailable"
@@ -411,7 +418,12 @@ class CapabilityInvocationService:
             return invocation
         invocation.completed_at = report.completed_at
         if report.status == "succeeded":
-            result = GoogleSheetsAppendValuesResult.model_validate(report.result)
+            result = (
+                ManagedWebhookPostJsonResult.model_validate(report.result)
+                if report.result
+                and report.result.result_type == "managed_webhook.post_json.v1"
+                else GoogleSheetsAppendValuesResult.model_validate(report.result)
+            )
             invocation.status = CapabilityInvocationStatus.SUCCEEDED
             invocation.technical_result = result.model_dump(mode="json")
             invocation.semantic_result = semantic_result(result).model_dump(mode="json")

@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from contracts import (
+    ManagedWebhookExecution,
     TenantCapabilityProfile,
     TenantConfig,
     TenantConfigV1,
@@ -536,7 +537,12 @@ class ConfigUseCases:
                         "Connection must be active",
                         "execution.connection_id",
                     )
-                if connection.provider is not IntegrationProvider.GOOGLE_SHEETS:
+                expected_provider = (
+                    IntegrationProvider.MANAGED_WEBHOOK
+                    if isinstance(raw_profile.execution, ManagedWebhookExecution)
+                    else IntegrationProvider.GOOGLE_SHEETS
+                )
+                if connection.provider is not expected_provider:
                     raise CapabilityValidationError(
                         "connection_provider_mismatch",
                         "Connection provider does not match plan type",

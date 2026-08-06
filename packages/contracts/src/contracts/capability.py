@@ -52,8 +52,22 @@ class GoogleSheetsAppendValuesPlan(_Contract):
     idempotency: GoogleSheetsIdempotency
 
 
+class ManagedWebhookCapability(_Contract):
+    semantic_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    semantic_version: int = Field(gt=0)
+
+
+class ManagedWebhookPostJsonPlan(_Contract):
+    plan_type: Literal["managed_webhook.post_json.v1"]
+    connection_ref: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    operation_id: UUID
+    capability: ManagedWebhookCapability
+    payload: dict[str, object]
+    timeout_seconds: float = Field(gt=0, le=60)
+
+
 ExecutionPlan = Annotated[
-    GoogleSheetsAppendValuesPlan,
+    GoogleSheetsAppendValuesPlan | ManagedWebhookPostJsonPlan,
     Field(discriminator="plan_type"),
 ]
 
@@ -90,8 +104,17 @@ class GoogleSheetsAppendValuesResult(_Contract):
     deduplicated: bool
 
 
+class ManagedWebhookPostJsonResult(_Contract):
+    result_type: Literal["managed_webhook.post_json.v1"]
+    status: Literal["succeeded"]
+    operation_id: UUID
+    reference: str | None = Field(default=None, max_length=1024)
+    deduplicated: bool
+    data: dict[str, object] = Field(default_factory=dict)
+
+
 TechnicalResult = Annotated[
-    GoogleSheetsAppendValuesResult,
+    GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult,
     Field(discriminator="result_type"),
 ]
 
@@ -100,6 +123,32 @@ class WorkerError(_Contract):
     code: str = Field(min_length=1, max_length=128)
     message: str = Field(min_length=1, max_length=1000)
     transient: bool
+
+
+class ManagedWebhookResponseError(_Contract):
+    code: str = Field(min_length=1, max_length=128)
+    retryable: bool
+    message: str = Field(min_length=1, max_length=1000)
+
+
+class ManagedWebhookResponseResult(_Contract):
+    reference: str | None = Field(default=None, max_length=1024)
+    deduplicated: bool
+    data: dict[str, object] = Field(default_factory=dict)
+
+
+class ManagedWebhookSuccessResponse(_Contract):
+    contract_version: Literal[1]
+    operation_id: UUID
+    status: Literal["succeeded"]
+    result: ManagedWebhookResponseResult
+
+
+class ManagedWebhookFailureResponse(_Contract):
+    contract_version: Literal[1]
+    operation_id: UUID
+    status: Literal["failed"]
+    error: ManagedWebhookResponseError
 
 
 class WorkerResultReport(_Contract):

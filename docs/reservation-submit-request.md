@@ -30,6 +30,37 @@ In Compose, bind the host/deployment secret directory to `/run/secrets:ro`. Addi
 
 Share the target test spreadsheet with the service-account `client_email`.
 
+## Penzión Grand managed webhook configuration
+
+Create a Backend integration connection with `provider: "managed_webhook"`; PostgreSQL stores only its `credential_ref`:
+
+```json
+{"key":"penzion-grand-reservation-submit","provider":"managed_webhook","credential_ref":"penzion-grand-reservation-submit"}
+```
+
+The published capability execution uses the generic managed webhook plan:
+
+```json
+{
+  "plan_type": "managed_webhook.post_json.v1",
+  "connection_id": "<managed-webhook-connection-uuid>",
+  "mapping_language": "jsonata",
+  "mapping_contract_version": 1,
+  "mapping_engine": "jsonata-python",
+  "mapping_engine_version": "0.7.0",
+  "timeout_seconds": 10,
+  "request_mapping": "{\"check_in\": business.stay.check_in, \"check_out\": business.stay.check_out, \"guest_name\": business.guest.name, \"caller_phone\": metadata.caller_phone, \"reservation_phone\": business.guest.phone, \"email\": business.guest.email ? business.guest.email : \"\", \"room_type\": business.allocation.room_type, \"room_count\": business.allocation.room_count}"
+}
+```
+
+Job Worker deployment configuration contains only the managed connection binding:
+
+```text
+MANAGED_WEBHOOK_CONNECTION_MAP={"penzion-grand-reservation-submit":{"url_file":"/run/secrets/penzion-grand-reservation-webhook-url","api_key_file":"/run/secrets/penzion-grand-reservation-webhook-api-key","api_key_header":"x-make-apikey","allowed_hosts":["hook.eu1.make.com"]}}
+```
+
+The Make scenario receives the generic envelope, uses `operation_id` for its hidden `reservations_new` column K, and returns the standard success/failure response envelope. Backend and Worker do not know the Sheet layout.
+
 ## Tenant A configuration
 
 Use the published prompt-bundle revision and connection ID returned by the APIs:

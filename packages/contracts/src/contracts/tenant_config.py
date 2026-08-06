@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -69,6 +69,23 @@ class GoogleSheetsAppendExecution(_TenantConfigModel):
     request_mapping: str = Field(min_length=1, max_length=20_000)
 
 
+class ManagedWebhookExecution(_TenantConfigModel):
+    plan_type: Literal["managed_webhook.post_json.v1"]
+    connection_id: UUID
+    mapping_language: Literal["jsonata"]
+    mapping_contract_version: Literal[1]
+    mapping_engine: Literal["jsonata-python"]
+    mapping_engine_version: Literal["0.7.0"]
+    request_mapping: str = Field(min_length=1, max_length=20_000)
+    timeout_seconds: int = Field(gt=0, le=60)
+
+
+CapabilityExecution = Annotated[
+    GoogleSheetsAppendExecution | ManagedWebhookExecution,
+    Field(discriminator="plan_type"),
+]
+
+
 class TenantCapabilityProfile(_TenantConfigModel):
     enabled: StrictBool
     semantic_version: int = Field(gt=0)
@@ -78,7 +95,7 @@ class TenantCapabilityProfile(_TenantConfigModel):
     business_policy: CapabilityBusinessPolicy = Field(
         default_factory=CapabilityBusinessPolicy
     )
-    execution: GoogleSheetsAppendExecution
+    execution: CapabilityExecution
     validation_fixtures: list[dict[str, Any]] = Field(min_length=2, max_length=3)
 
 

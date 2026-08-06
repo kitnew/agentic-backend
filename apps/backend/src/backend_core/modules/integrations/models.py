@@ -10,6 +10,7 @@ from backend_core.platform.database import Base
 
 class IntegrationProvider(StrEnum):
     GOOGLE_SHEETS = "google_sheets"
+    MANAGED_WEBHOOK = "managed_webhook"
 
 
 class IntegrationConnectionStatus(StrEnum):
