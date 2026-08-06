@@ -216,7 +216,8 @@ compose run --rm --no-deps api \
 if [ "$sip_enabled" = "false" ]; then
   compose --profile sip stop livekit-sip
 fi
-compose run --rm --no-deps --entrypoint sh livekit-egress -c 'chmod 0777 /recordings'
+docker run --rm -u 0:0 -v "${PROJECT_NAME}_recordings-data:/recordings" alpine:3.22 \
+  chmod 0777 /recordings
 compose up -d --remove-orphans
 for service in api voice-agent debug-chat caddy
 do
