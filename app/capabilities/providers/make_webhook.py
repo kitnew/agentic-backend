@@ -11,6 +11,23 @@ from app.capabilities.schemas import CapabilityRequest, CapabilityResult, Capabi
 from app.tenants.schemas import TenantContext
 
 
+_PAYLOAD_SOURCES = {
+    "guest_name",
+    "booked_name",
+    "check_in",
+    "check_out",
+    "original_check_in",
+    "original_check_out",
+    "change",
+    "reason",
+    "caller_number",
+    "reservation_phone",
+    "room_type_code",
+    "room_count",
+    "room_count_text",
+}
+
+
 class MakeWebhookProvider:
     provider_name = "make_webhook"
     default_timeout_seconds = 15
@@ -25,7 +42,7 @@ class MakeWebhookProvider:
             return self._failure(capability_request.name, "invalid_webhook_config")
         url = config.get("webhook_url")
         timeout = config.get("timeout_seconds", self.default_timeout_seconds)
-        payload = _payload(tenant_context, capability_request)
+        payload = _payload(tenant_context, capability_request, config)
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         api_key_env = config.get("webhook_api_key_env")
         if api_key_env and (api_key := os.getenv(api_key_env)):
@@ -110,6 +127,17 @@ def valid_webhook_config(config: dict[str, Any]) -> bool:
     url = config.get("webhook_url")
     parsed = urlparse(url) if isinstance(url, str) else None
     timeout = config.get("timeout_seconds", MakeWebhookProvider.default_timeout_seconds)
+    fields = config.get("payload_fields")
+    valid_fields = fields is None or (
+        isinstance(fields, dict)
+        and bool(fields)
+        and all(
+            isinstance(output, str)
+            and isinstance(source, str)
+            and source in _PAYLOAD_SOURCES
+            for output, source in fields.items()
+        )
+    )
     return bool(
         parsed
         and parsed.scheme in {"http", "https"}
@@ -117,10 +145,15 @@ def valid_webhook_config(config: dict[str, Any]) -> bool:
         and isinstance(timeout, (int, float))
         and not isinstance(timeout, bool)
         and timeout > 0
+        and valid_fields
     )
 
 
-def _payload(tenant_context: TenantContext, request: CapabilityRequest) -> Any:
+def _payload(
+    tenant_context: TenantContext,
+    request: CapabilityRequest,
+    config: dict[str, Any],
+) -> Any:
     if tenant_context.tenant_id != "penzion_grand":
         return {
             "tenant_id": tenant_context.tenant_id,
@@ -128,15 +161,39 @@ def _payload(tenant_context: TenantContext, request: CapabilityRequest) -> Any:
             "input": request.input,
             "metadata": request.metadata or {},
         }
-    return [_penzion_grand_payload(tenant_context, request)]
+    return [_penzion_grand_payload(tenant_context, request, config)]
 
 
 def _penzion_grand_payload(
-    tenant_context: TenantContext, request: CapabilityRequest
+    tenant_context: TenantContext,
+    request: CapabilityRequest,
+    config: dict[str, Any],
 ) -> dict[str, Any]:
     values = request.input
     caller_phone = values.get("caller_number") or values.get("phone")
     guest_phone = values.get("reservation_phone") or values.get("UserID")
+    sources = {
+        "guest_name": values.get("reservation_name") or values.get("guest_name"),
+        "booked_name": values.get("reservation_name") or values.get("booked_name"),
+        "check_in": _date_text(values.get("check_in") or values.get("start_date")),
+        "check_out": _date_text(values.get("check_out") or values.get("end_date")),
+        "original_check_in": _date_text(
+            values.get("original_check_in") or values.get("original_start_date")
+        ),
+        "original_check_out": _date_text(
+            values.get("original_check_out") or values.get("original_end_date")
+        ),
+        "change": values.get("change") or values.get("modification"),
+        "reason": values.get("reason") or values.get("notes") or "",
+        "caller_number": caller_phone,
+        "reservation_phone": guest_phone,
+        "room_type_code": _room_type_code(tenant_context, values.get("room_type")),
+        "room_count": values.get("room_count"),
+        "room_count_text": str(values.get("room_count")),
+    }
+    fields = config.get("payload_fields")
+    if isinstance(fields, dict):
+        return {output: sources[source] for output, source in fields.items()}
     if request.name == "reservation.create_request":
         return {
             "guest_name": values.get("reservation_name") or values.get("guest_name"),

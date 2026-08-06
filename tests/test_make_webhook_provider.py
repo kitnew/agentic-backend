@@ -174,6 +174,118 @@ def test_penzion_grand_existing_reservation_payload(monkeypatch):
     ]
 
 
+def test_configured_payload_fields_are_the_only_webhook_fields(monkeypatch):
+    calls = []
+
+    def fake_urlopen(http_request, timeout):
+        calls.append(json.loads(http_request.data))
+        return Response()
+
+    monkeypatch.setattr(
+        "app.capabilities.providers.make_webhook.urlopen", fake_urlopen
+    )
+    tenant = tenant_with_webhook("reservation.create_request")
+    capability = tenant.capabilities["reservation.create_request"].model_copy(
+        update={
+            "config": {
+                "webhook_url": "https://make.example.test/hook",
+                "payload_fields": {"guest": "guest_name", "phone": "caller_number"},
+            }
+        }
+    )
+    tenant = tenant.model_copy(
+        update={
+            "capabilities": {
+                **tenant.capabilities,
+                "reservation.create_request": capability,
+            }
+        }
+    )
+
+    result = execute(tenant, Sheets(), request("reservation.create_request"))
+
+    assert result.status == "success"
+    assert calls == [[{"guest": "Ján Novák", "phone": "+421900111222"}]]
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        (
+            "reservation.check_availability",
+            {
+                "start_date": "29.08.2026",
+                "end_date": "31.08.2026",
+                "room_count": "1",
+                "room_type": "2",
+                "caller_id": None,
+            },
+        ),
+        (
+            "reservation.create_request",
+            {
+                "guest_name": "Ján Novák",
+                "phone": "+421900111222",
+                "start_date": "29.08.2026",
+                "end_date": "31.08.2026",
+                "room_type": "2",
+                "room_count": 2,
+                "userID": "+421900333444",
+            },
+        ),
+        (
+            "reservation.change_request",
+            {
+                "booked_name": "Ján Novák",
+                "original_start_date": "29.08.2026",
+                "original_end_date": "31.08.2026",
+                "modification": "Prosím o detskú postieľku.",
+                "phone": "+421900111222",
+                "UserID": "+421900333444",
+            },
+        ),
+        (
+            "reservation.cancel_request",
+            {
+                "booked_name": "Ján Novák",
+                "original_start_date": "29.08.2026",
+                "original_end_date": "31.08.2026",
+                "notes": "Zmena plánov",
+                "UserID": "+421900333444",
+            },
+        ),
+    ],
+)
+def test_penzion_grand_configured_webhook_payloads(monkeypatch, name, expected):
+    calls = []
+
+    def fake_urlopen(http_request, timeout):
+        calls.append(json.loads(http_request.data))
+        return Response({"output": {"status": "available"}})
+
+    monkeypatch.setattr(
+        "app.capabilities.providers.make_webhook.urlopen", fake_urlopen
+    )
+    request_value = (
+        CapabilityRequest(
+            name=name,
+            input={
+                "check_in": "2026-08-29",
+                "check_out": "2026-08-31",
+                "room_type": "two_bed",
+                "room_count": 1,
+            },
+        )
+        if name == "reservation.check_availability"
+        else request(name)
+    )
+
+    result = execute(TenantConfigLoader().load("penzion_grand"), Sheets(), request_value)
+
+    assert result.status == "success"
+    assert calls == [[expected]]
+
+
 def test_webhook_failure_does_not_fall_back_to_google_sheets(monkeypatch):
     monkeypatch.setattr(
         "app.capabilities.providers.make_webhook.urlopen",
