@@ -131,74 +131,56 @@ features:
 capabilities:
   reservation.check_availability:
     enabled: true
-    provider: make_webhook
+    provider: google_sheets
     config:
-      webhook_url: "https://hook.eu1.make.com/onjaogyrnr6hu0es70fjvuhtgcwwtl0u"
-      payload_fields:
-        start_date: check_in
-        end_date: check_out
-        room_count: room_count_text
-        room_type: room_type_code
-        caller_id: caller_number
-      response_format: availability_text
-      row_format: accommodation_availability
-      announcement: Skontrolujem dostupnosť izieb.
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "availability"
+      table_range: "A:AE"
+      header_row: 1
+      data_start_row: 2
+      date_column: "A"
+      room_type_columns:
+        two_bed: "E:W"
+        three_bed: "X:Y"
+        four_bed: "Z:AE"
+      one_night_room_type_fallbacks:
+        two_bed:
+          - three_bed
+          - four_bed
+      announcement: Hneď vám overím dostupnosť.
+      free_cell_policy: blank
+      stay_interval: check_in_inclusive_check_out_exclusive
+      reject_past_check_in: true
+      past_check_in_responses:
+        sk-SK: Dostupnosť viem overiť len pre dnešný alebo budúci termín.
+        en-GB: I can only check availability for today or a future date.
+      date_formats:
+        - "%Y-%m-%d"
+        - "%d.%m.%Y"
   reservation.create_request:
     enabled: true
-    provider: make_webhook
+    provider: google_sheets
     config:
-      webhook_url: "https://hook.eu1.make.com/p9ck5dsptj5ki5exbvclix6drw4gfzer"
-      payload_fields:
-        guest_name: guest_name
-        phone: caller_number
-        start_date: check_in
-        end_date: check_out
-        room_type: room_type_code
-        room_count: room_count
-        userID: reservation_phone
-      response_format: acknowledgement
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "reservations_new"
       row_format: accommodation_request
       announcement: Výborne, teraz odošlem požiadavku na rezerváciu.
   reservation.change_request:
     enabled: true
-    provider: make_webhook
+    provider: google_sheets
     config:
-      webhook_url: "https://hook.eu1.make.com/64954kpu7cr3ypi4df0g8rw4jwuxam1s"
-      payload_fields:
-        booked_name: booked_name
-        original_start_date: original_check_in
-        original_end_date: original_check_out
-        modification: change
-        phone: caller_number
-        UserID: reservation_phone
-      response_format: acknowledgement
-      timeout_seconds: 15
-      announcement: Zmeny rezervácie odošlem personálu na spracovanie.
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "reservations_change"
   reservation.cancel_request:
     enabled: true
-    provider: make_webhook
+    provider: google_sheets
     config:
-      webhook_url: "https://hook.eu1.make.com/s59s5ljuyx3hk32az3ky8e3hpmbahgmp"
-      payload_fields:
-        booked_name: booked_name
-        original_start_date: original_check_in
-        original_end_date: original_check_out
-        notes: reason
-        UserID: reservation_phone
-      response_format: acknowledgement
-      timeout_seconds: 15
-      announcement: Zrušenie rezervácie odošlem personálu na spracovanie.
-  reservation.check_existing_reservation:
-    enabled: false
-    provider: make_webhook
-    config:
-      webhook_url: ""
-      timeout_seconds: 15
+      spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
+      sheet_name: "reservations_cancel"
 
 post_call_transcript:
   spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
   sheet_name: "transcripts"
-  recording_delivery_mode: base64
 
 voice:
   enabled: true

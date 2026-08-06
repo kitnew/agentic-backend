@@ -28,6 +28,12 @@ class Response:
         return self.body
 
 
+class PlainTextResponse(Response):
+    def __init__(self, body):
+        self.body = body
+        self.status = 200
+
+
 def tenant_with_webhook(capability_name: str):
     tenant = TenantConfigLoader().load("penzion_grand")
     capabilities = dict(tenant.capabilities)
@@ -206,6 +212,31 @@ def test_configured_payload_fields_are_the_only_webhook_fields(monkeypatch):
 
     assert result.status == "success"
     assert calls == [[{"guest": "Ján Novák", "phone": "+421900111222"}]]
+
+
+def test_webhook_phone_numbers_are_sent_without_spaces(monkeypatch):
+    calls = []
+
+    def fake_urlopen(http_request, timeout):
+        calls.append(json.loads(http_request.data))
+        return Response()
+
+    monkeypatch.setattr(
+        "app.capabilities.providers.make_webhook.urlopen", fake_urlopen
+    )
+    result = execute(
+        tenant_with_webhook("reservation.create_request"),
+        Sheets(),
+        request(
+            "reservation.create_request",
+            caller_number="+421 900 000 001",
+            reservation_phone="+421 900 000 002",
+        ),
+    )
+
+    assert result.status == "success"
+    assert calls[0][0]["phone"] == "+421900000001"
+    assert calls[0][0]["userID"] == "+421900000002"
 
 
 @pytest.mark.parametrize(
@@ -439,7 +470,10 @@ def test_check_availability_can_be_explicitly_switched_to_webhook(monkeypatch):
     ].model_copy(
         update={
             "provider": "make_webhook",
-            "config": {"webhook_url": "https://make.example.test/availability"},
+            "config": {
+                "webhook_url": "https://make.example.test/availability",
+                "response_format": "availability_text",
+            },
         }
     )
     tenant = tenant.model_copy(update={"capabilities": capabilities})
@@ -447,7 +481,7 @@ def test_check_availability_can_be_explicitly_switched_to_webhook(monkeypatch):
 
     def fake_urlopen(http_request, timeout):
         calls.append(json.loads(http_request.data))
-        return Response({"output": {"status": "available"}})
+        return PlainTextResponse(b"volne")
 
     monkeypatch.setattr(
         "app.capabilities.providers.make_webhook.urlopen", fake_urlopen
@@ -469,6 +503,15 @@ def test_check_availability_can_be_explicitly_switched_to_webhook(monkeypatch):
 
     assert result.status == "success"
     assert result.provider == "make_webhook"
+    assert result.output == {
+        "status": "volne",
+        "availability_state": "available",
+        "check_in": "2026-08-29",
+        "check_out": "2026-08-31",
+        "requested_room_type": "two_bed",
+        "allocated_room_type": "two_bed",
+        "requested_rooms": 1,
+    }
     assert calls == [
         [
             {
@@ -481,6 +524,35 @@ def test_check_availability_can_be_explicitly_switched_to_webhook(monkeypatch):
         ]
     ]
     assert sheets.reads == []
+
+
+def test_acknowledgement_response_accepts_empty_make_body(monkeypatch):
+    tenant = tenant_with_webhook("reservation.create_request")
+    capability = tenant.capabilities["reservation.create_request"].model_copy(
+        update={
+            "config": {
+                "webhook_url": "https://make.example.test/hook",
+                "response_format": "acknowledgement",
+            }
+        }
+    )
+    tenant = tenant.model_copy(
+        update={
+            "capabilities": {
+                **tenant.capabilities,
+                "reservation.create_request": capability,
+            }
+        }
+    )
+    monkeypatch.setattr(
+        "app.capabilities.providers.make_webhook.urlopen",
+        lambda *_args, **_kwargs: PlainTextResponse(b""),
+    )
+
+    result = execute(tenant, Sheets(), request("reservation.create_request"))
+
+    assert result.status == "success"
+    assert result.output == {"status": "submitted"}
 
 
 def test_tenant_config_validates_make_webhook_url(tmp_path):

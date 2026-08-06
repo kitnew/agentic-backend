@@ -3,6 +3,7 @@ import os
 import socket
 from datetime import date
 from typing import Any
+from unicodedata import normalize
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -75,10 +76,33 @@ class MakeWebhookProvider:
         if status >= 400:
             return self._failure(capability_request.name, f"webhook_http_{status}")
 
-        try:
-            response_payload: Any = json.loads(body.decode("utf-8")) if body else {}
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return self._failure(capability_request.name, "invalid_webhook_response")
+        response_format = config.get("response_format")
+        if response_format == "availability_text":
+            try:
+                response_text = body.decode("utf-8").strip()
+            except UnicodeDecodeError:
+                return self._failure(capability_request.name, "invalid_webhook_response")
+            if not response_text:
+                return self._failure(capability_request.name, "invalid_webhook_response")
+            response_payload = {"status": response_text}
+            if capability_request.name == "reservation.check_availability":
+                response_payload.update(
+                    {
+                        "availability_state": _availability_state(response_text),
+                        "check_in": capability_request.input.get("check_in"),
+                        "check_out": capability_request.input.get("check_out"),
+                        "requested_room_type": capability_request.input.get("room_type"),
+                        "allocated_room_type": capability_request.input.get("room_type"),
+                        "requested_rooms": capability_request.input.get("room_count"),
+                    }
+                )
+        elif response_format == "acknowledgement":
+            response_payload = {"status": "submitted"}
+        else:
+            try:
+                response_payload = json.loads(body.decode("utf-8")) if body else {}
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return self._failure(capability_request.name, "invalid_webhook_response")
 
         if not isinstance(response_payload, dict):
             response_payload = {"response": response_payload}
@@ -128,6 +152,7 @@ def valid_webhook_config(config: dict[str, Any]) -> bool:
     parsed = urlparse(url) if isinstance(url, str) else None
     timeout = config.get("timeout_seconds", MakeWebhookProvider.default_timeout_seconds)
     fields = config.get("payload_fields")
+    response_format = config.get("response_format")
     valid_fields = fields is None or (
         isinstance(fields, dict)
         and bool(fields)
@@ -146,6 +171,7 @@ def valid_webhook_config(config: dict[str, Any]) -> bool:
         and not isinstance(timeout, bool)
         and timeout > 0
         and valid_fields
+        and response_format in (None, "availability_text", "acknowledgement")
     )
 
 
@@ -170,8 +196,8 @@ def _penzion_grand_payload(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     values = request.input
-    caller_phone = values.get("caller_number") or values.get("phone")
-    guest_phone = values.get("reservation_phone") or values.get("UserID")
+    caller_phone = _phone_text(values.get("caller_number") or values.get("phone"))
+    guest_phone = _phone_text(values.get("reservation_phone") or values.get("UserID"))
     sources = {
         "guest_name": values.get("reservation_name") or values.get("guest_name"),
         "booked_name": values.get("reservation_name") or values.get("booked_name"),
@@ -255,6 +281,21 @@ def _date_text(value: Any) -> Any:
         except ValueError:
             return value
     return value
+
+
+def _phone_text(value: Any) -> Any:
+    return "".join(value.split()) if isinstance(value, str) else value
+
+
+def _availability_state(value: str) -> str:
+    text = normalize("NFKD", value).encode("ascii", "ignore").decode().casefold()
+    if any(word in text for word in ("nedostup", "obsad", "unavailable", "not available")):
+        return "unavailable"
+    if any(word in text for word in ("voln", "dostup", "available", "free")):
+        return "available"
+    return "unknown"
+
+
 
 
 def _room_type_code(tenant_context: TenantContext, value: Any) -> Any:

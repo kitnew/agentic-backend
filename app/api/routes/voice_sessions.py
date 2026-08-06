@@ -763,6 +763,10 @@ def _matching_availability_error(
     }
     if actual != expected:
         return "availability_check_required"
+    if output.get("availability_state") in {"available", "unavailable", "unknown"}:
+        if output["availability_state"] != "available":
+            return "availability_check_invalid"
+        return None
     if (
         output.get("status") != "available"
         or output.get("requested_room_type") != expected["room_type"]
