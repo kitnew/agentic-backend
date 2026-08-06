@@ -206,7 +206,7 @@ voice:
   inbound_dids:
     - "+421552301299"
   outbound_dids: 
-    - "+421011578111"
+    - "+421911578111"
   outbound_trunk_id: "ST_V958JJnzAuMC"
   stt:
     provider: elevenlabs
