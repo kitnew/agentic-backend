@@ -1,18 +1,14 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import datetime
 
 from livekit import api
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.domain.call_sessions.enums import CallFinalizationStatus, CallSessionStatus
 from app.domain.messages.enums import MessageRole
 from app.infrastructure.repositories.call_session_repository import CallSessionRepository
 from app.infrastructure.repositories.message_repository import MessageRepository
-from app.integrations.google_sheets.client import GoogleSheetsClient
-from app.integrations.google_sheets.schemas import GoogleSheetsAppendRowRequest
 from app.integrations.summary import AzureSummaryClient
 from app.integrations.livekit_recording import (
     RecordingHandle,
@@ -189,31 +185,8 @@ async def finalize_call(
                     )
         if delivery_error:
             raise delivery_error
-        updated_range = None
-        if config := tenant.post_call_transcript:
-            if db.bind and db.bind.dialect.name == "postgresql":
-                # ponytail: global lock; use per-sheet allocation if transcript throughput grows.
-                db.execute(text("SELECT pg_advisory_xact_lock(773144917)"))
-            completion_time = call.ended_at or datetime.now(timezone.utc)
-            result = (sheets or GoogleSheetsClient()).append_row_once(
-                GoogleSheetsAppendRowRequest(
-                    spreadsheet_id=config.spreadsheet_id,
-                    sheet_name=config.sheet_name,
-                    values=[
-                        transcript,
-                        summary,
-                        completion_time.replace(tzinfo=completion_time.tzinfo or timezone.utc)
-                        .astimezone(ZoneInfo(tenant.timezone))
-                        .strftime("%d.%m.%Y %H:%M:%S"),
-                        str(call.caller_phone or ""),
-                    ],
-                ),
-                idempotency_key=call.id,
-            )
-            updated_range = result.updated_range
         call.transcript = transcript
         call.summary = summary
-        call.transcript_sheet_range = updated_range or call.transcript_sheet_range
         call.finalization_status = CallFinalizationStatus.COMPLETED
         call.finalization_error = None
         call.updated_at = datetime.now()

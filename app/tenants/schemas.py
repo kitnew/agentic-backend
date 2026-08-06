@@ -208,19 +208,10 @@ class TenantAvailabilityConfig(TenantModel):
 
 
 class TenantPostCallTranscriptConfig(TenantModel):
-    spreadsheet_id: str
-    sheet_name: str
     webhook_url: str | None = None
     webhook_api_key_env: str | None = None
     recording_delivery_mode: Literal["base64", "recording_url"] = "base64"
     recording_public_base_url: str | None = None
-
-    @field_validator("spreadsheet_id", "sheet_name")
-    @classmethod
-    def validate_non_empty(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
 
     @field_validator("webhook_url", "recording_public_base_url")
     @classmethod

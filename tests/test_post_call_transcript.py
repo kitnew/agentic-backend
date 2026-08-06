@@ -146,23 +146,24 @@ def test_elevenlabs_transcript_maps_roles_and_excludes_non_messages():
         ]
 
 
-def test_finalization_maps_row_preserves_phone_and_is_idempotent():
+def test_finalization_does_not_write_to_sheets():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     sheets, summary = Sheets(), Summary()
+    tenant_loader = SimpleNamespace(
+        load=lambda _tenant_id: SimpleNamespace(post_call_transcript=None)
+    )
     with Session(engine) as db:
         seed(db)
-        first = asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
-        second = asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
+        first = asyncio.run(
+            finalize_call(db, "call-1", summary_client=summary, sheets=sheets, tenant_loader=tenant_loader)
+        )
+        second = asyncio.run(
+            finalize_call(db, "call-1", summary_client=summary, sheets=sheets, tenant_loader=tenant_loader)
+        )
         call = CallSessionRepository(db).get("call-1")
     assert first == second
-    assert summary.calls == 1 and len(sheets.rows) == 1
-    assert sheets.rows[0].values == [
-        "Hosť: Dobrý deň, chcem izbu.\nAgent: Žiadosť bola odoslaná.",
-        "Hosť požiadal o izbu. Žiadosť bola odoslaná.",
-        "22.07.2026 22:15:00",
-        "+421900111222",
-    ]
+    assert summary.calls == 1 and sheets.rows == []
     assert call.finalization_status == CallFinalizationStatus.COMPLETED
 
 
@@ -170,16 +171,23 @@ def test_failed_finalization_can_be_retried():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     summary, sheets = Summary(RuntimeError("llm down")), Sheets()
+    tenant_loader = SimpleNamespace(
+        load=lambda _tenant_id: SimpleNamespace(post_call_transcript=None)
+    )
     with Session(engine) as db:
         seed(db)
         try:
-            asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
+            asyncio.run(
+                finalize_call(db, "call-1", summary_client=summary, sheets=sheets, tenant_loader=tenant_loader)
+            )
         except RuntimeError:
             pass
         assert CallSessionRepository(db).get("call-1").finalization_status == CallFinalizationStatus.FAILED
-        asyncio.run(finalize_call(db, "call-1", summary_client=summary, sheets=sheets))
+        asyncio.run(
+            finalize_call(db, "call-1", summary_client=summary, sheets=sheets, tenant_loader=tenant_loader)
+        )
         assert CallSessionRepository(db).get("call-1").finalization_status == CallFinalizationStatus.COMPLETED
-    assert len(sheets.rows) == 1
+    assert sheets.rows == []
 
 
 def test_concurrent_finalization_attempts_append_one_row(tmp_path):
@@ -191,16 +199,25 @@ def test_concurrent_finalization_attempts_append_one_row(tmp_path):
     with sessions() as db:
         seed(db)
     sheets, summary = Sheets(), Summary()
+    tenant_loader = SimpleNamespace(
+        load=lambda _tenant_id: SimpleNamespace(post_call_transcript=None)
+    )
 
     async def run_one():
         with sessions() as db:
-            return await finalize_call(db, "call-1", summary_client=summary, sheets=sheets)
+            return await finalize_call(
+                db,
+                "call-1",
+                summary_client=summary,
+                sheets=sheets,
+                tenant_loader=tenant_loader,
+            )
 
     async def run_both():
         return await asyncio.gather(run_one(), run_one())
 
     asyncio.run(run_both())
-    assert len(sheets.rows) == 1
+    assert sheets.rows == []
 
 
 class RecordingEgress:

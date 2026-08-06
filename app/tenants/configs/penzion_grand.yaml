@@ -196,9 +196,8 @@ capabilities:
       timeout_seconds: 15
 
 post_call_transcript:
-  spreadsheet_id: "1YaOGHsa8lGN9MLJ05z5Hac-l805no23l9mFz8PB4wVI"
-  sheet_name: "transcripts"
   recording_delivery_mode: base64
+  webhook_url: "https://hook.eu1.make.com/21nrojnlsym52f2e90bdd9uwksgmwmrd"
 
 voice:
   enabled: true
