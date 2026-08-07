@@ -30,6 +30,10 @@ from backend_core.modules.capabilities.domain import (
     validate_business_input,
     validate_result_for_plan,
 )
+from backend_core.modules.capabilities.execution import (
+    TechnicalResultProjectionError,
+    project_execution_outcome,
+)
 from backend_core.modules.capabilities.models import (
     CapabilityConfirmation,
     CapabilityInvocation,
@@ -416,10 +420,16 @@ class CapabilityInvocationService:
                     "result_missing", "Successful worker report has no result"
                 )
             validate_result_for_plan(invocation.execution_plan, report.result)
+            try:
+                outcome = project_execution_outcome(report.result)
+            except TechnicalResultProjectionError as error:
+                raise CapabilityValidationError(
+                    "unsupported_result_type", str(error)
+                ) from error
             invocation.status = CapabilityInvocationStatus.SUCCEEDED
             invocation.technical_result = report.result.model_dump(mode="json")
             invocation.semantic_result = semantic_result(
-                invocation.semantic_key, invocation.semantic_version, report.result
+                invocation.semantic_key, invocation.semantic_version, outcome
             ).model_dump(mode="json")
         else:
             if report.error is None:

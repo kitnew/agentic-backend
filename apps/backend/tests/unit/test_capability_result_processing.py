@@ -1,8 +1,16 @@
+from dataclasses import fields
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from backend_core.modules.capabilities.domain import CapabilityValidationError
+from backend_core.modules.capabilities.domain import (
+    CapabilityValidationError,
+    semantic_result,
+)
+from backend_core.modules.capabilities.execution import (
+    ExecutionOutcome,
+    project_execution_outcome,
+)
 from backend_core.modules.capabilities.models import CapabilityInvocation
 from backend_core.modules.capabilities.service import CapabilityInvocationService
 from contracts import (
@@ -143,6 +151,58 @@ async def test_matching_typed_result_completes_invocation(
         "deduplicated": result.deduplicated,
     }
     assert repository.flushed
+
+
+def test_technical_results_project_to_provider_neutral_outcomes() -> None:
+    sheets = project_execution_outcome(
+        GoogleSheetsAppendValuesResult(
+            result_type="google_sheets.append_values.v1",
+            status="succeeded",
+            updated_range="Reservations!A2:D2",
+            updated_rows=1,
+            deduplicated=True,
+        )
+    )
+    webhook = project_execution_outcome(
+        ManagedWebhookPostJsonResult(
+            result_type="managed_webhook.post_json.v1",
+            status="succeeded",
+            operation_id=uuid4(),
+            reference=None,
+            deduplicated=False,
+            data={"accepted": True},
+        )
+    )
+    assert sheets == ExecutionOutcome(reference="Reservations!A2:D2", deduplicated=True)
+    assert webhook == ExecutionOutcome(
+        reference=None, deduplicated=False, data={"accepted": True}
+    )
+    assert {field.name for field in fields(ExecutionOutcome)} == {
+        "reference",
+        "deduplicated",
+        "data",
+    }
+
+
+def test_unknown_technical_result_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unsupported technical result type"):
+        project_execution_outcome(object())  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("reference", "deduplicated"), [("accepted-1", False), (None, True)]
+)
+def test_semantic_mapper_accepts_execution_outcome_only(
+    reference: str | None, deduplicated: bool
+) -> None:
+    result = semantic_result(
+        "reservation.submit_request",
+        1,
+        ExecutionOutcome(reference=reference, deduplicated=deduplicated),
+    )
+    assert result.status == "request_submitted"
+    assert result.request_reference == reference
+    assert result.deduplicated is deduplicated
 
 
 @pytest.mark.asyncio

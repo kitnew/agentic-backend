@@ -13,6 +13,7 @@ from backend_core.modules.capabilities.domain import (
     validate_agent_schema,
     validate_business_input,
 )
+from backend_core.modules.capabilities.execution import project_execution_outcome
 from contracts import TenantCapabilityProfile
 from job_worker.worker import GoogleSheetsAppendValuesHandler
 
@@ -185,12 +186,14 @@ async def test_two_tenants_share_the_full_compilation_and_worker_path() -> None:
     assert first_a.deduplicated is False
     assert duplicate_a.deduplicated is True
     assert (
-        semantic_result("reservation.submit_request", 1, first_a).status
+        semantic_result(
+            "reservation.submit_request", 1, project_execution_outcome(first_a)
+        ).status
         == "request_submitted"
     )
     assert (
         "confirmed"
         not in semantic_result(
-            "reservation.submit_request", 1, first_b
+            "reservation.submit_request", 1, project_execution_outcome(first_b)
         ).model_dump_json()
     )

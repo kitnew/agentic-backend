@@ -11,7 +11,6 @@ import jsonata  # type: ignore[import-untyped]
 from contracts import (
     ExecutionPlan,
     GoogleSheetsAppendValuesPlan,
-    GoogleSheetsAppendValuesResult,
     GoogleSheetsIdempotency,
     ManagedWebhookCapability,
     ManagedWebhookExecution,
@@ -30,6 +29,8 @@ from jsonschema.exceptions import (  # type: ignore[import-untyped]
     ValidationError,
 )
 from pydantic import TypeAdapter
+
+from backend_core.modules.capabilities.execution import ExecutionOutcome
 
 CANONICAL_FIELDS = {
     "guest.name": "string",
@@ -75,7 +76,7 @@ REGISTRY = {
 }
 
 
-SemanticResultMapper = Callable[[TechnicalResult], ReservationRequestSubmitted]
+SemanticResultMapper = Callable[[ExecutionOutcome], ReservationRequestSubmitted]
 
 
 class CapabilityValidationError(ValueError):
@@ -481,14 +482,10 @@ def compile_plan(
     )
 
 
-def _reservation_result(result: TechnicalResult) -> ReservationRequestSubmitted:
+def _reservation_result(outcome: ExecutionOutcome) -> ReservationRequestSubmitted:
     return ReservationRequestSubmitted(
-        request_reference=(
-            result.updated_range
-            if isinstance(result, GoogleSheetsAppendValuesResult)
-            else result.reference
-        ),
-        deduplicated=result.deduplicated,
+        request_reference=outcome.reference,
+        deduplicated=outcome.deduplicated,
     )
 
 
@@ -513,7 +510,7 @@ def validate_result_for_plan(
 
 
 def semantic_result(
-    semantic_key: str, semantic_version: int, result: TechnicalResult
+    semantic_key: str, semantic_version: int, outcome: ExecutionOutcome
 ) -> ReservationRequestSubmitted:
     mapper = SEMANTIC_RESULT_MAPPERS.get((semantic_key, semantic_version))
     if mapper is None:
@@ -521,7 +518,7 @@ def semantic_result(
             "unsupported_capability_version",
             "Capability semantic key or version is unsupported",
         )
-    return mapper(result)
+    return mapper(outcome)
 
 
 def runtime_definition(
