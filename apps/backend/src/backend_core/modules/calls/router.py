@@ -35,7 +35,7 @@ from backend_core.modules.tenants.errors import TenantNotFoundError
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     InboundRouteRepository,
-    PromptBundleRevisionRepository,
+    PromptCompositionRepository,
     TenantRepository,
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
@@ -54,7 +54,7 @@ def build_call_session_service(session: AsyncSession) -> CallSessionService:
     return CallSessionService(
         CallSessionRepository(session),
         InboundRouteRepository(session),
-        PromptBundleRevisionRepository(session),
+        PromptCompositionRepository(session),
         TenantRepository(session),
         ConfigRevisionRepository(session),
         build_conversation_service(session),
@@ -107,7 +107,7 @@ def call_http_exception(error: Exception) -> HTTPException:
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "tenant_configuration_not_voice_ready",
-                "message": "tenant active configuration must be schema version 2 with a published prompt bundle",
+                "message": "tenant needs a published schema version 3 config and PromptSet",
             },
         )
     return HTTPException(

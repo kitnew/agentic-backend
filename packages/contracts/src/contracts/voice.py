@@ -23,9 +23,11 @@ class LiveKitJobMetadata(_VoiceModel):
 
 
 class VoiceAgentPrompt(_VoiceModel):
-    system_instructions: str = Field(min_length=1)
-    tenant_instructions: str = ""
-    knowledge_text: str = ""
+    system_prompt: str = Field(min_length=1)
+    profile_prompt: str = ""
+    tenant_prompt: str = ""
+    knowledge_context: str = ""
+    knowledge_base_revision_id: UUID
 
 
 class VoiceAgentRuntimeContext(_VoiceModel):

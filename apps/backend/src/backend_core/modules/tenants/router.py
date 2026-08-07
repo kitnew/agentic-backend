@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from contracts import ActiveTenantConfig
@@ -25,11 +25,7 @@ from backend_core.modules.tenants.errors import (
     InboundRouteNotFoundError,
     InboundRouteUnavailableError,
     InvalidTenantConfigError,
-    PromptBundleActiveDraftExistsError,
-    PromptBundleRevisionError,
-    PromptBundleRevisionImmutableError,
-    PromptBundleRevisionNotFoundError,
-    PromptBundleRevisionVersionConflictError,
+    PromptRevisionError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
@@ -40,30 +36,37 @@ from backend_core.modules.tenants.legacy_yaml import (
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     InboundRouteRepository,
-    PromptBundleRevisionRepository,
+    PromptCompositionRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     ConfigRevisionResponse,
     CreateDraftRequest,
     CreateInboundRouteRequest,
-    CreatePromptBundleDraftRequest,
+    CreatePlatformPromptDraftRequest,
+    CreatePromptSetDraftRequest,
     CreateTenantRequest,
+    CreateTextDraftRequest,
     InboundRouteResponse,
+    KnowledgeBaseRevisionResponse,
     LegacyConfigImportResponse,
-    PromptBundleRevisionResponse,
+    PlatformPromptRevisionResponse,
+    PromptSetRevisionResponse,
+    PromptTextRevisionResponse,
     ResolveTenantRouteRequest,
+    TenantPromptRevisionResponse,
     TenantResponse,
     TenantRouteResolutionResponse,
     UpdateDraftRequest,
     UpdateInboundRouteRequest,
-    UpdatePromptBundleDraftRequest,
+    UpdatePromptSetDraftRequest,
+    UpdateTextDraftRequest,
     ValidateDraftResponse,
 )
 from backend_core.modules.tenants.service import (
     ConfigUseCases,
     InboundRouteService,
-    PromptBundleService,
+    PromptCompositionUseCases,
     TenantService,
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
@@ -77,6 +80,11 @@ router = APIRouter(
 internal_router = APIRouter(
     prefix="/internal/v1",
     tags=["internal:tenants"],
+)
+platform_router = APIRouter(
+    prefix="/admin/v1/platform/prompts",
+    tags=["admin:platform-prompts"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -93,7 +101,6 @@ def get_config_use_cases(
     return ConfigUseCases(
         TenantRepository(session),
         ConfigRevisionRepository(session),
-        PromptBundleRevisionRepository(session),
         IntegrationConnectionRepository(session),
     )
 
@@ -119,18 +126,19 @@ InboundRouteServiceDependency = Annotated[
 ]
 
 
-def get_prompt_bundle_service(
+def get_prompt_composition_use_cases(
     session: DatabaseSession,
-) -> PromptBundleService:
-    return PromptBundleService(
+) -> PromptCompositionUseCases:
+    return PromptCompositionUseCases(
         TenantRepository(session),
-        PromptBundleRevisionRepository(session),
+        PromptCompositionRepository(session),
+        ConfigRevisionRepository(session),
     )
 
 
-PromptBundleServiceDependency = Annotated[
-    PromptBundleService,
-    Depends(get_prompt_bundle_service),
+PromptCompositionUseCasesDependency = Annotated[
+    PromptCompositionUseCases,
+    Depends(get_prompt_composition_use_cases),
 ]
 
 
@@ -169,28 +177,23 @@ def config_http_exception(
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
-def prompt_bundle_http_exception(
-    error: TenantNotFoundError | PromptBundleRevisionError,
+def prompt_http_exception(
+    error: TenantNotFoundError | PromptRevisionError,
 ) -> HTTPException:
-    if isinstance(
-        error,
-        (TenantNotFoundError, PromptBundleRevisionNotFoundError),
-    ):
+    if isinstance(error, TenantNotFoundError):
         return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="tenant or prompt bundle revision not found",
+            status_code=status.HTTP_404_NOT_FOUND, detail="tenant not found"
         )
-    if isinstance(error, PromptBundleRevisionVersionConflictError):
+    detail = "prompt revision conflict"
+    if error.__class__.__name__.endswith("NotFoundError"):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="prompt revision not found"
+        )
+    if error.__class__.__name__.endswith("VersionConflictError"):
         return HTTPException(
             status_code=status.HTTP_412_PRECONDITION_FAILED,
-            detail="prompt bundle version does not match If-Match",
+            detail="draft version does not match If-Match",
         )
-    if isinstance(error, PromptBundleActiveDraftExistsError):
-        detail = "tenant already has an active prompt bundle draft"
-    elif isinstance(error, PromptBundleRevisionImmutableError):
-        detail = "published or archived prompt bundle revisions are immutable"
-    else:
-        detail = "prompt bundle revision conflict"
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
@@ -239,6 +242,21 @@ def parse_if_match(value: str | None) -> int:
     return int(raw_version)
 
 
+def text_response(revision: Any, *, key: str | None = None) -> dict[str, object]:
+    data = {
+        "id": revision.id,
+        "revision_number": revision.revision_number,
+        "status": revision.status,
+        "text": revision.text,
+        "created_at": revision.created_at,
+        "published_at": revision.published_at,
+        "version": revision.version,
+    }
+    if key is not None:
+        data["key"] = key
+    return data
+
+
 @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(
     data: CreateTenantRequest,
@@ -277,6 +295,411 @@ async def list_tenants(
 ) -> list[TenantResponse]:
     tenants = await service.list(offset=offset, limit=limit)
     return [TenantResponse.model_validate(tenant) for tenant in tenants]
+
+
+@platform_router.post(
+    "/system/drafts", response_model=PlatformPromptRevisionResponse, status_code=201
+)
+async def create_system_prompt_draft(
+    data: CreatePlatformPromptDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.create_system_draft(data)
+    except PromptRevisionError as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return {
+        **text_response(revision, key=data.key),
+        "prompt_id": revision.system_prompt_id,
+    }
+
+
+@platform_router.patch(
+    "/system/drafts/{revision_id}", response_model=PromptTextRevisionResponse
+)
+async def update_system_prompt_draft(
+    revision_id: UUID,
+    data: UpdateTextDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.update_system_draft(
+            revision_id, data, parse_if_match(if_match)
+        )
+    except PromptRevisionError as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return text_response(revision)
+
+
+@platform_router.post(
+    "/system/drafts/{revision_id}/publish", response_model=PromptTextRevisionResponse
+)
+async def publish_system_prompt_draft(
+    revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> dict[str, object]:
+    try:
+        return text_response(await use_cases.publish_system(revision_id))
+    except PromptRevisionError as error:
+        raise prompt_http_exception(error) from error
+
+
+@platform_router.get(
+    "/system/{key}/revisions", response_model=list[PromptTextRevisionResponse]
+)
+async def list_system_prompt_revisions(
+    key: str, use_cases: PromptCompositionUseCasesDependency
+) -> list[dict[str, object]]:
+    return [text_response(item) for item in await use_cases.list_system(key)]
+
+
+@platform_router.post(
+    "/profiles/drafts", response_model=PlatformPromptRevisionResponse, status_code=201
+)
+async def create_profile_prompt_draft(
+    data: CreatePlatformPromptDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.create_profile_draft(data)
+    except PromptRevisionError as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return {
+        **text_response(revision, key=data.key),
+        "prompt_id": revision.profile_prompt_id,
+    }
+
+
+@platform_router.patch(
+    "/profiles/drafts/{revision_id}", response_model=PromptTextRevisionResponse
+)
+async def update_profile_prompt_draft(
+    revision_id: UUID,
+    data: UpdateTextDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.update_profile_draft(
+            revision_id, data, parse_if_match(if_match)
+        )
+    except PromptRevisionError as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return text_response(revision)
+
+
+@platform_router.post(
+    "/profiles/drafts/{revision_id}/publish", response_model=PromptTextRevisionResponse
+)
+async def publish_profile_prompt_draft(
+    revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> dict[str, object]:
+    try:
+        return text_response(await use_cases.publish_profile(revision_id))
+    except PromptRevisionError as error:
+        raise prompt_http_exception(error) from error
+
+
+@platform_router.get(
+    "/profiles/{key}/revisions", response_model=list[PromptTextRevisionResponse]
+)
+async def list_profile_prompt_revisions(
+    key: str, use_cases: PromptCompositionUseCasesDependency
+) -> list[dict[str, object]]:
+    return [text_response(item) for item in await use_cases.list_profile(key)]
+
+
+@platform_router.get("/profiles", response_model=list[str])
+async def list_profiles(
+    use_cases: PromptCompositionUseCasesDependency,
+) -> list[str]:
+    return [profile.key for profile in await use_cases.list_profiles()]
+
+
+async def tenant_text_draft(
+    tenant_id: UUID,
+    data: CreateTextDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+    *,
+    knowledge: bool,
+) -> dict[str, object]:
+    try:
+        revision: Any = await (
+            use_cases.create_knowledge_base_draft(tenant_id, data)
+            if knowledge
+            else use_cases.create_tenant_prompt_draft(tenant_id, data)
+        )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    if knowledge:
+        return {
+            **text_response(revision),
+            "tenant_id": tenant_id,
+            "knowledge_base_id": revision.knowledge_base_id,
+        }
+    return {
+        **text_response(revision),
+        "tenant_id": tenant_id,
+        "prompt_id": revision.tenant_prompt_id,
+    }
+
+
+@router.post(
+    "/{tenant_id}/tenant-prompt/drafts",
+    response_model=TenantPromptRevisionResponse,
+    status_code=201,
+)
+async def create_tenant_prompt_draft(
+    tenant_id: UUID,
+    data: CreateTextDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+) -> dict[str, object]:
+    return await tenant_text_draft(
+        tenant_id, data, response, use_cases, knowledge=False
+    )
+
+
+@router.post(
+    "/{tenant_id}/knowledge-base/drafts",
+    response_model=KnowledgeBaseRevisionResponse,
+    status_code=201,
+)
+async def create_knowledge_base_draft(
+    tenant_id: UUID,
+    data: CreateTextDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+) -> dict[str, object]:
+    return await tenant_text_draft(tenant_id, data, response, use_cases, knowledge=True)
+
+
+@router.patch(
+    "/{tenant_id}/tenant-prompt/drafts/{revision_id}",
+    response_model=TenantPromptRevisionResponse,
+)
+async def update_tenant_prompt_draft(
+    tenant_id: UUID,
+    revision_id: UUID,
+    data: UpdateTextDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.update_tenant_prompt_draft(
+            tenant_id, revision_id, data, parse_if_match(if_match)
+        )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return {
+        **text_response(revision),
+        "tenant_id": tenant_id,
+        "prompt_id": revision.tenant_prompt_id,
+    }
+
+
+@router.patch(
+    "/{tenant_id}/knowledge-base/drafts/{revision_id}",
+    response_model=KnowledgeBaseRevisionResponse,
+)
+async def update_knowledge_base_draft(
+    tenant_id: UUID,
+    revision_id: UUID,
+    data: UpdateTextDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.update_knowledge_base_draft(
+            tenant_id, revision_id, data, parse_if_match(if_match)
+        )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return {
+        **text_response(revision),
+        "tenant_id": tenant_id,
+        "knowledge_base_id": revision.knowledge_base_id,
+    }
+
+
+@router.post(
+    "/{tenant_id}/tenant-prompt/drafts/{revision_id}/publish",
+    response_model=TenantPromptRevisionResponse,
+)
+async def publish_tenant_prompt_draft(
+    tenant_id: UUID, revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.publish_tenant_prompt(tenant_id, revision_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    return {
+        **text_response(revision),
+        "tenant_id": tenant_id,
+        "prompt_id": revision.tenant_prompt_id,
+    }
+
+
+@router.post(
+    "/{tenant_id}/knowledge-base/drafts/{revision_id}/publish",
+    response_model=KnowledgeBaseRevisionResponse,
+)
+async def publish_knowledge_base_draft(
+    tenant_id: UUID, revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> dict[str, object]:
+    try:
+        revision = await use_cases.publish_knowledge_base(tenant_id, revision_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    return {
+        **text_response(revision),
+        "tenant_id": tenant_id,
+        "knowledge_base_id": revision.knowledge_base_id,
+    }
+
+
+@router.get(
+    "/{tenant_id}/tenant-prompt/revisions",
+    response_model=list[TenantPromptRevisionResponse],
+)
+async def list_tenant_prompt_revisions(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> list[dict[str, object]]:
+    return [
+        {
+            **text_response(item),
+            "tenant_id": tenant_id,
+            "prompt_id": item.tenant_prompt_id,
+        }
+        for item in await use_cases.list_tenant_prompts(tenant_id)
+    ]
+
+
+@router.get(
+    "/{tenant_id}/knowledge-base/revisions",
+    response_model=list[KnowledgeBaseRevisionResponse],
+)
+async def list_knowledge_base_revisions(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> list[dict[str, object]]:
+    return [
+        {
+            **text_response(item),
+            "tenant_id": tenant_id,
+            "knowledge_base_id": item.knowledge_base_id,
+        }
+        for item in await use_cases.list_knowledge_bases(tenant_id)
+    ]
+
+
+@router.post(
+    "/{tenant_id}/prompt-set/drafts",
+    response_model=PromptSetRevisionResponse,
+    status_code=201,
+)
+async def create_prompt_set_draft(
+    tenant_id: UUID,
+    data: CreatePromptSetDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+) -> PromptSetRevisionResponse:
+    try:
+        revision = await use_cases.create_prompt_set_draft(tenant_id, data)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return PromptSetRevisionResponse.model_validate(revision)
+
+
+@router.patch(
+    "/{tenant_id}/prompt-set/drafts/{revision_id}",
+    response_model=PromptSetRevisionResponse,
+)
+async def update_prompt_set_draft(
+    tenant_id: UUID,
+    revision_id: UUID,
+    data: UpdatePromptSetDraftRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> PromptSetRevisionResponse:
+    try:
+        revision = await use_cases.update_prompt_set_draft(
+            tenant_id, revision_id, data, parse_if_match(if_match)
+        )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(revision.version)
+    return PromptSetRevisionResponse.model_validate(revision)
+
+
+@router.post(
+    "/{tenant_id}/prompt-set/drafts/{revision_id}/validate",
+    response_model=ValidateDraftResponse,
+)
+async def validate_prompt_set_draft(
+    tenant_id: UUID, revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> ValidateDraftResponse:
+    try:
+        errors = await use_cases.validate_prompt_set_draft(tenant_id, revision_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    return ValidateDraftResponse(valid=not errors, errors=errors)
+
+
+@router.post(
+    "/{tenant_id}/prompt-set/drafts/{revision_id}/publish",
+    response_model=PromptSetRevisionResponse,
+)
+async def publish_prompt_set_draft(
+    tenant_id: UUID, revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> PromptSetRevisionResponse:
+    try:
+        return PromptSetRevisionResponse.model_validate(
+            await use_cases.publish_prompt_set(tenant_id, revision_id)
+        )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.get(
+    "/{tenant_id}/prompt-set/revisions", response_model=list[PromptSetRevisionResponse]
+)
+async def list_prompt_set_revisions(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> list[PromptSetRevisionResponse]:
+    return [
+        PromptSetRevisionResponse.model_validate(item)
+        for item in await use_cases.list_prompt_sets(tenant_id)
+    ]
+
+
+@router.get(
+    "/{tenant_id}/prompt-set/active", response_model=PromptSetRevisionResponse
+)
+async def active_prompt_set(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> PromptSetRevisionResponse:
+    try:
+        return PromptSetRevisionResponse.model_validate(
+            await use_cases.active_prompt_set(tenant_id)
+        )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
 
 
 @router.post(
@@ -332,83 +755,6 @@ async def update_inbound_route(
     ) as error:
         raise inbound_route_http_exception(error) from error
     return InboundRouteResponse.model_validate(route)
-
-
-@router.post(
-    "/{tenant_id}/prompt-bundle/drafts",
-    response_model=PromptBundleRevisionResponse,
-    status_code=status.HTTP_201_CREATED,
-)
-async def create_prompt_bundle_draft(
-    tenant_id: UUID,
-    data: CreatePromptBundleDraftRequest,
-    response: Response,
-    service: PromptBundleServiceDependency,
-) -> PromptBundleRevisionResponse:
-    try:
-        revision = await service.create_draft(tenant_id, data)
-    except (TenantNotFoundError, PromptBundleRevisionError) as error:
-        raise prompt_bundle_http_exception(error) from error
-    response.headers["ETag"] = etag(revision.version)
-    return PromptBundleRevisionResponse.model_validate(revision)
-
-
-@router.patch(
-    "/{tenant_id}/prompt-bundle/drafts/{revision_id}",
-    response_model=PromptBundleRevisionResponse,
-)
-async def update_prompt_bundle_draft(
-    tenant_id: UUID,
-    revision_id: UUID,
-    data: UpdatePromptBundleDraftRequest,
-    response: Response,
-    service: PromptBundleServiceDependency,
-    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
-) -> PromptBundleRevisionResponse:
-    try:
-        revision = await service.update_draft(
-            tenant_id,
-            revision_id,
-            data,
-            parse_if_match(if_match),
-        )
-    except (TenantNotFoundError, PromptBundleRevisionError) as error:
-        raise prompt_bundle_http_exception(error) from error
-    response.headers["ETag"] = etag(revision.version)
-    return PromptBundleRevisionResponse.model_validate(revision)
-
-
-@router.post(
-    "/{tenant_id}/prompt-bundle/drafts/{revision_id}/publish",
-    response_model=PromptBundleRevisionResponse,
-)
-async def publish_prompt_bundle_draft(
-    tenant_id: UUID,
-    revision_id: UUID,
-    service: PromptBundleServiceDependency,
-) -> PromptBundleRevisionResponse:
-    try:
-        revision = await service.publish(tenant_id, revision_id)
-    except (TenantNotFoundError, PromptBundleRevisionError) as error:
-        raise prompt_bundle_http_exception(error) from error
-    return PromptBundleRevisionResponse.model_validate(revision)
-
-
-@router.get(
-    "/{tenant_id}/prompt-bundle/revisions",
-    response_model=list[PromptBundleRevisionResponse],
-)
-async def list_prompt_bundle_revisions(
-    tenant_id: UUID,
-    service: PromptBundleServiceDependency,
-) -> list[PromptBundleRevisionResponse]:
-    try:
-        revisions = await service.list(tenant_id)
-    except TenantNotFoundError as error:
-        raise prompt_bundle_http_exception(error) from error
-    return [
-        PromptBundleRevisionResponse.model_validate(revision) for revision in revisions
-    ]
 
 
 @router.post(

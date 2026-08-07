@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -6,10 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
     InboundRoute,
+    KnowledgeBase,
+    ProfilePrompt,
     PromptBundleRevision,
     PromptBundleRevisionStatus,
+    PromptRevisionStatus,
+    PromptSet,
+    SystemPrompt,
     Tenant,
     TenantConfigRevision,
+    TenantPrompt,
     TenantStatus,
 )
 
@@ -226,3 +233,93 @@ class ConfigRevisionRepository:
             .order_by(TenantConfigRevision.revision_number)
         )
         return list(revisions)
+
+
+class PromptCompositionRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def system_prompt(self, key: str) -> SystemPrompt | None:
+        return await self._session.scalar(
+            select(SystemPrompt).where(SystemPrompt.key == key)
+        )
+
+    async def profile_prompt(self, key: str) -> ProfilePrompt | None:
+        return await self._session.scalar(
+            select(ProfilePrompt).where(ProfilePrompt.key == key)
+        )
+
+    async def profile_prompt_by_id(self, prompt_id: UUID) -> ProfilePrompt | None:
+        return await self._session.get(ProfilePrompt, prompt_id)
+
+    async def list_profile_prompts(self) -> list[ProfilePrompt]:
+        return list(
+            await self._session.scalars(select(ProfilePrompt).order_by(ProfilePrompt.key))
+        )
+
+    async def tenant_prompt(self, tenant_id: UUID) -> TenantPrompt | None:
+        return await self._session.scalar(
+            select(TenantPrompt).where(TenantPrompt.tenant_id == tenant_id)
+        )
+
+    async def knowledge_base(self, tenant_id: UUID) -> KnowledgeBase | None:
+        return await self._session.scalar(
+            select(KnowledgeBase).where(KnowledgeBase.tenant_id == tenant_id)
+        )
+
+    async def prompt_set(self, tenant_id: UUID) -> PromptSet | None:
+        return await self._session.scalar(
+            select(PromptSet).where(PromptSet.tenant_id == tenant_id)
+        )
+
+    async def add(self, value: Any) -> Any:
+        self._session.add(value)
+        await self._session.flush()
+        return value
+
+    async def revision(
+        self,
+        revision_type: type[Any],
+        revision_id: UUID,
+        *,
+        tenant_id: UUID | None = None,
+        lock: bool = False,
+    ) -> Any | None:
+        query = select(revision_type).where(revision_type.id == revision_id)
+        if tenant_id is not None:
+            query = query.where(revision_type.tenant_id == tenant_id)
+        if lock:
+            query = query.with_for_update()
+        return await self._session.scalar(query)
+
+    async def revision_by_parent(
+        self,
+        revision_type: type[Any],
+        parent_field: str,
+        parent_id: UUID,
+        *,
+        status: PromptRevisionStatus | None = None,
+    ) -> list[Any]:
+        query = select(revision_type).where(
+            getattr(revision_type, parent_field) == parent_id
+        )
+        if status is not None:
+            query = query.where(revision_type.status == status)
+        query = query.order_by(revision_type.revision_number)
+        return list(await self._session.scalars(query))
+
+    async def next_revision_number(
+        self,
+        revision_type: type[Any],
+        parent_field: str,
+        parent_id: UUID,
+    ) -> int:
+        latest = await self._session.scalar(
+            select(func.max(revision_type.revision_number)).where(
+                getattr(revision_type, parent_field) == parent_id
+            )
+        )
+        return (latest or 0) + 1
+
+    async def flush(self) -> None:
+        await self._session.flush()

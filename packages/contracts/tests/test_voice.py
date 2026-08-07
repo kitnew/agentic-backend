@@ -19,9 +19,11 @@ def runtime_context() -> dict[str, object]:
         "greeting": "Dobry den",
         "conversation_scope": "property_only",
         "prompt": {
-            "system_instructions": "Help the guest.",
-            "tenant_instructions": "Be concise.",
-            "knowledge_text": "Breakfast is at seven.",
+            "system_prompt": "Help the guest.",
+            "profile_prompt": "Hotel behavior.",
+            "tenant_prompt": "Be concise.",
+            "knowledge_context": "Breakfast is at seven.",
+            "knowledge_base_revision_id": str(uuid4()),
         },
     }
 
@@ -36,7 +38,7 @@ def test_voice_contracts_round_trip_and_forbid_authoring_fields() -> None:
     assert (
         not {
             "schema_version",
-            "prompt_bundle_revision_id",
+            "prompt_set_revision_id",
             "spreadsheet_id",
             "request_mapping",
             "credential_ref",

@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from contracts import (
@@ -7,6 +8,7 @@ from contracts import (
     TenantConfig,
     TenantConfigV1,
     TenantConfigV2,
+    TenantConfigV3,
 )
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -34,36 +36,49 @@ from backend_core.modules.tenants.errors import (
     InboundRouteDidConflictError,
     InboundRouteNotFoundError,
     InboundRouteUnavailableError,
+    InvalidPromptSetError,
     InvalidTenantConfigError,
-    PromptBundleActiveDraftExistsError,
-    PromptBundleRevisionImmutableError,
-    PromptBundleRevisionNotFoundError,
-    PromptBundleRevisionVersionConflictError,
+    PromptRevisionActiveDraftExistsError,
+    PromptRevisionImmutableError,
+    PromptRevisionNotFoundError,
+    PromptRevisionVersionConflictError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
     InboundRoute,
-    PromptBundleRevision,
-    PromptBundleRevisionStatus,
+    KnowledgeBase,
+    KnowledgeBaseRevision,
+    ProfilePrompt,
+    ProfilePromptRevision,
+    PromptRevisionStatus,
+    PromptSet,
+    PromptSetRevision,
+    SystemPrompt,
+    SystemPromptRevision,
     Tenant,
     TenantConfigRevision,
+    TenantPrompt,
+    TenantPromptRevision,
 )
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     InboundRouteRepository,
-    PromptBundleRevisionRepository,
+    PromptCompositionRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     CreateDraftRequest,
     CreateInboundRouteRequest,
-    CreatePromptBundleDraftRequest,
+    CreatePlatformPromptDraftRequest,
+    CreatePromptSetDraftRequest,
     CreateTenantRequest,
+    CreateTextDraftRequest,
     UpdateDraftRequest,
     UpdateInboundRouteRequest,
-    UpdatePromptBundleDraftRequest,
+    UpdatePromptSetDraftRequest,
+    UpdateTextDraftRequest,
     ValidationIssue,
 )
 
@@ -147,78 +162,420 @@ class InboundRouteService:
         return resolution
 
 
-class PromptBundleService:
+class PromptCompositionUseCases:
+    """Explicit artifact lifecycles; the small generic helpers stay private."""
+
     def __init__(
         self,
         tenants: TenantRepository,
-        revisions: PromptBundleRevisionRepository,
+        revisions: PromptCompositionRepository,
+        configs: ConfigRevisionRepository,
     ) -> None:
         self._tenants = tenants
         self._revisions = revisions
+        self._configs = configs
 
-    async def create_draft(
-        self,
-        tenant_id: UUID,
-        data: CreatePromptBundleDraftRequest,
-    ) -> PromptBundleRevision:
-        if await self._tenants.get_for_update(tenant_id) is None:
-            raise TenantNotFoundError
-        if await self._revisions.get_draft(tenant_id):
-            raise PromptBundleActiveDraftExistsError
-        revision = PromptBundleRevision(
-            tenant_id=tenant_id,
-            revision_number=await self._revisions.next_revision_number(tenant_id),
-            **data.model_dump(),
+    async def create_system_draft(
+        self, data: CreatePlatformPromptDraftRequest
+    ) -> SystemPromptRevision:
+        prompt = await self._revisions.system_prompt(data.key)
+        if prompt is None:
+            prompt = await self._revisions.add(SystemPrompt(key=data.key))
+        return await self._create_text_draft(
+            SystemPromptRevision, "system_prompt_id", prompt.id, data.text
         )
-        try:
-            return await self._revisions.add(revision)
-        except IntegrityError as error:
-            raise PromptBundleActiveDraftExistsError from error
 
-    async def update_draft(
+    async def create_profile_draft(
+        self, data: CreatePlatformPromptDraftRequest
+    ) -> ProfilePromptRevision:
+        prompt = await self._revisions.profile_prompt(data.key)
+        if prompt is None:
+            prompt = await self._revisions.add(ProfilePrompt(key=data.key))
+        return await self._create_text_draft(
+            ProfilePromptRevision, "profile_prompt_id", prompt.id, data.text
+        )
+
+    async def create_tenant_prompt_draft(
+        self, tenant_id: UUID, data: CreateTextDraftRequest
+    ) -> TenantPromptRevision:
+        await self._tenant(tenant_id)
+        prompt = await self._revisions.tenant_prompt(tenant_id)
+        if prompt is None:
+            prompt = await self._revisions.add(TenantPrompt(tenant_id=tenant_id))
+        return await self._create_text_draft(
+            TenantPromptRevision,
+            "tenant_prompt_id",
+            prompt.id,
+            data.text,
+            tenant_id=tenant_id,
+        )
+
+    async def create_knowledge_base_draft(
+        self, tenant_id: UUID, data: CreateTextDraftRequest
+    ) -> KnowledgeBaseRevision:
+        await self._tenant(tenant_id)
+        base = await self._revisions.knowledge_base(tenant_id)
+        if base is None:
+            base = await self._revisions.add(KnowledgeBase(tenant_id=tenant_id))
+        return await self._create_text_draft(
+            KnowledgeBaseRevision,
+            "knowledge_base_id",
+            base.id,
+            data.text,
+            tenant_id=tenant_id,
+        )
+
+    async def update_system_draft(
+        self, revision_id: UUID, data: UpdateTextDraftRequest, expected_version: int
+    ) -> SystemPromptRevision:
+        return await self._update_text_draft(
+            SystemPromptRevision, revision_id, data.text, expected_version
+        )
+
+    async def update_profile_draft(
+        self, revision_id: UUID, data: UpdateTextDraftRequest, expected_version: int
+    ) -> ProfilePromptRevision:
+        return await self._update_text_draft(
+            ProfilePromptRevision, revision_id, data.text, expected_version
+        )
+
+    async def update_tenant_prompt_draft(
         self,
         tenant_id: UUID,
         revision_id: UUID,
-        data: UpdatePromptBundleDraftRequest,
+        data: UpdateTextDraftRequest,
         expected_version: int,
-    ) -> PromptBundleRevision:
-        revision = await self._revision_for_update(tenant_id, revision_id)
-        if revision.status is not PromptBundleRevisionStatus.DRAFT:
-            raise PromptBundleRevisionImmutableError
+    ) -> TenantPromptRevision:
+        return await self._update_text_draft(
+            TenantPromptRevision, revision_id, data.text, expected_version, tenant_id
+        )
+
+    async def update_knowledge_base_draft(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+        data: UpdateTextDraftRequest,
+        expected_version: int,
+    ) -> KnowledgeBaseRevision:
+        return await self._update_text_draft(
+            KnowledgeBaseRevision, revision_id, data.text, expected_version, tenant_id
+        )
+
+    async def publish_system(self, revision_id: UUID) -> SystemPromptRevision:
+        return await self._publish_text(SystemPromptRevision, revision_id)
+
+    async def publish_profile(self, revision_id: UUID) -> ProfilePromptRevision:
+        return await self._publish_text(ProfilePromptRevision, revision_id)
+
+    async def publish_tenant_prompt(
+        self, tenant_id: UUID, revision_id: UUID
+    ) -> TenantPromptRevision:
+        return await self._publish_text(TenantPromptRevision, revision_id, tenant_id)
+
+    async def publish_knowledge_base(
+        self, tenant_id: UUID, revision_id: UUID
+    ) -> KnowledgeBaseRevision:
+        return await self._publish_text(KnowledgeBaseRevision, revision_id, tenant_id)
+
+    async def create_prompt_set_draft(
+        self, tenant_id: UUID, data: CreatePromptSetDraftRequest
+    ) -> PromptSetRevision:
+        await self._tenant(tenant_id)
+        prompt_set = await self._revisions.prompt_set(tenant_id)
+        if prompt_set is None:
+            prompt_set = await self._revisions.add(PromptSet(tenant_id=tenant_id))
+        existing = await self._revisions.revision_by_parent(
+            PromptSetRevision,
+            "prompt_set_id",
+            prompt_set.id,
+            status=PromptRevisionStatus.DRAFT,
+        )
+        if existing:
+            raise PromptRevisionActiveDraftExistsError
+        return await self._revisions.add(
+            PromptSetRevision(
+                prompt_set_id=prompt_set.id,
+                tenant_id=tenant_id,
+                revision_number=await self._revisions.next_revision_number(
+                    PromptSetRevision, "prompt_set_id", prompt_set.id
+                ),
+                **data.model_dump(),
+            )
+        )
+
+    async def update_prompt_set_draft(
+        self,
+        tenant_id: UUID,
+        revision_id: UUID,
+        data: UpdatePromptSetDraftRequest,
+        expected_version: int,
+    ) -> PromptSetRevision:
+        revision = await self._prompt_set_for_update(tenant_id, revision_id)
+        if revision.status is not PromptRevisionStatus.DRAFT:
+            raise PromptRevisionImmutableError
         if revision.version != expected_version:
-            raise PromptBundleRevisionVersionConflictError
-        for field, value in data.model_dump(exclude_unset=True).items():
+            raise PromptRevisionVersionConflictError
+        for field, value in data.model_dump().items():
             setattr(revision, field, value)
         revision.version += 1
         await self._revisions.flush()
         return revision
 
-    async def publish(
+    async def validate_prompt_set_draft(
+        self, tenant_id: UUID, revision_id: UUID
+    ) -> list[ValidationIssue]:
+        revision = await self._prompt_set(tenant_id, revision_id)
+        if revision.status is not PromptRevisionStatus.DRAFT:
+            raise PromptRevisionImmutableError
+        return await self._validate_prompt_set(tenant_id, revision)
+
+    async def publish_prompt_set(
+        self, tenant_id: UUID, revision_id: UUID
+    ) -> PromptSetRevision:
+        tenant = await self._tenant(tenant_id)
+        revision = await self._prompt_set_for_update(tenant_id, revision_id)
+        if revision.status is not PromptRevisionStatus.DRAFT:
+            raise PromptRevisionImmutableError
+        errors = await self._validate_prompt_set(tenant_id, revision)
+        if errors:
+            raise InvalidPromptSetError
+        if tenant.active_prompt_set_revision_id:
+            active = await self._prompt_set_for_update(
+                tenant_id, tenant.active_prompt_set_revision_id
+            )
+            active.status = PromptRevisionStatus.ARCHIVED
+        revision.status = PromptRevisionStatus.PUBLISHED
+        revision.published_at = datetime.now(UTC)
+        tenant.active_prompt_set_revision_id = revision.id
+        await self._revisions.flush()
+        return revision
+
+    async def list_system(self, key: str) -> list[SystemPromptRevision]:
+        prompt = await self._revisions.system_prompt(key)
+        return (
+            []
+            if prompt is None
+            else await self._revisions.revision_by_parent(
+                SystemPromptRevision, "system_prompt_id", prompt.id
+            )
+        )
+
+    async def list_profiles(self) -> list[ProfilePrompt]:
+        return await self._revisions.list_profile_prompts()
+
+    async def list_profile(self, key: str) -> list[ProfilePromptRevision]:
+        prompt = await self._revisions.profile_prompt(key)
+        return (
+            []
+            if prompt is None
+            else await self._revisions.revision_by_parent(
+                ProfilePromptRevision, "profile_prompt_id", prompt.id
+            )
+        )
+
+    async def list_tenant_prompts(self, tenant_id: UUID) -> list[TenantPromptRevision]:
+        prompt = await self._revisions.tenant_prompt(tenant_id)
+        return (
+            []
+            if prompt is None
+            else await self._revisions.revision_by_parent(
+                TenantPromptRevision, "tenant_prompt_id", prompt.id
+            )
+        )
+
+    async def list_knowledge_bases(
+        self, tenant_id: UUID
+    ) -> list[KnowledgeBaseRevision]:
+        base = await self._revisions.knowledge_base(tenant_id)
+        return (
+            []
+            if base is None
+            else await self._revisions.revision_by_parent(
+                KnowledgeBaseRevision, "knowledge_base_id", base.id
+            )
+        )
+
+    async def list_prompt_sets(self, tenant_id: UUID) -> list[PromptSetRevision]:
+        prompt_set = await self._revisions.prompt_set(tenant_id)
+        return (
+            []
+            if prompt_set is None
+            else await self._revisions.revision_by_parent(
+                PromptSetRevision, "prompt_set_id", prompt_set.id
+            )
+        )
+
+    async def active_prompt_set(self, tenant_id: UUID) -> PromptSetRevision:
+        tenant = await self._tenants.get(tenant_id)
+        if tenant is None:
+            raise TenantNotFoundError
+        if tenant.active_prompt_set_revision_id is None:
+            raise PromptRevisionNotFoundError
+        return await self._prompt_set(tenant_id, tenant.active_prompt_set_revision_id)
+
+    async def _create_text_draft(
         self,
-        tenant_id: UUID,
+        revision_type: type[Any],
+        parent_field: str,
+        parent_id: UUID,
+        text: str,
+        *,
+        tenant_id: UUID | None = None,
+    ) -> Any:
+        existing = await self._revisions.revision_by_parent(
+            revision_type, parent_field, parent_id, status=PromptRevisionStatus.DRAFT
+        )
+        if existing:
+            raise PromptRevisionActiveDraftExistsError
+        values: dict[str, object] = {
+            parent_field: parent_id,
+            "revision_number": await self._revisions.next_revision_number(
+                revision_type, parent_field, parent_id
+            ),
+            "text": text,
+        }
+        if tenant_id is not None:
+            values["tenant_id"] = tenant_id
+        return await self._revisions.add(revision_type(**values))
+
+    async def _update_text_draft(
+        self,
+        revision_type: type[Any],
         revision_id: UUID,
-    ) -> PromptBundleRevision:
-        revision = await self._revision_for_update(tenant_id, revision_id)
-        if revision.status is not PromptBundleRevisionStatus.DRAFT:
-            raise PromptBundleRevisionImmutableError
-        revision.status = PromptBundleRevisionStatus.PUBLISHED
+        value: str,
+        expected_version: int,
+        tenant_id: UUID | None = None,
+    ) -> Any:
+        revision = await self._revisions.revision(
+            revision_type, revision_id, tenant_id=tenant_id, lock=True
+        )
+        if revision is None:
+            raise PromptRevisionNotFoundError
+        if revision.status is not PromptRevisionStatus.DRAFT:
+            raise PromptRevisionImmutableError
+        if revision.version != expected_version:
+            raise PromptRevisionVersionConflictError
+        revision.text = value
+        revision.version += 1
+        await self._revisions.flush()
+        return revision
+
+    async def _publish_text(
+        self,
+        revision_type: type[Any],
+        revision_id: UUID,
+        tenant_id: UUID | None = None,
+    ) -> Any:
+        revision = await self._revisions.revision(
+            revision_type, revision_id, tenant_id=tenant_id, lock=True
+        )
+        if revision is None:
+            raise PromptRevisionNotFoundError
+        if revision.status is not PromptRevisionStatus.DRAFT:
+            raise PromptRevisionImmutableError
+        revision.status = PromptRevisionStatus.PUBLISHED
         revision.published_at = datetime.now(UTC)
         await self._revisions.flush()
         return revision
 
-    async def list(self, tenant_id: UUID) -> list[PromptBundleRevision]:
-        if await self._tenants.get(tenant_id) is None:
-            raise TenantNotFoundError
-        return await self._revisions.list(tenant_id)
+    async def _validate_prompt_set(
+        self, tenant_id: UUID, revision: PromptSetRevision
+    ) -> list[ValidationIssue]:
+        sources = (
+            (
+                "system_prompt_revision_id",
+                SystemPromptRevision,
+                None,
+                revision.system_prompt_revision_id,
+            ),
+            (
+                "profile_prompt_revision_id",
+                ProfilePromptRevision,
+                None,
+                revision.profile_prompt_revision_id,
+            ),
+            (
+                "tenant_prompt_revision_id",
+                TenantPromptRevision,
+                tenant_id,
+                revision.tenant_prompt_revision_id,
+            ),
+            (
+                "knowledge_base_revision_id",
+                KnowledgeBaseRevision,
+                tenant_id,
+                revision.knowledge_base_revision_id,
+            ),
+        )
+        errors: list[ValidationIssue] = []
+        for field, revision_type, owner, artifact_id in sources:
+            artifact = await self._revisions.revision(
+                revision_type, artifact_id, tenant_id=owner
+            )
+            if artifact is None:
+                errors.append(
+                    ValidationIssue(
+                        path=field,
+                        code="revision_not_found",
+                        message="revision does not belong to this owner",
+                    )
+                )
+            elif artifact.status is not PromptRevisionStatus.PUBLISHED:
+                errors.append(
+                    ValidationIssue(
+                        path=field,
+                        code="revision_not_published",
+                        message="PromptSet references must be published",
+                    )
+                )
+        tenant = await self._tenants.get(tenant_id)
+        if tenant is not None and tenant.active_config_revision_id is not None:
+            config_revision = await self._configs.get(
+                tenant_id, tenant.active_config_revision_id
+            )
+            if config_revision is not None and config_revision.schema_version == 3:
+                config = TenantConfigV3.model_validate(config_revision.config)
+                profile_revision = await self._revisions.revision(
+                    ProfilePromptRevision, revision.profile_prompt_revision_id
+                )
+                if profile_revision is not None:
+                    profile = await self._revisions.profile_prompt_by_id(
+                        profile_revision.profile_prompt_id
+                    )
+                    if profile is None or profile.key != config.agent.profile:
+                        errors.append(
+                            ValidationIssue(
+                                path="profile_prompt_revision_id",
+                                code="profile_mismatch",
+                                message="PromptSet profile must match active TenantConfigV3",
+                            )
+                        )
+        return errors
 
-    async def _revision_for_update(
-        self,
-        tenant_id: UUID,
-        revision_id: UUID,
-    ) -> PromptBundleRevision:
-        revision = await self._revisions.get_for_update(tenant_id, revision_id)
+    async def _tenant(self, tenant_id: UUID) -> Tenant:
+        tenant = await self._tenants.get_for_update(tenant_id)
+        if tenant is None:
+            raise TenantNotFoundError
+        return tenant
+
+    async def _prompt_set(
+        self, tenant_id: UUID, revision_id: UUID
+    ) -> PromptSetRevision:
+        revision = await self._revisions.revision(
+            PromptSetRevision, revision_id, tenant_id=tenant_id
+        )
         if revision is None:
-            raise PromptBundleRevisionNotFoundError
+            raise PromptRevisionNotFoundError
+        return revision
+
+    async def _prompt_set_for_update(
+        self, tenant_id: UUID, revision_id: UUID
+    ) -> PromptSetRevision:
+        revision = await self._revisions.revision(
+            PromptSetRevision, revision_id, tenant_id=tenant_id, lock=True
+        )
+        if revision is None:
+            raise PromptRevisionNotFoundError
         return revision
 
 
@@ -227,12 +584,10 @@ class ConfigUseCases:
         self,
         tenants: TenantRepository,
         revisions: ConfigRevisionRepository,
-        prompt_bundles: PromptBundleRevisionRepository,
         connections: IntegrationConnectionRepository,
     ) -> None:
         self._tenants = tenants
         self._revisions = revisions
-        self._prompt_bundles = prompt_bundles
         self._connections = connections
 
     async def create_config_draft(
@@ -259,7 +614,7 @@ class ConfigUseCases:
             schema_version = (
                 config_schema_version
                 if type(config_schema_version) is int and config_schema_version > 0
-                else 1
+                else 3
             )
 
         revision = TenantConfigRevision(
@@ -428,14 +783,14 @@ class ConfigUseCases:
         self,
         revision: TenantConfigRevision,
     ) -> tuple[TenantConfig | None, list[ValidationIssue]]:
-        if revision.schema_version not in (1, 2):
+        if revision.schema_version not in (1, 2, 3):
             return (
                 None,
                 [
                     ValidationIssue(
                         path="schema_version",
                         code="unsupported_schema_version",
-                        message="Only schema_version 1 and 2 are supported",
+                        message="Only schema_version 1, 2 and 3 are supported",
                     )
                 ],
             )
@@ -443,8 +798,10 @@ class ConfigUseCases:
             config: TenantConfig
             if revision.schema_version == 1:
                 config = TenantConfigV1.model_validate(revision.config)
-            else:
+            elif revision.schema_version == 2:
                 config = TenantConfigV2.model_validate(revision.config)
+            else:
+                config = TenantConfigV3.model_validate(revision.config)
         except ValidationError as error:
             return (
                 None,
@@ -472,33 +829,7 @@ class ConfigUseCases:
                     )
                 ],
             )
-        if isinstance(config, TenantConfigV2):
-            prompt_revision = await self._prompt_bundles.get(
-                revision.tenant_id,
-                config.prompt_bundle_revision_id,
-            )
-            if prompt_revision is None:
-                return (
-                    None,
-                    [
-                        ValidationIssue(
-                            path="prompt_bundle_revision_id",
-                            code="prompt_bundle_revision_not_found",
-                            message="Prompt bundle revision does not belong to tenant",
-                        )
-                    ],
-                )
-            if prompt_revision.status is not PromptBundleRevisionStatus.PUBLISHED:
-                return (
-                    None,
-                    [
-                        ValidationIssue(
-                            path="prompt_bundle_revision_id",
-                            code="prompt_bundle_revision_not_published",
-                            message="Prompt bundle revision is not published",
-                        )
-                    ],
-                )
+        if isinstance(config, (TenantConfigV2, TenantConfigV3)):
             capability_errors = await self._validate_capabilities(
                 revision.tenant_id,
                 config,
@@ -510,7 +841,7 @@ class ConfigUseCases:
     async def _validate_capabilities(
         self,
         tenant_id: UUID,
-        config: TenantConfigV2,
+        config: TenantConfigV2 | TenantConfigV3,
     ) -> list[ValidationIssue]:
         errors: list[ValidationIssue] = []
         for semantic_key, raw_profile in config.capabilities.items():

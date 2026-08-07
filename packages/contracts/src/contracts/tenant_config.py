@@ -34,6 +34,22 @@ class AgentConfig(_TenantConfigModel):
     greeting: str = Field(min_length=1, max_length=1000)
 
 
+class BusinessConfig(_TenantConfigModel):
+    name: str = Field(min_length=1, max_length=255)
+    type: str = Field(min_length=1, max_length=64)
+
+
+class ContactConfig(_TenantConfigModel):
+    address: str | None = Field(default=None, min_length=1, max_length=1000)
+    phones: list[str] = Field(default_factory=list, max_length=20)
+    emails: list[str] = Field(default_factory=list, max_length=20)
+    website: str | None = Field(default=None, min_length=1, max_length=2048)
+
+
+class AgentConfigV3(AgentConfig):
+    profile: str = Field(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
+
+
 class ConversationScope(StrEnum):
     PROPERTY_ONLY = "property_only"
 
@@ -117,7 +133,19 @@ class TenantConfigV2(_TenantConfigBase):
     prompt_bundle_revision_id: UUID
 
 
-TenantConfig = TenantConfigV1 | TenantConfigV2
+class TenantConfigV3(_TenantConfigModel):
+    schema_version: Literal[3]
+    business: BusinessConfig
+    contact: ContactConfig = Field(default_factory=ContactConfig)
+    localization: LocalizationConfig
+    agent: AgentConfigV3
+    conversation: ConversationConfig
+    capabilities: dict[str, StrictBool | TenantCapabilityProfile] = Field(
+        default_factory=dict
+    )
+
+
+TenantConfig = TenantConfigV1 | TenantConfigV2 | TenantConfigV3
 
 
 class ActiveTenantConfig(_TenantConfigModel):

@@ -58,13 +58,14 @@ def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
     return "\n\n".join(
         part
         for part in (
-            context.prompt.system_instructions,
-            context.prompt.tenant_instructions,
-            context.prompt.knowledge_text,
+            context.prompt.system_prompt,
+            context.prompt.profile_prompt,
+            context.prompt.tenant_prompt,
             f"Locale: {context.locale}",
             f"Timezone: {context.timezone}",
             f"Conversation scope: {context.conversation_scope}",
             "Use a capability tool when its inputs are known. Do not promise success before its result. reservation_submit_request submits a request; it never confirms a reservation.",
+            context.prompt.knowledge_context,
         )
         if part
     )

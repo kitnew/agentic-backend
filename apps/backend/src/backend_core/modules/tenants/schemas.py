@@ -54,6 +54,7 @@ class TenantResponse(BaseModel):
     business_type: str
     status: TenantStatus
     active_config_revision_id: UUID | None
+    active_prompt_set_revision_id: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -156,6 +157,86 @@ class PromptBundleRevisionResponse(BaseModel):
     system_instructions: str
     tenant_instructions: str
     knowledge_text: str
+    created_at: datetime
+    published_at: datetime | None
+    version: int
+
+
+PromptText = Annotated[str, Field(max_length=1_000_000)]
+
+
+class CreatePlatformPromptDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: Annotated[
+        str, Field(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
+    ]
+    text: PromptText
+
+
+class CreateTextDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: PromptText = ""
+
+
+class UpdateTextDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: PromptText
+
+
+class PromptTextRevisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    revision_number: int
+    status: str
+    text: str
+    created_at: datetime
+    published_at: datetime | None
+    version: int
+
+
+class PlatformPromptRevisionResponse(PromptTextRevisionResponse):
+    prompt_id: UUID
+    key: str
+
+
+class TenantPromptRevisionResponse(PromptTextRevisionResponse):
+    tenant_id: UUID
+    prompt_id: UUID
+
+
+class KnowledgeBaseRevisionResponse(PromptTextRevisionResponse):
+    tenant_id: UUID
+    knowledge_base_id: UUID
+
+
+class CreatePromptSetDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    system_prompt_revision_id: UUID
+    profile_prompt_revision_id: UUID
+    tenant_prompt_revision_id: UUID
+    knowledge_base_revision_id: UUID
+
+
+class UpdatePromptSetDraftRequest(CreatePromptSetDraftRequest):
+    pass
+
+
+class PromptSetRevisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    tenant_id: UUID
+    revision_number: int
+    status: str
+    system_prompt_revision_id: UUID
+    profile_prompt_revision_id: UUID
+    tenant_prompt_revision_id: UUID
+    knowledge_base_revision_id: UUID
     created_at: datetime
     published_at: datetime | None
     version: int

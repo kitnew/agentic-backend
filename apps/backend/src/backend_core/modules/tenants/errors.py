@@ -42,6 +42,30 @@ class PromptBundleRevisionVersionConflictError(PromptBundleRevisionError):
     pass
 
 
+class PromptRevisionError(Exception):
+    pass
+
+
+class PromptRevisionNotFoundError(PromptRevisionError):
+    pass
+
+
+class PromptRevisionImmutableError(PromptRevisionError):
+    pass
+
+
+class PromptRevisionVersionConflictError(PromptRevisionError):
+    pass
+
+
+class PromptRevisionActiveDraftExistsError(PromptRevisionError):
+    pass
+
+
+class InvalidPromptSetError(PromptRevisionError):
+    pass
+
+
 class ConfigRevisionError(Exception):
     pass
 

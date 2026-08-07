@@ -16,13 +16,14 @@ from backend_core.modules.conversations.router import (
 )
 from backend_core.modules.integrations.router import router as integrations_router
 from backend_core.modules.tenants import router as tenants_router
-from backend_core.modules.tenants.router import internal_router
+from backend_core.modules.tenants.router import internal_router, platform_router
 from fastapi import APIRouter
 
 router = APIRouter()
 
 router.include_router(health_router)
 router.include_router(tenants_router)
+router.include_router(platform_router)
 router.include_router(internal_router)
 router.include_router(calls_router)
 router.include_router(call_runtime_router)

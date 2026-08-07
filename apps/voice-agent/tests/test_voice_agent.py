@@ -52,9 +52,11 @@ def runtime_context() -> VoiceAgentRuntimeContext:
         greeting="Dobry den",
         conversation_scope="property_only",
         prompt={
-            "system_instructions": "System prompt",
-            "tenant_instructions": "Tenant prompt",
-            "knowledge_text": "Knowledge",
+            "system_prompt": "System prompt",
+            "profile_prompt": "Profile prompt",
+            "tenant_prompt": "Tenant prompt",
+            "knowledge_context": "Knowledge",
+            "knowledge_base_revision_id": uuid4(),
         },
     )
 
@@ -122,12 +124,12 @@ async def test_service_jwt_has_one_requested_scope() -> None:
 def test_prompt_assembly_uses_only_runtime_material() -> None:
     instructions = assemble_instructions(runtime_context())
     assert instructions == (
-        "System prompt\n\nTenant prompt\n\nKnowledge\n\n"
+        "System prompt\n\nProfile prompt\n\nTenant prompt\n\n"
         "Locale: sk-SK\n\nTimezone: Europe/Bratislava\n\n"
         "Conversation scope: property_only\n\n"
         "Use a capability tool when its inputs are known. Do not promise success "
         "before its result. reservation_submit_request submits a request; it never "
-        "confirms a reservation."
+        "confirms a reservation.\n\nKnowledge"
     )
 
 

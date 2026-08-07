@@ -48,12 +48,9 @@ class CallSession(Base):
             name="fk_call_sessions_config_revision_same_tenant",
         ),
         ForeignKeyConstraint(
-            ("tenant_id", "prompt_bundle_revision_id"),
-            (
-                "prompt_bundle_revisions.tenant_id",
-                "prompt_bundle_revisions.id",
-            ),
-            name="fk_call_sessions_prompt_revision_same_tenant",
+            ("tenant_id", "prompt_set_revision_id"),
+            ("prompt_set_revisions.tenant_id", "prompt_set_revisions.id"),
+            name="fk_call_sessions_prompt_set_revision_same_tenant",
         ),
         UniqueConstraint(
             "provider",
@@ -99,7 +96,7 @@ class CallSession(Base):
         ),
     )
     tenant_config_revision_id: Mapped[UUID] = mapped_column(Uuid)
-    prompt_bundle_revision_id: Mapped[UUID] = mapped_column(Uuid)
+    prompt_set_revision_id: Mapped[UUID] = mapped_column(Uuid)
     channel: Mapped[CallChannel] = mapped_column(
         Enum(
             CallChannel,

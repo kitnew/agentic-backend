@@ -42,6 +42,7 @@ from contracts.tenant_config import (
     TenantConfig,
     TenantConfigV1,
     TenantConfigV2,
+    TenantConfigV3,
 )
 from contracts.voice import (
     CallLifecycleResponse,
@@ -91,6 +92,7 @@ __all__ = [
     "TenantConfig",
     "TenantConfigV1",
     "TenantConfigV2",
+    "TenantConfigV3",
     "TraceContext",
     "VoiceAgentPrompt",
     "VoiceAgentRuntimeContext",

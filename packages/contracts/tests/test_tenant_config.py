@@ -7,6 +7,7 @@ from contracts import (
     ConversationScope,
     TenantConfigV1,
     TenantConfigV2,
+    TenantConfigV3,
 )
 from pydantic import ValidationError
 
@@ -46,12 +47,29 @@ def test_v1_rejects_unknown_fields_and_schema_versions() -> None:
     document["unknown"] = True
     with pytest.raises(ValidationError):
         TenantConfigV1.model_validate_json(json.dumps(document))
-
     document.pop("unknown")
     document["schema_version"] = 2
     with pytest.raises(ValidationError):
         TenantConfigV1.model_validate_json(json.dumps(document))
 
+
+def test_v3_keeps_prompt_text_out_of_deterministic_configuration() -> None:
+    config = {
+        "schema_version": 3,
+        "business": {"name": "Fixture Hotel", "type": "hotel"},
+        "contact": {"phones": ["+421900000000"]},
+        "localization": {"default_locale": "sk-SK", "timezone": "Europe/Bratislava"},
+        "agent": {
+            "display_name": "Amelia",
+            "greeting": "Dobry den",
+            "profile": "hotel_assistant",
+        },
+        "conversation": {"scope": "property_only"},
+        "capabilities": {},
+    }
+    assert TenantConfigV3.model_validate(config).agent.profile == "hotel_assistant"
+    with pytest.raises(ValidationError):
+        TenantConfigV3.model_validate({**config, "knowledge_text": "Breakfast"})
 
 def test_v1_rejects_unknown_timezone() -> None:
     document = json.loads(fixture_json())
