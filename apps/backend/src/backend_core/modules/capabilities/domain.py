@@ -1,5 +1,6 @@
 import json
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Protocol
@@ -8,15 +9,16 @@ from zoneinfo import ZoneInfo
 
 import jsonata  # type: ignore[import-untyped]
 from contracts import (
+    ExecutionPlan,
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsAppendValuesResult,
     GoogleSheetsIdempotency,
     ManagedWebhookCapability,
     ManagedWebhookExecution,
     ManagedWebhookPostJsonPlan,
-    ManagedWebhookPostJsonResult,
     ReservationRequestSubmitted,
     RuntimeCapabilityDefinition,
+    TechnicalResult,
     TenantCapabilityProfile,
 )
 from jsonschema import (  # type: ignore[import-untyped]
@@ -27,6 +29,7 @@ from jsonschema.exceptions import (  # type: ignore[import-untyped]
     SchemaError,
     ValidationError,
 )
+from pydantic import TypeAdapter
 
 CANONICAL_FIELDS = {
     "guest.name": "string",
@@ -70,6 +73,9 @@ REGISTRY = {
         tool_name=TOOL_NAME,
     )
 }
+
+
+SemanticResultMapper = Callable[[TechnicalResult], ReservationRequestSubmitted]
 
 
 class CapabilityValidationError(ValueError):
@@ -475,9 +481,7 @@ def compile_plan(
     )
 
 
-def semantic_result(
-    result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult,
-) -> ReservationRequestSubmitted:
+def _reservation_result(result: TechnicalResult) -> ReservationRequestSubmitted:
     return ReservationRequestSubmitted(
         request_reference=(
             result.updated_range
@@ -486,6 +490,38 @@ def semantic_result(
         ),
         deduplicated=result.deduplicated,
     )
+
+
+SEMANTIC_RESULT_MAPPERS: dict[tuple[str, int], SemanticResultMapper] = {
+    (SEMANTIC_KEY, SEMANTIC_VERSION): _reservation_result,
+}
+
+
+def validate_result_for_plan(
+    execution_plan: dict[str, object], result: TechnicalResult
+) -> None:
+    try:
+        plan: ExecutionPlan = TypeAdapter(ExecutionPlan).validate_python(execution_plan)
+    except Exception as error:
+        raise CapabilityValidationError(
+            "execution_plan_invalid", "Invocation execution plan is invalid"
+        ) from error
+    if result.result_type != plan.plan_type:
+        raise CapabilityValidationError(
+            "result_plan_mismatch", "Worker result does not match execution plan"
+        )
+
+
+def semantic_result(
+    semantic_key: str, semantic_version: int, result: TechnicalResult
+) -> ReservationRequestSubmitted:
+    mapper = SEMANTIC_RESULT_MAPPERS.get((semantic_key, semantic_version))
+    if mapper is None:
+        raise CapabilityValidationError(
+            "unsupported_capability_version",
+            "Capability semantic key or version is unsupported",
+        )
+    return mapper(result)
 
 
 def runtime_definition(

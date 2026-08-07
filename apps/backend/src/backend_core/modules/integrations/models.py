@@ -13,6 +13,10 @@ class IntegrationProvider(StrEnum):
     MANAGED_WEBHOOK = "managed_webhook"
 
 
+def provider_for_plan_type(plan_type: str) -> IntegrationProvider:
+    return IntegrationProvider(plan_type.rsplit(".", 2)[0])
+
+
 class IntegrationConnectionStatus(StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"

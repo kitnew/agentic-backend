@@ -7,6 +7,7 @@ from contracts import (
     GoogleSheetsAppendValuesPlan,
     IntegrationJob,
     RuntimeCapabilityDefinition,
+    TechnicalResult,
     WorkerResultReport,
 )
 from pydantic import TypeAdapter, ValidationError
@@ -35,7 +36,6 @@ def test_job_and_result_contracts_round_trip() -> None:
     job = IntegrationJob(
         job_id=uuid4(),
         capability_invocation_id=uuid4(),
-        tenant_id=uuid4(),
         execution_plan=plan(),
         created_at=now,
         expires_at=now + timedelta(minutes=10),
@@ -57,6 +57,41 @@ def test_job_and_result_contracts_round_trip() -> None:
         completed_at=now,
     )
     assert WorkerResultReport.model_validate_json(report.model_dump_json()) == report
+
+
+def test_result_discriminator_and_outcome_invariants_are_enforced() -> None:
+    now = datetime.now(UTC)
+    with pytest.raises(ValidationError):
+        TypeAdapter(TechnicalResult).validate_python({"result_type": "unknown.v1"})
+    with pytest.raises(ValidationError):
+        WorkerResultReport.model_validate(
+            {
+                "job_id": str(uuid4()),
+                "capability_invocation_id": str(uuid4()),
+                "status": "succeeded",
+                "attempt": 1,
+                "started_at": now,
+                "completed_at": now,
+            }
+        )
+    with pytest.raises(ValidationError):
+        WorkerResultReport.model_validate(
+            {
+                "job_id": str(uuid4()),
+                "capability_invocation_id": str(uuid4()),
+                "status": "failed",
+                "result": {
+                    "result_type": "google_sheets.append_values.v1",
+                    "status": "succeeded",
+                    "updated_range": "Reservations!A2:E2",
+                    "updated_rows": 1,
+                    "deduplicated": False,
+                },
+                "attempt": 1,
+                "started_at": now,
+                "completed_at": now,
+            }
+        )
 
 
 def test_plan_discriminator_rejects_unknown_plan() -> None:

@@ -10,10 +10,7 @@ from contracts import (
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
-    GoogleSheetsAppendValuesResult,
     IntegrationJob,
-    ManagedWebhookExecution,
-    ManagedWebhookPostJsonResult,
     ReservationRequestSubmitted,
     TenantCapabilityProfile,
     TenantConfigV2,
@@ -31,6 +28,7 @@ from backend_core.modules.capabilities.domain import (
     semantic_result,
     validate_agent_input,
     validate_business_input,
+    validate_result_for_plan,
 )
 from backend_core.modules.capabilities.models import (
     CapabilityConfirmation,
@@ -41,7 +39,7 @@ from backend_core.modules.capabilities.repository import CapabilityInvocationRep
 from backend_core.modules.conversations.repository import ConversationRepository
 from backend_core.modules.integrations.models import (
     IntegrationConnectionStatus,
-    IntegrationProvider,
+    provider_for_plan_type,
 )
 from backend_core.modules.integrations.repository import IntegrationConnectionRepository
 from backend_core.modules.tenants.models import ConfigRevisionStatus, TenantStatus
@@ -318,14 +316,10 @@ class CapabilityInvocationService:
             raise CapabilityValidationError(
                 "connection_not_found", "Integration connection was not found"
             )
-        expected_provider = (
-            IntegrationProvider.MANAGED_WEBHOOK
-            if isinstance(profile.execution, ManagedWebhookExecution)
-            else IntegrationProvider.GOOGLE_SHEETS
-        )
         if (
             connection.status is not IntegrationConnectionStatus.ACTIVE
-            or connection.provider is not expected_provider
+            or connection.provider
+            is not provider_for_plan_type(profile.execution.plan_type)
         ):
             raise CapabilityValidationError(
                 "connection_disabled", "Integration connection is unavailable"
@@ -351,7 +345,6 @@ class CapabilityInvocationService:
         job = IntegrationJob(
             job_id=job_id,
             capability_invocation_id=invocation_id,
-            tenant_id=call.tenant_id,
             execution_plan=plan,
             created_at=now,
             expires_at=now + timedelta(minutes=10),
@@ -418,22 +411,25 @@ class CapabilityInvocationService:
             return invocation
         invocation.completed_at = report.completed_at
         if report.status == "succeeded":
-            result = (
-                ManagedWebhookPostJsonResult.model_validate(report.result)
-                if report.result
-                and report.result.result_type == "managed_webhook.post_json.v1"
-                else GoogleSheetsAppendValuesResult.model_validate(report.result)
-            )
+            if report.result is None:
+                raise CapabilityValidationError(
+                    "result_missing", "Successful worker report has no result"
+                )
+            validate_result_for_plan(invocation.execution_plan, report.result)
             invocation.status = CapabilityInvocationStatus.SUCCEEDED
-            invocation.technical_result = result.model_dump(mode="json")
-            invocation.semantic_result = semantic_result(result).model_dump(mode="json")
+            invocation.technical_result = report.result.model_dump(mode="json")
+            invocation.semantic_result = semantic_result(
+                invocation.semantic_key, invocation.semantic_version, report.result
+            ).model_dump(mode="json")
         else:
+            if report.error is None:
+                raise CapabilityValidationError(
+                    "error_missing", "Failed worker report has no error"
+                )
             invocation.status = CapabilityInvocationStatus.FAILED
-            invocation.technical_result = (
-                {"error": report.error.model_dump(mode="json")}
-                if report.error
-                else None
-            )
+            invocation.technical_result = {
+                "error": report.error.model_dump(mode="json")
+            }
             invocation.error_code = "execution_failed"
             invocation.error_message = "The reservation request could not be submitted"
         await self._invocations.flush()

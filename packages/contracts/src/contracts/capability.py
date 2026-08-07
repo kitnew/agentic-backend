@@ -78,11 +78,10 @@ class TraceContext(_Contract):
 
 
 class IntegrationJob(_Contract):
-    job_version: Literal[1] = 1
+    job_version: Literal[2] = 2
     job_id: UUID
     job_type: Literal["integration.execute"] = "integration.execute"
     capability_invocation_id: UUID
-    tenant_id: UUID
     execution_plan: ExecutionPlan
     attempt: int = Field(default=1, ge=1, le=10)
     created_at: datetime

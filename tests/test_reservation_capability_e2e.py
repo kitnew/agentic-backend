@@ -184,5 +184,13 @@ async def test_two_tenants_share_the_full_compilation_and_worker_path() -> None:
     assert plan_a.plan_type == plan_b.plan_type
     assert first_a.deduplicated is False
     assert duplicate_a.deduplicated is True
-    assert semantic_result(first_a).status == "request_submitted"
-    assert "confirmed" not in semantic_result(first_b).model_dump_json()
+    assert (
+        semantic_result("reservation.submit_request", 1, first_a).status
+        == "request_submitted"
+    )
+    assert (
+        "confirmed"
+        not in semantic_result(
+            "reservation.submit_request", 1, first_b
+        ).model_dump_json()
+    )

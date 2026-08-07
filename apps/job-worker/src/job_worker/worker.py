@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import ipaddress
 import json
@@ -106,9 +108,9 @@ class MountedSecretFileCredentialResolver:
             ) from error
         if not isinstance(value, dict):
             raise TypeError("GOOGLE_SHEETS_CREDENTIAL_FILE_MAP must be an object")
-        root = Path(secrets_dir).resolve()
-        if not root.is_absolute():
+        if not Path(secrets_dir).is_absolute():
             raise ValueError("credential secrets directory must be absolute")
+        root = Path(secrets_dir).resolve()
         self._credential_files: dict[str, Path] = {}
         for key, credential_path in value.items():
             if not isinstance(key, str) or not re.fullmatch(
@@ -168,8 +170,10 @@ class ManagedWebhookConnectionResolver:
             ) from error
         if not isinstance(value, dict):
             raise TypeError("MANAGED_WEBHOOK_CONNECTION_MAP must be an object")
-        root = Path(secrets_dir).resolve()
-        self._connections: dict[str, dict[str, object]] = {}
+        if not Path(secrets_dir).is_absolute():
+            raise ValueError("managed webhook secrets directory must be absolute")
+        self._root = Path(secrets_dir).resolve()
+        self._connections: dict[str, ManagedWebhookConnectionConfig] = {}
         for reference, raw in value.items():
             if not isinstance(reference, str) or not re.fullmatch(
                 r"[a-z][a-z0-9_.-]{0,127}", reference
@@ -177,24 +181,24 @@ class ManagedWebhookConnectionResolver:
                 raise ValueError("managed webhook map contains an invalid reference")
             if not isinstance(raw, dict):
                 raise TypeError("managed webhook connection values must be objects")
-            url_file = self._safe_path(raw.get("url_file"), root)
-            api_key_file = self._safe_path(raw.get("api_key_file"), root)
+            url_file = self._safe_path(raw.get("url_file"), self._root)
+            api_key_file = self._safe_path(raw.get("api_key_file"), self._root)
             header = raw.get("api_key_header", "x-api-key")
             if not isinstance(header, str) or not re.fullmatch(
                 r"[A-Za-z0-9-]{1,64}", header
             ):
                 raise ValueError("managed webhook API key header is invalid")
-            allowed_hosts = raw.get("allowed_hosts", [])
-            if not isinstance(allowed_hosts, list) or not all(
-                isinstance(host, str) and host for host in allowed_hosts
-            ):
+            allowed_hosts = raw.get("allowed_hosts")
+            if not isinstance(allowed_hosts, list) or not allowed_hosts:
                 raise ValueError("managed webhook allowed_hosts must be a string list")
-            self._connections[reference] = {
-                "url_file": url_file,
-                "api_key_file": api_key_file,
-                "api_key_header": header,
-                "allowed_hosts": set(allowed_hosts),
-            }
+            self._connections[reference] = ManagedWebhookConnectionConfig(
+                url_file=url_file,
+                api_key_file=api_key_file,
+                api_key_header=header,
+                allowed_hosts=frozenset(
+                    self._normalized_hostname(host) for host in allowed_hosts
+                ),
+            )
 
     @staticmethod
     def _safe_path(value: object, root: Path) -> Path:
@@ -212,7 +216,31 @@ class ManagedWebhookConnectionResolver:
             ) from error
         return resolved
 
-    def resolve(self, reference: str) -> tuple[str, str, str, set[str]]:
+    @staticmethod
+    def _normalized_hostname(value: object) -> str:
+        if not isinstance(value, str):
+            raise TypeError("managed webhook allowed_hosts must be a string list")
+        hostname = value.rstrip(".").lower()
+        if not hostname or not re.fullmatch(
+            r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+            hostname,
+        ):
+            raise ValueError("managed webhook allowed host is invalid")
+        return hostname
+
+    def _read_secret(self, path: Path) -> str:
+        try:
+            resolved = path.resolve(strict=True)
+            resolved.relative_to(self._root)
+            return resolved.read_text(encoding="utf-8").strip()
+        except (OSError, ValueError) as error:
+            raise ExecutionError(
+                "credential_resolution_failed",
+                "Managed webhook credentials could not be loaded",
+                transient=False,
+            ) from error
+
+    def resolve(self, reference: str) -> ResolvedManagedWebhookConnection:
         connection = self._connections.get(reference)
         if connection is None:
             raise ExecutionError(
@@ -220,31 +248,36 @@ class ManagedWebhookConnectionResolver:
                 "Managed webhook connection could not be resolved",
                 transient=False,
             )
-        try:
-            url = Path(str(connection["url_file"])).read_text(encoding="utf-8").strip()
-            api_key = (
-                Path(str(connection["api_key_file"]))
-                .read_text(encoding="utf-8")
-                .strip()
-            )
-        except OSError as error:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Managed webhook credentials could not be loaded",
-                transient=False,
-            ) from error
+        url = self._read_secret(connection.url_file)
+        api_key = self._read_secret(connection.api_key_file)
         if not url or not api_key:
             raise ExecutionError(
                 "credential_resolution_failed",
                 "Managed webhook credentials are empty",
                 transient=False,
             )
-        return (
-            url,
-            api_key,
-            str(connection["api_key_header"]),
-            connection["allowed_hosts"],  # type: ignore[return-value]
+        return ResolvedManagedWebhookConnection(
+            url=url,
+            api_key=api_key,
+            api_key_header=connection.api_key_header,
+            allowed_hosts=connection.allowed_hosts,
         )
+
+
+@dataclass(frozen=True)
+class ManagedWebhookConnectionConfig:
+    url_file: Path
+    api_key_file: Path
+    api_key_header: str
+    allowed_hosts: frozenset[str]
+
+
+@dataclass(frozen=True)
+class ResolvedManagedWebhookConnection:
+    url: str
+    api_key: str
+    api_key_header: str
+    allowed_hosts: frozenset[str]
 
 
 class CredentialResolver(Protocol):
@@ -266,35 +299,47 @@ class ManagedWebhookPostJsonHandler:
     async def execute(
         self, plan: ManagedWebhookPostJsonPlan
     ) -> ManagedWebhookPostJsonResult:
-        url, api_key, header, allowed_hosts = self._connections.resolve(
-            plan.connection_ref
-        )
-        parsed = urlparse(url)
-        if parsed.scheme != "https" and not self._allow_insecure:
+        connection = self._connections.resolve(plan.connection_ref)
+        parsed = urlparse(connection.url)
+        if parsed.scheme not in (
+            {"https", "http"} if self._allow_insecure else {"https"}
+        ):
             raise ExecutionError(
                 "provider_permanent_error",
                 "Managed webhook requires HTTPS",
                 transient=False,
             )
-        if not parsed.hostname or parsed.username or parsed.password:
+        if not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
             raise ExecutionError(
                 "provider_permanent_error",
                 "Managed webhook URL is invalid",
                 transient=False,
             )
-        if not self._allow_insecure and parsed.hostname not in allowed_hosts:
-            try:
-                address = ipaddress.ip_address(parsed.hostname)
-            except ValueError:
-                address = None
-            if address is not None and (
-                address.is_private or address.is_loopback or address.is_link_local
-            ):
-                raise ExecutionError(
-                    "provider_permanent_error",
-                    "Managed webhook destination is not allowed",
-                    transient=False,
-                )
+        try:
+            hostname = self._connections._normalized_hostname(parsed.hostname)
+            port = parsed.port
+        except ValueError as error:
+            raise ExecutionError(
+                "provider_permanent_error",
+                "Managed webhook URL is invalid",
+                transient=False,
+            ) from error
+        try:
+            address = ipaddress.ip_address(hostname)
+        except ValueError:
+            address = None
+        if port not in {None, 443 if parsed.scheme == "https" else 80}:
+            raise ExecutionError(
+                "provider_permanent_error",
+                "Managed webhook URL port is not allowed",
+                transient=False,
+            )
+        if address is not None or hostname not in connection.allowed_hosts:
+            raise ExecutionError(
+                "provider_permanent_error",
+                "Managed webhook destination is not allowed",
+                transient=False,
+            )
         envelope = {
             "contract_version": 1,
             "operation_id": str(plan.operation_id),
@@ -310,8 +355,11 @@ class ManagedWebhookPostJsonHandler:
             )
         try:
             response = await self._client.post(
-                url,
-                headers={header: api_key, "Content-Type": "application/json"},
+                connection.url,
+                headers={
+                    connection.api_key_header: connection.api_key,
+                    "Content-Type": "application/json",
+                },
                 content=encoded.encode(),
                 timeout=plan.timeout_seconds,
                 follow_redirects=False,
@@ -330,13 +378,6 @@ class ManagedWebhookPostJsonHandler:
             raise ExecutionError(
                 "response_too_large",
                 "Managed webhook response is too large",
-                transient=False,
-            )
-        content_type = response.headers.get("content-type", "")
-        if "application/json" not in content_type.lower():
-            raise ExecutionError(
-                "response_contract_invalid",
-                "Managed webhook response must be JSON",
                 transient=False,
             )
         if (
@@ -359,6 +400,13 @@ class ManagedWebhookPostJsonHandler:
             raise ExecutionError(
                 "provider_permanent_error",
                 "Managed webhook returned an unsupported status",
+                transient=False,
+            )
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type.lower():
+            raise ExecutionError(
+                "response_contract_invalid",
+                "Managed webhook response must be JSON",
                 transient=False,
             )
         try:
@@ -641,7 +689,6 @@ class CapabilityWorker:
         logger.info(
             "capability_job_started",
             extra={
-                "tenant_id": str(job.tenant_id),
                 "invocation_id": str(job.capability_invocation_id),
                 "job_id": str(job.job_id),
                 "redis_message_id": message_id,
@@ -664,7 +711,6 @@ class CapabilityWorker:
             logger.info(
                 "capability_provider_call_started",
                 extra={
-                    "tenant_id": str(job.tenant_id),
                     "invocation_id": str(job.capability_invocation_id),
                     "job_id": str(job.job_id),
                     "plan_type": job.execution_plan.plan_type,
@@ -685,7 +731,6 @@ class CapabilityWorker:
             logger.info(
                 "capability_provider_call_completed",
                 extra={
-                    "tenant_id": str(job.tenant_id),
                     "invocation_id": str(job.capability_invocation_id),
                     "job_id": str(job.job_id),
                     "plan_type": job.execution_plan.plan_type,
@@ -706,7 +751,6 @@ class CapabilityWorker:
                 logger.info(
                     "capability_job_requeued",
                     extra={
-                        "tenant_id": str(job.tenant_id),
                         "invocation_id": str(job.capability_invocation_id),
                         "job_id": str(job.job_id),
                         "redis_message_id": message_id,
