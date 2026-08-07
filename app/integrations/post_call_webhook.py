@@ -29,7 +29,10 @@ async def send_post_call_webhook(
     try:
         async with session.post(config.webhook_url, json=payload, headers=headers) as response:
             if response.status >= 400:
-                raise RuntimeError(f"post_call_webhook_http_{response.status}")
+                body = await response.text()
+                raise RuntimeError(
+                    f"post_call_webhook_http_{response.status}: {body[:1000]}"
+                )
     finally:
         if owns_session:
             await session.close()
