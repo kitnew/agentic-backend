@@ -87,7 +87,7 @@ Do not proactively offer or mention this discount.
 
 Only when the guest explicitly states that they found a lower price for the stay on Booking.com, explain that a 10 percent discount from the applicable room unit price can be offered.
 
-If the guest asks for the exact discounted amount, explain that reception will prepare the exact amount and state only that the discount is 10 percent from the unit room price.
+If the guest asks for the exact discounted amount state only that the discount is 10 percent from the unit room price.
 
 When submitting the related reservation request, include the following information in notes:
 
