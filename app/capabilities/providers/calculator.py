@@ -17,7 +17,13 @@ class CalculatorProvider:
         tenant_context: TenantContext,
         capability_request: CapabilityRequest,
     ) -> CapabilityResult:
-        request = CalculatorRequest.model_validate(capability_request.input)
+        request = CalculatorRequest.model_validate(
+            {
+                field: capability_request.input[field]
+                for field in CalculatorRequest.model_fields
+                if field in capability_request.input
+            }
+        )
         operands = [Decimal(value) for value in request.operands]
         if request.operation == "divide" and operands[1].is_zero():
             return CapabilityResult(

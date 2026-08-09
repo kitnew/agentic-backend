@@ -263,6 +263,9 @@ def test_penzion_grand_prompt_contains_each_safe_section_once():
     assert "Refuse unrelated requests without answering them" in prompt
     assert "S otázkami mimo Penziónu Grand" in prompt
     assert "I can only help with questions related to Penzión Grand" in prompt
+    assert "For one guest staying in the `two_bed` room type" in prompt
+    assert "Never divide either price by the number of guests" in prompt
+    assert "Mandatory rule: use `calculator.calculate` for every arithmetic operation" in prompt
     assert "at or after 22:00" in prompt
     assert "check-out exclusive" in prompt
     assert "check-out date is the departure date" in prompt

@@ -48,10 +48,12 @@ def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
             **common,
             public_name="calculate",
             description=(
-                "Perform exactly one deterministic arithmetic operation. Use this tool instead "
-                "of doing user-facing arithmetic yourself. For multi-step calculations, call it "
-                "sequentially and use the previous result as an operand. percentage(a, b) means "
-                "b percent of a."
+                "MANDATORY: use this tool for every arithmetic operation involving numbers; "
+                "never calculate, estimate, round, split, compare by arithmetic, or apply a "
+                "percentage yourself. Do not provide a numeric result until this tool returns. "
+                "Perform exactly one deterministic arithmetic operation per call. For multi-step "
+                "calculations, call it sequentially and use the previous result as an operand. "
+                "percentage(a, b) means b percent of a."
             ),
             parameters={
                 "type": "object",

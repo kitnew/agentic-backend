@@ -116,7 +116,8 @@ def test_backend_resolves_tools_for_every_existing_tenant():
     assert "email" not in hotel_create.parameters["properties"]
     assert "use_inbound_caller_number" in hotel_create.parameters["properties"]
     calculator = next(tool for tool in hotel if tool.backend_capability == "calculator.calculate")
-    assert "instead of doing user-facing arithmetic yourself" in calculator.description
+    assert "MANDATORY: use this tool for every arithmetic operation involving numbers" in calculator.description
+    assert "Do not provide a numeric result until this tool returns" in calculator.description
     assert calculator.parameters["properties"]["operands"]["maxItems"] == 10
     assert "Customer confirmation is required" in hotel_create.description
     assert "Customer confirmation is not required" in next(

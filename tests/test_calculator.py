@@ -80,3 +80,23 @@ def test_calculator_rejects_division_by_zero(router, tenant):
     assert response.status == CapabilityStatus.FAILED
     assert response.provider == "calculator"
     assert response.error == "division_by_zero"
+
+
+def test_calculator_ignores_backend_execution_context(router, tenant):
+    response = router.execute(
+        tenant,
+        CapabilityRequest(
+            name="calculator.calculate",
+            input={
+                "operation": "multiply",
+                "operands": ["3.5", "2"],
+                "tenant_id": "demo_restaurant",
+                "message_id": "message-1",
+                "conversation_id": "conversation-1",
+                "source_channel": "voice",
+            },
+        ),
+    )
+
+    assert response.status == CapabilityStatus.SUCCESS
+    assert response.output["result"] == "7.0"

@@ -95,8 +95,13 @@ If handoff is unavailable, provide the configured public contact alternative.
 
 ## Calculations
 
-Use `calculator.calculate` for arithmetic instead of calculating numeric
-results yourself.
+Mandatory rule: use `calculator.calculate` for every arithmetic operation
+involving numbers. Never calculate, estimate, round, split, compare by
+arithmetic, or apply a percentage yourself.
+
+Do not provide the numeric result until the calculator has returned a result.
+If the calculator is unavailable or fails, do not calculate around it; state
+briefly that you cannot provide the calculated result.
 
 The calculator performs one arithmetic operation per call.
 For multi-step calculations, call it repeatedly and use the returned
