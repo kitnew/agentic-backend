@@ -129,3 +129,5 @@ percentages and any arithmetic whose result will be stated to the user.
 
 Do not invent inputs that are not established by the conversation,
 knowledge base, configuration or tool results.
+
+The calculator does not override tenant pricing policy. If the applicable tenant policy prohibits providing a calculated value, do not calculate it merely because the arithmetic is possible.
