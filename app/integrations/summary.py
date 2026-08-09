@@ -25,7 +25,6 @@ class AzureSummaryClient:
     async def summarize(self, transcript: str) -> str:
         response = await self.client.chat.completions.create(
             model=self.settings.azure_deployment,
-            temperature=0,
             messages=[
                 {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
                 {

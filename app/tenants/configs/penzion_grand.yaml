@@ -126,7 +126,7 @@ features:
   reservation_modify: true
   reservation_cancel: true
   reservation_lookup: false
-  human_transfer: false
+  human_transfer: true
 
 capabilities:
   calculator.calculate:

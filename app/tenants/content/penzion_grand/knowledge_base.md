@@ -171,6 +171,12 @@ Reservations can normally be made up to one year in advance.
 
 Reception needs the requested room type, stay dates, and guest name.
 
+A new reservation request submitted by the voice assistant is reviewed by reception staff.
+
+Submitting the request does not itself confirm the reservation.
+
+After reception processes and accepts the request, the reservation is confirmed to the guest by SMS.
+
 For stays longer than seven nights, a 10 percent room-price discount is available.
 
 Group bookings may receive an individually agreed discount when they include:

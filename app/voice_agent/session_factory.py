@@ -121,7 +121,6 @@ def build_session(settings, metadata, vad) -> AgentSession:
             azure_deployment=settings.azure_openai_deployment,
             api_version=settings.azure_openai_api_version,
             api_key=settings.azure_openai_api_key,
-            temperature=1,
         ),
         tts=elevenlabs.TTS(
             api_key=settings.elevenlabs_api_key,
