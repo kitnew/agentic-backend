@@ -129,6 +129,9 @@ features:
   human_transfer: false
 
 capabilities:
+  calculator.calculate:
+    enabled: true
+    provider: calculator
   reservation.check_availability:
     enabled: true
     provider: make_webhook
@@ -143,6 +146,7 @@ capabilities:
       response_format: availability_text
       row_format: accommodation_availability
       announcement: Skontrolujem dostupnosť izieb.
+      confirmation_required: false
   reservation.create_request:
     enabled: true
     provider: make_webhook
@@ -159,6 +163,7 @@ capabilities:
       response_format: acknowledgement
       row_format: accommodation_request
       announcement: Výborne, teraz odošlem požiadavku na rezerváciu.
+      confirmation_required: true
   reservation.change_request:
     enabled: true
     provider: make_webhook
@@ -174,6 +179,7 @@ capabilities:
       response_format: acknowledgement
       timeout_seconds: 15
       announcement: Zmeny rezervácie odošlem personálu na spracovanie.
+      confirmation_required: true
   reservation.cancel_request:
     enabled: true
     provider: make_webhook
@@ -188,6 +194,7 @@ capabilities:
       response_format: acknowledgement
       timeout_seconds: 15
       announcement: Zrušenie rezervácie odošlem personálu na spracovanie.
+      confirmation_required: true
   reservation.check_existing_reservation:
     enabled: false
     provider: make_webhook

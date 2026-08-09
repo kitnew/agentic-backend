@@ -140,6 +140,9 @@ voice:
     continue_if_stt_metadata_missing: true
 
 capabilities:
+  calculator.calculate:
+    enabled: true
+    provider: calculator
   reservation.create_request:
     enabled: true
     provider: google_sheets

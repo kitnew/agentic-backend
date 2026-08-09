@@ -94,9 +94,11 @@ def test_backend_resolves_tools_for_every_existing_tenant():
     hotel = resolve_runtime_tools(loader.load("penzion_grand"))
 
     assert [(tool.public_name, tool.backend_capability) for tool in restaurant] == [
-        ("create_reservation", "reservation.create_request")
+        ("calculate", "calculator.calculate"),
+        ("create_reservation", "reservation.create_request"),
     ]
     assert {tool.backend_capability for tool in hotel} == {
+        "calculator.calculate",
         "reservation.check_availability",
         "reservation.create_request",
         "reservation.change_request",
@@ -113,6 +115,15 @@ def test_backend_resolves_tools_for_every_existing_tenant():
     )
     assert "email" not in hotel_create.parameters["properties"]
     assert "use_inbound_caller_number" in hotel_create.parameters["properties"]
+    calculator = next(tool for tool in hotel if tool.backend_capability == "calculator.calculate")
+    assert "instead of doing user-facing arithmetic yourself" in calculator.description
+    assert calculator.parameters["properties"]["operands"]["maxItems"] == 10
+    assert "Customer confirmation is required" in hotel_create.description
+    assert "Customer confirmation is not required" in next(
+        tool
+        for tool in hotel
+        if tool.backend_capability == "reservation.check_availability"
+    ).description
 
     smoke_loader = TenantConfigLoader(
         Path(__file__).parents[1] / "smoke" / "tenants"

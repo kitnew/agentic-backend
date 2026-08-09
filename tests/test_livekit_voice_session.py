@@ -131,6 +131,7 @@ def test_livekit_session_creates_conversation_and_room_scoped_dispatch(monkeypat
     assert response.turn_config.stt_segmentation.threshold == 0.4
     assert metadata["instructions"]
     assert [tool["backend_capability"] for tool in metadata["tools"]] == [
+        "calculator.calculate",
         "reservation.create_request"
     ]
     assert "post_call_transcript" not in metadata

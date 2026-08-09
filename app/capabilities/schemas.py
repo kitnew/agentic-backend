@@ -1,8 +1,16 @@
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 
 
 class CapabilityStatus(str, Enum):
@@ -119,6 +127,36 @@ class ReservationChangeRequest(ExistingReservationRequest):
 
 class ReservationCancellationRequest(ExistingReservationRequest):
     reason: str = ""
+
+
+class CalculatorRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: Literal["add", "subtract", "multiply", "divide", "percentage"]
+    operands: list[Annotated[StrictStr, Field(min_length=1, max_length=128)]] = Field(
+        min_length=2, max_length=10
+    )
+
+    @field_validator("operands")
+    @classmethod
+    def validate_operands(cls, values: list[str]) -> list[str]:
+        for value in values:
+            try:
+                decimal = Decimal(value)
+            except InvalidOperation as exc:
+                raise ValueError("operands must be decimal strings") from exc
+            if not decimal.is_finite():
+                raise ValueError("operands must be finite decimal strings")
+        return values
+
+    @model_validator(mode="after")
+    def validate_arity(self):
+        if (
+            self.operation in {"subtract", "divide", "percentage"}
+            and len(self.operands) != 2
+        ):
+            raise ValueError(f"{self.operation} requires exactly two operands")
+        return self
 
 
 class CapabilityRequest(BaseModel):

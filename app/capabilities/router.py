@@ -2,6 +2,7 @@ from pydantic import ValidationError
 
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.schemas import (
+    CalculatorRequest,
     CapabilityRequest,
     CapabilityResult,
     CapabilityStatus,
@@ -134,6 +135,7 @@ class CapabilityRouter:
         request: CapabilityRequest,
     ) -> CapabilityResult | None:
         models = {
+            "calculator.calculate": CalculatorRequest,
             "reservation.check_availability": RoomAvailabilityRequest,
             "reservation.create_request": NewReservationRequest,
             "reservation.change_request": ReservationChangeRequest,
@@ -154,11 +156,17 @@ class CapabilityRouter:
             return self._validation_error(
                 request.name,
                 (
+                    "invalid_calculator_request"
+                    if request.name == "calculator.calculate"
+                    else
                     "invalid_availability_request"
                     if request.name == "reservation.check_availability"
                     else "invalid_reservation_request"
                 ),
                 (
+                    "Invalid calculator operation or operands."
+                    if request.name == "calculator.calculate"
+                    else
                     "Dátum odchodu musí byť neskôr ako dátum príchodu a počet izieb musí byť kladný."
                     if request.name == "reservation.check_availability"
                     else "Skontrolujte údaje žiadosti a potvrďte finálne detaily."

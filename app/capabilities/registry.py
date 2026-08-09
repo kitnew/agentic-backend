@@ -1,5 +1,6 @@
 from typing import Protocol
 
+from app.capabilities.providers.calculator import CalculatorProvider
 from app.capabilities.providers.disabled import DisabledProvider
 from app.capabilities.providers.google_sheets import GoogleSheetsReservationProvider
 from app.capabilities.providers.make_webhook import MakeWebhookProvider
@@ -22,6 +23,7 @@ class CapabilityProvider(Protocol):
 class CapabilityRegistry:
     def __init__(self):
         self.providers: dict[str, CapabilityProvider] = {
+            "calculator": CalculatorProvider(),
             "disabled": DisabledProvider(),
             "google_sheets": GoogleSheetsReservationProvider(),
             "make_webhook": MakeWebhookProvider(),

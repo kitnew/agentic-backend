@@ -18,6 +18,7 @@ class TenantConfigInvalidError(Exception):
 
 class TenantConfigLoader:
     known_capabilities = {
+        "calculator.calculate",
         "knowledge.search",
         "notification.send_staff_message",
         "reservation.check_availability",

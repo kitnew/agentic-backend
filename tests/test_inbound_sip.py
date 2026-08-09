@@ -122,7 +122,7 @@ def test_did_normalization_and_duplicate_assignment_validation(tmp_path):
         ("tenant_b", "0012025550123"),
     )
     with pytest.raises(TenantConfigInvalidError, match="assigned to both"):
-        loader.validate_all({"google_sheets", "disabled"})
+        loader.validate_all({"calculator", "google_sheets", "disabled"})
 
 
 def test_bootstrap_authentication_rejects_missing_and_accepts_service_token(monkeypatch):

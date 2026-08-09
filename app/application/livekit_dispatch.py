@@ -29,17 +29,56 @@ def resolve_runtime_tools(tenant) -> tuple[RuntimeToolDefinition, ...]:
     return tuple(tools)
 
 
+def _confirmation_note(config: dict) -> str:
+    return (
+        "Customer confirmation is required before invoking this tool."
+        if config.get("confirmation_required")
+        else "Customer confirmation is not required before invoking this tool."
+    )
+
+
 def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
     common = {
         "enabled": True,
         "backend_capability": capability,
         "announcement": config.get("announcement"),
     }
+    if capability == "calculator.calculate":
+        return RuntimeToolDefinition(
+            **common,
+            public_name="calculate",
+            description=(
+                "Perform exactly one deterministic arithmetic operation. Use this tool instead "
+                "of doing user-facing arithmetic yourself. For multi-step calculations, call it "
+                "sequentially and use the previous result as an operand. percentage(a, b) means "
+                "b percent of a."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "operation": {
+                        "type": "string",
+                        "enum": ["add", "subtract", "multiply", "divide", "percentage"],
+                    },
+                    "operands": {
+                        "type": "array",
+                        "items": _text(128),
+                        "minItems": 2,
+                        "maxItems": 10,
+                    },
+                },
+                "required": ["operation", "operands"],
+                "additionalProperties": False,
+            },
+        )
     if capability == "reservation.check_availability":
         return RuntimeToolDefinition(
             **common,
             public_name="check_room_availability",
-            description="Check room availability for every night of a requested stay.",
+            description=(
+                "Check room availability for every night of a requested stay. "
+                f"{_confirmation_note(config)}"
+            ),
             parameters=_object_schema(
                 {
                     "check_in": _date(),
@@ -57,7 +96,8 @@ def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
             **common,
             public_name="submit_new_reservation_request",
             description=(
-                "Submit a new accommodation request after availability and final guest confirmation."
+                "Submit a new accommodation request after availability and final guest confirmation. "
+                f"{_confirmation_note(config)}"
             ),
             inject_caller_number=True,
             parameters=_object_schema(
@@ -82,7 +122,8 @@ def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
             **common,
             public_name="create_reservation",
             description=(
-                "Submit a reservation request for staff confirmation after collecting all required fields."
+                "Submit a reservation request for staff confirmation after collecting all required fields. "
+                f"{_confirmation_note(config)}"
             ),
             inject_caller_number=True,
             argument_container="reservation_frame",
@@ -102,7 +143,10 @@ def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
         return RuntimeToolDefinition(
             **common,
             public_name="submit_reservation_change_request",
-            description="Submit any confirmed reservation change; availability fields are all-or-none.",
+            description=(
+                "Submit any confirmed reservation change; availability fields are all-or-none. "
+                f"{_confirmation_note(config)}"
+            ),
             inject_caller_number=True,
             parameters=_object_schema(
                 {
@@ -131,7 +175,10 @@ def _definition(capability: str, config: dict) -> RuntimeToolDefinition | None:
         return RuntimeToolDefinition(
             **common,
             public_name="submit_reservation_cancellation_request",
-            description="Submit a reservation cancellation after final guest confirmation.",
+            description=(
+                "Submit a reservation cancellation after final guest confirmation. "
+                f"{_confirmation_note(config)}"
+            ),
             inject_caller_number=True,
             parameters=_object_schema(
                 {
