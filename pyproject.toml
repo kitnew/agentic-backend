@@ -3,17 +3,22 @@ name = "agent-platform-workspace"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
-
+    "control-plane",
 ]
 
 [tool.uv]
 package = false
 
+[tool.uv.sources]
+control-plane = { workspace = true }
+
 [tool.uv.workspace]
 members = [
     "apps/backend",
+    "apps/control-plane",
     "apps/job-worker",
     "apps/voice-agent",
+    "packages/admin-client",
     "packages/contracts",
 ]
 
@@ -25,3 +30,13 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "ruff>=0.16.0",
 ]
+
+[tool.ruff]
+extend-exclude = ["packages/admin-client/src/admin_client/generated"]
+
+[[tool.mypy.overrides]]
+module = ["admin_client.generated.*"]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]

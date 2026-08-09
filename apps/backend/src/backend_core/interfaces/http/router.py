@@ -19,18 +19,21 @@ from backend_core.modules.tenants import router as tenants_router
 from backend_core.modules.tenants.router import internal_router, platform_router
 from fastapi import APIRouter
 
+admin_router = APIRouter()
+admin_router.include_router(tenants_router)
+admin_router.include_router(platform_router)
+admin_router.include_router(voice_admin_router)
+admin_router.include_router(conversation_admin_router)
+admin_router.include_router(integrations_router)
+
 router = APIRouter()
 
 router.include_router(health_router)
-router.include_router(tenants_router)
-router.include_router(platform_router)
+router.include_router(admin_router)
 router.include_router(internal_router)
 router.include_router(calls_router)
 router.include_router(call_runtime_router)
-router.include_router(voice_admin_router)
 router.include_router(conversation_internal_router)
-router.include_router(conversation_admin_router)
-router.include_router(integrations_router)
 router.include_router(capability_voice_router)
 router.include_router(capability_worker_router)
 

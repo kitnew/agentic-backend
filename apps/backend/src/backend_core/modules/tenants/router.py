@@ -688,9 +688,7 @@ async def list_prompt_set_revisions(
     ]
 
 
-@router.get(
-    "/{tenant_id}/prompt-set/active", response_model=PromptSetRevisionResponse
-)
+@router.get("/{tenant_id}/prompt-set/active", response_model=PromptSetRevisionResponse)
 async def active_prompt_set(
     tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
 ) -> PromptSetRevisionResponse:
@@ -855,6 +853,7 @@ async def publish_config_draft(
     "/{tenant_id}/config/import-yaml",
     response_model=LegacyConfigImportResponse,
     status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
 )
 async def import_legacy_yaml(
     tenant_id: UUID,

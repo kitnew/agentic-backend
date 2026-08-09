@@ -159,6 +159,7 @@ secrets/*.json
 !debug-chat/package.json
 !debug-chat/package-lock.json
 !packages/contracts/tests/fixtures/*.json
+!packages/admin-client/openapi/admin.openapi.json
 debug-chat/node_modules/
 env/
 venv/
