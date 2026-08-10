@@ -49,7 +49,13 @@ from backend_core.modules.tenants.schemas import (
     CreateTenantRequest,
     CreateTextDraftRequest,
     InboundRouteResponse,
+    KnowledgeBasePlanResponse,
+    KnowledgeBasePublishResponse,
+    KnowledgeBasePushResponse,
     KnowledgeBaseRevisionResponse,
+    KnowledgeBaseSnapshotResponse,
+    KnowledgeBaseStateResponse,
+    KnowledgeDocumentsRequest,
     LegacyConfigImportResponse,
     PlatformPromptPublishResponse,
     PlatformPromptRevisionResponse,
@@ -266,6 +272,26 @@ def parse_if_match(value: str | None) -> int:
     return int(raw_version)
 
 
+def parse_knowledge_if_match(value: str | None) -> int:
+    if value is None:
+        raise HTTPException(
+            status_code=status.HTTP_428_PRECONDITION_REQUIRED,
+            detail="If-Match header is required",
+        )
+    if len(value) < 3 or value[0] != '"' or value[-1] != '"':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='If-Match must be a quoted non-negative integer, for example "0"',
+        )
+    raw_version = value[1:-1]
+    if not raw_version.isdigit():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail='If-Match must be a quoted non-negative integer, for example "0"',
+        )
+    return int(raw_version)
+
+
 def text_response(revision: Any, *, key: str | None = None) -> dict[str, object]:
     data = {
         "id": revision.id,
@@ -443,7 +469,8 @@ async def update_profile_prompt_draft(
 
 
 @platform_router.post(
-    "/profiles/drafts/{revision_id}/publish", response_model=PlatformPromptPublishResponse
+    "/profiles/drafts/{revision_id}/publish",
+    response_model=PlatformPromptPublishResponse,
 )
 async def publish_profile_prompt_draft(
     revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
@@ -482,24 +509,12 @@ async def tenant_text_draft(
     data: CreateTextDraftRequest,
     response: Response,
     use_cases: PromptCompositionUseCasesDependency,
-    *,
-    knowledge: bool,
 ) -> dict[str, object]:
     try:
-        revision: Any = await (
-            use_cases.create_knowledge_base_draft(tenant_id, data)
-            if knowledge
-            else use_cases.create_tenant_prompt_draft(tenant_id, data)
-        )
+        revision = await use_cases.create_tenant_prompt_draft(tenant_id, data)
     except (TenantNotFoundError, PromptRevisionError) as error:
         raise prompt_http_exception(error) from error
     response.headers["ETag"] = etag(revision.version)
-    if knowledge:
-        return {
-            **text_response(revision),
-            "tenant_id": tenant_id,
-            "knowledge_base_id": revision.knowledge_base_id,
-        }
     return {
         **text_response(revision),
         "tenant_id": tenant_id,
@@ -518,23 +533,7 @@ async def create_tenant_prompt_draft(
     response: Response,
     use_cases: PromptCompositionUseCasesDependency,
 ) -> dict[str, object]:
-    return await tenant_text_draft(
-        tenant_id, data, response, use_cases, knowledge=False
-    )
-
-
-@router.post(
-    "/{tenant_id}/knowledge-base/drafts",
-    response_model=KnowledgeBaseRevisionResponse,
-    status_code=201,
-)
-async def create_knowledge_base_draft(
-    tenant_id: UUID,
-    data: CreateTextDraftRequest,
-    response: Response,
-    use_cases: PromptCompositionUseCasesDependency,
-) -> dict[str, object]:
-    return await tenant_text_draft(tenant_id, data, response, use_cases, knowledge=True)
+    return await tenant_text_draft(tenant_id, data, response, use_cases)
 
 
 @router.patch(
@@ -563,32 +562,6 @@ async def update_tenant_prompt_draft(
     }
 
 
-@router.patch(
-    "/{tenant_id}/knowledge-base/drafts/{revision_id}",
-    response_model=KnowledgeBaseRevisionResponse,
-)
-async def update_knowledge_base_draft(
-    tenant_id: UUID,
-    revision_id: UUID,
-    data: UpdateTextDraftRequest,
-    response: Response,
-    use_cases: PromptCompositionUseCasesDependency,
-    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
-) -> dict[str, object]:
-    try:
-        revision = await use_cases.update_knowledge_base_draft(
-            tenant_id, revision_id, data, parse_if_match(if_match)
-        )
-    except (TenantNotFoundError, PromptRevisionError) as error:
-        raise prompt_http_exception(error) from error
-    response.headers["ETag"] = etag(revision.version)
-    return {
-        **text_response(revision),
-        "tenant_id": tenant_id,
-        "knowledge_base_id": revision.knowledge_base_id,
-    }
-
-
 @router.post(
     "/{tenant_id}/tenant-prompt/drafts/{revision_id}/publish",
     response_model=TenantPromptRevisionResponse,
@@ -604,24 +577,6 @@ async def publish_tenant_prompt_draft(
         **text_response(revision),
         "tenant_id": tenant_id,
         "prompt_id": revision.tenant_prompt_id,
-    }
-
-
-@router.post(
-    "/{tenant_id}/knowledge-base/drafts/{revision_id}/publish",
-    response_model=KnowledgeBaseRevisionResponse,
-)
-async def publish_knowledge_base_draft(
-    tenant_id: UUID, revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
-) -> dict[str, object]:
-    try:
-        revision = await use_cases.publish_knowledge_base(tenant_id, revision_id)
-    except (TenantNotFoundError, PromptRevisionError) as error:
-        raise prompt_http_exception(error) from error
-    return {
-        **text_response(revision),
-        "tenant_id": tenant_id,
-        "knowledge_base_id": revision.knowledge_base_id,
     }
 
 
@@ -648,15 +603,93 @@ async def list_tenant_prompt_revisions(
 )
 async def list_knowledge_base_revisions(
     tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
-) -> list[dict[str, object]]:
-    return [
-        {
-            **text_response(item),
-            "tenant_id": tenant_id,
-            "knowledge_base_id": item.knowledge_base_id,
-        }
-        for item in await use_cases.list_knowledge_bases(tenant_id)
-    ]
+) -> list[KnowledgeBaseRevisionResponse]:
+    try:
+        return await use_cases.knowledge_base_history(tenant_id)
+    except TenantNotFoundError as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.get(
+    "/{tenant_id}/knowledge-base",
+    response_model=KnowledgeBaseStateResponse,
+)
+async def show_knowledge_base(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> KnowledgeBaseStateResponse:
+    try:
+        return await use_cases.knowledge_base_state(tenant_id)
+    except TenantNotFoundError as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.get(
+    "/{tenant_id}/knowledge-base/published",
+    response_model=KnowledgeBaseSnapshotResponse,
+)
+async def get_published_knowledge_base(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> KnowledgeBaseSnapshotResponse:
+    try:
+        return await use_cases.published_knowledge_base(tenant_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.post(
+    "/{tenant_id}/knowledge-base/plan",
+    response_model=KnowledgeBasePlanResponse,
+)
+async def plan_knowledge_base(
+    tenant_id: UUID,
+    data: KnowledgeDocumentsRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+) -> KnowledgeBasePlanResponse:
+    try:
+        plan = await use_cases.plan_knowledge_base(tenant_id, data)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(plan.base_version)
+    return plan
+
+
+@router.post(
+    "/{tenant_id}/knowledge-base/push",
+    response_model=KnowledgeBasePushResponse,
+)
+async def push_knowledge_base(
+    tenant_id: UUID,
+    data: KnowledgeDocumentsRequest,
+    response: Response,
+    use_cases: PromptCompositionUseCasesDependency,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> KnowledgeBasePushResponse:
+    try:
+        result = await use_cases.push_knowledge_base(
+            tenant_id, data, parse_knowledge_if_match(if_match)
+        )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+    response.headers["ETag"] = etag(
+        result.draft.revision.version
+        if result.draft is not None
+        else parse_knowledge_if_match(if_match)
+    )
+    return result
+
+
+@router.post(
+    "/{tenant_id}/knowledge-base/publish",
+    response_model=KnowledgeBasePublishResponse,
+)
+async def publish_knowledge_base(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> KnowledgeBasePublishResponse:
+    try:
+        return await use_cases.publish_knowledge_base(tenant_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
 
 
 @router.post(

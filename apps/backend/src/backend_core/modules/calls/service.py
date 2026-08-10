@@ -32,6 +32,7 @@ from backend_core.modules.capabilities.domain import runtime_definition
 from backend_core.modules.conversations.errors import ConversationConflictError
 from backend_core.modules.conversations.service import ConversationService
 from backend_core.modules.tenants.errors import TenantNotFoundError
+from backend_core.modules.tenants.knowledge import render_knowledge_context
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
     KnowledgeBaseRevision,
@@ -243,6 +244,9 @@ class CallSessionService:
         assert profile is not None
         assert tenant_prompt is not None
         assert knowledge is not None
+        knowledge_documents = await self._prompts.knowledge_snapshot(
+            call.tenant_id, knowledge.id
+        )
         return VoiceAgentRuntimeContext(
             call_session_id=call.id,
             room_name=call.room_name,
@@ -255,7 +259,12 @@ class CallSessionService:
                 system_prompt=system.text,
                 profile_prompt=profile.text,
                 tenant_prompt=tenant_prompt.text,
-                knowledge_context=knowledge.text,
+                knowledge_context=render_knowledge_context(
+                    [
+                        (document.key, document_revision.content)
+                        for _, document, document_revision in knowledge_documents
+                    ]
+                ),
                 knowledge_base_revision_id=knowledge.id,
             ),
             capabilities=[

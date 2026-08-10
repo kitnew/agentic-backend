@@ -163,6 +163,9 @@ class PromptBundleRevisionResponse(BaseModel):
 
 
 PromptText = Annotated[str, Field(max_length=1_000_000)]
+KnowledgeDocumentKey = Annotated[
+    str, Field(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_-]*$")
+]
 
 
 class CreatePlatformPromptDraftRequest(BaseModel):
@@ -208,9 +211,94 @@ class TenantPromptRevisionResponse(PromptTextRevisionResponse):
     prompt_id: UUID
 
 
-class KnowledgeBaseRevisionResponse(PromptTextRevisionResponse):
+class KnowledgeDocumentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: KnowledgeDocumentKey
+    media_type: Literal["text/markdown"] = "text/markdown"
+    content: PromptText = ""
+
+
+class KnowledgeDocumentsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    documents: Annotated[list[KnowledgeDocumentInput], Field(max_length=100)]
+
+    @model_validator(mode="after")
+    def document_keys_are_unique(self) -> KnowledgeDocumentsRequest:
+        keys = [document.key for document in self.documents]
+        if len(keys) != len(set(keys)):
+            raise ValueError("document keys must be unique")
+        return self
+
+
+class KnowledgeDocumentRevisionResponse(BaseModel):
+    key: str
+    media_type: str
+    document_revision_number: int
+    content: str
+    content_hash: str
+    position: int
+
+
+class KnowledgeDocumentSummaryResponse(BaseModel):
+    key: str
+    media_type: str
+    document_revision_number: int
+    position: int
+
+
+class KnowledgeBaseRevisionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
     tenant_id: UUID
     knowledge_base_id: UUID
+    revision_number: int
+    status: str
+    created_at: datetime
+    published_at: datetime | None
+    version: int
+    document_count: int
+
+
+class KnowledgeBaseSnapshotResponse(BaseModel):
+    revision: KnowledgeBaseRevisionResponse
+    documents: list[KnowledgeDocumentRevisionResponse]
+
+
+class KnowledgeBaseStateResponse(BaseModel):
+    tenant_id: UUID
+    latest_published_revision: KnowledgeBaseRevisionResponse | None
+    draft_revision: KnowledgeBaseRevisionResponse | None
+    published_documents: list[KnowledgeDocumentSummaryResponse]
+
+
+class KnowledgeDocumentPlanResponse(BaseModel):
+    key: str
+    status: Literal["unchanged", "modified", "local-only", "missing-local"]
+    current_revision_number: int | None
+    action: Literal["reuse", "create", "remove"]
+
+
+class KnowledgeBasePlanResponse(BaseModel):
+    tenant_id: UUID
+    status: Literal["unchanged", "modified"]
+    base_version: int
+    documents: list[KnowledgeDocumentPlanResponse]
+    reuse_count: int
+    create_count: int
+    remove_count: int
+    update_draft: bool
+
+
+class KnowledgeBasePushResponse(BaseModel):
+    changed: bool
+    draft: KnowledgeBaseSnapshotResponse | None
+
+
+class KnowledgeBasePublishResponse(BaseModel):
+    published: KnowledgeBaseSnapshotResponse
 
 
 class CreatePromptSetDraftRequest(BaseModel):

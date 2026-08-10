@@ -17,29 +17,31 @@ class KnowledgeBaseRevisionResponse:
     """
     Attributes:
         created_at (datetime.datetime):
+        document_count (int):
         id (UUID):
         knowledge_base_id (UUID):
         published_at (datetime.datetime | None):
         revision_number (int):
         status (str):
         tenant_id (UUID):
-        text (str):
         version (int):
     """
 
     created_at: datetime.datetime
+    document_count: int
     id: UUID
     knowledge_base_id: UUID
     published_at: datetime.datetime | None
     revision_number: int
     status: str
     tenant_id: UUID
-    text: str
     version: int
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         created_at = self.created_at.isoformat()
+
+        document_count = self.document_count
 
         id = str(self.id)
 
@@ -57,8 +59,6 @@ class KnowledgeBaseRevisionResponse:
 
         tenant_id = str(self.tenant_id)
 
-        text = self.text
-
         version = self.version
 
         field_dict: dict[str, Any] = {}
@@ -66,13 +66,13 @@ class KnowledgeBaseRevisionResponse:
         field_dict.update(
             {
                 "created_at": created_at,
+                "document_count": document_count,
                 "id": id,
                 "knowledge_base_id": knowledge_base_id,
                 "published_at": published_at,
                 "revision_number": revision_number,
                 "status": status,
                 "tenant_id": tenant_id,
-                "text": text,
                 "version": version,
             }
         )
@@ -83,6 +83,8 @@ class KnowledgeBaseRevisionResponse:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
+
+        document_count = d.pop("document_count")
 
         id = UUID(d.pop("id"))
 
@@ -109,19 +111,17 @@ class KnowledgeBaseRevisionResponse:
 
         tenant_id = UUID(d.pop("tenant_id"))
 
-        text = d.pop("text")
-
         version = d.pop("version")
 
         knowledge_base_revision_response = cls(
             created_at=created_at,
+            document_count=document_count,
             id=id,
             knowledge_base_id=knowledge_base_id,
             published_at=published_at,
             revision_number=revision_number,
             status=status,
             tenant_id=tenant_id,
-            text=text,
             version=version,
         )
 

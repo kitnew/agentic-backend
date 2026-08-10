@@ -81,11 +81,31 @@ async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str
         f"/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts",
         {"text": "Tenant instructions"},
     )
-    knowledge_revision_id = await publish_text(
-        client,
-        f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts",
-        {"text": "Tenant facts"},
+    documents = {
+        "documents": [
+            {
+                "key": "knowledge",
+                "media_type": "text/markdown",
+                "content": "Tenant facts",
+            }
+        ]
+    }
+    knowledge_plan = await client.post(
+        f"/admin/v1/tenants/{tenant_id}/knowledge-base/plan", json=documents
     )
+    assert knowledge_plan.status_code == 200
+    assert (
+        await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/push",
+            json=documents,
+            headers={"If-Match": f'"{knowledge_plan.json()["base_version"]}"'},
+        )
+    ).status_code == 200
+    knowledge_published = await client.post(
+        f"/admin/v1/tenants/{tenant_id}/knowledge-base/publish"
+    )
+    assert knowledge_published.status_code == 200
+    knowledge_revision_id = knowledge_published.json()["published"]["revision"]["id"]
 
     config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
     config_draft = await client.post(

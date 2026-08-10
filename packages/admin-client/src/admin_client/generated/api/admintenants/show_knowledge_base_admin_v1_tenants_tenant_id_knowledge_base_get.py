@@ -7,41 +7,32 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.create_text_draft_request import CreateTextDraftRequest
 from ...models.http_validation_error import HTTPValidationError
-from ...models.knowledge_base_revision_response import KnowledgeBaseRevisionResponse
+from ...models.knowledge_base_state_response import KnowledgeBaseStateResponse
 from ...types import Response
 
 
 def _get_kwargs(
     tenant_id: UUID,
-    *,
-    body: CreateTextDraftRequest,
 ) -> dict[str, Any]:
-    headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
-        "method": "post",
-        "url": "/admin/v1/tenants/{tenant_id}/knowledge-base/drafts".format(
+        "method": "get",
+        "url": "/admin/v1/tenants/{tenant_id}/knowledge-base".format(
             tenant_id=quote(str(tenant_id), safe=""),
         ),
     }
 
-    _kwargs["json"] = body.to_dict()
-
-    headers["Content-Type"] = "application/json"
-
-    _kwargs["headers"] = headers
     return _kwargs
 
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | KnowledgeBaseRevisionResponse | None:
-    if response.status_code == 201:
-        response_201 = KnowledgeBaseRevisionResponse.from_dict(response.json())
+) -> HTTPValidationError | KnowledgeBaseStateResponse | None:
+    if response.status_code == 200:
+        response_200 = KnowledgeBaseStateResponse.from_dict(response.json())
 
-        return response_201
+        return response_200
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -56,7 +47,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | KnowledgeBaseRevisionResponse]:
+) -> Response[HTTPValidationError | KnowledgeBaseStateResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -69,25 +60,22 @@ def sync_detailed(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: CreateTextDraftRequest,
-) -> Response[HTTPValidationError | KnowledgeBaseRevisionResponse]:
-    """Create Knowledge Base Draft
+) -> Response[HTTPValidationError | KnowledgeBaseStateResponse]:
+    """Show Knowledge Base
 
     Args:
         tenant_id (UUID):
-        body (CreateTextDraftRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | KnowledgeBaseRevisionResponse]
+        Response[HTTPValidationError | KnowledgeBaseStateResponse]
     """
 
     kwargs = _get_kwargs(
         tenant_id=tenant_id,
-        body=body,
     )
 
     response = client.get_httpx_client().request(
@@ -101,26 +89,23 @@ def sync(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: CreateTextDraftRequest,
-) -> HTTPValidationError | KnowledgeBaseRevisionResponse | None:
-    """Create Knowledge Base Draft
+) -> HTTPValidationError | KnowledgeBaseStateResponse | None:
+    """Show Knowledge Base
 
     Args:
         tenant_id (UUID):
-        body (CreateTextDraftRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | KnowledgeBaseRevisionResponse
+        HTTPValidationError | KnowledgeBaseStateResponse
     """
 
     return sync_detailed(
         tenant_id=tenant_id,
         client=client,
-        body=body,
     ).parsed
 
 
@@ -128,25 +113,22 @@ async def asyncio_detailed(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: CreateTextDraftRequest,
-) -> Response[HTTPValidationError | KnowledgeBaseRevisionResponse]:
-    """Create Knowledge Base Draft
+) -> Response[HTTPValidationError | KnowledgeBaseStateResponse]:
+    """Show Knowledge Base
 
     Args:
         tenant_id (UUID):
-        body (CreateTextDraftRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | KnowledgeBaseRevisionResponse]
+        Response[HTTPValidationError | KnowledgeBaseStateResponse]
     """
 
     kwargs = _get_kwargs(
         tenant_id=tenant_id,
-        body=body,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -158,26 +140,23 @@ async def asyncio(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-    body: CreateTextDraftRequest,
-) -> HTTPValidationError | KnowledgeBaseRevisionResponse | None:
-    """Create Knowledge Base Draft
+) -> HTTPValidationError | KnowledgeBaseStateResponse | None:
+    """Show Knowledge Base
 
     Args:
         tenant_id (UUID):
-        body (CreateTextDraftRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | KnowledgeBaseRevisionResponse
+        HTTPValidationError | KnowledgeBaseStateResponse
     """
 
     return (
         await asyncio_detailed(
             tenant_id=tenant_id,
             client=client,
-            body=body,
         )
     ).parsed

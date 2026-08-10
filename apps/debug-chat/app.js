@@ -33,8 +33,11 @@ async function createPrompt() {
   const system = await publish("/admin/v1/platform/prompts/system/drafts", { key: `debug_${tenantId.replaceAll("-", "")}`, text: $("system-instructions").value });
   const profile = await publish("/admin/v1/platform/prompts/profiles/drafts", { key: "hotel_assistant", text: "" });
   const tenant = await publish(`/admin/v1/tenants/${tenantId}/tenant-prompt/drafts`, { text: $("tenant-instructions").value });
-  const knowledge = await publish(`/admin/v1/tenants/${tenantId}/knowledge-base/drafts`, { text: $("knowledge").value });
-  const draft = await api(`/admin/v1/tenants/${tenantId}/prompt-set/drafts`, { method: "POST", body: JSON.stringify({ system_prompt_revision_id: system.id, profile_prompt_revision_id: profile.id, tenant_prompt_revision_id: tenant.id, knowledge_base_revision_id: knowledge.id }) });
+  const documents = { documents: [{ key: "knowledge", media_type: "text/markdown", content: $("knowledge").value }] };
+  const knowledgePlan = await api(`/admin/v1/tenants/${tenantId}/knowledge-base/plan`, { method: "POST", body: JSON.stringify(documents) });
+  await api(`/admin/v1/tenants/${tenantId}/knowledge-base/push`, { method: "POST", headers: { "If-Match": `"${knowledgePlan.base_version}"` }, body: JSON.stringify(documents) });
+  const knowledge = await api(`/admin/v1/tenants/${tenantId}/knowledge-base/publish`, { method: "POST" });
+  const draft = await api(`/admin/v1/tenants/${tenantId}/prompt-set/drafts`, { method: "POST", body: JSON.stringify({ system_prompt_revision_id: system.id, profile_prompt_revision_id: profile.id, tenant_prompt_revision_id: tenant.id, knowledge_base_revision_id: knowledge.published.revision.id }) });
   const published = await api(`/admin/v1/tenants/${tenantId}/prompt-set/drafts/${draft.id}/publish`, { method: "POST" });
   $("prompt-revision-id").value = published.id;
   $("prompt-result").textContent = `Published: ${published.id}`;

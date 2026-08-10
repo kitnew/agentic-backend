@@ -15,13 +15,37 @@ from test_voice_test_sessions import cleanup_tenants
 async def publish_tenant_text(
     client: AsyncClient, tenant_id: str, resource: str, text: str
 ) -> str:
+    if resource == "knowledge-base":
+        documents = {
+            "documents": [
+                {
+                    "key": "knowledge",
+                    "media_type": "text/markdown",
+                    "content": text,
+                }
+            ]
+        }
+        plan = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/plan", json=documents
+        )
+        assert plan.status_code == 200
+        pushed = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/push",
+            json=documents,
+            headers={"If-Match": f'"{plan.json()["base_version"]}"'},
+        )
+        assert pushed.status_code == 200
+        published = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/publish"
+        )
+        assert published.status_code == 200
+        return published.json()["published"]["revision"]["id"]
     draft = await client.post(
         f"/admin/v1/tenants/{tenant_id}/{resource}/drafts", json={"text": text}
     )
     assert draft.status_code == 201
     published = await client.post(
-        f"/admin/v1/tenants/{tenant_id}/{resource}/drafts/"
-        f"{draft.json()['id']}/publish"
+        f"/admin/v1/tenants/{tenant_id}/{resource}/drafts/{draft.json()['id']}/publish"
     )
     assert published.status_code == 200
     return published.json()["id"]
@@ -116,8 +140,9 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
                 headers=voice_headers,
             )
             assert call_a.status_code == 201
-            assert call_a.json()["prompt_set_revision_id"] == (
-                initial["prompt_set_revision_id"]
+            assert (
+                call_a.json()["prompt_set_revision_id"]
+                == (initial["prompt_set_revision_id"])
             )
 
             newer_tenant = await publish_tenant_text(
@@ -141,21 +166,22 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
             }
 
             rolled_out = (
-                await client.get(
-                    f"/admin/v1/tenants/{tenant_id}/prompt-set/active"
-                )
+                await client.get(f"/admin/v1/tenants/{tenant_id}/prompt-set/active")
             ).json()
-            assert rolled_out["system_prompt_revision_id"] == (
-                system_publish.json()["id"]
+            assert (
+                rolled_out["system_prompt_revision_id"] == (system_publish.json()["id"])
             )
-            assert rolled_out["profile_prompt_revision_id"] == (
-                initial["profile_revision_id"]
+            assert (
+                rolled_out["profile_prompt_revision_id"]
+                == (initial["profile_revision_id"])
             )
-            assert rolled_out["tenant_prompt_revision_id"] == (
-                initial["tenant_prompt_revision_id"]
+            assert (
+                rolled_out["tenant_prompt_revision_id"]
+                == (initial["tenant_prompt_revision_id"])
             )
-            assert rolled_out["knowledge_base_revision_id"] == (
-                initial["knowledge_base_revision_id"]
+            assert (
+                rolled_out["knowledge_base_revision_id"]
+                == (initial["knowledge_base_revision_id"])
             )
             assert newer_tenant != rolled_out["tenant_prompt_revision_id"]
             assert newer_knowledge != rolled_out["knowledge_base_revision_id"]
@@ -182,21 +208,22 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
                 "unchanged_tenants": 0,
             }
             profiled = (
-                await client.get(
-                    f"/admin/v1/tenants/{tenant_id}/prompt-set/active"
-                )
+                await client.get(f"/admin/v1/tenants/{tenant_id}/prompt-set/active")
             ).json()
-            assert profiled["profile_prompt_revision_id"] == (
-                profile_publish.json()["id"]
+            assert (
+                profiled["profile_prompt_revision_id"] == (profile_publish.json()["id"])
             )
-            assert profiled["system_prompt_revision_id"] == (
-                rolled_out["system_prompt_revision_id"]
+            assert (
+                profiled["system_prompt_revision_id"]
+                == (rolled_out["system_prompt_revision_id"])
             )
-            assert profiled["tenant_prompt_revision_id"] == (
-                rolled_out["tenant_prompt_revision_id"]
+            assert (
+                profiled["tenant_prompt_revision_id"]
+                == (rolled_out["tenant_prompt_revision_id"])
             )
-            assert profiled["knowledge_base_revision_id"] == (
-                rolled_out["knowledge_base_revision_id"]
+            assert (
+                profiled["knowledge_base_revision_id"]
+                == (rolled_out["knowledge_base_revision_id"])
             )
             rolled_out = profiled
 
@@ -215,22 +242,23 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
                 json=call_payload,
                 headers=voice_headers,
             )
-            assert replay_a.json()["prompt_set_revision_id"] == (
-                initial["prompt_set_revision_id"]
+            assert (
+                replay_a.json()["prompt_set_revision_id"]
+                == (initial["prompt_set_revision_id"])
             )
 
-            plan = await client.get(
-                f"/admin/v1/tenants/{tenant_id}/prompt-set/plan"
-            )
+            plan = await client.get(f"/admin/v1/tenants/{tenant_id}/prompt-set/plan")
             assert plan.status_code == 200
             assert plan.json()["status"] == "modified"
             assert plan.json()["components"]["system"]["changed"] is False
-            assert plan.json()["components"]["tenant_prompt"]["desired"][
-                "revision_id"
-            ] == newer_tenant
-            assert plan.json()["components"]["knowledge_base"]["desired"][
-                "revision_id"
-            ] == newer_knowledge
+            assert (
+                plan.json()["components"]["tenant_prompt"]["desired"]["revision_id"]
+                == newer_tenant
+            )
+            assert (
+                plan.json()["components"]["knowledge_base"]["desired"]["revision_id"]
+                == newer_knowledge
+            )
 
             applied = await client.post(
                 f"/admin/v1/tenants/{tenant_id}/prompt-set/apply"
@@ -240,9 +268,7 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
             applied_revision = applied.json()["prompt_set"]["revision"]
             assert applied_revision["tenant_prompt_revision_id"] == newer_tenant
             assert applied_revision["knowledge_base_revision_id"] == newer_knowledge
-            no_op = await client.post(
-                f"/admin/v1/tenants/{tenant_id}/prompt-set/apply"
-            )
+            no_op = await client.post(f"/admin/v1/tenants/{tenant_id}/prompt-set/apply")
             assert no_op.json()["changed"] is False
 
             call_c = await client.post(
@@ -269,9 +295,7 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
             )
             assert alternate_publish.json()["rollout"]["updated_tenants"] == 0
             active_before_config = (
-                await client.get(
-                    f"/admin/v1/tenants/{tenant_id}/prompt-set/active"
-                )
+                await client.get(f"/admin/v1/tenants/{tenant_id}/prompt-set/active")
             ).json()
             config_draft = await client.post(
                 f"/admin/v1/tenants/{tenant_id}/config/drafts",
@@ -289,15 +313,11 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
             )
             assert config_publish.status_code == 200
             active_after_config = (
-                await client.get(
-                    f"/admin/v1/tenants/{tenant_id}/prompt-set/active"
-                )
+                await client.get(f"/admin/v1/tenants/{tenant_id}/prompt-set/active")
             ).json()
             assert active_after_config["id"] == active_before_config["id"]
             mismatch_plan = (
-                await client.get(
-                    f"/admin/v1/tenants/{tenant_id}/prompt-set/plan"
-                )
+                await client.get(f"/admin/v1/tenants/{tenant_id}/prompt-set/plan")
             ).json()
             assert mismatch_plan["components"]["profile"]["changed"] is True
             assert mismatch_plan["components"]["profile"]["desired"]["key"] == (
@@ -330,22 +350,27 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
             )
             assert repeated_apply.json()["changed"] is True
             repeated_revision = repeated_apply.json()["prompt_set"]["revision"]
-            assert repeated_revision["revision_number"] > alternate_revision[
-                "revision_number"
-            ]
+            assert (
+                repeated_revision["revision_number"]
+                > alternate_revision["revision_number"]
+            )
             assert repeated_revision["id"] != applied_revision["id"]
-            assert repeated_revision["system_prompt_revision_id"] == applied_revision[
-                "system_prompt_revision_id"
-            ]
-            assert repeated_revision["profile_prompt_revision_id"] == applied_revision[
-                "profile_prompt_revision_id"
-            ]
-            assert repeated_revision["tenant_prompt_revision_id"] == applied_revision[
-                "tenant_prompt_revision_id"
-            ]
-            assert repeated_revision["knowledge_base_revision_id"] == applied_revision[
-                "knowledge_base_revision_id"
-            ]
+            assert (
+                repeated_revision["system_prompt_revision_id"]
+                == applied_revision["system_prompt_revision_id"]
+            )
+            assert (
+                repeated_revision["profile_prompt_revision_id"]
+                == applied_revision["profile_prompt_revision_id"]
+            )
+            assert (
+                repeated_revision["tenant_prompt_revision_id"]
+                == applied_revision["tenant_prompt_revision_id"]
+            )
+            assert (
+                repeated_revision["knowledge_base_revision_id"]
+                == applied_revision["knowledge_base_revision_id"]
+            )
             replay_b = await client.post(
                 "/internal/v1/call-sessions",
                 json={
@@ -357,9 +382,7 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
             )
             assert replay_b.json()["prompt_set_revision_id"] == rolled_out["id"]
     finally:
-        await cleanup_tenants(
-            database, "orchestration-hotel", "orchestration-empty"
-        )
+        await cleanup_tenants(database, "orchestration-hotel", "orchestration-empty")
         await cleanup_profile(database, "orchestration_alternate")
         await database.close()
 
@@ -411,9 +434,7 @@ async def test_concurrent_system_and_profile_rollouts_preserve_both_updates(
             assert system_result.status_code == 200
             assert profile_result.status_code == 200
             active = (
-                await client.get(
-                    f"/admin/v1/tenants/{tenant_id}/prompt-set/active"
-                )
+                await client.get(f"/admin/v1/tenants/{tenant_id}/prompt-set/active")
             ).json()
             assert active["system_prompt_revision_id"] == system_result.json()["id"]
             assert active["profile_prompt_revision_id"] == profile_result.json()["id"]

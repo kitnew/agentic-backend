@@ -37,7 +37,20 @@ uv run agentctl tenant prompt pull penzion-grand
 uv run agentctl tenant prompt plan penzion-grand
 uv run agentctl tenant prompt push penzion-grand
 uv run agentctl tenant prompt publish penzion-grand
+
+uv run agentctl tenant knowledge pull penzion-grand
+# edit control-plane/tenants/penzion-grand/knowledge/*.md
+uv run agentctl tenant knowledge plan penzion-grand
+uv run agentctl tenant knowledge push penzion-grand
+uv run agentctl tenant knowledge publish penzion-grand
+uv run agentctl tenant prompt-set plan penzion-grand
+uv run agentctl tenant prompt-set apply penzion-grand
 ```
 
 TenantPrompt publication remains separate from PromptSet composition and
 activation; publishing the artifact alone does not change runtime behavior.
+
+Knowledge authoring is a flat UTF-8 Markdown tree under
+`tenants/<tenant_slug>/knowledge/*.md`. Filenames are stable document keys.
+Publishing a KnowledgeBase snapshot does not activate it; explicit PromptSet
+plan/apply selects it for new calls.

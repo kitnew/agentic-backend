@@ -1,6 +1,6 @@
 from copy import deepcopy
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any, Literal, cast
 from uuid import UUID
 
 from contracts import (
@@ -46,11 +46,18 @@ from backend_core.modules.tenants.errors import (
     TenantNotFoundError,
     TenantSlugConflictError,
 )
+from backend_core.modules.tenants.knowledge import (
+    knowledge_content_hash,
+    knowledge_content_matches,
+)
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
     InboundRoute,
     KnowledgeBase,
     KnowledgeBaseRevision,
+    KnowledgeBaseRevisionDocument,
+    KnowledgeDocument,
+    KnowledgeDocumentRevision,
     ProfilePrompt,
     ProfilePromptRevision,
     PromptRevisionStatus,
@@ -76,6 +83,16 @@ from backend_core.modules.tenants.schemas import (
     CreatePromptSetDraftRequest,
     CreateTenantRequest,
     CreateTextDraftRequest,
+    KnowledgeBasePlanResponse,
+    KnowledgeBasePublishResponse,
+    KnowledgeBasePushResponse,
+    KnowledgeBaseRevisionResponse,
+    KnowledgeBaseSnapshotResponse,
+    KnowledgeBaseStateResponse,
+    KnowledgeDocumentPlanResponse,
+    KnowledgeDocumentRevisionResponse,
+    KnowledgeDocumentsRequest,
+    KnowledgeDocumentSummaryResponse,
     PromptSetApplyResponse,
     PromptSetComponentPlanResponse,
     PromptSetComponentResponse,
@@ -228,21 +245,6 @@ class PromptCompositionUseCases:
             tenant_id=tenant_id,
         )
 
-    async def create_knowledge_base_draft(
-        self, tenant_id: UUID, data: CreateTextDraftRequest
-    ) -> KnowledgeBaseRevision:
-        await self._tenant(tenant_id)
-        base = await self._revisions.knowledge_base(tenant_id)
-        if base is None:
-            base = await self._revisions.add(KnowledgeBase(tenant_id=tenant_id))
-        return await self._create_text_draft(
-            KnowledgeBaseRevision,
-            "knowledge_base_id",
-            base.id,
-            data.text,
-            tenant_id=tenant_id,
-        )
-
     async def update_system_draft(
         self, revision_id: UUID, data: UpdateTextDraftRequest, expected_version: int
     ) -> SystemPromptRevision:
@@ -268,17 +270,6 @@ class PromptCompositionUseCases:
             TenantPromptRevision, revision_id, data.text, expected_version, tenant_id
         )
 
-    async def update_knowledge_base_draft(
-        self,
-        tenant_id: UUID,
-        revision_id: UUID,
-        data: UpdateTextDraftRequest,
-        expected_version: int,
-    ) -> KnowledgeBaseRevision:
-        return await self._update_text_draft(
-            KnowledgeBaseRevision, revision_id, data.text, expected_version, tenant_id
-        )
-
     async def publish_system(
         self, revision_id: UUID
     ) -> tuple[SystemPromptRevision, int, int]:
@@ -297,9 +288,7 @@ class PromptCompositionUseCases:
         self, revision_id: UUID
     ) -> tuple[ProfilePromptRevision, int, int]:
         revision = await self._publish_text(ProfilePromptRevision, revision_id)
-        profile = await self._revisions.profile_prompt_by_id(
-            revision.profile_prompt_id
-        )
+        profile = await self._revisions.profile_prompt_by_id(revision.profile_prompt_id)
         if profile is None:
             raise PromptRevisionNotFoundError
         updated, unchanged = await self._rollout_component(
@@ -312,10 +301,231 @@ class PromptCompositionUseCases:
     ) -> TenantPromptRevision:
         return await self._publish_text(TenantPromptRevision, revision_id, tenant_id)
 
+    async def knowledge_base_state(self, tenant_id: UUID) -> KnowledgeBaseStateResponse:
+        await self._tenant(tenant_id)
+        base = await self._revisions.knowledge_base(tenant_id)
+        if base is None:
+            return KnowledgeBaseStateResponse(
+                tenant_id=tenant_id,
+                latest_published_revision=None,
+                draft_revision=None,
+                published_documents=[],
+            )
+        published = await self._revisions.latest_published_revision(
+            KnowledgeBaseRevision, "knowledge_base_id", base.id
+        )
+        drafts = await self._revisions.revision_by_parent(
+            KnowledgeBaseRevision,
+            "knowledge_base_id",
+            base.id,
+            status=PromptRevisionStatus.DRAFT,
+        )
+        published_snapshot = (
+            await self._knowledge_snapshot_response(published)
+            if published is not None
+            else None
+        )
+        return KnowledgeBaseStateResponse(
+            tenant_id=tenant_id,
+            latest_published_revision=(
+                published_snapshot.revision if published_snapshot else None
+            ),
+            draft_revision=(
+                (await self._knowledge_revision_response(drafts[0])) if drafts else None
+            ),
+            published_documents=(
+                [
+                    KnowledgeDocumentSummaryResponse(
+                        key=document.key,
+                        media_type=document_revision.media_type,
+                        document_revision_number=document_revision.revision_number,
+                        position=link.position,
+                    )
+                    for link, document, document_revision in (
+                        await self._revisions.knowledge_snapshot(
+                            tenant_id, published.id
+                        )
+                    )
+                ]
+                if published is not None
+                else []
+            ),
+        )
+
+    async def knowledge_base_history(
+        self, tenant_id: UUID
+    ) -> list[KnowledgeBaseRevisionResponse]:
+        await self._tenant(tenant_id)
+        base = await self._revisions.knowledge_base(tenant_id)
+        if base is None:
+            return []
+        revisions = await self._revisions.revision_by_parent(
+            KnowledgeBaseRevision, "knowledge_base_id", base.id
+        )
+        return [await self._knowledge_revision_response(item) for item in revisions]
+
+    async def published_knowledge_base(
+        self, tenant_id: UUID
+    ) -> KnowledgeBaseSnapshotResponse:
+        await self._tenant(tenant_id)
+        base = await self._revisions.knowledge_base(tenant_id)
+        revision = (
+            await self._revisions.latest_published_revision(
+                KnowledgeBaseRevision, "knowledge_base_id", base.id
+            )
+            if base is not None
+            else None
+        )
+        if revision is None:
+            raise PromptRevisionNotFoundError
+        return await self._knowledge_snapshot_response(revision)
+
+    async def plan_knowledge_base(
+        self, tenant_id: UUID, data: KnowledgeDocumentsRequest
+    ) -> KnowledgeBasePlanResponse:
+        await self._tenant(tenant_id)
+        base = await self._revisions.knowledge_base(tenant_id)
+        current = await self._current_knowledge_revision(base)
+        return await self._knowledge_plan(tenant_id, current, data)
+
+    async def push_knowledge_base(
+        self,
+        tenant_id: UUID,
+        data: KnowledgeDocumentsRequest,
+        expected_version: int,
+    ) -> KnowledgeBasePushResponse:
+        tenant = await self._tenants.get_for_update(tenant_id)
+        if tenant is None:
+            raise TenantNotFoundError
+        base = await self._revisions.knowledge_base_for_update(tenant_id)
+        current = await self._current_knowledge_revision(base)
+        if (current.version if current is not None else 0) != expected_version:
+            raise PromptRevisionVersionConflictError
+        plan = await self._knowledge_plan(tenant_id, current, data)
+        if plan.status == "unchanged":
+            return KnowledgeBasePushResponse(
+                changed=False,
+                draft=(
+                    await self._knowledge_snapshot_response(current)
+                    if current is not None
+                    and current.status is PromptRevisionStatus.DRAFT
+                    else None
+                ),
+            )
+        if base is None:
+            base = await self._revisions.add(KnowledgeBase(tenant_id=tenant_id))
+
+        current_rows = (
+            await self._revisions.knowledge_snapshot(tenant_id, current.id)
+            if current is not None
+            else []
+        )
+        current_by_key = {
+            document.key: document_revision
+            for _, document, document_revision in current_rows
+        }
+        documents = {
+            document.key: document
+            for document in await self._revisions.knowledge_documents(base.id)
+        }
+        resolved: list[tuple[KnowledgeDocument, KnowledgeDocumentRevision]] = []
+        for desired in sorted(data.documents, key=lambda item: item.key):
+            document = documents.get(desired.key)
+            if document is None:
+                document = await self._revisions.add(
+                    KnowledgeDocument(
+                        knowledge_base_id=base.id,
+                        tenant_id=tenant_id,
+                        key=desired.key,
+                    )
+                )
+                documents[desired.key] = document
+            existing = current_by_key.get(desired.key)
+            if existing is not None and knowledge_content_matches(
+                existing.content, desired.content
+            ):
+                document_revision = existing
+            else:
+                content_hash = knowledge_content_hash(desired.content)
+                matched = await self._revisions.matching_document_revision(
+                    document.id, content_hash, desired.content
+                )
+                if matched is None:
+                    matched = await self._revisions.add(
+                        KnowledgeDocumentRevision(
+                            knowledge_document_id=document.id,
+                            knowledge_base_id=base.id,
+                            tenant_id=tenant_id,
+                            revision_number=await self._revisions.next_document_revision_number(
+                                document.id
+                            ),
+                            media_type=desired.media_type,
+                            content=desired.content,
+                            content_hash=content_hash,
+                        )
+                    )
+                document_revision = matched
+            resolved.append((document, document_revision))
+
+        if current is not None and current.status is PromptRevisionStatus.DRAFT:
+            draft = current
+            draft.version += 1
+        else:
+            draft = await self._revisions.add(
+                KnowledgeBaseRevision(
+                    knowledge_base_id=base.id,
+                    tenant_id=tenant_id,
+                    revision_number=await self._revisions.next_revision_number(
+                        KnowledgeBaseRevision, "knowledge_base_id", base.id
+                    ),
+                    version=expected_version + 1,
+                )
+            )
+        await self._revisions.replace_knowledge_snapshot(
+            draft.id,
+            [
+                KnowledgeBaseRevisionDocument(
+                    knowledge_base_revision_id=draft.id,
+                    knowledge_document_revision_id=document_revision.id,
+                    tenant_id=tenant_id,
+                    knowledge_base_id=base.id,
+                    knowledge_document_id=document.id,
+                    position=position,
+                )
+                for position, (document, document_revision) in enumerate(resolved)
+            ],
+        )
+        return KnowledgeBasePushResponse(
+            changed=True, draft=await self._knowledge_snapshot_response(draft)
+        )
+
     async def publish_knowledge_base(
-        self, tenant_id: UUID, revision_id: UUID
-    ) -> KnowledgeBaseRevision:
-        return await self._publish_text(KnowledgeBaseRevision, revision_id, tenant_id)
+        self, tenant_id: UUID
+    ) -> KnowledgeBasePublishResponse:
+        tenant = await self._tenants.get_for_update(tenant_id)
+        if tenant is None:
+            raise TenantNotFoundError
+        base = await self._revisions.knowledge_base_for_update(tenant_id)
+        drafts = (
+            await self._revisions.revision_by_parent(
+                KnowledgeBaseRevision,
+                "knowledge_base_id",
+                base.id,
+                status=PromptRevisionStatus.DRAFT,
+            )
+            if base is not None
+            else []
+        )
+        if not drafts:
+            raise PromptRevisionNotFoundError
+        draft = drafts[0]
+        draft.status = PromptRevisionStatus.PUBLISHED
+        draft.published_at = datetime.now(UTC)
+        draft.version += 1
+        await self._revisions.flush()
+        return KnowledgeBasePublishResponse(
+            published=await self._knowledge_snapshot_response(draft)
+        )
 
     async def create_prompt_set_draft(
         self, tenant_id: UUID, data: CreatePromptSetDraftRequest
@@ -605,9 +815,7 @@ class PromptCompositionUseCases:
                     "tenant has no active config",
                 )
             return None
-        revision = await self._configs.get(
-            tenant.id, tenant.active_config_revision_id
-        )
+        revision = await self._configs.get(tenant.id, tenant.active_config_revision_id)
         if revision is None or revision.schema_version != 3:
             if required:
                 raise PromptSetResolutionError(
@@ -691,9 +899,7 @@ class PromptCompositionUseCases:
         )
         reasons = {
             "system": "platform current revision differs",
-            "profile": (
-                f"active TenantConfig selects {desired_detail.profile.key}"
-            ),
+            "profile": (f"active TenantConfig selects {desired_detail.profile.key}"),
             "tenant_prompt": "newer published tenant revision available",
             "knowledge_base": "newer published KnowledgeBase revision available",
         }
@@ -813,6 +1019,121 @@ class PromptCompositionUseCases:
                 revision_id=knowledge.id,
                 revision_number=knowledge.revision_number,
             ),
+        )
+
+    async def _current_knowledge_revision(
+        self, base: KnowledgeBase | None
+    ) -> KnowledgeBaseRevision | None:
+        if base is None:
+            return None
+        drafts = await self._revisions.revision_by_parent(
+            KnowledgeBaseRevision,
+            "knowledge_base_id",
+            base.id,
+            status=PromptRevisionStatus.DRAFT,
+        )
+        if drafts:
+            return drafts[0]
+        return await self._revisions.latest_published_revision(
+            KnowledgeBaseRevision, "knowledge_base_id", base.id
+        )
+
+    async def _knowledge_plan(
+        self,
+        tenant_id: UUID,
+        current: KnowledgeBaseRevision | None,
+        data: KnowledgeDocumentsRequest,
+    ) -> KnowledgeBasePlanResponse:
+        rows = (
+            await self._revisions.knowledge_snapshot(tenant_id, current.id)
+            if current is not None
+            else []
+        )
+        remote = {
+            document.key: document_revision for _, document, document_revision in rows
+        }
+        desired = {document.key: document for document in data.documents}
+        documents: list[KnowledgeDocumentPlanResponse] = []
+        for key in sorted(remote.keys() | desired.keys()):
+            local = desired.get(key)
+            existing = remote.get(key)
+            status: Literal["unchanged", "modified", "local-only", "missing-local"]
+            action: Literal["reuse", "create", "remove"]
+            if local is None:
+                status, action = "missing-local", "remove"
+            elif existing is None:
+                status, action = "local-only", "create"
+            elif knowledge_content_matches(existing.content, local.content):
+                status, action = "unchanged", "reuse"
+            else:
+                status, action = "modified", "create"
+            documents.append(
+                KnowledgeDocumentPlanResponse(
+                    key=key,
+                    status=status,
+                    current_revision_number=(
+                        existing.revision_number if existing is not None else None
+                    ),
+                    action=action,
+                )
+            )
+        reuse_count = sum(item.action == "reuse" for item in documents)
+        create_count = sum(item.action == "create" for item in documents)
+        remove_count = sum(item.action == "remove" for item in documents)
+        return KnowledgeBasePlanResponse(
+            tenant_id=tenant_id,
+            status=("modified" if create_count or remove_count else "unchanged"),
+            base_version=current.version if current is not None else 0,
+            documents=documents,
+            reuse_count=reuse_count,
+            create_count=create_count,
+            remove_count=remove_count,
+            update_draft=bool(create_count or remove_count),
+        )
+
+    async def _knowledge_revision_response(
+        self, revision: KnowledgeBaseRevision
+    ) -> KnowledgeBaseRevisionResponse:
+        rows = await self._revisions.knowledge_snapshot(revision.tenant_id, revision.id)
+        return KnowledgeBaseRevisionResponse(
+            id=revision.id,
+            tenant_id=revision.tenant_id,
+            knowledge_base_id=revision.knowledge_base_id,
+            revision_number=revision.revision_number,
+            status=revision.status,
+            created_at=revision.created_at,
+            published_at=revision.published_at,
+            version=revision.version,
+            document_count=len(rows),
+        )
+
+    async def _knowledge_snapshot_response(
+        self, revision: KnowledgeBaseRevision
+    ) -> KnowledgeBaseSnapshotResponse:
+        rows = await self._revisions.knowledge_snapshot(revision.tenant_id, revision.id)
+        return KnowledgeBaseSnapshotResponse(
+            revision=KnowledgeBaseRevisionResponse(
+                id=revision.id,
+                tenant_id=revision.tenant_id,
+                knowledge_base_id=revision.knowledge_base_id,
+                revision_number=revision.revision_number,
+                status=revision.status,
+                created_at=revision.created_at,
+                published_at=revision.published_at,
+                version=revision.version,
+                document_count=len(rows),
+            ),
+            documents=[
+                KnowledgeDocumentRevisionResponse(
+                    key=document.key,
+                    media_type=document_revision.media_type,
+                    document_revision_number=document_revision.revision_number,
+                    content=document_revision.content,
+                    content_hash=document_revision.content_hash,
+                    position=link.position,
+                )
+                for link, document, document_revision in rows
+            ],
         )
 
     async def _create_text_draft(

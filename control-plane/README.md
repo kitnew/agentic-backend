@@ -10,6 +10,7 @@ platform/system_prompt.md
 platform/profiles/<profile_key>.md
 tenants/<tenant_slug>/tenant.yaml
 tenants/<tenant_slug>/tenant_prompt.md
+tenants/<tenant_slug>/knowledge/*.md
 ```
 
 Markdown files contain prompt text only. Revision IDs, versions, status, and
@@ -47,6 +48,14 @@ agentctl tenant config pull penzion-grand
 agentctl tenant config plan penzion-grand
 agentctl tenant config push penzion-grand
 agentctl tenant config publish penzion-grand
+
+agentctl tenant knowledge pull penzion-grand
+# edit control-plane/tenants/penzion-grand/knowledge/*.md
+agentctl tenant knowledge plan penzion-grand
+agentctl tenant knowledge push penzion-grand
+agentctl tenant knowledge publish penzion-grand
+agentctl tenant prompt-set plan penzion-grand
+agentctl tenant prompt-set apply penzion-grand
 ```
 
 `pull` creates parent directories and refuses to overwrite differing local
@@ -62,8 +71,8 @@ credentials in secrets. Publishing a TenantPrompt revision does not activate
 it: a separately published PromptSet must reference that revision.
 
 `tenant.yaml` contains structured deterministic TenantConfig data;
-`tenant_prompt.md` contains tenant-specific behavioral instructions; and the
-future `knowledge/` directory will contain factual/document sources. YAML uses
+`tenant_prompt.md` contains tenant-specific behavioral instructions; and
+`knowledge/*.md` contains factual source documents. YAML uses
 the current explicit `schema_version: 3`, stable model-field ordering, two-space
 indentation, Unicode text, block style, sorted free-form capability mappings,
 and one final newline. Mapping order and formatting do not affect comparison.
@@ -103,7 +112,7 @@ conversation:
 capabilities: {}
 ```
 
-Future slices may extend this tree without changing these paths:
+Canonical authoring uses a flat Markdown-only knowledge directory:
 
 ```text
 control-plane/
@@ -117,9 +126,31 @@ control-plane/
         ├── tenant.yaml
         ├── tenant_prompt.md
         ├── knowledge/
+        │   ├── knowledge.md
+        │   ├── rooms.md
+        │   └── policies.md
         ├── integrations.yaml
         └── capabilities.yaml
 ```
 
-The `knowledge/` directory is reserved for a future document-oriented
-KnowledgeBase workflow; this slice does not define a `knowledge.md` convention.
+Each filename must match `<key>.md`, where the key begins with a lowercase
+letter and contains only lowercase letters, digits, `_`, or `-`. Subdirectories,
+symlinks, hidden files, and non-Markdown files are rejected. Content is preserved
+as UTF-8 Markdown; comments are ordinary document content.
+
+`knowledge pull` materializes the latest published snapshot and refuses any
+local document-set difference unless `--force` is supplied. A forced pull
+overwrites managed Markdown files and removes managed local-only Markdown files,
+but never deletes unsupported files. Removing or renaming a local Markdown file
+only removes the old logical document from the next snapshot; historical
+snapshots and immutable document revisions remain reproducible. Rename detection
+and garbage collection are intentionally absent.
+
+`knowledge push` reconciles the full local document set into a remote draft and
+reuses unchanged document revisions. `knowledge publish` publishes that snapshot
+but does not activate it. Run `tenant prompt-set plan` and explicit
+`tenant prompt-set apply` to select the newest published KnowledgeBase for new
+calls. Existing calls remain pinned to their original PromptSet and KB snapshot.
+Future RAG processing will attach to the immutable document revisions allowed by
+that pinned KB snapshot; this workflow does not implement retrieval, chunks, or
+embeddings.

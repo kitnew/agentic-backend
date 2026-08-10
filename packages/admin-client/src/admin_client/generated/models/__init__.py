@@ -37,7 +37,20 @@ from .inbound_route_response import InboundRouteResponse
 from .integration_connection_response import IntegrationConnectionResponse
 from .integration_connection_status import IntegrationConnectionStatus
 from .integration_provider import IntegrationProvider
+from .knowledge_base_plan_response import KnowledgeBasePlanResponse
+from .knowledge_base_plan_response_status import KnowledgeBasePlanResponseStatus
+from .knowledge_base_publish_response import KnowledgeBasePublishResponse
+from .knowledge_base_push_response import KnowledgeBasePushResponse
 from .knowledge_base_revision_response import KnowledgeBaseRevisionResponse
+from .knowledge_base_snapshot_response import KnowledgeBaseSnapshotResponse
+from .knowledge_base_state_response import KnowledgeBaseStateResponse
+from .knowledge_document_input import KnowledgeDocumentInput
+from .knowledge_document_plan_response import KnowledgeDocumentPlanResponse
+from .knowledge_document_plan_response_action import KnowledgeDocumentPlanResponseAction
+from .knowledge_document_plan_response_status import KnowledgeDocumentPlanResponseStatus
+from .knowledge_document_revision_response import KnowledgeDocumentRevisionResponse
+from .knowledge_document_summary_response import KnowledgeDocumentSummaryResponse
+from .knowledge_documents_request import KnowledgeDocumentsRequest
 from .localization_config import LocalizationConfig
 from .managed_webhook_execution import ManagedWebhookExecution
 from .platform_prompt_publish_response import PlatformPromptPublishResponse
@@ -124,7 +137,20 @@ __all__ = (
     "IntegrationConnectionResponse",
     "IntegrationConnectionStatus",
     "IntegrationProvider",
+    "KnowledgeBasePlanResponse",
+    "KnowledgeBasePlanResponseStatus",
+    "KnowledgeBasePublishResponse",
+    "KnowledgeBasePushResponse",
     "KnowledgeBaseRevisionResponse",
+    "KnowledgeBaseSnapshotResponse",
+    "KnowledgeBaseStateResponse",
+    "KnowledgeDocumentInput",
+    "KnowledgeDocumentPlanResponse",
+    "KnowledgeDocumentPlanResponseAction",
+    "KnowledgeDocumentPlanResponseStatus",
+    "KnowledgeDocumentRevisionResponse",
+    "KnowledgeDocumentSummaryResponse",
+    "KnowledgeDocumentsRequest",
     "LocalizationConfig",
     "ManagedWebhookExecution",
     "PlatformPromptPublishResponse",

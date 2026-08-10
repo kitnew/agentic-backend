@@ -6,6 +6,7 @@ from json import dumps, loads
 import httpx
 
 from control_plane import __version__
+from control_plane.commands.knowledge import run_tenant_knowledge
 from control_plane.commands.prompt_sets import run_tenant_prompt_set
 from control_plane.commands.prompts import (
     PromptCommandError,
@@ -60,6 +61,18 @@ def parser() -> ArgumentParser:
     for action in ("show", "revisions", "plan", "apply"):
         command = tenant_prompt_set_actions.add_parser(action)
         command.add_argument("tenant_slug")
+    tenant_knowledge = tenant_actions.add_parser(
+        "knowledge", help="manage the tenant-owned KnowledgeBase"
+    )
+    tenant_knowledge_actions = tenant_knowledge.add_subparsers(
+        dest="tenant_knowledge_action", required=True
+    )
+    for action in ("show", "revisions", "plan", "push", "publish"):
+        command = tenant_knowledge_actions.add_parser(action)
+        command.add_argument("tenant_slug")
+    tenant_knowledge_pull = tenant_knowledge_actions.add_parser("pull")
+    tenant_knowledge_pull.add_argument("tenant_slug")
+    tenant_knowledge_pull.add_argument("--force", action="store_true")
 
     system = resources.add_parser(
         "system-prompt", help="manage the canonical SystemPrompt"
@@ -134,10 +147,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 force=getattr(arguments, "force", False),
             )
             return 0
-        if (
-            arguments.resource == "tenant"
-            and arguments.tenant_action == "prompt-set"
-        ):
+        if arguments.resource == "tenant" and arguments.tenant_action == "knowledge":
+            run_tenant_knowledge(
+                settings,
+                arguments.tenant_knowledge_action,
+                arguments.tenant_slug,
+                force=getattr(arguments, "force", False),
+            )
+            return 0
+        if arguments.resource == "tenant" and arguments.tenant_action == "prompt-set":
             run_tenant_prompt_set(
                 settings,
                 arguments.tenant_prompt_set_action,

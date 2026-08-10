@@ -265,6 +265,10 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
             assert runtime.status_code == 200
             assert runtime.json()["greeting"] == "Pinned greeting A"
             assert runtime.json()["prompt"]["system_prompt"] == ("Pinned system A")
+            assert runtime.json()["prompt"]["knowledge_context"] == (
+                "Breakfast starts at seven."
+            )
+            assert runtime.json()["prompt"]["knowledge_base_revision_id"]
             assert (
                 not {
                     "schema_version",

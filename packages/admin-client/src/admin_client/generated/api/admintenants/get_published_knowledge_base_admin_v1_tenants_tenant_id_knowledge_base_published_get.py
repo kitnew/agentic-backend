@@ -8,20 +8,18 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.knowledge_base_revision_response import KnowledgeBaseRevisionResponse
+from ...models.knowledge_base_snapshot_response import KnowledgeBaseSnapshotResponse
 from ...types import Response
 
 
 def _get_kwargs(
     tenant_id: UUID,
-    revision_id: UUID,
 ) -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
-        "method": "post",
-        "url": "/admin/v1/tenants/{tenant_id}/knowledge-base/drafts/{revision_id}/publish".format(
+        "method": "get",
+        "url": "/admin/v1/tenants/{tenant_id}/knowledge-base/published".format(
             tenant_id=quote(str(tenant_id), safe=""),
-            revision_id=quote(str(revision_id), safe=""),
         ),
     }
 
@@ -30,9 +28,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | KnowledgeBaseRevisionResponse | None:
+) -> HTTPValidationError | KnowledgeBaseSnapshotResponse | None:
     if response.status_code == 200:
-        response_200 = KnowledgeBaseRevisionResponse.from_dict(response.json())
+        response_200 = KnowledgeBaseSnapshotResponse.from_dict(response.json())
 
         return response_200
 
@@ -49,7 +47,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | KnowledgeBaseRevisionResponse]:
+) -> Response[HTTPValidationError | KnowledgeBaseSnapshotResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,27 +58,24 @@ def _build_response(
 
 def sync_detailed(
     tenant_id: UUID,
-    revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | KnowledgeBaseRevisionResponse]:
-    """Publish Knowledge Base Draft
+) -> Response[HTTPValidationError | KnowledgeBaseSnapshotResponse]:
+    """Get Published Knowledge Base
 
     Args:
         tenant_id (UUID):
-        revision_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | KnowledgeBaseRevisionResponse]
+        Response[HTTPValidationError | KnowledgeBaseSnapshotResponse]
     """
 
     kwargs = _get_kwargs(
         tenant_id=tenant_id,
-        revision_id=revision_id,
     )
 
     response = client.get_httpx_client().request(
@@ -92,54 +87,48 @@ def sync_detailed(
 
 def sync(
     tenant_id: UUID,
-    revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | KnowledgeBaseRevisionResponse | None:
-    """Publish Knowledge Base Draft
+) -> HTTPValidationError | KnowledgeBaseSnapshotResponse | None:
+    """Get Published Knowledge Base
 
     Args:
         tenant_id (UUID):
-        revision_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | KnowledgeBaseRevisionResponse
+        HTTPValidationError | KnowledgeBaseSnapshotResponse
     """
 
     return sync_detailed(
         tenant_id=tenant_id,
-        revision_id=revision_id,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
     tenant_id: UUID,
-    revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | KnowledgeBaseRevisionResponse]:
-    """Publish Knowledge Base Draft
+) -> Response[HTTPValidationError | KnowledgeBaseSnapshotResponse]:
+    """Get Published Knowledge Base
 
     Args:
         tenant_id (UUID):
-        revision_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | KnowledgeBaseRevisionResponse]
+        Response[HTTPValidationError | KnowledgeBaseSnapshotResponse]
     """
 
     kwargs = _get_kwargs(
         tenant_id=tenant_id,
-        revision_id=revision_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -149,28 +138,25 @@ async def asyncio_detailed(
 
 async def asyncio(
     tenant_id: UUID,
-    revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | KnowledgeBaseRevisionResponse | None:
-    """Publish Knowledge Base Draft
+) -> HTTPValidationError | KnowledgeBaseSnapshotResponse | None:
+    """Get Published Knowledge Base
 
     Args:
         tenant_id (UUID):
-        revision_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | KnowledgeBaseRevisionResponse
+        HTTPValidationError | KnowledgeBaseSnapshotResponse
     """
 
     return (
         await asyncio_detailed(
             tenant_id=tenant_id,
-            revision_id=revision_id,
             client=client,
         )
     ).parsed

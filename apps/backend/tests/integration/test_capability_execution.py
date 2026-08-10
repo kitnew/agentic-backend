@@ -129,18 +129,37 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
                 headers=admin_headers,
             )
         ).status_code == 200
-        knowledge = await client.post(
-            f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts",
+        documents = {
+            "documents": [
+                {
+                    "key": "knowledge",
+                    "media_type": "text/markdown",
+                    "content": (
+                        "Reservation requests are handled by the reservations team."
+                    ),
+                }
+            ]
+        }
+        knowledge_plan = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/plan",
             headers=admin_headers,
-            json={"text": "Reservation requests are handled by the reservations team."},
+            json=documents,
         )
-        assert knowledge.status_code == 201
-        assert (
-            await client.post(
-                f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts/{knowledge.json()['id']}/publish",
-                headers=admin_headers,
-            )
-        ).status_code == 200
+        assert knowledge_plan.status_code == 200
+        knowledge = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/push",
+            headers={
+                **admin_headers,
+                "If-Match": f'"{knowledge_plan.json()["base_version"]}"',
+            },
+            json=documents,
+        )
+        assert knowledge.status_code == 200
+        knowledge_published = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/publish",
+            headers=admin_headers,
+        )
+        assert knowledge_published.status_code == 200
         prompt_set = await client.post(
             f"/admin/v1/tenants/{tenant_id}/prompt-set/drafts",
             headers=admin_headers,
@@ -148,7 +167,9 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
                 "system_prompt_revision_id": system.json()["id"],
                 "profile_prompt_revision_id": profile.json()["id"],
                 "tenant_prompt_revision_id": tenant_prompt.json()["id"],
-                "knowledge_base_revision_id": knowledge.json()["id"],
+                "knowledge_base_revision_id": knowledge_published.json()["published"][
+                    "revision"
+                ]["id"],
             },
         )
         assert prompt_set.status_code == 201

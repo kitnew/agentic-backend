@@ -997,12 +997,108 @@
         "title": "IntegrationProvider",
         "type": "string"
       },
+      "KnowledgeBasePlanResponse": {
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "integer"
+          },
+          "create_count": {
+            "title": "Create Count",
+            "type": "integer"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeDocumentPlanResponse"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "remove_count": {
+            "title": "Remove Count",
+            "type": "integer"
+          },
+          "reuse_count": {
+            "title": "Reuse Count",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "unchanged",
+              "modified"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "update_draft": {
+            "title": "Update Draft",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "status",
+          "base_version",
+          "documents",
+          "reuse_count",
+          "create_count",
+          "remove_count",
+          "update_draft"
+        ],
+        "title": "KnowledgeBasePlanResponse",
+        "type": "object"
+      },
+      "KnowledgeBasePublishResponse": {
+        "properties": {
+          "published": {
+            "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
+          }
+        },
+        "required": [
+          "published"
+        ],
+        "title": "KnowledgeBasePublishResponse",
+        "type": "object"
+      },
+      "KnowledgeBasePushResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "changed",
+          "draft"
+        ],
+        "title": "KnowledgeBasePushResponse",
+        "type": "object"
+      },
       "KnowledgeBaseRevisionResponse": {
         "properties": {
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "document_count": {
+            "title": "Document Count",
+            "type": "integer"
           },
           "id": {
             "format": "uuid",
@@ -1039,10 +1135,6 @@
             "title": "Tenant Id",
             "type": "string"
           },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          },
           "version": {
             "title": "Version",
             "type": "integer"
@@ -1050,16 +1142,239 @@
         },
         "required": [
           "id",
+          "tenant_id",
+          "knowledge_base_id",
           "revision_number",
           "status",
-          "text",
           "created_at",
           "published_at",
           "version",
-          "tenant_id",
-          "knowledge_base_id"
+          "document_count"
         ],
         "title": "KnowledgeBaseRevisionResponse",
+        "type": "object"
+      },
+      "KnowledgeBaseSnapshotResponse": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeDocumentRevisionResponse"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
+          }
+        },
+        "required": [
+          "revision",
+          "documents"
+        ],
+        "title": "KnowledgeBaseSnapshotResponse",
+        "type": "object"
+      },
+      "KnowledgeBaseStateResponse": {
+        "properties": {
+          "draft_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_published_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_documents": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeDocumentSummaryResponse"
+            },
+            "title": "Published Documents",
+            "type": "array"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "latest_published_revision",
+          "draft_revision",
+          "published_documents"
+        ],
+        "title": "KnowledgeBaseStateResponse",
+        "type": "object"
+      },
+      "KnowledgeDocumentInput": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "default": "",
+            "maxLength": 1000000,
+            "title": "Content",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_-]*$",
+            "title": "Key",
+            "type": "string"
+          },
+          "media_type": {
+            "const": "text/markdown",
+            "default": "text/markdown",
+            "title": "Media Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "KnowledgeDocumentInput",
+        "type": "object"
+      },
+      "KnowledgeDocumentPlanResponse": {
+        "properties": {
+          "action": {
+            "enum": [
+              "reuse",
+              "create",
+              "remove"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "current_revision_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Revision Number"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "unchanged",
+              "modified",
+              "local-only",
+              "missing-local"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "status",
+          "current_revision_number",
+          "action"
+        ],
+        "title": "KnowledgeDocumentPlanResponse",
+        "type": "object"
+      },
+      "KnowledgeDocumentRevisionResponse": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "document_revision_number": {
+            "title": "Document Revision Number",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "media_type",
+          "document_revision_number",
+          "content",
+          "content_hash",
+          "position"
+        ],
+        "title": "KnowledgeDocumentRevisionResponse",
+        "type": "object"
+      },
+      "KnowledgeDocumentSummaryResponse": {
+        "properties": {
+          "document_revision_number": {
+            "title": "Document Revision Number",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "media_type",
+          "document_revision_number",
+          "position"
+        ],
+        "title": "KnowledgeDocumentSummaryResponse",
+        "type": "object"
+      },
+      "KnowledgeDocumentsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeDocumentInput"
+            },
+            "maxItems": 100,
+            "title": "Documents",
+            "type": "array"
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "title": "KnowledgeDocumentsRequest",
         "type": "object"
       },
       "LocalizationConfig": {
@@ -3839,9 +4154,9 @@
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/drafts": {
-      "post": {
-        "operationId": "create_knowledge_base_draft_admin_v1_tenants__tenant_id__knowledge_base_drafts_post",
+    "/admin/v1/tenants/{tenant_id}/knowledge-base": {
+      "get": {
+        "operationId": "show_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_get",
         "parameters": [
           {
             "in": "path",
@@ -3854,22 +4169,12 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTextDraftRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
+                  "$ref": "#/components/schemas/KnowledgeBaseStateResponse"
                 }
               }
             },
@@ -3891,15 +4196,15 @@
             "AdminToken": []
           }
         ],
-        "summary": "Create Knowledge Base Draft",
+        "summary": "Show Knowledge Base",
         "tags": [
           "admin:tenants"
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/drafts/{revision_id}": {
-      "patch": {
-        "operationId": "update_knowledge_base_draft_admin_v1_tenants__tenant_id__knowledge_base_drafts__revision_id__patch",
+    "/admin/v1/tenants/{tenant_id}/knowledge-base/plan": {
+      "post": {
+        "operationId": "plan_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_plan_post",
         "parameters": [
           {
             "in": "path",
@@ -3910,14 +4215,158 @@
               "title": "Tenant Id",
               "type": "string"
             }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeDocumentsRequest"
+              }
+            }
           },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBasePlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Knowledge Base",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/knowledge-base/publish": {
+      "post": {
+        "operationId": "publish_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_publish_post",
+        "parameters": [
           {
             "in": "path",
-            "name": "revision_id",
+            "name": "tenant_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Revision Id",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBasePublishResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Publish Knowledge Base",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/knowledge-base/published": {
+      "get": {
+        "operationId": "get_published_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_published_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Get Published Knowledge Base",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/knowledge-base/push": {
+      "post": {
+        "operationId": "push_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_push_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
               "type": "string"
             }
           },
@@ -3942,7 +4391,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateTextDraftRequest"
+                "$ref": "#/components/schemas/KnowledgeDocumentsRequest"
               }
             }
           },
@@ -3953,7 +4402,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
+                  "$ref": "#/components/schemas/KnowledgeBasePushResponse"
                 }
               }
             },
@@ -3975,65 +4424,7 @@
             "AdminToken": []
           }
         ],
-        "summary": "Update Knowledge Base Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/drafts/{revision_id}/publish": {
-      "post": {
-        "operationId": "publish_knowledge_base_draft_admin_v1_tenants__tenant_id__knowledge_base_drafts__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Knowledge Base Draft",
+        "summary": "Push Knowledge Base",
         "tags": [
           "admin:tenants"
         ]

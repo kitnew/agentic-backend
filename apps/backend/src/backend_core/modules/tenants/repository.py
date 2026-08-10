@@ -2,13 +2,16 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
     InboundRoute,
     KnowledgeBase,
+    KnowledgeBaseRevisionDocument,
+    KnowledgeDocument,
+    KnowledgeDocumentRevision,
     ProfilePrompt,
     PromptBundleRevision,
     PromptBundleRevisionStatus,
@@ -270,7 +273,9 @@ class PromptCompositionRepository:
 
     async def list_profile_prompts(self) -> list[ProfilePrompt]:
         return list(
-            await self._session.scalars(select(ProfilePrompt).order_by(ProfilePrompt.key))
+            await self._session.scalars(
+                select(ProfilePrompt).order_by(ProfilePrompt.key)
+            )
         )
 
     async def tenant_prompt(self, tenant_id: UUID) -> TenantPrompt | None:
@@ -282,6 +287,93 @@ class PromptCompositionRepository:
         return await self._session.scalar(
             select(KnowledgeBase).where(KnowledgeBase.tenant_id == tenant_id)
         )
+
+    async def knowledge_base_for_update(self, tenant_id: UUID) -> KnowledgeBase | None:
+        return await self._session.scalar(
+            select(KnowledgeBase)
+            .where(KnowledgeBase.tenant_id == tenant_id)
+            .with_for_update()
+        )
+
+    async def knowledge_snapshot(
+        self, tenant_id: UUID, revision_id: UUID
+    ) -> list[
+        tuple[
+            KnowledgeBaseRevisionDocument,
+            KnowledgeDocument,
+            KnowledgeDocumentRevision,
+        ]
+    ]:
+        rows = await self._session.execute(
+            select(
+                KnowledgeBaseRevisionDocument,
+                KnowledgeDocument,
+                KnowledgeDocumentRevision,
+            )
+            .join(
+                KnowledgeDocument,
+                KnowledgeDocument.id
+                == KnowledgeBaseRevisionDocument.knowledge_document_id,
+            )
+            .join(
+                KnowledgeDocumentRevision,
+                KnowledgeDocumentRevision.id
+                == KnowledgeBaseRevisionDocument.knowledge_document_revision_id,
+            )
+            .where(
+                KnowledgeBaseRevisionDocument.tenant_id == tenant_id,
+                KnowledgeBaseRevisionDocument.knowledge_base_revision_id == revision_id,
+            )
+            .order_by(KnowledgeBaseRevisionDocument.position)
+        )
+        return list(rows.tuples())
+
+    async def knowledge_documents(
+        self, knowledge_base_id: UUID
+    ) -> list[KnowledgeDocument]:
+        return list(
+            await self._session.scalars(
+                select(KnowledgeDocument)
+                .where(KnowledgeDocument.knowledge_base_id == knowledge_base_id)
+                .order_by(KnowledgeDocument.key)
+            )
+        )
+
+    async def matching_document_revision(
+        self,
+        document_id: UUID,
+        content_hash: str,
+        content: str,
+    ) -> KnowledgeDocumentRevision | None:
+        return await self._session.scalar(
+            select(KnowledgeDocumentRevision).where(
+                KnowledgeDocumentRevision.knowledge_document_id == document_id,
+                KnowledgeDocumentRevision.content_hash == content_hash,
+                KnowledgeDocumentRevision.content == content,
+                KnowledgeDocumentRevision.media_type == "text/markdown",
+            )
+        )
+
+    async def next_document_revision_number(self, document_id: UUID) -> int:
+        latest = await self._session.scalar(
+            select(func.max(KnowledgeDocumentRevision.revision_number)).where(
+                KnowledgeDocumentRevision.knowledge_document_id == document_id
+            )
+        )
+        return (latest or 0) + 1
+
+    async def replace_knowledge_snapshot(
+        self,
+        revision_id: UUID,
+        links: list[KnowledgeBaseRevisionDocument],
+    ) -> None:
+        await self._session.execute(
+            delete(KnowledgeBaseRevisionDocument).where(
+                KnowledgeBaseRevisionDocument.knowledge_base_revision_id == revision_id
+            )
+        )
+        self._session.add_all(links)
+        await self._session.flush()
 
     async def prompt_set(self, tenant_id: UUID) -> PromptSet | None:
         return await self._session.scalar(

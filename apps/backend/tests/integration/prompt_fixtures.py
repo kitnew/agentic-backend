@@ -41,23 +41,47 @@ async def publish_prompt_set(
         f"{tenant_prompt.json()['id']}/publish"
     )
     assert tenant_prompt_published.status_code == 200
-    knowledge = await client.post(
-        f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts",
-        json={"text": "Breakfast starts at seven."},
+    documents = {
+        "documents": [
+            {
+                "key": "knowledge",
+                "media_type": "text/markdown",
+                "content": "Breakfast starts at seven.",
+            }
+        ]
+    }
+    knowledge_plan = await client.post(
+        f"/admin/v1/tenants/{tenant_id}/knowledge-base/plan", json=documents
     )
-    assert knowledge.status_code == 201
-    knowledge_published = await client.post(
-        f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts/"
-        f"{knowledge.json()['id']}/publish"
+    assert knowledge_plan.status_code == 200
+    knowledge_push = await client.post(
+        f"/admin/v1/tenants/{tenant_id}/knowledge-base/push",
+        json=documents,
+        headers={"If-Match": f'"{knowledge_plan.json()["base_version"]}"'},
     )
-    assert knowledge_published.status_code == 200
+    assert knowledge_push.status_code == 200
+    if knowledge_push.json()["draft"] is None:
+        knowledge_snapshot = await client.get(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/published"
+        )
+    else:
+        published = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/publish"
+        )
+        assert published.status_code == 200
+        knowledge_snapshot = published
+    assert knowledge_snapshot.status_code == 200
     prompt_set = await client.post(
         f"/admin/v1/tenants/{tenant_id}/prompt-set/drafts",
         json={
             "system_prompt_revision_id": system["id"],
             "profile_prompt_revision_id": profile["id"],
             "tenant_prompt_revision_id": tenant_prompt_published.json()["id"],
-            "knowledge_base_revision_id": knowledge_published.json()["id"],
+            "knowledge_base_revision_id": (
+                knowledge_snapshot.json().get("published", knowledge_snapshot.json())[
+                    "revision"
+                ]["id"]
+            ),
         },
     )
     assert prompt_set.status_code == 201
@@ -70,7 +94,11 @@ async def publish_prompt_set(
         "system_revision_id": system["id"],
         "profile_revision_id": profile["id"],
         "tenant_prompt_revision_id": tenant_prompt_published.json()["id"],
-        "knowledge_base_revision_id": knowledge_published.json()["id"],
+        "knowledge_base_revision_id": (
+            knowledge_snapshot.json().get("published", knowledge_snapshot.json())[
+                "revision"
+            ]["id"]
+        ),
         "prompt_set_revision_id": published_prompt_set.json()["id"],
     }
 
