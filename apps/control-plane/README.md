@@ -12,11 +12,17 @@ uv run agentctl --version
 uv run agentctl tenant list
 uv run agentctl system-prompt plan
 uv run agentctl profile list
+uv run agentctl sync plan
 ```
 
 `--api-url` overrides `AGENTCTL_API_URL`. The token is accepted only through the
 environment and is never printed. `--state-dir` overrides `AGENTCTL_STATE_DIR`;
 the default canonical state root is `./control-plane`.
+
+Use `sync plan`, `sync push`, `sync publish`, and `sync pull [--force]` to
+orchestrate the same resource workflows across the locally represented desired
+state. Missing canonical resources are unmanaged; global sync never treats
+absence as remote deletion and never creates remote tenants.
 
 ```bash
 uv run agentctl system-prompt pull

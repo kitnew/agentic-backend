@@ -124,6 +124,20 @@ def content_matches(left: str, right: str) -> bool:
     return comparable_content(left) == comparable_content(right)
 
 
+def plan_status(local: str | None, state: RemoteState) -> str:
+    if local is None:
+        return "missing-local"
+    if not state.revisions:
+        return "local-only"
+    if state.draft is not None and not content_matches(local, state.draft.text):
+        return "draft-conflict"
+    if state.draft is not None or (
+        state.published is not None and content_matches(local, state.published.text)
+    ):
+        return "unchanged"
+    return "modified"
+
+
 def _detail(content: bytes) -> str:
     try:
         payload = json.loads(content)
@@ -363,18 +377,7 @@ def _pull(target: PromptTarget, state: RemoteState, *, force: bool) -> None:
 def _plan(target: PromptTarget, state: RemoteState) -> None:
     local = _read(target.path, required=False)
     print(f"{target.label}: {target.key}\n")
-    if local is None:
-        local_status = "missing-local"
-    elif not state.revisions:
-        local_status = "local-only"
-    elif state.draft is not None and not content_matches(local, state.draft.text):
-        local_status = "draft-conflict"
-    elif state.draft is not None or (
-        state.published is not None and content_matches(local, state.published.text)
-    ):
-        local_status = "unchanged"
-    else:
-        local_status = "modified"
+    local_status = plan_status(local, state)
     print(f"Status: {local_status}\n")
     print("Local:")
     print(f"  {target.path}\n")

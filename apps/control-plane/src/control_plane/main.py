@@ -14,6 +14,7 @@ from control_plane.commands.prompts import (
     run_system_prompt,
     run_tenant_prompt,
 )
+from control_plane.commands.sync import run_sync
 from control_plane.commands.tenant_configs import run_tenant_config
 from control_plane.commands.tenants import fetch_tenants
 from control_plane.settings import Settings, SettingsError
@@ -92,6 +93,12 @@ def parser() -> ArgumentParser:
     profile_pull = profile_actions.add_parser("pull")
     profile_pull.add_argument("profile_key")
     profile_pull.add_argument("--force", action="store_true")
+    sync = resources.add_parser("sync", help="reconcile repository desired state")
+    sync_actions = sync.add_subparsers(dest="action", required=True)
+    for action in ("plan", "push", "publish"):
+        sync_actions.add_parser(action)
+    sync_pull = sync_actions.add_parser("pull")
+    sync_pull.add_argument("--force", action="store_true")
     return root
 
 
@@ -116,6 +123,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
         settings = Settings.load(arguments.api_url, arguments.state_dir)
+        if arguments.resource == "sync":
+            return run_sync(
+                settings,
+                arguments.action,
+                force=getattr(arguments, "force", False),
+            )
         if arguments.resource == "system-prompt":
             run_system_prompt(
                 settings,

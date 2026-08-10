@@ -13,6 +13,28 @@ tenants/<tenant_slug>/tenant_prompt.md
 tenants/<tenant_slug>/knowledge/*.md
 ```
 
+Global reconciliation uses only paths already represented in this checkout:
+
+```bash
+agentctl sync plan
+agentctl sync push
+agentctl sync publish
+agentctl sync pull [--force]
+```
+
+Presence is the management marker. A missing `system_prompt.md`, profile file,
+`tenant.yaml`, `tenant_prompt.md`, or `knowledge/` directory is unmanaged and is
+never a remote deletion request. A present `knowledge/` directory is the full
+managed document snapshot, including when it is empty. Remote-only profiles and
+tenants are not pulled, changed, reconciled, or materialized by global sync.
+
+`sync plan` is read-only. `sync push` changes drafts only. `sync publish` first
+checks the complete managed state against remote drafts, then publishes in
+dependency order and asks Backend PromptSet plan/apply to reconcile only local
+tenant directories. `sync pull` compares every managed resource before writing;
+without `--force`, one conflict prevents all writes. PromptSets, revision IDs,
+ETags, timestamps, and secrets are never written to this directory.
+
 Markdown files contain prompt text only. Revision IDs, versions, status, and
 timestamps remain in Backend Core/PostgreSQL. The canonical SystemPrompt uses
 the stable platform key `default`; Backend runtime activation still happens only

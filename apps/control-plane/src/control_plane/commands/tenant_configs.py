@@ -382,16 +382,7 @@ def _print_plan(
     local: dict[str, Any] | None,
     remote: dict[str, Any] | None,
 ) -> None:
-    if local is None:
-        status = "missing-local"
-    elif remote is None:
-        status = "local-only"
-    elif local == remote:
-        status = "unchanged"
-    elif state.draft is not None:
-        status = "draft-conflict"
-    else:
-        status = "modified"
+    status = plan_status(local, remote, state)
     print(f"Tenant Config: {slug}\n\nStatus: {status}\n")
     print(f"Local:\n  {path}")
     if local is not None:
@@ -433,6 +424,20 @@ def _print_plan(
         print("  create draft revision")
         print("  validate draft")
         print("  no publication")
+
+
+def plan_status(
+    local: dict[str, Any] | None,
+    remote: dict[str, Any] | None,
+    state: ConfigState,
+) -> str:
+    if local is None:
+        return "missing-local"
+    if remote is None:
+        return "local-only"
+    if local == remote:
+        return "unchanged"
+    return "draft-conflict" if state.draft is not None else "modified"
 
 
 def _plan(
