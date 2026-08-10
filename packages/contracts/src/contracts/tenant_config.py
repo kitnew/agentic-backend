@@ -147,6 +147,15 @@ class TenantConfigV3(_TenantConfigModel):
 
 TenantConfig = TenantConfigV1 | TenantConfigV2 | TenantConfigV3
 
+# The persisted revision schema version is the dispatch key for deserialization.
+TENANT_CONFIG_SCHEMAS: dict[
+    int, type[TenantConfigV1 | TenantConfigV2 | TenantConfigV3]
+] = {
+    1: TenantConfigV1,
+    2: TenantConfigV2,
+    3: TenantConfigV3,
+}
+
 
 class ActiveTenantConfig(_TenantConfigModel):
     tenant_id: UUID

@@ -5,7 +5,7 @@ from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.models import ProfilePrompt, Tenant
 from backend_core.platform.database import Database
-from contracts import TenantConfigV1
+from contracts import TENANT_CONFIG_SCHEMAS, TenantConfigV1
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 from sqlalchemy import delete, update
@@ -267,7 +267,9 @@ async def test_config_revision_lifecycle(
                     {
                         "path": "schema_version",
                         "code": "unsupported_schema_version",
-                        "message": "Only schema_version 1, 2 and 3 are supported",
+                        "message": "Only schema_version "
+                        + ", ".join(str(version) for version in TENANT_CONFIG_SCHEMAS)
+                        + " are supported",
                     }
                 ],
             }

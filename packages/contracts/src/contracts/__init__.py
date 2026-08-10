@@ -32,6 +32,7 @@ from contracts.conversation import (
     ConversationResponse,
 )
 from contracts.tenant_config import (
+    TENANT_CONFIG_SCHEMAS,
     ActiveTenantConfig,
     CapabilityBusinessPolicy,
     ConversationScope,
@@ -53,6 +54,7 @@ from contracts.voice import (
 )
 
 __all__ = [
+    "TENANT_CONFIG_SCHEMAS",
     "ActiveTenantConfig",
     "AppendConversationMessage",
     "CallLifecycleResponse",

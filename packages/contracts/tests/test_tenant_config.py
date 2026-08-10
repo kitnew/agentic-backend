@@ -1,8 +1,10 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from contracts import (
+    TENANT_CONFIG_SCHEMAS,
     ActiveTenantConfig,
     ConversationScope,
     TenantConfigV1,
@@ -17,6 +19,44 @@ V2_FIXTURE = Path(__file__).parent / "fixtures" / "tenant_config_v2.json"
 
 def fixture_json() -> str:
     return FIXTURE.read_text()
+
+
+def config_v3() -> dict[str, object]:
+    return {
+        "schema_version": 3,
+        "business": {"name": "Fixture Hotel", "type": "hotel"},
+        "contact": {"phones": ["+421900000000"]},
+        "localization": {"default_locale": "sk-SK", "timezone": "Europe/Bratislava"},
+        "agent": {
+            "display_name": "Amelia",
+            "greeting": "Dobry den",
+            "profile": "hotel_assistant",
+        },
+        "conversation": {"scope": "property_only"},
+        "capabilities": {},
+    }
+
+
+@pytest.mark.parametrize(
+    ("version", "document"),
+    [
+        (1, lambda: json.loads(fixture_json())),
+        (2, lambda: json.loads(V2_FIXTURE.read_text())),
+        (3, config_v3),
+    ],
+)
+def test_registered_schema_versions_parse_through_canonical_dispatch(
+    version: int, document: Callable[[], dict[str, object]]
+) -> None:
+    assert sorted(TENANT_CONFIG_SCHEMAS) == [1, 2, 3]
+    assert (
+        TENANT_CONFIG_SCHEMAS[version].model_validate(document()).schema_version
+        == version
+    )
+
+
+def test_canonical_schema_dispatch_rejects_unregistered_versions() -> None:
+    assert TENANT_CONFIG_SCHEMAS.get(4) is None
 
 
 def test_v1_json_round_trip() -> None:
@@ -54,22 +94,11 @@ def test_v1_rejects_unknown_fields_and_schema_versions() -> None:
 
 
 def test_v3_keeps_prompt_text_out_of_deterministic_configuration() -> None:
-    config = {
-        "schema_version": 3,
-        "business": {"name": "Fixture Hotel", "type": "hotel"},
-        "contact": {"phones": ["+421900000000"]},
-        "localization": {"default_locale": "sk-SK", "timezone": "Europe/Bratislava"},
-        "agent": {
-            "display_name": "Amelia",
-            "greeting": "Dobry den",
-            "profile": "hotel_assistant",
-        },
-        "conversation": {"scope": "property_only"},
-        "capabilities": {},
-    }
+    config = config_v3()
     assert TenantConfigV3.model_validate(config).agent.profile == "hotel_assistant"
     with pytest.raises(ValidationError):
         TenantConfigV3.model_validate({**config, "knowledge_text": "Breakfast"})
+
 
 def test_v1_rejects_unknown_timezone() -> None:
     document = json.loads(fixture_json())

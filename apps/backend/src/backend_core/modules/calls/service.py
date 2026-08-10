@@ -3,6 +3,7 @@ from hashlib import sha256
 from uuid import UUID, uuid4
 
 from contracts import (
+    TENANT_CONFIG_SCHEMAS,
     ConversationPersistenceStatus,
     TenantCapabilityProfile,
     TenantConfigV2,
@@ -212,13 +213,14 @@ class CallSessionService:
         if config_revision is None or prompt_set is None:
             raise CallSessionConfigUnavailableError
         try:
-            config = (
-                TenantConfigV3.model_validate(config_revision.config)
-                if config_revision.schema_version == 3
-                else TenantConfigV2.model_validate(config_revision.config)
-            )
+            model = TENANT_CONFIG_SCHEMAS.get(config_revision.schema_version)
+            if model is None:
+                raise CallSessionConfigUnavailableError
+            config = model.model_validate(config_revision.config)
         except ValidationError as error:
             raise CallSessionConfigUnavailableError from error
+        if not isinstance(config, (TenantConfigV2, TenantConfigV3)):
+            raise CallSessionConfigUnavailableError
         system = await self._prompts.revision(
             SystemPromptRevision, prompt_set.system_prompt_revision_id
         )

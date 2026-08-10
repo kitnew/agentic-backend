@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from contracts import (
+    TENANT_CONFIG_SCHEMAS,
     CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
@@ -14,8 +15,10 @@ from contracts import (
     ReservationRequestSubmitted,
     TenantCapabilityProfile,
     TenantConfigV2,
+    TenantConfigV3,
     WorkerResultReport,
 )
+from pydantic import ValidationError
 
 from backend_core.modules.calls.models import CallSessionStatus
 from backend_core.modules.calls.repository import CallSessionRepository
@@ -92,7 +95,7 @@ class CapabilityInvocationService:
             raise CapabilityValidationError(
                 "configuration_invalid", "Pinned configuration is unavailable"
             )
-        config = TenantConfigV2.model_validate(revision.config)
+        config = self._capability_config(revision.schema_version, revision.config)
         profile = config.capabilities.get(SEMANTIC_KEY)
         if not isinstance(profile, TenantCapabilityProfile) or not profile.enabled:
             raise CapabilityValidationError(
@@ -270,7 +273,7 @@ class CapabilityInvocationService:
             raise CapabilityValidationError(
                 "configuration_invalid", "Pinned configuration is unavailable"
             )
-        config = TenantConfigV2.model_validate(revision.config)
+        config = self._capability_config(revision.schema_version, revision.config)
         profile = config.capabilities.get(SEMANTIC_KEY)
         if not isinstance(profile, TenantCapabilityProfile) or not profile.enabled:
             raise CapabilityValidationError(
@@ -390,6 +393,28 @@ class CapabilityInvocationService:
                 },
             )
         return created_invocation, created
+
+    @staticmethod
+    def _capability_config(
+        schema_version: int, config: object
+    ) -> TenantConfigV2 | TenantConfigV3:
+        model = TENANT_CONFIG_SCHEMAS.get(schema_version)
+        if model is None:
+            raise CapabilityValidationError(
+                "configuration_invalid", "Pinned configuration is unavailable"
+            )
+        try:
+            parsed = model.model_validate(config)
+        except ValidationError as error:
+            raise CapabilityValidationError(
+                "configuration_invalid", "Pinned configuration is unavailable"
+            ) from error
+        if not isinstance(parsed, (TenantConfigV2, TenantConfigV3)):
+            raise CapabilityValidationError(
+                "configuration_invalid",
+                "Pinned configuration has no capability profiles",
+            )
+        return parsed
 
     async def get(self, call_id: UUID, invocation_id: UUID) -> CapabilityInvocation:
         invocation = await self._invocations.get(invocation_id)

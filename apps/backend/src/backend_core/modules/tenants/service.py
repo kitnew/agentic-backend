@@ -1,12 +1,12 @@
 from copy import deepcopy
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from contracts import (
+    TENANT_CONFIG_SCHEMAS,
     TenantCapabilityProfile,
     TenantConfig,
-    TenantConfigV1,
     TenantConfigV2,
     TenantConfigV3,
 )
@@ -807,25 +807,25 @@ class ConfigUseCases:
         self,
         revision: TenantConfigRevision,
     ) -> tuple[TenantConfig | None, list[ValidationIssue]]:
-        if revision.schema_version not in (1, 2, 3):
+        model = TENANT_CONFIG_SCHEMAS.get(revision.schema_version)
+        if model is None:
+            supported_versions = ", ".join(
+                str(version) for version in TENANT_CONFIG_SCHEMAS
+            )
             return (
                 None,
                 [
                     ValidationIssue(
                         path="schema_version",
                         code="unsupported_schema_version",
-                        message="Only schema_version 1, 2 and 3 are supported",
+                        message=(
+                            f"Only schema_version {supported_versions} are supported"
+                        ),
                     )
                 ],
             )
         try:
-            config: TenantConfig
-            if revision.schema_version == 1:
-                config = TenantConfigV1.model_validate(revision.config)
-            elif revision.schema_version == 2:
-                config = TenantConfigV2.model_validate(revision.config)
-            else:
-                config = TenantConfigV3.model_validate(revision.config)
+            config = cast(TenantConfig, model.model_validate(revision.config))
         except ValidationError as error:
             return (
                 None,
@@ -842,18 +842,8 @@ class ConfigUseCases:
                     )
                 ],
             )
-        if config.schema_version != revision.schema_version:
-            return (
-                None,
-                [
-                    ValidationIssue(
-                        path="schema_version",
-                        code="schema_version_mismatch",
-                        message="Config and revision schema versions differ",
-                    )
-                ],
-            )
         if isinstance(config, (TenantConfigV2, TenantConfigV3)):
+            # V1 only has boolean switches; V2+ can carry capability profiles.
             capability_errors = await self._validate_capabilities(
                 revision.tenant_id,
                 config,
