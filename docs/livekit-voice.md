@@ -29,11 +29,23 @@ TURN, TLS, NAT, and firewall topology remain deployment requirements.
 ## Voice turn detection
 
 ElevenLabs Scribe v2 realtime owns end-of-speech commits. LiveKit uses
-`turn_detection="stt"` with fixed endpointing (`min_delay=0.2`,
-`max_delay=1.0`). Server VAD is currently configured with one second of silence,
+`turn_detection="stt"` with fixed endpointing (`min_delay=0.1`,
+`max_delay=0.7`). Server VAD is currently configured with 0.5 seconds of silence,
 0.35 activity threshold, 100 ms minimum speech, and 500 ms minimum silence.
 Local Silero VAD is also enabled for speech onset and interruption (barge-in);
-it does not replace ElevenLabs end-of-speech ownership.
+it does not replace ElevenLabs end-of-speech ownership. These values, provider
+models, logical Azure model, and TTS voice come from the call-pinned
+`VoiceRuntimeRevision`.
+
+The Voice Agent binds the pinned logical Azure model through
+`AZURE_OPENAI_MODEL` to the environment's `AZURE_OPENAI_DEPLOYMENT` and fails a
+session if they differ. Azure endpoint, API version, deployment, provider
+credentials, provider timeout/retry, participant wait timeout, and capability
+polling remain deployment settings. ElevenLabs STT/TTS language codes are mapped
+at the adapter boundary from the pinned Slovak locale (`sk-SK` to `slk`/`sk`);
+other locales fail explicitly. Historical calls whose nullable migration-era
+runtime revision is absent are not resumable through the new runtime-context
+endpoint.
 
 The Voice Agent emits `Voice EOU metrics` with transcription and endpointing
 delays. Compare a real smoke test before tuning the values. Candidate variants:

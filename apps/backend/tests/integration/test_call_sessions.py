@@ -9,6 +9,7 @@ from backend_core.modules.conversations.models import Conversation
 from backend_core.modules.tenants.models import ProfilePrompt, SystemPrompt, Tenant
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
+from runtime_fixtures import apply_voice_runtime
 from sqlalchemy import delete, select
 
 
@@ -54,7 +55,9 @@ async def publish_text(
     return revision_id
 
 
-async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str]:
+async def prepare_voice_ready_tenant(
+    client: AsyncClient,
+) -> tuple[str, str, str, str]:
     tenant_response = await client.post(
         "/admin/v1/tenants",
         json={
@@ -134,12 +137,19 @@ async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str
         await client.post(f"{prompt_set_url}/{prompt_set_revision_id}/publish")
     ).status_code == 200
 
+    voice_runtime_revision_id = (await apply_voice_runtime(client, tenant_id))["id"]
+
     route = await client.post(
         f"/admin/v1/tenants/{tenant_id}/inbound-routes",
         json={"normalized_did": "+421552301410"},
     )
     assert route.status_code == 201
-    return tenant_id, config_revision_id, prompt_set_revision_id
+    return (
+        tenant_id,
+        config_revision_id,
+        prompt_set_revision_id,
+        voice_runtime_revision_id,
+    )
 
 
 @pytest.mark.asyncio
@@ -180,6 +190,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
                 tenant_id,
                 config_revision_id,
                 prompt_set_revision_id,
+                voice_runtime_revision_id,
             ) = await prepare_voice_ready_tenant(client)
             calls_url = "/internal/v1/call-sessions"
             payload = {
@@ -204,6 +215,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert created["tenant_id"] == tenant_id
             assert created["tenant_config_revision_id"] == config_revision_id
             assert created["prompt_set_revision_id"] == prompt_set_revision_id
+            assert created["voice_runtime_revision_id"] == voice_runtime_revision_id
             assert created["channel"] == "sip"
             assert created["direction"] == "inbound"
             assert created["status"] == "created"
@@ -218,6 +230,25 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             )
             assert replay.status_code == 200
             assert replay.json() == created
+
+            runtime_drafts_url = f"/admin/v1/tenants/{tenant_id}/runtime/drafts"
+            runtime_draft = await client.post(
+                runtime_drafts_url,
+                json={"settings": {"tts": {"voice_id": "voice-b"}}},
+            )
+            assert runtime_draft.status_code == 201
+            assert (
+                await client.post(
+                    f"{runtime_drafts_url}/{runtime_draft.json()['id']}/publish"
+                )
+            ).status_code == 200
+            runtime_apply = await client.post(
+                f"/admin/v1/tenants/{tenant_id}/voice-runtime/apply"
+            )
+            assert runtime_apply.status_code == 200
+            next_voice_runtime_revision_id = runtime_apply.json()["voice_runtime"][
+                "id"
+            ]
 
             config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
             next_config = await client.post(
@@ -238,6 +269,9 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert existing_after_publish.json()["tenant_config_revision_id"] == (
                 config_revision_id
             )
+            assert existing_after_publish.json()["voice_runtime_revision_id"] == (
+                voice_runtime_revision_id
+            )
             new_call = await client.post(
                 calls_url,
                 json={
@@ -249,6 +283,9 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             )
             assert new_call.status_code == 201
             assert new_call.json()["tenant_config_revision_id"] == next_config_id
+            assert new_call.json()["voice_runtime_revision_id"] == (
+                next_voice_runtime_revision_id
+            )
 
             activated = await client.post(
                 f"{calls_url}/{call_id}/activate",

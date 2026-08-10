@@ -48,6 +48,28 @@ def log_session_metrics(event: object) -> None:
     )
 
 
+def log_runtime_binding(
+    settings: VoiceAgentSettings, context: VoiceAgentRuntimeContext
+) -> None:
+    runtime = context.voice_runtime
+    logger.info(
+        "Voice runtime binding resolved",
+        extra={
+            "call_session_id": str(context.call_session_id),
+            "voice_runtime_revision_id": str(context.voice_runtime_revision_id),
+            "llm_provider": runtime.llm.provider,
+            "llm_logical_model": runtime.llm.model,
+            "azure_deployment": settings.azure_openai_deployment,
+            "azure_api_version": settings.azure_openai_api_version,
+            "stt_provider": runtime.stt.provider,
+            "stt_model": runtime.stt.model,
+            "tts_provider": runtime.tts.provider,
+            "tts_model": runtime.tts.model,
+            "tts_voice_id": runtime.tts.voice_id,
+        },
+    )
+
+
 def parse_metadata(raw_metadata: str) -> LiveKitJobMetadata:
     if not raw_metadata:
         raise ValueError("missing job metadata")
@@ -185,7 +207,8 @@ async def run_job(
     cancelled = False
     try:
         context = await backend.runtime_context(metadata.call_session_id)
-        session = create_agent_session(settings, context.locale)
+        log_runtime_binding(settings, context)
+        session = create_agent_session(settings, context.voice_runtime)
         persistence = ConversationPersistence(backend, metadata.call_session_id)
         closed = asyncio.get_running_loop().create_future()
 

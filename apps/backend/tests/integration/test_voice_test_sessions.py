@@ -28,6 +28,7 @@ from backend_core.platform.livekit import LiveKitAdapter
 from contracts import LiveKitJobMetadata
 from httpx import ASGITransport, AsyncClient
 from prompt_fixtures import publish_config, publish_prompt_set
+from runtime_fixtures import apply_voice_runtime
 from sqlalchemy import delete, select, update
 
 
@@ -38,6 +39,11 @@ async def cleanup_tenants(database: Database, *slugs: str) -> None:
             update(Tenant)
             .where(Tenant.slug.in_(slugs))
             .values(active_prompt_set_revision_id=None)
+        )
+        await session.execute(
+            update(Tenant)
+            .where(Tenant.slug.in_(slugs))
+            .values(active_voice_runtime_revision_id=None)
         )
         await session.execute(
             update(Tenant)
@@ -181,6 +187,7 @@ async def create_voice_ready_tenant(client: AsyncClient, slug: str) -> str:
     tenant_id = tenant.json()["id"]
     await publish_prompt_set(client, tenant_id, system_text="Pinned system A")
     await publish_config(client, tenant_id, greeting="Pinned greeting A")
+    await apply_voice_runtime(client, tenant_id)
     return tenant_id
 
 
@@ -269,6 +276,13 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
                 "Breakfast starts at seven."
             )
             assert runtime.json()["prompt"]["knowledge_base_revision_id"]
+            assert runtime.json()["voice_runtime_revision_id"]
+            assert runtime.json()["voice_runtime"]["locale"] == "sk-SK"
+            assert runtime.json()["voice_runtime"]["tts"]["voice_id"] == "voice-a"
+            runtime_text = runtime.text.lower()
+            assert "api_key" not in runtime_text
+            assert "azure_endpoint" not in runtime_text
+            assert "azure_deployment" not in runtime_text
             assert (
                 not {
                     "schema_version",
@@ -278,6 +292,20 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
                     "credential_ref",
                 }
                 & runtime.json().keys()
+            )
+            async with database.transaction() as session:
+                await session.execute(
+                    update(CallSession)
+                    .where(CallSession.id == UUID(call_id))
+                    .values(voice_runtime_revision_id=None)
+                )
+            legacy_runtime = await client.get(
+                f"/internal/v1/calls/{call_id}/runtime-context",
+                headers=runtime_headers,
+            )
+            assert legacy_runtime.status_code == 409
+            assert legacy_runtime.json()["detail"]["code"] == (
+                "historical_call_voice_runtime_unavailable"
             )
             assert (
                 await client.post(

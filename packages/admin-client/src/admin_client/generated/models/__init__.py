@@ -27,6 +27,7 @@ from .create_tenant_request import CreateTenantRequest
 from .create_test_voice_session_request import CreateTestVoiceSessionRequest
 from .create_test_voice_session_response import CreateTestVoiceSessionResponse
 from .create_text_draft_request import CreateTextDraftRequest
+from .effective_voice_runtime import EffectiveVoiceRuntime
 from .google_sheets_append_execution import GoogleSheetsAppendExecution
 from .google_sheets_append_execution_value_input_option import (
     GoogleSheetsAppendExecutionValueInputOption,
@@ -51,10 +52,16 @@ from .knowledge_document_plan_response_status import KnowledgeDocumentPlanRespon
 from .knowledge_document_revision_response import KnowledgeDocumentRevisionResponse
 from .knowledge_document_summary_response import KnowledgeDocumentSummaryResponse
 from .knowledge_documents_request import KnowledgeDocumentsRequest
+from .llm_runtime_settings import LLMRuntimeSettings
+from .local_vad_runtime_settings import LocalVADRuntimeSettings
 from .localization_config import LocalizationConfig
 from .managed_webhook_execution import ManagedWebhookExecution
 from .platform_prompt_publish_response import PlatformPromptPublishResponse
 from .platform_prompt_revision_response import PlatformPromptRevisionResponse
+from .platform_runtime_policy import PlatformRuntimePolicy
+from .platform_runtime_request import PlatformRuntimeRequest
+from .platform_runtime_revision_response import PlatformRuntimeRevisionResponse
+from .platform_runtime_state_response import PlatformRuntimeStateResponse
 from .prompt_set_apply_response import PromptSetApplyResponse
 from .prompt_set_component_plan_response import PromptSetComponentPlanResponse
 from .prompt_set_component_response import PromptSetComponentResponse
@@ -68,6 +75,10 @@ from .prompt_set_resolution_error_response import PromptSetResolutionErrorRespon
 from .prompt_set_revision_response import PromptSetRevisionResponse
 from .prompt_set_rollout_summary_response import PromptSetRolloutSummaryResponse
 from .prompt_text_revision_response import PromptTextRevisionResponse
+from .runtime_revision_status import RuntimeRevisionStatus
+from .runtime_validation_response import RuntimeValidationResponse
+from .server_vad_runtime_settings import ServerVADRuntimeSettings
+from .stt_runtime_settings import STTRuntimeSettings
 from .tenant_capability_profile import TenantCapabilityProfile
 from .tenant_capability_profile_agent_input_schema import (
     TenantCapabilityProfileAgentInputSchema,
@@ -83,7 +94,14 @@ from .tenant_config_v3 import TenantConfigV3
 from .tenant_config_v3_capabilities import TenantConfigV3Capabilities
 from .tenant_prompt_revision_response import TenantPromptRevisionResponse
 from .tenant_response import TenantResponse
+from .tenant_runtime_override import TenantRuntimeOverride
+from .tenant_runtime_request import TenantRuntimeRequest
+from .tenant_runtime_revision_response import TenantRuntimeRevisionResponse
+from .tenant_runtime_state_response import TenantRuntimeStateResponse
 from .tenant_status import TenantStatus
+from .tenant_tts_runtime_override import TenantTTSRuntimeOverride
+from .tts_runtime_settings import TTSRuntimeSettings
+from .turn_runtime_settings import TurnRuntimeSettings
 from .update_draft_request import UpdateDraftRequest
 from .update_draft_request_config_type_0 import UpdateDraftRequestConfigType0
 from .update_inbound_route_request import UpdateInboundRouteRequest
@@ -100,6 +118,11 @@ from .validate_draft_response import ValidateDraftResponse
 from .validation_error import ValidationError
 from .validation_error_context import ValidationErrorContext
 from .validation_issue import ValidationIssue
+from .voice_runtime_apply_response import VoiceRuntimeApplyResponse
+from .voice_runtime_change import VoiceRuntimeChange
+from .voice_runtime_plan_response import VoiceRuntimePlanResponse
+from .voice_runtime_plan_status import VoiceRuntimePlanStatus
+from .voice_runtime_revision_response import VoiceRuntimeRevisionResponse
 
 __all__ = (
     "ActiveTenantConfig",
@@ -129,6 +152,7 @@ __all__ = (
     "CreateTestVoiceSessionRequest",
     "CreateTestVoiceSessionResponse",
     "CreateTextDraftRequest",
+    "EffectiveVoiceRuntime",
     "GoogleSheetsAppendExecution",
     "GoogleSheetsAppendExecutionValueInputOption",
     "GoogleSheetsExecutionIdempotency",
@@ -151,10 +175,16 @@ __all__ = (
     "KnowledgeDocumentRevisionResponse",
     "KnowledgeDocumentSummaryResponse",
     "KnowledgeDocumentsRequest",
+    "LLMRuntimeSettings",
+    "LocalVADRuntimeSettings",
     "LocalizationConfig",
     "ManagedWebhookExecution",
     "PlatformPromptPublishResponse",
     "PlatformPromptRevisionResponse",
+    "PlatformRuntimePolicy",
+    "PlatformRuntimeRequest",
+    "PlatformRuntimeRevisionResponse",
+    "PlatformRuntimeStateResponse",
     "PromptSetApplyResponse",
     "PromptSetComponentPlanResponse",
     "PromptSetComponentResponse",
@@ -168,6 +198,11 @@ __all__ = (
     "PromptSetRevisionResponse",
     "PromptSetRolloutSummaryResponse",
     "PromptTextRevisionResponse",
+    "RuntimeRevisionStatus",
+    "RuntimeValidationResponse",
+    "STTRuntimeSettings",
+    "ServerVADRuntimeSettings",
+    "TTSRuntimeSettings",
     "TenantCapabilityProfile",
     "TenantCapabilityProfileAgentInputSchema",
     "TenantCapabilityProfileValidationFixturesItem",
@@ -179,7 +214,13 @@ __all__ = (
     "TenantConfigV3Capabilities",
     "TenantPromptRevisionResponse",
     "TenantResponse",
+    "TenantRuntimeOverride",
+    "TenantRuntimeRequest",
+    "TenantRuntimeRevisionResponse",
+    "TenantRuntimeStateResponse",
     "TenantStatus",
+    "TenantTTSRuntimeOverride",
+    "TurnRuntimeSettings",
     "UpdateDraftRequest",
     "UpdateDraftRequestConfigType0",
     "UpdateInboundRouteRequest",
@@ -194,4 +235,9 @@ __all__ = (
     "ValidationError",
     "ValidationErrorContext",
     "ValidationIssue",
+    "VoiceRuntimeApplyResponse",
+    "VoiceRuntimeChange",
+    "VoiceRuntimePlanResponse",
+    "VoiceRuntimePlanStatus",
+    "VoiceRuntimeRevisionResponse",
 )

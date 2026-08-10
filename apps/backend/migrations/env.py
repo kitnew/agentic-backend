@@ -14,6 +14,7 @@ from backend_core.modules.conversations.models import (  # noqa: F401
 )
 from backend_core.modules.integrations.models import IntegrationConnection  # noqa: F401
 from backend_core.modules.tenants.models import Tenant  # noqa: F401
+from backend_core.modules.voice_runtime.models import VoiceRuntime  # noqa: F401
 from backend_core.platform.database.metadata import Base
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config

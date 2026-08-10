@@ -1,6 +1,7 @@
 from uuid import uuid4
 
 from httpx import AsyncClient
+from runtime_fixtures import apply_voice_runtime
 
 
 async def _publish_platform_prompt(
@@ -153,6 +154,7 @@ async def create_voice_ready_tenant(
     tenant_id = tenant.json()["id"]
     await publish_prompt_set(client, tenant_id)
     await publish_config(client, tenant_id, greeting="Dobrý deň")
+    await apply_voice_runtime(client, tenant_id)
     did = f"+421{uuid4().int % 10**9:09d}"
     route = await client.post(
         f"/admin/v1/tenants/{tenant_id}/inbound-routes",

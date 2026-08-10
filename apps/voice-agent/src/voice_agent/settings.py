@@ -18,9 +18,9 @@ class VoiceAgentSettings(BaseSettings):
     backend_http_timeout_seconds: Annotated[float, Field(gt=0)] = 10.0
 
     elevenlabs_api_key: Annotated[SecretStr, Field(min_length=1)]
-    elevenlabs_voice_id: Annotated[str, Field(min_length=1)]
     azure_openai_api_key: Annotated[SecretStr, Field(min_length=1)]
     azure_openai_endpoint: Annotated[str, Field(min_length=1)]
+    azure_openai_model: Annotated[str, Field(min_length=1)]
     azure_openai_deployment: Annotated[str, Field(min_length=1)]
     azure_openai_api_version: Annotated[str, Field(min_length=1)]
 

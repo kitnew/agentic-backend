@@ -29,6 +29,7 @@ from backend_core.platform.database import Database
 from backend_core.platform.outbox import OutboxDispatcher
 from httpx import ASGITransport, AsyncClient
 from redis.exceptions import RedisError
+from runtime_fixtures import apply_voice_runtime
 from sqlalchemy import delete, func, select
 
 
@@ -222,7 +223,10 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             "schema_version": 3,
             "business": {"name": "Capability Test", "type": "hotel"},
             "contact": {},
-            "localization": {"default_locale": "en", "timezone": "Europe/Bratislava"},
+            "localization": {
+                "default_locale": "sk-SK",
+                "timezone": "Europe/Bratislava",
+            },
             "agent": {
                 "display_name": "Agent",
                 "greeting": "Hello",
@@ -299,6 +303,8 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
                 headers=admin_headers,
             )
         ).status_code == 200
+
+        await apply_voice_runtime(client, str(tenant_id), headers=admin_headers)
 
         async with database.transaction() as session:
             call, _ = await build_call_session_service(session).create_manual(tenant_id)
@@ -442,6 +448,7 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             assert tenant is not None
             tenant.active_prompt_set_revision_id = None
             tenant.active_config_revision_id = None
+            tenant.active_voice_runtime_revision_id = None
             await session.flush()
             await session.execute(
                 delete(PromptSetRevision).where(

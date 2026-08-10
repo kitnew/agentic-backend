@@ -7,6 +7,10 @@ from typing import Any, Literal, cast
 
 import httpx
 from admin_client import AuthenticatedClient
+from admin_client.generated.api.admintenant_runtime import (
+    apply_voice_runtime_admin_v1_tenants_tenant_id_voice_runtime_apply_post,
+    plan_voice_runtime_admin_v1_tenants_tenant_id_voice_runtime_plan_get,
+)
 from admin_client.generated.api.admintenants import (
     apply_prompt_set_admin_v1_tenants_tenant_id_prompt_set_apply_post,
     get_published_knowledge_base_admin_v1_tenants_tenant_id_knowledge_base_published_get,
@@ -38,8 +42,20 @@ from admin_client.generated.models.prompt_set_plan_response import (
     PromptSetPlanResponse,
 )
 from admin_client.generated.models.tenant_response import TenantResponse
+from admin_client.generated.models.voice_runtime_apply_response import (
+    VoiceRuntimeApplyResponse,
+)
+from admin_client.generated.models.voice_runtime_plan_response import (
+    VoiceRuntimePlanResponse,
+)
 
-from control_plane.commands import knowledge, prompt_sets, prompts, tenant_configs
+from control_plane.commands import (
+    knowledge,
+    prompt_sets,
+    prompts,
+    runtimes,
+    tenant_configs,
+)
 from control_plane.commands.prompts import PromptCommandError
 from control_plane.settings import Settings
 
@@ -69,12 +85,19 @@ class DesiredKnowledge:
 
 
 @dataclass(frozen=True)
+class DesiredRuntime:
+    path: Path
+    settings: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class DesiredTenant:
     slug: str
     path: Path
     config: DesiredConfig | None = None
     prompt: DesiredPrompt | None = None
     knowledge: DesiredKnowledge | None = None
+    runtime: DesiredRuntime | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +106,7 @@ class DesiredState:
     system_prompt: DesiredPrompt | None
     profiles: tuple[DesiredPrompt, ...]
     tenants: tuple[DesiredTenant, ...]
+    platform_runtime: DesiredRuntime | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +141,7 @@ class SyncReport:
     rollouts: int = 0
     configs_activated: int = 0
     prompt_sets_applied: int = 0
+    voice_runtimes_applied: int = 0
 
     @property
     def exit_code(self) -> int:
@@ -134,7 +159,7 @@ class _TenantRemote:
 class _PublishTask:
     resource: str
     kind: str
-    desired: DesiredPrompt | DesiredConfig | DesiredKnowledge
+    desired: DesiredPrompt | DesiredConfig | DesiredKnowledge | DesiredRuntime
     tenant: TenantResponse | None
     remote: object
 
@@ -143,7 +168,7 @@ class _PublishTask:
 class _PullWrite:
     resource: str
     kind: str
-    desired: DesiredPrompt | DesiredConfig | DesiredKnowledge
+    desired: DesiredPrompt | DesiredConfig | DesiredKnowledge | DesiredRuntime
     remote: object
     changed: bool
 
@@ -172,6 +197,10 @@ def discover_desired_state(state_dir: Path) -> tuple[DesiredState, list[SyncIssu
             issues.append(
                 SyncIssue("SystemPrompt default", str(error), error.exit_code)
             )
+
+    platform_runtime = _discover_runtime(
+        runtimes.platform_runtime_path(state_dir), "Platform Runtime", True, issues
+    )
 
     profiles: list[DesiredPrompt] = []
     profile_dir = state_dir / "platform" / "profiles"
@@ -268,8 +297,18 @@ def discover_desired_state(state_dir: Path) -> tuple[DesiredState, list[SyncIssu
                 managed_knowledge = _discover_knowledge(
                     path / "knowledge", slug, issues
                 )
+                managed_runtime = _discover_runtime(
+                    path / "runtime.yaml", f"{slug} Tenant Runtime", False, issues
+                )
                 tenants.append(
-                    DesiredTenant(slug, path, config, prompt, managed_knowledge)
+                    DesiredTenant(
+                        slug,
+                        path,
+                        config,
+                        prompt,
+                        managed_knowledge,
+                        managed_runtime,
+                    )
                 )
 
     return (
@@ -278,6 +317,7 @@ def discover_desired_state(state_dir: Path) -> tuple[DesiredState, list[SyncIssu
             system,
             tuple(sorted(profiles, key=lambda item: item.key)),
             tuple(sorted(tenants, key=lambda item: item.slug)),
+            platform_runtime,
         ),
         issues,
     )
@@ -321,6 +361,24 @@ def _discover_knowledge(
         return None
 
 
+def _discover_runtime(
+    path: Path,
+    label: str,
+    platform: bool,
+    issues: list[SyncIssue],
+) -> DesiredRuntime | None:
+    if not path.exists() and not path.is_symlink():
+        return None
+    try:
+        text = _real_file(path, label)
+        return DesiredRuntime(
+            path, runtimes.parse_runtime_yaml(text, platform=platform)
+        )
+    except PromptCommandError as error:
+        issues.append(SyncIssue(label, str(error), error.exit_code))
+        return None
+
+
 def _prompt_action(status: AuthoringStatus, has_draft: bool) -> str:
     if status == "unchanged":
         return "no changes"
@@ -351,7 +409,10 @@ def _tenant_resource_names(tenant: DesiredTenant, action: str) -> list[str]:
         resources.append(f"{tenant.slug} TenantPrompt")
     if tenant.knowledge is not None:
         resources.append(f"{tenant.slug} KnowledgeBase")
+    if tenant.runtime is not None:
+        resources.append(f"{tenant.slug} Tenant Runtime")
     if action == "publish":
+        resources.append(f"{tenant.slug} Voice Runtime")
         resources.append(f"{tenant.slug} PromptSet")
     return resources
 
@@ -363,12 +424,17 @@ def build_plan(settings: Settings) -> SyncReport:
         profiles = _remote_profiles(client, report) if desired.profiles else set()
         if desired.system_prompt is not None:
             _plan_platform_prompt(client, desired.system_prompt, False, report)
+        platform_runtime_future = False
+        if desired.platform_runtime is not None:
+            platform_runtime_future = _plan_platform_runtime(
+                client, desired.platform_runtime, report
+            )
         for profile in desired.profiles:
             if profiles is None:
                 break
             _plan_platform_prompt(client, profile, profile.key in profiles, report)
         for remote in _resolve_tenants(client, desired, report):
-            _plan_tenant(client, remote, report)
+            _plan_tenant(client, remote, report, platform_runtime_future)
     return report
 
 
@@ -429,11 +495,37 @@ def _plan_platform_prompt(
         report.issues.append(SyncIssue(resource, str(error), error.exit_code))
 
 
+def _plan_platform_runtime(
+    client: AuthenticatedClient, desired: DesiredRuntime, report: SyncReport
+) -> bool:
+    resource = "Platform Runtime"
+    try:
+        runtimes.validate_platform(client, desired.settings)
+        state = runtimes.platform_state(client)
+        status = cast(AuthoringStatus, runtimes.plan_status(desired.settings, state))
+        report.resources.append(
+            ResourcePlan(
+                "Platform",
+                resource,
+                status,
+                _prompt_action(status, state.draft_revision is not None),
+            )
+        )
+        return status != "unchanged" or state.draft_revision is not None
+    except PromptCommandError as error:
+        _record_plan_error(report, "Platform", resource, error)
+        return True
+
+
 def _plan_tenant(
-    client: AuthenticatedClient, remote: _TenantRemote, report: SyncReport
+    client: AuthenticatedClient,
+    remote: _TenantRemote,
+    report: SyncReport,
+    platform_runtime_future: bool,
 ) -> None:
     desired, tenant = remote.desired, remote.tenant
-    future = False
+    future_prompt = False
+    future_voice = platform_runtime_future
     if desired.config is not None:
         resource = f"{desired.slug} TenantConfig"
         try:
@@ -452,7 +544,9 @@ def _plan_tenant(
                 AuthoringStatus,
                 tenant_configs.plan_status(local, comparison, config_state),
             )
-            future = future or status != "unchanged" or config_state.draft is not None
+            config_future = status != "unchanged" or config_state.draft is not None
+            future_prompt = future_prompt or config_future
+            future_voice = future_voice or config_future
             report.resources.append(
                 ResourcePlan(
                     f"Tenant: {desired.slug}",
@@ -471,7 +565,9 @@ def _plan_tenant(
                 AuthoringStatus,
                 prompts.plan_status(desired.prompt.text, prompt_state),
             )
-            future = future or status != "unchanged" or prompt_state.draft is not None
+            future_prompt = (
+                future_prompt or status != "unchanged" or prompt_state.draft is not None
+            )
             report.resources.append(
                 ResourcePlan(
                     f"Tenant: {desired.slug}",
@@ -493,8 +589,8 @@ def _plan_tenant(
             knowledge_state = knowledge._expect(
                 state_response, KnowledgeBaseStateResponse
             )
-            future = (
-                future
+            future_prompt = (
+                future_prompt
                 or status != "unchanged"
                 or knowledge_state.draft_revision is not None
             )
@@ -512,6 +608,66 @@ def _plan_tenant(
             )
         except PromptCommandError as error:
             _record_plan_error(report, f"Tenant: {desired.slug}", resource, error)
+    if desired.runtime is not None:
+        resource = f"{desired.slug} Tenant Runtime"
+        try:
+            runtimes.validate_tenant(client, tenant.id, desired.runtime.settings)
+            runtime_state = runtimes.tenant_state(client, tenant.id)
+            status = cast(
+                AuthoringStatus,
+                runtimes.plan_status(desired.runtime.settings, runtime_state),
+            )
+            future_voice = (
+                future_voice
+                or status != "unchanged"
+                or runtime_state.draft_revision is not None
+            )
+            report.resources.append(
+                ResourcePlan(
+                    f"Tenant: {desired.slug}",
+                    resource,
+                    status,
+                    _prompt_action(status, runtime_state.draft_revision is not None),
+                )
+            )
+        except PromptCommandError as error:
+            _record_plan_error(report, f"Tenant: {desired.slug}", resource, error)
+    voice_resource = f"{desired.slug} Voice Runtime"
+    try:
+        voice_plan = _voice_runtime_plan(client, tenant)
+        report.resources.append(
+            ResourcePlan(
+                f"Tenant: {desired.slug}",
+                voice_resource,
+                voice_plan.status.value,
+                (
+                    "reconciliation required after artifact publication"
+                    if future_voice
+                    else "no changes"
+                    if voice_plan.status.value == "unchanged"
+                    else "apply Backend VoiceRuntime plan"
+                ),
+                tuple(
+                    f"{change.path}: {change.before!r} -> {change.after!r}"
+                    for change in voice_plan.changes
+                ),
+                future_runtime_reconciliation=future_voice,
+            )
+        )
+    except PromptCommandError as error:
+        if future_voice:
+            report.resources.append(
+                ResourcePlan(
+                    f"Tenant: {desired.slug}",
+                    voice_resource,
+                    "pending",
+                    "reconciliation required after artifact publication",
+                    (f"current resolution unavailable: {error}",),
+                    future_runtime_reconciliation=True,
+                )
+            )
+        else:
+            _record_plan_error(report, f"Tenant: {desired.slug}", voice_resource, error)
     resource = f"{desired.slug} PromptSet"
     try:
         runtime_plan = _prompt_set_plan(client, tenant)
@@ -522,13 +678,13 @@ def _plan_tenant(
                 runtime_plan.status.value,
                 (
                     "reconciliation required after artifact publication"
-                    if future
+                    if future_prompt
                     else "no changes"
                     if runtime_plan.status.value == "unchanged"
                     else "apply Backend PromptSet plan"
                 ),
                 _prompt_set_details(runtime_plan),
-                future_runtime_reconciliation=future,
+                future_runtime_reconciliation=future_prompt,
             )
         )
     except PromptCommandError as error:
@@ -562,6 +718,15 @@ def _prompt_set_plan(
         )
     )
     return prompt_sets._expect(response, PromptSetPlanResponse)
+
+
+def _voice_runtime_plan(
+    client: AuthenticatedClient, tenant: TenantResponse
+) -> VoiceRuntimePlanResponse:
+    response = plan_voice_runtime_admin_v1_tenants_tenant_id_voice_runtime_plan_get.sync_detailed(
+        tenant.id, client=client
+    )
+    return runtimes._expect(response, VoiceRuntimePlanResponse)
 
 
 def _prompt_set_details(plan: PromptSetPlanResponse) -> tuple[str, ...]:
@@ -601,6 +766,8 @@ def push(settings: Settings) -> SyncReport:
             _push_platform(client, desired.system_prompt, True, report)
         for profile in desired.profiles:
             _push_platform(client, profile, profile.key in profiles, report)
+        if desired.platform_runtime is not None:
+            _push_platform_runtime(client, desired.platform_runtime, report)
         resolved = _resolve_tenants(client, desired, report)
         by_slug = {item.desired.slug: item for item in resolved}
         for tenant in desired.tenants:
@@ -612,6 +779,9 @@ def push(settings: Settings) -> SyncReport:
         for tenant in desired.tenants:
             if tenant.knowledge is not None and tenant.slug in by_slug:
                 _push_knowledge(client, by_slug[tenant.slug], report)
+        for tenant in desired.tenants:
+            if tenant.runtime is not None and tenant.slug in by_slug:
+                _push_tenant_runtime(client, by_slug[tenant.slug], report)
     return report
 
 
@@ -620,6 +790,8 @@ def _authoring_resource_names(desired: DesiredState) -> list[str]:
     if desired.system_prompt is not None:
         resources.append("SystemPrompt default")
     resources.extend(f"ProfilePrompt {profile.key}" for profile in desired.profiles)
+    if desired.platform_runtime is not None:
+        resources.append("Platform Runtime")
     for tenant in desired.tenants:
         resources.extend(_tenant_resource_names(tenant, "push"))
     return resources
@@ -663,6 +835,16 @@ def _push_platform(
         return True
 
     _attempt(report, resource, operation)
+
+
+def _push_platform_runtime(
+    client: AuthenticatedClient, desired: DesiredRuntime, report: SyncReport
+) -> None:
+    def operation() -> bool:
+        _, changed = runtimes.push_platform(client, desired.settings)
+        return changed
+
+    _attempt(report, "Platform Runtime", operation)
 
 
 def _push_config(
@@ -739,6 +921,19 @@ def _push_knowledge(
     _attempt(report, resource, operation)
 
 
+def _push_tenant_runtime(
+    client: AuthenticatedClient, remote: _TenantRemote, report: SyncReport
+) -> None:
+    desired = remote.desired.runtime
+    assert desired is not None
+
+    def operation() -> bool:
+        _, changed = runtimes.push_tenant(client, remote.tenant.id, desired.settings)
+        return changed
+
+    _attempt(report, f"{remote.desired.slug} Tenant Runtime", operation)
+
+
 def publish(settings: Settings) -> SyncReport:
     desired, issues = discover_desired_state(settings.state_dir)
     report = SyncReport("publish", issues=issues)
@@ -746,6 +941,7 @@ def publish(settings: Settings) -> SyncReport:
         report.skipped.extend(
             [
                 *_authoring_resource_names(desired),
+                *(f"{tenant.slug} Voice Runtime" for tenant in desired.tenants),
                 *(f"{tenant.slug} PromptSet" for tenant in desired.tenants),
             ]
         )
@@ -756,15 +952,21 @@ def publish(settings: Settings) -> SyncReport:
         _publish_preflight(client, desired, report, tasks, tenants)
         if report.issues:
             report.skipped.extend(task.resource for task in tasks)
+            report.skipped.extend(
+                f"{item.desired.slug} Voice Runtime" for item in tenants
+            )
             report.skipped.extend(f"{item.desired.slug} PromptSet" for item in tenants)
             return report
-        failed_tenants: set[str] = set()
-        platform_failed = False
+        failed_tenants: dict[str, set[str]] = {}
+        failed_platform: set[str] = set()
         for index, task in enumerate(tasks):
             try:
                 _execute_publish_task(client, task, report)
             except httpx.TransportError:
                 report.pending.extend(item.resource for item in tasks[index + 1 :])
+                report.pending.extend(
+                    f"{item.desired.slug} Voice Runtime" for item in tenants
+                )
                 report.pending.extend(
                     f"{item.desired.slug} PromptSet" for item in tenants
                 )
@@ -774,12 +976,25 @@ def publish(settings: Settings) -> SyncReport:
                     SyncIssue(task.resource, str(error), error.exit_code)
                 )
                 if task.tenant is None:
-                    platform_failed = True
+                    failed_platform.add(task.kind)
                 else:
-                    failed_tenants.add(task.tenant.slug)
+                    failed_tenants.setdefault(task.tenant.slug, set()).add(task.kind)
         for remote in tenants:
+            failed = failed_tenants.get(remote.desired.slug, set())
+            voice_resource = f"{remote.desired.slug} Voice Runtime"
+            if "platform-runtime" in failed_platform or failed & {
+                "config",
+                "tenant-runtime",
+            }:
+                report.pending.append(voice_resource)
+            else:
+                _reconcile_voice_runtime(client, remote, report)
             resource = f"{remote.desired.slug} PromptSet"
-            if platform_failed or remote.desired.slug in failed_tenants:
+            if "platform" in failed_platform or failed & {
+                "config",
+                "tenant-prompt",
+                "knowledge",
+            }:
                 report.pending.append(resource)
                 continue
             try:
@@ -817,15 +1032,25 @@ def _publish_preflight(
         _preflight_platform_prompt(
             client, profile, profile.key in profiles, report, tasks
         )
-    platform_changes = bool(tasks)
+    if desired.platform_runtime is not None:
+        _preflight_platform_runtime(client, desired.platform_runtime, report, tasks)
+    platform_prompt_changes = any(task.kind == "platform" for task in tasks)
+    platform_runtime_changes = any(
+        task.kind == "platform-runtime" for task in tasks
+    )
     tenants.extend(_resolve_tenants(client, desired, report))
     for remote in tenants:
         before = len(tasks)
         _preflight_tenant(client, remote, report, tasks)
+        tenant_changes = {task.kind for task in tasks[before:]}
         try:
             _prompt_set_plan(client, remote.tenant)
         except PromptCommandError as error:
-            if not platform_changes and len(tasks) == before:
+            if not platform_prompt_changes and not tenant_changes & {
+                "config",
+                "tenant-prompt",
+                "knowledge",
+            }:
                 report.issues.append(
                     SyncIssue(
                         f"{remote.desired.slug} PromptSet",
@@ -833,6 +1058,49 @@ def _publish_preflight(
                         error.exit_code,
                     )
                 )
+        try:
+            _voice_runtime_plan(client, remote.tenant)
+        except PromptCommandError as error:
+            if not platform_runtime_changes and not tenant_changes & {
+                "config",
+                "tenant-runtime",
+            }:
+                report.issues.append(
+                    SyncIssue(
+                        f"{remote.desired.slug} Voice Runtime",
+                        str(error),
+                        error.exit_code,
+                    )
+                )
+
+
+def _preflight_platform_runtime(
+    client: AuthenticatedClient,
+    desired: DesiredRuntime,
+    report: SyncReport,
+    tasks: list[_PublishTask],
+) -> None:
+    resource = "Platform Runtime"
+    try:
+        runtimes.validate_platform(client, desired.settings)
+        state = runtimes.platform_state(client)
+        if (
+            state.draft_revision is not None
+            and desired.settings == state.draft_revision.policy.to_dict()
+        ):
+            tasks.append(
+                _PublishTask(resource, "platform-runtime", desired, None, state)
+            )
+        elif (
+            state.draft_revision is None
+            and state.latest_published_revision is not None
+            and desired.settings == state.latest_published_revision.policy.to_dict()
+        ):
+            report.unchanged.append(resource)
+        else:
+            _draft_mismatch(report, resource)
+    except PromptCommandError as error:
+        report.issues.append(SyncIssue(resource, str(error), error.exit_code))
 
 
 def _preflight_platform_prompt(
@@ -979,6 +1247,36 @@ def _preflight_tenant(
                 _draft_mismatch(report, resource)
         except PromptCommandError as error:
             report.issues.append(SyncIssue(resource, str(error), error.exit_code))
+    if desired.runtime is not None:
+        resource = f"{desired.slug} Tenant Runtime"
+        try:
+            runtimes.validate_tenant(client, tenant.id, desired.runtime.settings)
+            runtime_state = runtimes.tenant_state(client, tenant.id)
+            if (
+                runtime_state.draft_revision is not None
+                and desired.runtime.settings
+                == runtime_state.draft_revision.settings.to_dict()
+            ):
+                tasks.append(
+                    _PublishTask(
+                        resource,
+                        "tenant-runtime",
+                        desired.runtime,
+                        tenant,
+                        runtime_state,
+                    )
+                )
+            elif (
+                runtime_state.draft_revision is None
+                and runtime_state.latest_published_revision is not None
+                and desired.runtime.settings
+                == runtime_state.latest_published_revision.settings.to_dict()
+            ):
+                report.unchanged.append(resource)
+            else:
+                _draft_mismatch(report, resource)
+        except PromptCommandError as error:
+            report.issues.append(SyncIssue(resource, str(error), error.exit_code))
 
 
 def _draft_mismatch(report: SyncReport, resource: str) -> None:
@@ -1000,6 +1298,10 @@ def _execute_publish_task(
         )
         prompts._publish(client, target, prompt_state)
         report.rollouts += 1
+    elif task.kind == "platform-runtime":
+        runtimes.publish_platform(
+            client, cast(runtimes.PlatformRuntimeStateResponse, task.remote)
+        )
     elif task.kind == "config":
         assert task.tenant is not None
         tenant_configs._publish(
@@ -1017,6 +1319,13 @@ def _execute_publish_task(
             target,
             cast(prompts.RemoteState, task.remote),
         )
+    elif task.kind == "tenant-runtime":
+        assert task.tenant is not None
+        runtimes.publish_tenant(
+            client,
+            task.tenant.id,
+            cast(runtimes.TenantRuntimeStateResponse, task.remote),
+        )
     else:
         assert task.tenant is not None
         response = publish_knowledge_base_admin_v1_tenants_tenant_id_knowledge_base_publish_post.sync_detailed(
@@ -1024,6 +1333,28 @@ def _execute_publish_task(
         )
         knowledge._expect(response, KnowledgeBasePublishResponse)
     report.succeeded.append(task.resource)
+
+
+def _reconcile_voice_runtime(
+    client: AuthenticatedClient, remote: _TenantRemote, report: SyncReport
+) -> None:
+    resource = f"{remote.desired.slug} Voice Runtime"
+    try:
+        plan = _voice_runtime_plan(client, remote.tenant)
+        if plan.status.value == "unchanged":
+            report.unchanged.append(resource)
+            return
+        response = apply_voice_runtime_admin_v1_tenants_tenant_id_voice_runtime_apply_post.sync_detailed(
+            remote.tenant.id, client=client
+        )
+        result = runtimes._expect(response, VoiceRuntimeApplyResponse)
+        if result.changed:
+            report.succeeded.append(resource)
+            report.voice_runtimes_applied += 1
+        else:
+            report.unchanged.append(resource)
+    except PromptCommandError as error:
+        report.failed.append(SyncIssue(resource, str(error), error.exit_code))
 
 
 def pull(settings: Settings, *, force: bool) -> SyncReport:
@@ -1042,6 +1373,10 @@ def pull(settings: Settings, *, force: bool) -> SyncReport:
         for profile in desired.profiles:
             _preflight_pull_prompt(
                 client, profile, profile.key in profiles, report, writes
+            )
+        if desired.platform_runtime is not None:
+            _preflight_pull_platform_runtime(
+                client, desired.platform_runtime, report, writes
             )
         for remote in _resolve_tenants(client, desired, report):
             _preflight_pull_tenant(client, remote, report, writes)
@@ -1117,6 +1452,30 @@ def _preflight_pull_prompt(
         report.issues.append(SyncIssue(resource, str(error), error.exit_code))
 
 
+def _preflight_pull_platform_runtime(
+    client: AuthenticatedClient,
+    desired: DesiredRuntime,
+    report: SyncReport,
+    writes: list[_PullWrite],
+) -> None:
+    try:
+        state = runtimes.platform_state(client)
+        if state.latest_published_revision is None:
+            raise PromptCommandError("Platform Runtime has no published revision", 5)
+        remote = state.latest_published_revision.policy.to_dict()
+        writes.append(
+            _PullWrite(
+                "Platform Runtime",
+                "runtime",
+                desired,
+                remote,
+                desired.settings != remote,
+            )
+        )
+    except PromptCommandError as error:
+        report.issues.append(SyncIssue("Platform Runtime", str(error), error.exit_code))
+
+
 def _preflight_pull_tenant(
     client: AuthenticatedClient,
     remote: _TenantRemote,
@@ -1189,6 +1548,24 @@ def _preflight_pull_tenant(
             )
         except PromptCommandError as error:
             report.issues.append(SyncIssue(resource, str(error), error.exit_code))
+    if desired.runtime is not None:
+        resource = f"{desired.slug} Tenant Runtime"
+        try:
+            state = runtimes.tenant_state(client, tenant.id)
+            if state.latest_published_revision is None:
+                raise PromptCommandError(f"{resource} has no published revision", 5)
+            remote_runtime = state.latest_published_revision.settings.to_dict()
+            writes.append(
+                _PullWrite(
+                    resource,
+                    "runtime",
+                    desired.runtime,
+                    remote_runtime,
+                    desired.runtime.settings != remote_runtime,
+                )
+            )
+        except PromptCommandError as error:
+            report.issues.append(SyncIssue(resource, str(error), error.exit_code))
 
 
 def _write_pull(item: _PullWrite) -> None:
@@ -1204,6 +1581,13 @@ def _write_pull(item: _PullWrite) -> None:
         assert isinstance(item.desired, DesiredConfig) and isinstance(item.remote, dict)
         tenant_configs._write(
             item.desired.path, tenant_configs.serialize_tenant_yaml(item.remote)
+        )
+    elif item.kind == "runtime":
+        assert isinstance(item.desired, DesiredRuntime) and isinstance(
+            item.remote, dict
+        )
+        tenant_configs._write(
+            item.desired.path, runtimes.serialize_runtime_yaml(item.remote)
         )
     else:
         assert isinstance(item.desired, DesiredKnowledge)
@@ -1266,12 +1650,12 @@ def _render_plan(report: SyncReport) -> None:
     authoring = sum(
         item.status not in {"unchanged", "error"}
         for item in report.resources
-        if not item.resource.endswith("PromptSet")
+        if not item.resource.endswith(("PromptSet", "Voice Runtime"))
     )
     runtime = sum(
         item.status not in {"unchanged", "error"} or item.future_runtime_reconciliation
         for item in report.resources
-        if item.resource.endswith("PromptSet")
+        if item.resource.endswith(("PromptSet", "Voice Runtime"))
     )
     unchanged = sum(item.status == "unchanged" for item in report.resources)
     print(
@@ -1318,6 +1702,7 @@ def _render_execution(report: SyncReport) -> None:
             len(report.succeeded)
             - report.configs_activated
             - report.prompt_sets_applied
+            - report.voice_runtimes_applied
         )
         print(
             "\nSummary:\n"
@@ -1325,6 +1710,7 @@ def _render_execution(report: SyncReport) -> None:
             f"  configs activated: {report.configs_activated}\n"
             f"  platform rollouts completed: {report.rollouts}\n"
             f"  PromptSets applied: {report.prompt_sets_applied}\n"
+            f"  VoiceRuntimes applied: {report.voice_runtimes_applied}\n"
             f"  unchanged: {len(report.unchanged)}\n"
             f"  failed: {len(failures)}"
         )

@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from contracts.capability import RuntimeCapabilityDefinition
+from contracts.voice_runtime import EffectiveVoiceRuntime
 
 
 class _VoiceModel(BaseModel):
@@ -32,6 +33,8 @@ class VoiceAgentPrompt(_VoiceModel):
 
 class VoiceAgentRuntimeContext(_VoiceModel):
     call_session_id: UUID
+    voice_runtime_revision_id: UUID
+    voice_runtime: EffectiveVoiceRuntime
     room_name: str = Field(min_length=1, max_length=255)
     locale: str = Field(min_length=1, max_length=35)
     timezone: str = Field(min_length=1, max_length=64)

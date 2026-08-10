@@ -8,6 +8,7 @@ from backend_core.modules.tenants.models import ProfilePrompt, ProfilePromptRevi
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
 from prompt_fixtures import publish_config, publish_prompt_set, tenant_config_v3
+from runtime_fixtures import apply_voice_runtime
 from sqlalchemy import delete, select
 from test_voice_test_sessions import cleanup_tenants
 
@@ -101,6 +102,7 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
             tenant_id = tenant.json()["id"]
             initial = await publish_prompt_set(client, tenant_id)
             await publish_config(client, tenant_id, greeting="Hello")
+            await apply_voice_runtime(client, tenant_id)
             empty_tenant = await client.post(
                 "/admin/v1/tenants",
                 json={

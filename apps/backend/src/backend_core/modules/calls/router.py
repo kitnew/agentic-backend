@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend_core.modules.calls.errors import (
     CallSessionConfigUnavailableError,
     CallSessionConflictError,
+    CallSessionLegacyRuntimeError,
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
 )
@@ -38,6 +39,7 @@ from backend_core.modules.tenants.repository import (
     PromptCompositionRepository,
     TenantRepository,
 )
+from backend_core.modules.voice_runtime.repository import VoiceRuntimeRepository
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import Database, DatabaseSession
 
@@ -57,6 +59,7 @@ def build_call_session_service(session: AsyncSession) -> CallSessionService:
         PromptCompositionRepository(session),
         TenantRepository(session),
         ConfigRevisionRepository(session),
+        VoiceRuntimeRepository(session),
         build_conversation_service(session),
     )
 
@@ -102,12 +105,20 @@ def call_http_exception(error: Exception) -> HTTPException:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="inbound route unavailable",
         )
+    if isinstance(error, CallSessionLegacyRuntimeError):
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "historical_call_voice_runtime_unavailable",
+                "message": "this historical call has no pinned VoiceRuntime revision",
+            },
+        )
     if isinstance(error, CallSessionConfigUnavailableError):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "tenant_configuration_not_voice_ready",
-                "message": "tenant needs a published schema version 3 config and PromptSet",
+                "message": "tenant needs published config, PromptSet, and active VoiceRuntime revisions",
             },
         )
     return HTTPException(
@@ -252,7 +263,11 @@ async def get_call_runtime_context(
 ) -> VoiceAgentRuntimeContext:
     try:
         return await service.get_runtime_context(call_id)
-    except (CallSessionNotFoundError, CallSessionConfigUnavailableError) as error:
+    except (
+        CallSessionNotFoundError,
+        CallSessionConfigUnavailableError,
+        CallSessionLegacyRuntimeError,
+    ) as error:
         raise call_http_exception(error) from error
 
 

@@ -272,6 +272,38 @@ def test_tenant_prompt_set_command_hierarchy(
     assert seen == {"action": action, "slug": "penzion-grand"}
 
 
+def test_runtime_command_hierarchies(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
+    monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
+    seen: list[tuple[str, str, str | None]] = []
+    monkeypatch.setattr(
+        cli,
+        "run_platform_runtime",
+        lambda settings, action, force=False: seen.append(("platform", action, None)),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_tenant_runtime",
+        lambda settings, action, slug, force=False: seen.append(
+            ("tenant", action, slug)
+        ),
+    )
+    monkeypatch.setattr(
+        cli,
+        "run_tenant_voice_runtime",
+        lambda settings, action, slug: seen.append(("voice", action, slug)),
+    )
+
+    assert cli.main(["runtime", "plan"]) == 0
+    assert cli.main(["tenant", "runtime", "push", "penzion-grand"]) == 0
+    assert cli.main(["tenant", "voice-runtime", "apply", "penzion-grand"]) == 0
+    assert seen == [
+        ("platform", "plan", None),
+        ("tenant", "push", "penzion-grand"),
+        ("voice", "apply", "penzion-grand"),
+    ]
+
+
 @pytest.mark.parametrize(
     ("failure", "code", "message"),
     [

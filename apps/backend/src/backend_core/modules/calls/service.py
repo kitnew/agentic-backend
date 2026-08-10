@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from contracts import (
     TENANT_CONFIG_SCHEMAS,
     ConversationPersistenceStatus,
+    EffectiveVoiceRuntime,
     TenantCapabilityProfile,
     TenantConfigV2,
     TenantConfigV3,
@@ -17,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from backend_core.modules.calls.errors import (
     CallSessionConfigUnavailableError,
     CallSessionConflictError,
+    CallSessionLegacyRuntimeError,
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
 )
@@ -51,6 +53,11 @@ from backend_core.modules.tenants.repository import (
     PromptCompositionRepository,
     TenantRepository,
 )
+from backend_core.modules.voice_runtime.models import (
+    RuntimeRevisionStatus,
+    VoiceRuntimeRevision,
+)
+from backend_core.modules.voice_runtime.repository import VoiceRuntimeRepository
 
 
 class CallSessionService:
@@ -61,6 +68,7 @@ class CallSessionService:
         prompts: PromptCompositionRepository,
         tenants: TenantRepository,
         configs: ConfigRevisionRepository,
+        runtimes: VoiceRuntimeRepository,
         conversations: ConversationService,
     ) -> None:
         self._calls = calls
@@ -68,6 +76,7 @@ class CallSessionService:
         self._prompts = prompts
         self._tenants = tenants
         self._configs = configs
+        self._runtimes = runtimes
         self._conversations = conversations
 
     async def create(
@@ -85,7 +94,7 @@ class CallSessionService:
             raise CallSessionRouteUnavailableError
         tenant, config_revision = resolution
 
-        _, prompt_set = await self._voice_config(
+        _, prompt_set, voice_runtime = await self._voice_config(
             tenant,
             config_revision,
         )
@@ -94,6 +103,7 @@ class CallSessionService:
             tenant_id=tenant.id,
             tenant_config_revision_id=config_revision.id,
             prompt_set_revision_id=prompt_set.id,
+            voice_runtime_revision_id=voice_runtime.id,
             channel=CallChannel.SIP,
             direction=CallDirection.INBOUND,
             provider=data.provider,
@@ -146,7 +156,9 @@ class CallSessionService:
             or config_revision.published_at is None
         ):
             raise CallSessionConfigUnavailableError
-        _, prompt_set = await self._voice_config(tenant, config_revision)
+        _, prompt_set, voice_runtime = await self._voice_config(
+            tenant, config_revision
+        )
 
         call_id = uuid4()
         room_name = f"call_{call_id}"
@@ -160,6 +172,7 @@ class CallSessionService:
             tenant_id=tenant.id,
             tenant_config_revision_id=config_revision.id,
             prompt_set_revision_id=prompt_set.id,
+            voice_runtime_revision_id=voice_runtime.id,
             channel=CallChannel.WEB,
             direction=CallDirection.INBOUND,
             provider="livekit",
@@ -204,6 +217,8 @@ class CallSessionService:
         call_id: UUID,
     ) -> VoiceAgentRuntimeContext:
         call = await self.get(call_id)
+        if call.voice_runtime_revision_id is None:
+            raise CallSessionLegacyRuntimeError
         config_revision = await self._configs.get(
             call.tenant_id,
             call.tenant_config_revision_id,
@@ -211,7 +226,10 @@ class CallSessionService:
         prompt_set = await self._prompts.revision(
             PromptSetRevision, call.prompt_set_revision_id, tenant_id=call.tenant_id
         )
-        if config_revision is None or prompt_set is None:
+        voice_runtime = await self._runtimes.voice_revision(
+            call.tenant_id, call.voice_runtime_revision_id
+        )
+        if config_revision is None or prompt_set is None or voice_runtime is None:
             raise CallSessionConfigUnavailableError
         try:
             model = TENANT_CONFIG_SCHEMAS.get(config_revision.schema_version)
@@ -249,6 +267,10 @@ class CallSessionService:
         )
         return VoiceAgentRuntimeContext(
             call_session_id=call.id,
+            voice_runtime_revision_id=voice_runtime.id,
+            voice_runtime=EffectiveVoiceRuntime.model_validate(
+                voice_runtime.effective_settings
+            ),
             room_name=call.room_name,
             locale=config.localization.default_locale,
             timezone=config.localization.timezone,
@@ -278,12 +300,14 @@ class CallSessionService:
         self,
         tenant: Tenant,
         config_revision: TenantConfigRevision,
-    ) -> tuple[TenantConfigV3, PromptSetRevision]:
+    ) -> tuple[TenantConfigV3, PromptSetRevision, VoiceRuntimeRevision]:
         try:
             config = TenantConfigV3.model_validate(config_revision.config)
         except ValidationError as error:
             raise CallSessionConfigUnavailableError from error
         if tenant.active_prompt_set_revision_id is None:
+            raise CallSessionConfigUnavailableError
+        if tenant.active_voice_runtime_revision_id is None:
             raise CallSessionConfigUnavailableError
         prompt_set = await self._prompts.revision(
             PromptSetRevision,
@@ -295,7 +319,15 @@ class CallSessionService:
             or prompt_set.status is not PromptRevisionStatus.PUBLISHED
         ):
             raise CallSessionConfigUnavailableError
-        return config, prompt_set
+        voice_runtime = await self._runtimes.voice_revision(
+            tenant.id, tenant.active_voice_runtime_revision_id
+        )
+        if (
+            voice_runtime is None
+            or voice_runtime.status is not RuntimeRevisionStatus.PUBLISHED
+        ):
+            raise CallSessionConfigUnavailableError
+        return config, prompt_set, voice_runtime
 
     async def activate(self, call_id: UUID) -> CallSession:
         call = await self._get_for_update(call_id)

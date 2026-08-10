@@ -4,7 +4,11 @@ from uuid import uuid4
 
 import jwt
 import pytest
-from contracts import RuntimeCapabilityDefinition, VoiceAgentRuntimeContext
+from contracts import (
+    EffectiveVoiceRuntime,
+    RuntimeCapabilityDefinition,
+    VoiceAgentRuntimeContext,
+)
 from livekit import agents
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
@@ -18,7 +22,11 @@ from voice_agent.main import (
     run_job,
 )
 from voice_agent.persistence import MESSAGE_NAMESPACE, message_from_event
-from voice_agent.providers import azure_endpoint, create_agent_session, tts_language
+from voice_agent.providers import (
+    azure_endpoint,
+    create_agent_session,
+    provider_languages,
+)
 from voice_agent.settings import VoiceAgentSettings
 
 
@@ -32,9 +40,9 @@ def settings(**overrides: object) -> VoiceAgentSettings:
         "internal_api_audience": "backend-core",
         "voice_agent_service_secret": "v" * 32,
         "elevenlabs_api_key": "eleven-key",
-        "elevenlabs_voice_id": "voice-id",
         "azure_openai_api_key": "azure-key",
         "azure_openai_endpoint": "https://test.openai.azure.com",
+        "azure_openai_model": "model-a",
         "azure_openai_deployment": "deployment",
         "azure_openai_api_version": "2025-01-01-preview",
     }
@@ -45,6 +53,8 @@ def settings(**overrides: object) -> VoiceAgentSettings:
 def runtime_context() -> VoiceAgentRuntimeContext:
     return VoiceAgentRuntimeContext(
         call_session_id=uuid4(),
+        voice_runtime_revision_id=uuid4(),
+        voice_runtime=runtime_settings(),
         room_name="call_test",
         locale="sk-SK",
         timezone="Europe/Bratislava",
@@ -59,6 +69,44 @@ def runtime_context() -> VoiceAgentRuntimeContext:
             "knowledge_base_revision_id": uuid4(),
         },
     )
+
+
+def runtime_settings(**overrides: object) -> EffectiveVoiceRuntime:
+    payload: dict[str, object] = {
+        "locale": "sk-SK",
+        "llm": {
+            "provider": "azure_openai",
+            "model": "model-a",
+            "temperature": 0,
+        },
+        "stt": {
+            "provider": "elevenlabs",
+            "model": "scribe_v2_realtime",
+            "server_vad": {
+                "silence_threshold_seconds": 0.5,
+                "activity_threshold": 0.35,
+                "min_speech_ms": 100,
+                "min_silence_ms": 500,
+            },
+        },
+        "tts": {
+            "provider": "elevenlabs",
+            "model": "eleven_flash_v2_5",
+            "voice_id": "voice-id",
+        },
+        "local_vad": {
+            "min_speech_seconds": 0.05,
+            "min_silence_seconds": 0.25,
+            "activation_threshold": 0.5,
+        },
+        "turn": {
+            "detection": "stt",
+            "min_endpointing_delay_seconds": 0.1,
+            "max_endpointing_delay_seconds": 0.7,
+        },
+    }
+    payload.update(overrides)
+    return EffectiveVoiceRuntime.model_validate(payload)
 
 
 @pytest.mark.parametrize(
@@ -193,8 +241,18 @@ def test_azure_endpoint_accepts_resource_url_and_openai_v1_url() -> None:
 
 
 @pytest.mark.asyncio
-async def test_provider_factory_uses_pinned_models_and_no_tools() -> None:
-    session = create_agent_session(settings(), "sk-SK")
+async def test_provider_factory_uses_pinned_models_and_no_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    azure: dict[str, object] = {}
+    original = openai.LLM.with_azure
+
+    def capture_azure(**kwargs: object):
+        azure.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(openai.LLM, "with_azure", capture_azure)
+    session = create_agent_session(settings(), runtime_settings())
     try:
         assert isinstance(session.stt, elevenlabs.STT)
         assert isinstance(session.llm, openai.LLM)
@@ -203,7 +261,18 @@ async def test_provider_factory_uses_pinned_models_and_no_tools() -> None:
         assert str(session.stt._opts.language_code) == "sk"
         assert session.vad is not None
         assert session.vad.model == "silero"
+        assert session.vad._opts.min_speech_duration == 0.05
+        assert session.vad._opts.min_silence_duration == 0.25
+        assert session.vad._opts.activation_threshold == 0.5
         assert session.turn_detection == "stt"
+        assert session._opts.turn_handling["endpointing"]["min_delay"] == 0.1
+        assert session._opts.turn_handling["endpointing"]["max_delay"] == 0.7
+        assert session.llm._opts.temperature == 0
+        assert azure["model"] == "model-a"
+        assert azure["azure_deployment"] == "deployment"
+        assert azure["azure_endpoint"] == "https://test.openai.azure.com"
+        assert azure["api_version"] == "2025-01-01-preview"
+        assert azure["api_key"] == "azure-key"
         assert session.tts._opts.model == "eleven_flash_v2_5"
         assert session.tts._opts.voice_id == "voice-id"
         assert str(session.tts._opts.language) == "sk"
@@ -216,13 +285,27 @@ async def test_provider_factory_uses_pinned_models_and_no_tools() -> None:
         assert session.conn_options.tts_conn_options.max_retry == 3
         assert session.stt._opts.api_key == "eleven-key"
         assert session.tts._opts.api_key == "eleven-key"
-        assert tts_language("sk-SK") == "sk"
+        assert provider_languages("sk-SK") == ("slk", "sk")
         with pytest.raises(ValueError):
-            tts_language("en-US")
+            provider_languages("en-US")
     finally:
         await session.stt.aclose()
         await session.llm.aclose()
         await session.tts.aclose()
+
+
+def test_provider_factory_rejects_unbound_logical_azure_model() -> None:
+    with pytest.raises(ValueError, match="is not bound"):
+        create_agent_session(
+            settings(),
+            runtime_settings(
+                llm={
+                    "provider": "azure_openai",
+                    "model": "model-b",
+                    "temperature": 0,
+                }
+            ),
+        )
 
 
 @pytest.mark.parametrize(

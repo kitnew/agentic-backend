@@ -14,9 +14,11 @@ from control_plane.commands.prompts import (
     run_system_prompt,
     run_tenant_prompt,
 )
+from control_plane.commands.runtimes import run_platform_runtime, run_tenant_runtime
 from control_plane.commands.sync import run_sync
 from control_plane.commands.tenant_configs import run_tenant_config
 from control_plane.commands.tenants import fetch_tenants
+from control_plane.commands.voice_runtimes import run_tenant_voice_runtime
 from control_plane.settings import Settings, SettingsError
 
 
@@ -41,6 +43,27 @@ def parser() -> ArgumentParser:
     tenant_prompt_pull = tenant_prompt_actions.add_parser("pull")
     tenant_prompt_pull.add_argument("tenant_slug")
     tenant_prompt_pull.add_argument("--force", action="store_true")
+    tenant_runtime = tenant_actions.add_parser(
+        "runtime", help="manage the tenant-owned runtime override"
+    )
+    tenant_runtime_actions = tenant_runtime.add_subparsers(
+        dest="tenant_runtime_action", required=True
+    )
+    for action in ("show", "revisions", "plan", "push", "publish"):
+        command = tenant_runtime_actions.add_parser(action)
+        command.add_argument("tenant_slug")
+    tenant_runtime_pull = tenant_runtime_actions.add_parser("pull")
+    tenant_runtime_pull.add_argument("tenant_slug")
+    tenant_runtime_pull.add_argument("--force", action="store_true")
+    tenant_voice_runtime = tenant_actions.add_parser(
+        "voice-runtime", help="inspect and reconcile the derived VoiceRuntime"
+    )
+    tenant_voice_runtime_actions = tenant_voice_runtime.add_subparsers(
+        dest="tenant_voice_runtime_action", required=True
+    )
+    for action in ("show", "revisions", "plan", "apply"):
+        command = tenant_voice_runtime_actions.add_parser(action)
+        command.add_argument("tenant_slug")
     tenant_config = tenant_actions.add_parser(
         "config", help="manage the tenant-owned TenantConfig"
     )
@@ -83,6 +106,15 @@ def parser() -> ArgumentParser:
         system_actions.add_parser(action)
     system_pull = system_actions.add_parser("pull")
     system_pull.add_argument("--force", action="store_true")
+
+    runtime = resources.add_parser(
+        "runtime", help="manage the canonical Platform Runtime policy"
+    )
+    runtime_actions = runtime.add_subparsers(dest="action", required=True)
+    for action in ("show", "revisions", "plan", "push", "publish"):
+        runtime_actions.add_parser(action)
+    runtime_pull = runtime_actions.add_parser("pull")
+    runtime_pull.add_argument("--force", action="store_true")
 
     profile = resources.add_parser("profile", help="manage ProfilePrompts")
     profile_actions = profile.add_subparsers(dest="action", required=True)
@@ -136,6 +168,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 force=getattr(arguments, "force", False),
             )
             return 0
+        if arguments.resource == "runtime":
+            run_platform_runtime(
+                settings,
+                arguments.action,
+                force=getattr(arguments, "force", False),
+            )
+            return 0
         if arguments.resource == "profile":
             run_profile(
                 settings,
@@ -158,6 +197,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.tenant_config_action,
                 arguments.tenant_slug,
                 force=getattr(arguments, "force", False),
+            )
+            return 0
+        if arguments.resource == "tenant" and arguments.tenant_action == "runtime":
+            run_tenant_runtime(
+                settings,
+                arguments.tenant_runtime_action,
+                arguments.tenant_slug,
+                force=getattr(arguments, "force", False),
+            )
+            return 0
+        if (
+            arguments.resource == "tenant"
+            and arguments.tenant_action == "voice-runtime"
+        ):
+            run_tenant_voice_runtime(
+                settings,
+                arguments.tenant_voice_runtime_action,
+                arguments.tenant_slug,
             )
             return 0
         if arguments.resource == "tenant" and arguments.tenant_action == "knowledge":

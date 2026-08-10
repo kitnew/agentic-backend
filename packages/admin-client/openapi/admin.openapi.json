@@ -766,6 +766,43 @@
         "title": "CreateTextDraftRequest",
         "type": "object"
       },
+      "EffectiveVoiceRuntime": {
+        "additionalProperties": false,
+        "properties": {
+          "llm": {
+            "$ref": "#/components/schemas/LLMRuntimeSettings"
+          },
+          "local_vad": {
+            "$ref": "#/components/schemas/LocalVADRuntimeSettings"
+          },
+          "locale": {
+            "maxLength": 35,
+            "minLength": 1,
+            "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "stt": {
+            "$ref": "#/components/schemas/STTRuntimeSettings"
+          },
+          "tts": {
+            "$ref": "#/components/schemas/TTSRuntimeSettings"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/TurnRuntimeSettings"
+          }
+        },
+        "required": [
+          "llm",
+          "stt",
+          "tts",
+          "local_vad",
+          "turn",
+          "locale"
+        ],
+        "title": "EffectiveVoiceRuntime",
+        "type": "object"
+      },
       "GoogleSheetsAppendExecution": {
         "additionalProperties": false,
         "properties": {
@@ -1377,6 +1414,65 @@
         "title": "KnowledgeDocumentsRequest",
         "type": "object"
       },
+      "LLMRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "const": "azure_openai",
+            "title": "Provider",
+            "type": "string"
+          },
+          "temperature": {
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "type": "number"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "temperature"
+        ],
+        "title": "LLMRuntimeSettings",
+        "type": "object"
+      },
+      "LocalVADRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "activation_threshold": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Activation Threshold",
+            "type": "number"
+          },
+          "min_silence_seconds": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Min Silence Seconds",
+            "type": "number"
+          },
+          "min_speech_seconds": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Min Speech Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "min_speech_seconds",
+          "min_silence_seconds",
+          "activation_threshold"
+        ],
+        "title": "LocalVADRuntimeSettings",
+        "type": "object"
+      },
       "LocalizationConfig": {
         "additionalProperties": false,
         "properties": {
@@ -1577,6 +1673,129 @@
           "key"
         ],
         "title": "PlatformPromptRevisionResponse",
+        "type": "object"
+      },
+      "PlatformRuntimePolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "llm": {
+            "$ref": "#/components/schemas/LLMRuntimeSettings"
+          },
+          "local_vad": {
+            "$ref": "#/components/schemas/LocalVADRuntimeSettings"
+          },
+          "stt": {
+            "$ref": "#/components/schemas/STTRuntimeSettings"
+          },
+          "tts": {
+            "$ref": "#/components/schemas/TTSRuntimeSettings"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/TurnRuntimeSettings"
+          }
+        },
+        "required": [
+          "llm",
+          "stt",
+          "tts",
+          "local_vad",
+          "turn"
+        ],
+        "title": "PlatformRuntimePolicy",
+        "type": "object"
+      },
+      "PlatformRuntimeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/PlatformRuntimePolicy"
+          }
+        },
+        "required": [
+          "policy"
+        ],
+        "title": "PlatformRuntimeRequest",
+        "type": "object"
+      },
+      "PlatformRuntimeRevisionResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/PlatformRuntimePolicy"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RuntimeRevisionStatus"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision_number",
+          "status",
+          "policy",
+          "created_at",
+          "published_at",
+          "version"
+        ],
+        "title": "PlatformRuntimeRevisionResponse",
+        "type": "object"
+      },
+      "PlatformRuntimeStateResponse": {
+        "properties": {
+          "draft_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_published_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "latest_published_revision",
+          "draft_revision"
+        ],
+        "title": "PlatformRuntimeStateResponse",
         "type": "object"
       },
       "PromptSetApplyResponse": {
@@ -1951,6 +2170,118 @@
         "title": "PromptTextRevisionResponse",
         "type": "object"
       },
+      "RuntimeRevisionStatus": {
+        "enum": [
+          "draft",
+          "published",
+          "archived"
+        ],
+        "title": "RuntimeRevisionStatus",
+        "type": "string"
+      },
+      "RuntimeValidationResponse": {
+        "properties": {
+          "valid": {
+            "default": true,
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "title": "RuntimeValidationResponse",
+        "type": "object"
+      },
+      "STTRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "const": "elevenlabs",
+            "title": "Provider",
+            "type": "string"
+          },
+          "server_vad": {
+            "$ref": "#/components/schemas/ServerVADRuntimeSettings"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "server_vad"
+        ],
+        "title": "STTRuntimeSettings",
+        "type": "object"
+      },
+      "ServerVADRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "activity_threshold": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Activity Threshold",
+            "type": "number"
+          },
+          "min_silence_ms": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60000.0,
+            "title": "Min Silence Ms",
+            "type": "integer"
+          },
+          "min_speech_ms": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60000.0,
+            "title": "Min Speech Ms",
+            "type": "integer"
+          },
+          "silence_threshold_seconds": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Silence Threshold Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "silence_threshold_seconds",
+          "activity_threshold",
+          "min_speech_ms",
+          "min_silence_ms"
+        ],
+        "title": "ServerVADRuntimeSettings",
+        "type": "object"
+      },
+      "TTSRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "const": "elevenlabs",
+            "title": "Provider",
+            "type": "string"
+          },
+          "voice_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Voice Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model",
+          "voice_id"
+        ],
+        "title": "TTSRuntimeSettings",
+        "type": "object"
+      },
       "TenantCapabilityProfile": {
         "additionalProperties": false,
         "properties": {
@@ -2251,6 +2582,18 @@
             ],
             "title": "Active Prompt Set Revision Id"
           },
+          "active_voice_runtime_revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Voice Runtime Revision Id"
+          },
           "business_type": {
             "title": "Business Type",
             "type": "string"
@@ -2296,6 +2639,123 @@
         "title": "TenantResponse",
         "type": "object"
       },
+      "TenantRuntimeOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "tts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantTTSRuntimeOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TenantRuntimeOverride",
+        "type": "object"
+      },
+      "TenantRuntimeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "settings": {
+            "$ref": "#/components/schemas/TenantRuntimeOverride"
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "title": "TenantRuntimeRequest",
+        "type": "object"
+      },
+      "TenantRuntimeRevisionResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/TenantRuntimeOverride"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RuntimeRevisionStatus"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "revision_number",
+          "status",
+          "settings",
+          "created_at",
+          "published_at",
+          "version"
+        ],
+        "title": "TenantRuntimeRevisionResponse",
+        "type": "object"
+      },
+      "TenantRuntimeStateResponse": {
+        "properties": {
+          "draft_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_published_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "latest_published_revision",
+          "draft_revision"
+        ],
+        "title": "TenantRuntimeStateResponse",
+        "type": "object"
+      },
       "TenantStatus": {
         "enum": [
           "active",
@@ -2304,6 +2764,51 @@
         ],
         "title": "TenantStatus",
         "type": "string"
+      },
+      "TenantTTSRuntimeOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "voice_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Voice Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "voice_id"
+        ],
+        "title": "TenantTTSRuntimeOverride",
+        "type": "object"
+      },
+      "TurnRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "detection": {
+            "const": "stt",
+            "title": "Detection",
+            "type": "string"
+          },
+          "max_endpointing_delay_seconds": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Max Endpointing Delay Seconds",
+            "type": "number"
+          },
+          "min_endpointing_delay_seconds": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Min Endpointing Delay Seconds",
+            "type": "number"
+          }
+        },
+        "required": [
+          "detection",
+          "min_endpointing_delay_seconds",
+          "max_endpointing_delay_seconds"
+        ],
+        "title": "TurnRuntimeSettings",
+        "type": "object"
       },
       "UpdateDraftRequest": {
         "additionalProperties": false,
@@ -2591,6 +3096,177 @@
           "message"
         ],
         "title": "ValidationIssue",
+        "type": "object"
+      },
+      "VoiceRuntimeApplyResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "voice_runtime": {
+            "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
+          }
+        },
+        "required": [
+          "changed",
+          "voice_runtime"
+        ],
+        "title": "VoiceRuntimeApplyResponse",
+        "type": "object"
+      },
+      "VoiceRuntimeChange": {
+        "properties": {
+          "after": {
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "before",
+          "after"
+        ],
+        "title": "VoiceRuntimeChange",
+        "type": "object"
+      },
+      "VoiceRuntimePlanResponse": {
+        "properties": {
+          "active_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/VoiceRuntimeChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "desired_settings": {
+            "$ref": "#/components/schemas/EffectiveVoiceRuntime"
+          },
+          "platform_runtime_revision_id": {
+            "format": "uuid",
+            "title": "Platform Runtime Revision Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VoiceRuntimePlanStatus"
+          },
+          "tenant_runtime_revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Runtime Revision Id"
+          }
+        },
+        "required": [
+          "status",
+          "active_revision",
+          "desired_settings",
+          "platform_runtime_revision_id",
+          "tenant_runtime_revision_id",
+          "changes"
+        ],
+        "title": "VoiceRuntimePlanResponse",
+        "type": "object"
+      },
+      "VoiceRuntimePlanStatus": {
+        "enum": [
+          "missing-active",
+          "unchanged",
+          "modified"
+        ],
+        "title": "VoiceRuntimePlanStatus",
+        "type": "string"
+      },
+      "VoiceRuntimeRevisionResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "effective_settings": {
+            "$ref": "#/components/schemas/EffectiveVoiceRuntime"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "platform_runtime_revision_id": {
+            "format": "uuid",
+            "title": "Platform Runtime Revision Id",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RuntimeRevisionStatus"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tenant_runtime_revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Runtime Revision Id"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "revision_number",
+          "status",
+          "platform_runtime_revision_id",
+          "tenant_runtime_revision_id",
+          "effective_settings",
+          "created_at",
+          "published_at"
+        ],
+        "title": "VoiceRuntimeRevisionResponse",
         "type": "object"
       }
     },
@@ -3120,6 +3796,276 @@
         "summary": "List System Prompt Revisions",
         "tags": [
           "admin:platform-prompts"
+        ]
+      }
+    },
+    "/admin/v1/platform/runtime": {
+      "get": {
+        "operationId": "show_platform_runtime_admin_v1_platform_runtime_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformRuntimeStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Show Platform Runtime",
+        "tags": [
+          "admin:platform-runtime"
+        ]
+      }
+    },
+    "/admin/v1/platform/runtime/drafts": {
+      "post": {
+        "operationId": "create_platform_runtime_draft_admin_v1_platform_runtime_drafts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformRuntimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Create Platform Runtime Draft",
+        "tags": [
+          "admin:platform-runtime"
+        ]
+      }
+    },
+    "/admin/v1/platform/runtime/drafts/{revision_id}": {
+      "patch": {
+        "operationId": "update_platform_runtime_draft_admin_v1_platform_runtime_drafts__revision_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformRuntimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Update Platform Runtime Draft",
+        "tags": [
+          "admin:platform-runtime"
+        ]
+      }
+    },
+    "/admin/v1/platform/runtime/drafts/{revision_id}/publish": {
+      "post": {
+        "operationId": "publish_platform_runtime_draft_admin_v1_platform_runtime_drafts__revision_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Publish Platform Runtime Draft",
+        "tags": [
+          "admin:platform-runtime"
+        ]
+      }
+    },
+    "/admin/v1/platform/runtime/revisions": {
+      "get": {
+        "operationId": "list_platform_runtime_revisions_admin_v1_platform_runtime_revisions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+                  },
+                  "title": "Response List Platform Runtime Revisions Admin V1 Platform Runtime Revisions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "List Platform Runtime Revisions",
+        "tags": [
+          "admin:platform-runtime"
+        ]
+      }
+    },
+    "/admin/v1/platform/runtime/validate": {
+      "post": {
+        "operationId": "validate_platform_runtime_admin_v1_platform_runtime_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlatformRuntimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeValidationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Validate Platform Runtime",
+        "tags": [
+          "admin:platform-runtime"
         ]
       }
     },
@@ -5036,6 +5982,364 @@
         ]
       }
     },
+    "/admin/v1/tenants/{tenant_id}/runtime": {
+      "get": {
+        "operationId": "show_tenant_runtime_admin_v1_tenants__tenant_id__runtime_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantRuntimeStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Show Tenant Runtime",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/runtime/drafts": {
+      "post": {
+        "operationId": "create_tenant_runtime_draft_admin_v1_tenants__tenant_id__runtime_drafts_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantRuntimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Create Tenant Runtime Draft",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/runtime/drafts/{revision_id}": {
+      "patch": {
+        "operationId": "update_tenant_runtime_draft_admin_v1_tenants__tenant_id__runtime_drafts__revision_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantRuntimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Update Tenant Runtime Draft",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/runtime/drafts/{revision_id}/publish": {
+      "post": {
+        "operationId": "publish_tenant_runtime_draft_admin_v1_tenants__tenant_id__runtime_drafts__revision_id__publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Revision Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Publish Tenant Runtime Draft",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/runtime/revisions": {
+      "get": {
+        "operationId": "list_tenant_runtime_revisions_admin_v1_tenants__tenant_id__runtime_revisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
+                  },
+                  "title": "Response List Tenant Runtime Revisions Admin V1 Tenants  Tenant Id  Runtime Revisions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "List Tenant Runtime Revisions",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/runtime/validate": {
+      "post": {
+        "operationId": "validate_tenant_runtime_admin_v1_tenants__tenant_id__runtime_validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantRuntimeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeValidationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Validate Tenant Runtime",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
     "/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts": {
       "post": {
         "operationId": "create_tenant_prompt_draft_admin_v1_tenants__tenant_id__tenant_prompt_drafts_post",
@@ -5285,6 +6589,202 @@
         "summary": "List Tenant Prompt Revisions",
         "tags": [
           "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/voice-runtime": {
+      "get": {
+        "operationId": "show_voice_runtime_admin_v1_tenants__tenant_id__voice_runtime_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Show Voice Runtime",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/voice-runtime/apply": {
+      "post": {
+        "operationId": "apply_voice_runtime_admin_v1_tenants__tenant_id__voice_runtime_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRuntimeApplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Apply Voice Runtime",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/voice-runtime/plan": {
+      "get": {
+        "operationId": "plan_voice_runtime_admin_v1_tenants__tenant_id__voice_runtime_plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceRuntimePlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Voice Runtime",
+        "tags": [
+          "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/voice-runtime/revisions": {
+      "get": {
+        "operationId": "list_voice_runtime_revisions_admin_v1_tenants__tenant_id__voice_runtime_revisions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
+                  },
+                  "title": "Response List Voice Runtime Revisions Admin V1 Tenants  Tenant Id  Voice Runtime Revisions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "List Voice Runtime Revisions",
+        "tags": [
+          "admin:tenant-runtime"
         ]
       }
     },

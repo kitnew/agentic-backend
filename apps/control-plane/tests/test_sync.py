@@ -57,18 +57,22 @@ def test_discovery_managed_presence_absence_and_sorting(tmp_path: Path) -> None:
     (tmp_path / "platform" / "profiles" / "alpha.md").write_text("a")
     (tmp_path / "platform" / "profiles" / "default.md").write_text("profile")
     (tmp_path / "platform" / "profiles" / "README.txt").write_text("ignored")
+    (tmp_path / "platform" / "runtime.yaml").write_text("llm: {}\n")
 
     beta = tmp_path / "tenants" / "beta-hotel"
     alpha = tmp_path / "tenants" / "alpha-hotel"
     beta.mkdir(parents=True)
     alpha.mkdir(parents=True)
     (alpha / "tenant_prompt.md").write_text("tenant")
+    (alpha / "runtime.yaml").write_text("{}\n")
     (alpha / "knowledge").mkdir()
 
     desired, issues = sync.discover_desired_state(tmp_path)
 
     assert not issues
     assert desired.system_prompt is not None
+    assert desired.platform_runtime is not None
+    assert desired.platform_runtime.settings == {"llm": {}}
     assert [profile.key for profile in desired.profiles] == [
         "alpha",
         "default",
@@ -84,15 +88,19 @@ def test_discovery_managed_presence_absence_and_sorting(tmp_path: Path) -> None:
     assert managed.prompt is not None
     assert managed.knowledge is not None
     assert managed.knowledge.documents == {}
+    assert managed.runtime is not None
+    assert managed.runtime.settings == {}
     assert unmanaged.config is None
     assert unmanaged.prompt is None
     assert unmanaged.knowledge is None
+    assert unmanaged.runtime is None
 
 
 def test_missing_platform_files_are_unmanaged(tmp_path: Path) -> None:
     desired, issues = sync.discover_desired_state(tmp_path)
     assert not issues
     assert desired.system_prompt is None
+    assert desired.platform_runtime is None
     assert desired.profiles == ()
     assert desired.tenants == ()
 
@@ -160,8 +168,16 @@ def test_push_order_and_never_pushes_prompt_set(
     config = sync.DesiredConfig(tmp_path / "tenant.yaml", {"schema_version": 3})
     prompt = sync.DesiredPrompt("alpha-hotel", tmp_path / "prompt.md", "prompt")
     kb = sync.DesiredKnowledge(tmp_path / "knowledge", {})
-    tenant = sync.DesiredTenant("alpha-hotel", tmp_path, config, prompt, kb)
-    desired = sync.DesiredState(tmp_path, system, (profile,), (tenant,))
+    tenant_runtime = sync.DesiredRuntime(tmp_path / "runtime.yaml", {})
+    platform_runtime = sync.DesiredRuntime(
+        tmp_path / "platform-runtime.yaml", {"llm": {}}
+    )
+    tenant = sync.DesiredTenant(
+        "alpha-hotel", tmp_path, config, prompt, kb, tenant_runtime
+    )
+    desired = sync.DesiredState(
+        tmp_path, system, (profile,), (tenant,), platform_runtime
+    )
     remote = sync._TenantRemote(tenant, cast(TenantResponse, object()))
     seen: list[str] = []
     monkeypatch.setattr(sync, "discover_desired_state", lambda path: (desired, []))
@@ -180,6 +196,11 @@ def test_push_order_and_never_pushes_prompt_set(
     )
     monkeypatch.setattr(
         sync,
+        "_push_platform_runtime",
+        lambda client, item, report: seen.append("platform-runtime"),
+    )
+    monkeypatch.setattr(
+        sync,
         "_push_tenant_prompt",
         lambda client, item, report: seen.append("tenant-prompt"),
     )
@@ -188,9 +209,22 @@ def test_push_order_and_never_pushes_prompt_set(
         "_push_knowledge",
         lambda client, item, report: seen.append("knowledge"),
     )
+    monkeypatch.setattr(
+        sync,
+        "_push_tenant_runtime",
+        lambda client, item, report: seen.append("tenant-runtime"),
+    )
 
     sync.push(settings(tmp_path))
-    assert seen == ["default", "hotel", "config", "tenant-prompt", "knowledge"]
+    assert seen == [
+        "default",
+        "hotel",
+        "platform-runtime",
+        "config",
+        "tenant-prompt",
+        "knowledge",
+        "tenant-runtime",
+    ]
 
 
 def test_publish_preflight_blocks_every_mutation(
@@ -362,6 +396,11 @@ def test_publish_dependency_order_and_backend_prompt_set_apply(
     monkeypatch.setattr(sync, "_execute_publish_task", execute)
     monkeypatch.setattr(
         sync,
+        "_reconcile_voice_runtime",
+        lambda client, remote, report: seen.append("alpha-hotel Voice Runtime"),
+    )
+    monkeypatch.setattr(
+        sync,
         "_prompt_set_plan",
         lambda client, tenant: (
             seen.append("alpha-hotel PromptSet plan")
@@ -389,6 +428,7 @@ def test_publish_dependency_order_and_backend_prompt_set_apply(
         "alpha-hotel TenantConfig",
         "alpha-hotel TenantPrompt",
         "alpha-hotel KnowledgeBase",
+        "alpha-hotel Voice Runtime",
         "alpha-hotel PromptSet plan",
         "alpha-hotel PromptSet apply",
     ]
@@ -447,6 +487,7 @@ def test_publish_partial_failure_marks_dependent_prompt_set_pending(
 
     monkeypatch.setattr(sync, "_publish_preflight", preflight)
     monkeypatch.setattr(sync, "_execute_publish_task", execute)
+    monkeypatch.setattr(sync, "_reconcile_voice_runtime", lambda *args: None)
 
     report = sync.publish(settings(tmp_path))
     assert report.succeeded == [

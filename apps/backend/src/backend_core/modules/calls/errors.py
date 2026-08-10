@@ -14,5 +14,9 @@ class CallSessionConfigUnavailableError(CallSessionError):
     pass
 
 
+class CallSessionLegacyRuntimeError(CallSessionError):
+    pass
+
+
 class CallSessionRouteUnavailableError(CallSessionError):
     pass

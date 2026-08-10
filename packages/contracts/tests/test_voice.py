@@ -12,6 +12,36 @@ from pydantic import ValidationError
 def runtime_context() -> dict[str, object]:
     return {
         "call_session_id": str(uuid4()),
+        "voice_runtime_revision_id": str(uuid4()),
+        "voice_runtime": {
+            "locale": "sk-SK",
+            "llm": {"provider": "azure_openai", "model": "model-a", "temperature": 0},
+            "stt": {
+                "provider": "elevenlabs",
+                "model": "scribe_v2_realtime",
+                "server_vad": {
+                    "silence_threshold_seconds": 0.5,
+                    "activity_threshold": 0.35,
+                    "min_speech_ms": 100,
+                    "min_silence_ms": 500,
+                },
+            },
+            "tts": {
+                "provider": "elevenlabs",
+                "model": "eleven_flash_v2_5",
+                "voice_id": "voice-a",
+            },
+            "local_vad": {
+                "min_speech_seconds": 0.05,
+                "min_silence_seconds": 0.25,
+                "activation_threshold": 0.5,
+            },
+            "turn": {
+                "detection": "stt",
+                "min_endpointing_delay_seconds": 0.1,
+                "max_endpointing_delay_seconds": 0.7,
+            },
+        },
         "room_name": "call_test",
         "locale": "sk-SK",
         "timezone": "Europe/Bratislava",

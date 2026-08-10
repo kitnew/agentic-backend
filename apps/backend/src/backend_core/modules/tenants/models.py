@@ -67,6 +67,12 @@ class Tenant(Base):
             name="fk_tenants_active_prompt_set_revision_same_tenant",
             use_alter=True,
         ),
+        ForeignKeyConstraint(
+            ("id", "active_voice_runtime_revision_id"),
+            ("voice_runtime_revisions.tenant_id", "voice_runtime_revisions.id"),
+            name="fk_tenants_active_voice_runtime_revision_same_tenant",
+            use_alter=True,
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -87,6 +93,7 @@ class Tenant(Base):
         nullable=True,
     )
     active_prompt_set_revision_id: Mapped[UUID | None] = mapped_column(Uuid)
+    active_voice_runtime_revision_id: Mapped[UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

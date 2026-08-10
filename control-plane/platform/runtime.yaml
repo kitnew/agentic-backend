@@ -1,0 +1,24 @@
+llm:
+  model: gpt-4o-mini
+  provider: azure_openai
+  temperature: 0.0
+local_vad:
+  activation_threshold: 0.5
+  min_silence_seconds: 0.25
+  min_speech_seconds: 0.05
+stt:
+  model: scribe_v2_realtime
+  provider: elevenlabs
+  server_vad:
+    activity_threshold: 0.35
+    min_silence_ms: 500
+    min_speech_ms: 100
+    silence_threshold_seconds: 0.5
+tts:
+  model: eleven_flash_v2_5
+  provider: elevenlabs
+  voice_id: 9Nd358gE1qQp0pDh8FgP
+turn:
+  detection: stt
+  max_endpointing_delay_seconds: 0.7
+  min_endpointing_delay_seconds: 0.1

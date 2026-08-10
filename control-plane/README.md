@@ -7,9 +7,11 @@ Supported canonical paths:
 
 ```text
 platform/system_prompt.md
+platform/runtime.yaml
 platform/profiles/<profile_key>.md
 tenants/<tenant_slug>/tenant.yaml
 tenants/<tenant_slug>/tenant_prompt.md
+tenants/<tenant_slug>/runtime.yaml
 tenants/<tenant_slug>/knowledge/*.md
 ```
 
@@ -23,17 +25,20 @@ agentctl sync pull [--force]
 ```
 
 Presence is the management marker. A missing `system_prompt.md`, profile file,
-`tenant.yaml`, `tenant_prompt.md`, or `knowledge/` directory is unmanaged and is
-never a remote deletion request. A present `knowledge/` directory is the full
-managed document snapshot, including when it is empty. Remote-only profiles and
-tenants are not pulled, changed, reconciled, or materialized by global sync.
+`tenant.yaml`, `tenant_prompt.md`, `runtime.yaml`, or `knowledge/` directory is
+unmanaged and is never a remote deletion request. A present empty tenant
+`runtime.yaml` mapping (`{}`) explicitly manages an empty override. A present
+`knowledge/` directory is the full managed document snapshot, including when it
+is empty. Remote-only profiles and tenants are not pulled, changed, or
+materialized by global pull.
 
 `sync plan` is read-only. `sync push` changes drafts only. `sync publish` first
 checks the complete managed state against remote drafts, then publishes in
-dependency order and asks Backend PromptSet plan/apply to reconcile only local
-tenant directories. `sync pull` compares every managed resource before writing;
-without `--force`, one conflict prevents all writes. PromptSets, revision IDs,
-ETags, timestamps, and secrets are never written to this directory.
+dependency order and asks Backend to reconcile the independent VoiceRuntime and
+PromptSet dimensions for local tenant directories. `sync pull` compares every
+managed authoring resource before writing; without `--force`, one conflict
+prevents all writes. Derived runtime snapshots, revision IDs, ETags, timestamps,
+and secrets are never written to this directory.
 
 Markdown files contain prompt text only. Revision IDs, versions, status, and
 timestamps remain in Backend Core/PostgreSQL. The canonical SystemPrompt uses
@@ -78,6 +83,20 @@ agentctl tenant knowledge push penzion-grand
 agentctl tenant knowledge publish penzion-grand
 agentctl tenant prompt-set plan penzion-grand
 agentctl tenant prompt-set apply penzion-grand
+
+agentctl runtime pull
+# edit control-plane/platform/runtime.yaml
+agentctl runtime plan
+agentctl runtime push
+agentctl runtime publish
+
+agentctl tenant runtime pull penzion-grand
+# edit control-plane/tenants/penzion-grand/runtime.yaml
+agentctl tenant runtime plan penzion-grand
+agentctl tenant runtime push penzion-grand
+agentctl tenant runtime publish penzion-grand
+agentctl tenant voice-runtime plan penzion-grand
+agentctl tenant voice-runtime apply penzion-grand
 ```
 
 `pull` creates parent directories and refuses to overwrite differing local
@@ -107,6 +126,74 @@ workflow.
 activates that revision for new calls according to Backend semantics; existing
 calls remain pinned to the revision with which they started. It does not alter
 PromptSet state.
+
+## Voice runtime policy
+
+`platform/runtime.yaml` is a complete logical runtime policy. It contains no
+credentials, endpoint, Azure deployment name, or provider reliability timeout:
+
+```yaml
+llm:
+  provider: azure_openai
+  model: <logical-model-key>
+  temperature: 0.0
+stt:
+  provider: elevenlabs
+  model: scribe_v2_realtime
+  server_vad:
+    silence_threshold_seconds: 0.5
+    activity_threshold: 0.35
+    min_speech_ms: 100
+    min_silence_ms: 500
+tts:
+  provider: elevenlabs
+  model: eleven_flash_v2_5
+  voice_id: <truthful-default-elevenlabs-voice-id>
+local_vad:
+  min_speech_seconds: 0.05
+  min_silence_seconds: 0.25
+  activation_threshold: 0.5
+turn:
+  detection: stt
+  min_endpointing_delay_seconds: 0.1
+  max_endpointing_delay_seconds: 0.7
+```
+
+The only tenant override in this slice is either an explicit voice:
+
+```yaml
+tts:
+  voice_id: <tenant-elevenlabs-voice-id>
+```
+
+or `{}` to reset effective behavior to the platform voice. Runtime publication
+never activates tenants. Backend resolves the latest published platform policy,
+latest published tenant override (if any), and active TenantConfig locale only
+when `tenant voice-runtime apply` runs. Equal behavior is a no-op; changed
+behavior always creates the next immutable revision, including A to B to A.
+New calls pin that active revision alongside TenantConfig and PromptSet.
+
+The repository intentionally does not ship an initial runtime file: neither the
+truthful Azure logical model key nor the current ElevenLabs voice ID can be
+derived from source. Deployment cutover is explicit:
+
+```bash
+# 1. deploy schema and code
+# 2. create platform/runtime.yaml with truthful non-secret values
+# 3. optionally create tenants/debug-hotel/runtime.yaml
+uv run agentctl sync plan
+uv run agentctl sync push
+uv run agentctl sync plan
+uv run agentctl sync publish
+uv run agentctl sync plan
+uv run agentctl tenant voice-runtime show debug-hotel
+uv run agentctl tenant voice-runtime revisions debug-hotel
+```
+
+Verify an E2E call only after `debug-hotel` has an active VoiceRuntime. The call
+must contain config, PromptSet, and VoiceRuntime revision IDs. To verify dynamic
+voice rollout, publish a changed tenant `tts.voice_id`, apply VoiceRuntime, and
+place a new call without restarting Voice Agent; the old call stays pinned.
 
 Current authoring shape:
 
@@ -151,8 +238,7 @@ control-plane/
         │   ├── knowledge.md
         │   ├── rooms.md
         │   └── policies.md
-        ├── integrations.yaml
-        └── capabilities.yaml
+        └── runtime.yaml
 ```
 
 Each filename must match `<key>.md`, where the key begins with a lowercase

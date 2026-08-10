@@ -55,6 +55,7 @@ class TenantResponse(BaseModel):
     status: TenantStatus
     active_config_revision_id: UUID | None
     active_prompt_set_revision_id: UUID | None
+    active_voice_runtime_revision_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
