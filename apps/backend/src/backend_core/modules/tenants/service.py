@@ -103,6 +103,12 @@ class TenantService:
             raise TenantNotFoundError
         return tenant
 
+    async def get_by_slug(self, slug: str) -> Tenant:
+        tenant = await self._repository.get_by_slug(slug)
+        if tenant is None:
+            raise TenantNotFoundError
+        return tenant
+
     async def list(self, *, offset: int, limit: int) -> list[Tenant]:
         return await self._repository.list(offset=offset, limit=limit)
 

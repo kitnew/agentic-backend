@@ -54,6 +54,7 @@ from backend_core.modules.tenants.schemas import (
     PromptSetRevisionResponse,
     PromptTextRevisionResponse,
     ResolveTenantRouteRequest,
+    Slug,
     TenantPromptRevisionResponse,
     TenantResponse,
     TenantRouteResolutionResponse,
@@ -268,6 +269,21 @@ async def create_tenant(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="tenant slug already exists",
+        ) from error
+    return TenantResponse.model_validate(tenant)
+
+
+@router.get("/by-slug/{slug}", response_model=TenantResponse)
+async def get_tenant_by_slug(
+    slug: Slug,
+    service: TenantServiceDependency,
+) -> TenantResponse:
+    try:
+        tenant = await service.get_by_slug(slug)
+    except TenantNotFoundError as error:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="tenant not found",
         ) from error
     return TenantResponse.model_validate(tenant)
 
