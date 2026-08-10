@@ -5,14 +5,31 @@ from uuid import UUID
 import pytest
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
+from backend_core.modules.calls.models import CallSession
 from backend_core.modules.calls.router import build_call_session_service
 from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
 from backend_core.modules.capabilities.retention import CapabilityRetentionService
+from backend_core.modules.conversations.models import Conversation
+from backend_core.modules.integrations.models import IntegrationConnection
+from backend_core.modules.tenants.models import (
+    KnowledgeBase,
+    KnowledgeBaseRevision,
+    ProfilePrompt,
+    ProfilePromptRevision,
+    PromptSet,
+    PromptSetRevision,
+    SystemPrompt,
+    SystemPromptRevision,
+    Tenant,
+    TenantConfigRevision,
+    TenantPrompt,
+    TenantPromptRevision,
+)
 from backend_core.platform.database import Database
 from backend_core.platform.outbox import OutboxDispatcher
 from httpx import ASGITransport, AsyncClient
 from redis.exceptions import RedisError
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 
 def agent_schema() -> dict[str, object]:
@@ -76,15 +93,68 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
         )
         assert tenant_response.status_code == 201
         tenant_id = UUID(tenant_response.json()["id"])
-        prompt = await client.post(
-            f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts",
+        system = await client.post(
+            "/admin/v1/platform/prompts/system/drafts",
             headers=admin_headers,
-            json={"system_instructions": "Help the caller."},
+            json={"key": "default", "text": "Help the caller."},
         )
-        prompt_id = prompt.json()["id"]
+        assert system.status_code == 201
         assert (
             await client.post(
-                f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts/{prompt_id}/publish",
+                f"/admin/v1/platform/prompts/system/drafts/{system.json()['id']}/publish",
+                headers=admin_headers,
+            )
+        ).status_code == 200
+        profile = await client.post(
+            "/admin/v1/platform/prompts/profiles/drafts",
+            headers=admin_headers,
+            json={"key": "hotel_assistant", "text": "Assist the caller."},
+        )
+        assert profile.status_code == 201
+        assert (
+            await client.post(
+                f"/admin/v1/platform/prompts/profiles/drafts/{profile.json()['id']}/publish",
+                headers=admin_headers,
+            )
+        ).status_code == 200
+        tenant_prompt = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts",
+            headers=admin_headers,
+            json={"text": "Use the tenant's reservation workflow."},
+        )
+        assert tenant_prompt.status_code == 201
+        assert (
+            await client.post(
+                f"/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts/{tenant_prompt.json()['id']}/publish",
+                headers=admin_headers,
+            )
+        ).status_code == 200
+        knowledge = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts",
+            headers=admin_headers,
+            json={"text": "Reservation requests are handled by the reservations team."},
+        )
+        assert knowledge.status_code == 201
+        assert (
+            await client.post(
+                f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts/{knowledge.json()['id']}/publish",
+                headers=admin_headers,
+            )
+        ).status_code == 200
+        prompt_set = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/prompt-set/drafts",
+            headers=admin_headers,
+            json={
+                "system_prompt_revision_id": system.json()["id"],
+                "profile_prompt_revision_id": profile.json()["id"],
+                "tenant_prompt_revision_id": tenant_prompt.json()["id"],
+                "knowledge_base_revision_id": knowledge.json()["id"],
+            },
+        )
+        assert prompt_set.status_code == 201
+        assert (
+            await client.post(
+                f"/admin/v1/tenants/{tenant_id}/prompt-set/drafts/{prompt_set.json()['id']}/publish",
                 headers=admin_headers,
             )
         ).status_code == 200
@@ -108,9 +178,10 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             },
         )
         assert other_tenant.status_code == 201
+        other_tenant_id = UUID(other_tenant.json()["id"])
         assert (
             await client.patch(
-                f"/admin/v1/tenants/{other_tenant.json()['id']}/integration-connections/{connection.json()['id']}",
+                f"/admin/v1/tenants/{other_tenant_id}/integration-connections/{connection.json()['id']}",
                 headers=admin_headers,
                 json={"status": "disabled"},
             )
@@ -127,10 +198,15 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             )
         ).status_code == 200
         config = {
-            "schema_version": 2,
-            "prompt_bundle_revision_id": prompt_id,
+            "schema_version": 3,
+            "business": {"name": "Capability Test", "type": "hotel"},
+            "contact": {},
             "localization": {"default_locale": "en", "timezone": "Europe/Bratislava"},
-            "agent": {"display_name": "Agent", "greeting": "Hello"},
+            "agent": {
+                "display_name": "Agent",
+                "greeting": "Hello",
+                "profile": "hotel_assistant",
+            },
             "conversation": {"scope": "property_only"},
             "capabilities": {
                 "reservation.submit_request": {
@@ -175,7 +251,7 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
         draft = await client.post(
             f"/admin/v1/tenants/{tenant_id}/config/drafts",
             headers=admin_headers,
-            json={"schema_version": 2, "config": config},
+            json={"schema_version": 3, "config": config},
         )
         assert draft.status_code == 201
         draft_id = draft.json()["id"]
@@ -252,7 +328,9 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             )
             invocation = await session.get(CapabilityInvocation, invocation_id)
             assert invocation is not None
-            assert invocation.execution_plan["rows"][0][1:] == [
+            rows = invocation.execution_plan.get("rows")
+            assert isinstance(rows, list) and isinstance(rows[0], list)
+            assert rows[0][1:] == [
                 "Alice",
                 "2030-08-12",
                 "2030-08-15",
@@ -330,5 +408,75 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             assert invocation.canonical_input == {}
             assert invocation.execution_plan == {}
             assert invocation.semantic_result is not None
+            await session.execute(
+                delete(CapabilityInvocation).where(
+                    CapabilityInvocation.id == invocation_id
+                )
+            )
+            await session.execute(
+                delete(Conversation).where(Conversation.call_session_id == call.id)
+            )
+            await session.execute(delete(CallSession).where(CallSession.id == call.id))
+            tenant = await session.get(Tenant, tenant_id)
+            assert tenant is not None
+            tenant.active_prompt_set_revision_id = None
+            tenant.active_config_revision_id = None
+            await session.flush()
+            await session.execute(
+                delete(PromptSetRevision).where(
+                    PromptSetRevision.tenant_id == tenant_id
+                )
+            )
+            await session.execute(
+                delete(TenantPromptRevision).where(
+                    TenantPromptRevision.tenant_id == tenant_id
+                )
+            )
+            await session.execute(
+                delete(KnowledgeBaseRevision).where(
+                    KnowledgeBaseRevision.tenant_id == tenant_id
+                )
+            )
+            await session.execute(
+                delete(PromptSet).where(PromptSet.tenant_id == tenant_id)
+            )
+            await session.execute(
+                delete(TenantPrompt).where(TenantPrompt.tenant_id == tenant_id)
+            )
+            await session.execute(
+                delete(KnowledgeBase).where(KnowledgeBase.tenant_id == tenant_id)
+            )
+            await session.execute(
+                delete(TenantConfigRevision).where(
+                    TenantConfigRevision.tenant_id == tenant_id
+                )
+            )
+            await session.execute(
+                delete(IntegrationConnection).where(
+                    IntegrationConnection.tenant_id == tenant_id
+                )
+            )
+            await session.execute(delete(Tenant).where(Tenant.id == tenant_id))
+            await session.execute(delete(Tenant).where(Tenant.id == other_tenant_id))
+            await session.execute(
+                delete(SystemPromptRevision).where(
+                    SystemPromptRevision.id == UUID(system.json()["id"])
+                )
+            )
+            await session.execute(
+                delete(ProfilePromptRevision).where(
+                    ProfilePromptRevision.id == UUID(profile.json()["id"])
+                )
+            )
+            await session.execute(
+                delete(SystemPrompt).where(
+                    SystemPrompt.id == UUID(system.json()["prompt_id"])
+                )
+            )
+            await session.execute(
+                delete(ProfilePrompt).where(
+                    ProfilePrompt.id == UUID(profile.json()["prompt_id"])
+                )
+            )
 
     await database.close()
