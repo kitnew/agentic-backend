@@ -1143,6 +1143,63 @@
         "title": "ManagedWebhookExecution",
         "type": "object"
       },
+      "PlatformPromptPublishResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published At"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "rollout": {
+            "$ref": "#/components/schemas/PromptSetRolloutSummaryResponse"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision_number",
+          "status",
+          "text",
+          "created_at",
+          "published_at",
+          "version",
+          "rollout"
+        ],
+        "title": "PlatformPromptPublishResponse",
+        "type": "object"
+      },
       "PlatformPromptRevisionResponse": {
         "properties": {
           "created_at": {
@@ -1205,6 +1262,229 @@
           "key"
         ],
         "title": "PlatformPromptRevisionResponse",
+        "type": "object"
+      },
+      "PromptSetApplyResponse": {
+        "properties": {
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "prompt_set": {
+            "$ref": "#/components/schemas/PromptSetDetailResponse"
+          }
+        },
+        "required": [
+          "changed",
+          "prompt_set"
+        ],
+        "title": "PromptSetApplyResponse",
+        "type": "object"
+      },
+      "PromptSetComponentPlanResponse": {
+        "properties": {
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromptSetComponentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "desired": {
+            "$ref": "#/components/schemas/PromptSetComponentResponse"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "active",
+          "desired",
+          "changed"
+        ],
+        "title": "PromptSetComponentPlanResponse",
+        "type": "object"
+      },
+      "PromptSetComponentResponse": {
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "revision_id": {
+            "format": "uuid",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision_id",
+          "revision_number"
+        ],
+        "title": "PromptSetComponentResponse",
+        "type": "object"
+      },
+      "PromptSetCompositionResponse": {
+        "properties": {
+          "knowledge_base": {
+            "$ref": "#/components/schemas/PromptSetComponentResponse"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/PromptSetComponentResponse"
+          },
+          "system": {
+            "$ref": "#/components/schemas/PromptSetComponentResponse"
+          },
+          "tenant_prompt": {
+            "$ref": "#/components/schemas/PromptSetComponentResponse"
+          }
+        },
+        "required": [
+          "system",
+          "profile",
+          "tenant_prompt",
+          "knowledge_base"
+        ],
+        "title": "PromptSetCompositionResponse",
+        "type": "object"
+      },
+      "PromptSetDetailResponse": {
+        "properties": {
+          "components": {
+            "$ref": "#/components/schemas/PromptSetCompositionResponse"
+          },
+          "revision": {
+            "$ref": "#/components/schemas/PromptSetRevisionResponse"
+          }
+        },
+        "required": [
+          "revision",
+          "components"
+        ],
+        "title": "PromptSetDetailResponse",
+        "type": "object"
+      },
+      "PromptSetPlanComponentsResponse": {
+        "properties": {
+          "knowledge_base": {
+            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
+          },
+          "system": {
+            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
+          },
+          "tenant_prompt": {
+            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
+          }
+        },
+        "required": [
+          "system",
+          "profile",
+          "tenant_prompt",
+          "knowledge_base"
+        ],
+        "title": "PromptSetPlanComponentsResponse",
+        "type": "object"
+      },
+      "PromptSetPlanResponse": {
+        "properties": {
+          "active_revision_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Revision Number"
+          },
+          "components": {
+            "$ref": "#/components/schemas/PromptSetPlanComponentsResponse"
+          },
+          "status": {
+            "enum": [
+              "unchanged",
+              "modified",
+              "missing-active"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "status",
+          "active_revision_number",
+          "components"
+        ],
+        "title": "PromptSetPlanResponse",
+        "type": "object"
+      },
+      "PromptSetResolutionErrorDetail": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "errors"
+        ],
+        "title": "PromptSetResolutionErrorDetail",
+        "type": "object"
+      },
+      "PromptSetResolutionErrorResponse": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/PromptSetResolutionErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "PromptSetResolutionErrorResponse",
         "type": "object"
       },
       "PromptSetRevisionResponse": {
@@ -1283,6 +1563,24 @@
           "version"
         ],
         "title": "PromptSetRevisionResponse",
+        "type": "object"
+      },
+      "PromptSetRolloutSummaryResponse": {
+        "properties": {
+          "unchanged_tenants": {
+            "title": "Unchanged Tenants",
+            "type": "integer"
+          },
+          "updated_tenants": {
+            "title": "Updated Tenants",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "updated_tenants",
+          "unchanged_tenants"
+        ],
+        "title": "PromptSetRolloutSummaryResponse",
         "type": "object"
       },
       "PromptTextRevisionResponse": {
@@ -2212,7 +2510,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PromptTextRevisionResponse"
+                  "$ref": "#/components/schemas/PlatformPromptPublishResponse"
                 }
               }
             },
@@ -2431,7 +2729,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PromptTextRevisionResponse"
+                  "$ref": "#/components/schemas/PlatformPromptPublishResponse"
                 }
               }
             },
@@ -3793,6 +4091,54 @@
         ]
       }
     },
+    "/admin/v1/tenants/{tenant_id}/prompt-set": {
+      "get": {
+        "operationId": "show_prompt_set_admin_v1_tenants__tenant_id__prompt_set_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptSetDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Show Prompt Set",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
     "/admin/v1/tenants/{tenant_id}/prompt-set/active": {
       "get": {
         "operationId": "active_prompt_set_admin_v1_tenants__tenant_id__prompt_set_active_get",
@@ -3836,6 +4182,54 @@
           }
         ],
         "summary": "Active Prompt Set",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/prompt-set/apply": {
+      "post": {
+        "operationId": "apply_prompt_set_admin_v1_tenants__tenant_id__prompt_set_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptSetApplyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptSetResolutionErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Apply Prompt Set",
         "tags": [
           "admin:tenants"
         ]
@@ -4094,6 +4488,106 @@
           }
         ],
         "summary": "Validate Prompt Set Draft",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/prompt-set/history": {
+      "get": {
+        "operationId": "prompt_set_history_admin_v1_tenants__tenant_id__prompt_set_history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PromptSetDetailResponse"
+                  },
+                  "title": "Response Prompt Set History Admin V1 Tenants  Tenant Id  Prompt Set History Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Prompt Set History",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/prompt-set/plan": {
+      "get": {
+        "operationId": "plan_prompt_set_admin_v1_tenants__tenant_id__prompt_set_plan_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptSetPlanResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromptSetResolutionErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Prompt Set",
         "tags": [
           "admin:tenants"
         ]

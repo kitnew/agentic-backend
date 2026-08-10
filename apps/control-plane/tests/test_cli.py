@@ -222,6 +222,25 @@ def test_tenant_config_command_hierarchy_and_state_dir(
     }
 
 
+@pytest.mark.parametrize("action", ["show", "revisions", "plan", "apply"])
+def test_tenant_prompt_set_command_hierarchy(
+    monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
+    monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli,
+        "run_tenant_prompt_set",
+        lambda settings, selected, slug: seen.update(
+            action=selected, slug=slug
+        ),
+    )
+
+    assert cli.main(["tenant", "prompt-set", action, "penzion-grand"]) == 0
+    assert seen == {"action": action, "slug": "penzion-grand"}
+
+
 @pytest.mark.parametrize(
     ("failure", "code", "message"),
     [

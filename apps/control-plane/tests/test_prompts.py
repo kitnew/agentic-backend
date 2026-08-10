@@ -8,8 +8,14 @@ from uuid import UUID
 
 import httpx
 import pytest
+from admin_client.generated.models.platform_prompt_publish_response import (
+    PlatformPromptPublishResponse,
+)
 from admin_client.generated.models.platform_prompt_revision_response import (
     PlatformPromptRevisionResponse,
+)
+from admin_client.generated.models.prompt_set_rollout_summary_response import (
+    PromptSetRolloutSummaryResponse,
 )
 from admin_client.generated.models.prompt_text_revision_response import (
     PromptTextRevisionResponse,
@@ -321,6 +327,37 @@ def test_publish_uses_remote_draft_without_reading_local_file(
     prompts.run_system_prompt(settings(tmp_path), "publish")
     assert "Published System Prompt" in capsys.readouterr().out
     assert not prompts.system_prompt_path(tmp_path).exists()
+
+
+def test_platform_publish_renders_backend_rollout_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mock_system_revisions(monkeypatch, [revision(2, "draft", "next")])
+    published = PlatformPromptPublishResponse(
+        created_at=NOW,
+        id=UUID(int=2),
+        published_at=NOW,
+        revision_number=2,
+        rollout=PromptSetRolloutSummaryResponse(
+            unchanged_tenants=3, updated_tenants=12
+        ),
+        status="published",
+        text="next",
+        version=1,
+    )
+    monkeypatch.setattr(
+        prompts.publish_system_prompt_draft_admin_v1_platform_prompts_system_drafts_revision_id_publish_post,
+        "sync_detailed",
+        lambda revision_id, *, client: response(published),
+    )
+
+    prompts.run_system_prompt(settings(tmp_path), "publish")
+
+    output = capsys.readouterr().out
+    assert "updated tenants: 12" in output
+    assert "unchanged tenants: 3" in output
 
 
 def test_profile_list_show_revisions_and_unknown_key(

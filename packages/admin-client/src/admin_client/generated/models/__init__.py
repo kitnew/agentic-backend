@@ -40,8 +40,20 @@ from .integration_provider import IntegrationProvider
 from .knowledge_base_revision_response import KnowledgeBaseRevisionResponse
 from .localization_config import LocalizationConfig
 from .managed_webhook_execution import ManagedWebhookExecution
+from .platform_prompt_publish_response import PlatformPromptPublishResponse
 from .platform_prompt_revision_response import PlatformPromptRevisionResponse
+from .prompt_set_apply_response import PromptSetApplyResponse
+from .prompt_set_component_plan_response import PromptSetComponentPlanResponse
+from .prompt_set_component_response import PromptSetComponentResponse
+from .prompt_set_composition_response import PromptSetCompositionResponse
+from .prompt_set_detail_response import PromptSetDetailResponse
+from .prompt_set_plan_components_response import PromptSetPlanComponentsResponse
+from .prompt_set_plan_response import PromptSetPlanResponse
+from .prompt_set_plan_response_status import PromptSetPlanResponseStatus
+from .prompt_set_resolution_error_detail import PromptSetResolutionErrorDetail
+from .prompt_set_resolution_error_response import PromptSetResolutionErrorResponse
 from .prompt_set_revision_response import PromptSetRevisionResponse
+from .prompt_set_rollout_summary_response import PromptSetRolloutSummaryResponse
 from .prompt_text_revision_response import PromptTextRevisionResponse
 from .tenant_capability_profile import TenantCapabilityProfile
 from .tenant_capability_profile_agent_input_schema import (
@@ -115,8 +127,20 @@ __all__ = (
     "KnowledgeBaseRevisionResponse",
     "LocalizationConfig",
     "ManagedWebhookExecution",
+    "PlatformPromptPublishResponse",
     "PlatformPromptRevisionResponse",
+    "PromptSetApplyResponse",
+    "PromptSetComponentPlanResponse",
+    "PromptSetComponentResponse",
+    "PromptSetCompositionResponse",
+    "PromptSetDetailResponse",
+    "PromptSetPlanComponentsResponse",
+    "PromptSetPlanResponse",
+    "PromptSetPlanResponseStatus",
+    "PromptSetResolutionErrorDetail",
+    "PromptSetResolutionErrorResponse",
     "PromptSetRevisionResponse",
+    "PromptSetRolloutSummaryResponse",
     "PromptTextRevisionResponse",
     "TenantCapabilityProfile",
     "TenantCapabilityProfileAgentInputSchema",

@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
@@ -47,6 +48,18 @@ class TenantRepository:
             .order_by(Tenant.created_at, Tenant.id)
             .offset(offset)
             .limit(limit)
+        )
+        return list(tenants)
+
+    async def list_prompt_rollout_targets_for_update(self) -> Sequence[Tenant]:
+        tenants = await self._session.scalars(
+            select(Tenant)
+            .where(
+                Tenant.status.in_((TenantStatus.ACTIVE, TenantStatus.SUSPENDED)),
+                Tenant.active_prompt_set_revision_id.is_not(None),
+            )
+            .order_by(Tenant.id)
+            .with_for_update()
         )
         return list(tenants)
 
@@ -244,6 +257,9 @@ class PromptCompositionRepository:
             select(SystemPrompt).where(SystemPrompt.key == key)
         )
 
+    async def system_prompt_by_id(self, prompt_id: UUID) -> SystemPrompt | None:
+        return await self._session.get(SystemPrompt, prompt_id)
+
     async def profile_prompt(self, key: str) -> ProfilePrompt | None:
         return await self._session.scalar(
             select(ProfilePrompt).where(ProfilePrompt.key == key)
@@ -307,6 +323,22 @@ class PromptCompositionRepository:
             query = query.where(revision_type.status == status)
         query = query.order_by(revision_type.revision_number)
         return list(await self._session.scalars(query))
+
+    async def latest_published_revision(
+        self,
+        revision_type: type[Any],
+        parent_field: str,
+        parent_id: UUID,
+    ) -> Any | None:
+        return await self._session.scalar(
+            select(revision_type)
+            .where(
+                getattr(revision_type, parent_field) == parent_id,
+                revision_type.status == PromptRevisionStatus.PUBLISHED,
+            )
+            .order_by(revision_type.revision_number.desc())
+            .limit(1)
+        )
 
     async def next_revision_number(
         self,

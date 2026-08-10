@@ -42,6 +42,7 @@ from backend_core.modules.tenants.errors import (
     PromptRevisionImmutableError,
     PromptRevisionNotFoundError,
     PromptRevisionVersionConflictError,
+    PromptSetResolutionError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
@@ -75,6 +76,14 @@ from backend_core.modules.tenants.schemas import (
     CreatePromptSetDraftRequest,
     CreateTenantRequest,
     CreateTextDraftRequest,
+    PromptSetApplyResponse,
+    PromptSetComponentPlanResponse,
+    PromptSetComponentResponse,
+    PromptSetCompositionResponse,
+    PromptSetDetailResponse,
+    PromptSetPlanComponentsResponse,
+    PromptSetPlanResponse,
+    PromptSetRevisionResponse,
     UpdateDraftRequest,
     UpdateInboundRouteRequest,
     UpdatePromptSetDraftRequest,
@@ -82,6 +91,8 @@ from backend_core.modules.tenants.schemas import (
     ValidateConfigRequest,
     ValidationIssue,
 )
+
+SYSTEM_PROMPT_KEY = "default"
 
 
 class TenantService:
@@ -268,11 +279,33 @@ class PromptCompositionUseCases:
             KnowledgeBaseRevision, revision_id, data.text, expected_version, tenant_id
         )
 
-    async def publish_system(self, revision_id: UUID) -> SystemPromptRevision:
-        return await self._publish_text(SystemPromptRevision, revision_id)
+    async def publish_system(
+        self, revision_id: UUID
+    ) -> tuple[SystemPromptRevision, int, int]:
+        revision = await self._publish_text(SystemPromptRevision, revision_id)
+        prompt = await self._revisions.system_prompt_by_id(revision.system_prompt_id)
+        if prompt is None:
+            raise PromptRevisionNotFoundError
+        if prompt.key != SYSTEM_PROMPT_KEY:
+            return revision, 0, 0
+        updated, unchanged = await self._rollout_component(
+            "system_prompt_revision_id", revision.id
+        )
+        return revision, updated, unchanged
 
-    async def publish_profile(self, revision_id: UUID) -> ProfilePromptRevision:
-        return await self._publish_text(ProfilePromptRevision, revision_id)
+    async def publish_profile(
+        self, revision_id: UUID
+    ) -> tuple[ProfilePromptRevision, int, int]:
+        revision = await self._publish_text(ProfilePromptRevision, revision_id)
+        profile = await self._revisions.profile_prompt_by_id(
+            revision.profile_prompt_id
+        )
+        if profile is None:
+            raise PromptRevisionNotFoundError
+        updated, unchanged = await self._rollout_component(
+            "profile_prompt_revision_id", revision.id, profile_key=profile.key
+        )
+        return revision, updated, unchanged
 
     async def publish_tenant_prompt(
         self, tenant_id: UUID, revision_id: UUID
@@ -420,6 +453,368 @@ class PromptCompositionUseCases:
             raise PromptRevisionNotFoundError
         return await self._prompt_set(tenant_id, tenant.active_prompt_set_revision_id)
 
+    async def prompt_set_detail(self, tenant_id: UUID) -> PromptSetDetailResponse:
+        revision = await self.active_prompt_set(tenant_id)
+        return await self._prompt_set_detail(revision)
+
+    async def prompt_set_history(
+        self, tenant_id: UUID
+    ) -> list[PromptSetDetailResponse]:
+        return [
+            await self._prompt_set_detail(revision)
+            for revision in await self.list_prompt_sets(tenant_id)
+            if revision.status is not PromptRevisionStatus.DRAFT
+        ]
+
+    async def plan_prompt_set(self, tenant_id: UUID) -> PromptSetPlanResponse:
+        tenant = await self._tenants.get(tenant_id)
+        if tenant is None:
+            raise TenantNotFoundError
+        desired = await self._desired_composition(tenant)
+        active = (
+            None
+            if tenant.active_prompt_set_revision_id is None
+            else await self._prompt_set(tenant_id, tenant.active_prompt_set_revision_id)
+        )
+        return await self._prompt_set_plan(tenant, active, desired)
+
+    async def apply_prompt_set(self, tenant_id: UUID) -> PromptSetApplyResponse:
+        tenant = await self._tenant(tenant_id)
+        desired = await self._desired_composition(tenant)
+        active = (
+            None
+            if tenant.active_prompt_set_revision_id is None
+            else await self._prompt_set_for_update(
+                tenant_id, tenant.active_prompt_set_revision_id
+            )
+        )
+        revision, changed = await self._activate_composition(
+            tenant, active, desired, validate_profile=True
+        )
+        return PromptSetApplyResponse(
+            changed=changed,
+            prompt_set=await self._prompt_set_detail(revision),
+        )
+
+    async def _rollout_component(
+        self,
+        field: str,
+        revision_id: UUID,
+        *,
+        profile_key: str | None = None,
+    ) -> tuple[int, int]:
+        updated = unchanged = 0
+        for tenant in await self._tenants.list_prompt_rollout_targets_for_update():
+            if profile_key is not None:
+                config = await self._active_v3_config(tenant, required=False)
+                if config is None or config.agent.profile != profile_key:
+                    continue
+            assert tenant.active_prompt_set_revision_id is not None
+            active = await self._prompt_set_for_update(
+                tenant.id, tenant.active_prompt_set_revision_id
+            )
+            if getattr(active, field) == revision_id:
+                unchanged += 1
+                continue
+            composition = {
+                "system_prompt_revision_id": active.system_prompt_revision_id,
+                "profile_prompt_revision_id": active.profile_prompt_revision_id,
+                "tenant_prompt_revision_id": active.tenant_prompt_revision_id,
+                "knowledge_base_revision_id": active.knowledge_base_revision_id,
+            }
+            composition[field] = revision_id
+            _, changed = await self._activate_composition(
+                tenant,
+                active,
+                composition,
+                validate_profile=profile_key is not None,
+            )
+            updated += int(changed)
+            unchanged += int(not changed)
+        return updated, unchanged
+
+    async def _desired_composition(self, tenant: Tenant) -> dict[str, UUID]:
+        config = await self._active_v3_config(tenant, required=True)
+        assert config is not None
+        system = await self._required_latest(
+            await self._revisions.system_prompt(SYSTEM_PROMPT_KEY),
+            SystemPromptRevision,
+            "system_prompt_id",
+            "system_prompt",
+            f"SystemPrompt '{SYSTEM_PROMPT_KEY}'",
+        )
+        profile = await self._required_latest(
+            await self._revisions.profile_prompt(config.agent.profile),
+            ProfilePromptRevision,
+            "profile_prompt_id",
+            "profile_prompt",
+            f"ProfilePrompt '{config.agent.profile}'",
+        )
+        tenant_prompt = await self._required_latest(
+            await self._revisions.tenant_prompt(tenant.id),
+            TenantPromptRevision,
+            "tenant_prompt_id",
+            "tenant_prompt",
+            "TenantPrompt",
+        )
+        knowledge = await self._required_latest(
+            await self._revisions.knowledge_base(tenant.id),
+            KnowledgeBaseRevision,
+            "knowledge_base_id",
+            "knowledge_base",
+            "KnowledgeBase",
+        )
+        return {
+            "system_prompt_revision_id": system.id,
+            "profile_prompt_revision_id": profile.id,
+            "tenant_prompt_revision_id": tenant_prompt.id,
+            "knowledge_base_revision_id": knowledge.id,
+        }
+
+    async def _required_latest(
+        self,
+        parent: Any | None,
+        revision_type: type[Any],
+        parent_field: str,
+        path: str,
+        label: str,
+    ) -> Any:
+        if parent is None:
+            raise PromptSetResolutionError(
+                path, "artifact_not_found", f"{label} does not exist"
+            )
+        revision = await self._revisions.latest_published_revision(
+            revision_type, parent_field, parent.id
+        )
+        if revision is None:
+            raise PromptSetResolutionError(
+                path,
+                "published_revision_not_found",
+                f"{label} has no published revision",
+            )
+        return revision
+
+    async def _active_v3_config(
+        self, tenant: Tenant, *, required: bool
+    ) -> TenantConfigV3 | None:
+        if tenant.active_config_revision_id is None:
+            if required:
+                raise PromptSetResolutionError(
+                    "tenant.active_config_revision_id",
+                    "active_config_not_found",
+                    "tenant has no active config",
+                )
+            return None
+        revision = await self._configs.get(
+            tenant.id, tenant.active_config_revision_id
+        )
+        if revision is None or revision.schema_version != 3:
+            if required:
+                raise PromptSetResolutionError(
+                    "tenant.active_config_revision",
+                    "active_config_not_v3",
+                    "active config is not TenantConfigV3",
+                )
+            return None
+        try:
+            return TenantConfigV3.model_validate(revision.config)
+        except ValidationError as error:
+            raise PromptSetResolutionError(
+                "tenant.active_config_revision",
+                "active_config_invalid",
+                "active TenantConfigV3 is invalid",
+            ) from error
+
+    async def _activate_composition(
+        self,
+        tenant: Tenant,
+        active: PromptSetRevision | None,
+        composition: dict[str, UUID],
+        *,
+        validate_profile: bool,
+    ) -> tuple[PromptSetRevision, bool]:
+        if active is not None and all(
+            getattr(active, field) == value for field, value in composition.items()
+        ):
+            return active, False
+        candidate = PromptSetRevision(
+            tenant_id=tenant.id,
+            prompt_set_id=active.prompt_set_id if active is not None else UUID(int=0),
+            revision_number=0,
+            **composition,
+        )
+        errors = await self._validate_prompt_set(
+            tenant.id, candidate, validate_profile=validate_profile
+        )
+        if errors:
+            raise InvalidPromptSetError
+        prompt_set = await self._revisions.prompt_set(tenant.id)
+        if prompt_set is None:
+            prompt_set = await self._revisions.add(PromptSet(tenant_id=tenant.id))
+        revision = await self._revisions.add(
+            PromptSetRevision(
+                prompt_set_id=prompt_set.id,
+                tenant_id=tenant.id,
+                revision_number=await self._revisions.next_revision_number(
+                    PromptSetRevision, "prompt_set_id", prompt_set.id
+                ),
+                status=PromptRevisionStatus.PUBLISHED,
+                published_at=datetime.now(UTC),
+                **composition,
+            )
+        )
+        if active is not None and active.id != revision.id:
+            active.status = PromptRevisionStatus.ARCHIVED
+        tenant.active_prompt_set_revision_id = revision.id
+        await self._revisions.flush()
+        return revision, True
+
+    async def _prompt_set_plan(
+        self,
+        tenant: Tenant,
+        active: PromptSetRevision | None,
+        desired: dict[str, UUID],
+    ) -> PromptSetPlanResponse:
+        desired_detail = await self._composition_detail(tenant.id, desired)
+        active_detail = (
+            None
+            if active is None
+            else await self._composition_detail(
+                tenant.id,
+                {
+                    "system_prompt_revision_id": active.system_prompt_revision_id,
+                    "profile_prompt_revision_id": active.profile_prompt_revision_id,
+                    "tenant_prompt_revision_id": active.tenant_prompt_revision_id,
+                    "knowledge_base_revision_id": active.knowledge_base_revision_id,
+                },
+            )
+        )
+        reasons = {
+            "system": "platform current revision differs",
+            "profile": (
+                f"active TenantConfig selects {desired_detail.profile.key}"
+            ),
+            "tenant_prompt": "newer published tenant revision available",
+            "knowledge_base": "newer published KnowledgeBase revision available",
+        }
+
+        def component(name: str) -> PromptSetComponentPlanResponse:
+            current = None if active_detail is None else getattr(active_detail, name)
+            target = getattr(desired_detail, name)
+            changed = current is None or current.revision_id != target.revision_id
+            return PromptSetComponentPlanResponse(
+                active=current,
+                desired=target,
+                changed=changed,
+                reason=reasons[name] if changed else None,
+            )
+
+        components = PromptSetPlanComponentsResponse(
+            system=component("system"),
+            profile=component("profile"),
+            tenant_prompt=component("tenant_prompt"),
+            knowledge_base=component("knowledge_base"),
+        )
+        changed = any(
+            item.changed
+            for item in (
+                components.system,
+                components.profile,
+                components.tenant_prompt,
+                components.knowledge_base,
+            )
+        )
+        return PromptSetPlanResponse(
+            tenant_id=tenant.id,
+            status=(
+                "missing-active"
+                if active is None
+                else "modified"
+                if changed
+                else "unchanged"
+            ),
+            active_revision_number=None if active is None else active.revision_number,
+            components=components,
+        )
+
+    async def _prompt_set_detail(
+        self, revision: PromptSetRevision
+    ) -> PromptSetDetailResponse:
+        return PromptSetDetailResponse(
+            revision=PromptSetRevisionResponse.model_validate(revision),
+            components=await self._composition_detail(
+                revision.tenant_id,
+                {
+                    "system_prompt_revision_id": revision.system_prompt_revision_id,
+                    "profile_prompt_revision_id": revision.profile_prompt_revision_id,
+                    "tenant_prompt_revision_id": revision.tenant_prompt_revision_id,
+                    "knowledge_base_revision_id": revision.knowledge_base_revision_id,
+                },
+            ),
+        )
+
+    async def _composition_detail(
+        self, tenant_id: UUID, composition: dict[str, UUID]
+    ) -> PromptSetCompositionResponse:
+        system = await self._revisions.revision(
+            SystemPromptRevision, composition["system_prompt_revision_id"]
+        )
+        profile = await self._revisions.revision(
+            ProfilePromptRevision, composition["profile_prompt_revision_id"]
+        )
+        tenant_prompt = await self._revisions.revision(
+            TenantPromptRevision,
+            composition["tenant_prompt_revision_id"],
+            tenant_id=tenant_id,
+        )
+        knowledge = await self._revisions.revision(
+            KnowledgeBaseRevision,
+            composition["knowledge_base_revision_id"],
+            tenant_id=tenant_id,
+        )
+        if any(item is None for item in (system, profile, tenant_prompt, knowledge)):
+            raise PromptSetResolutionError(
+                "active_prompt_set",
+                "component_not_found",
+                "PromptSet contains an unavailable component revision",
+            )
+        assert system is not None
+        assert profile is not None
+        assert tenant_prompt is not None
+        assert knowledge is not None
+        system_parent = await self._revisions.system_prompt_by_id(
+            system.system_prompt_id
+        )
+        profile_parent = await self._revisions.profile_prompt_by_id(
+            profile.profile_prompt_id
+        )
+        if system_parent is None or profile_parent is None:
+            raise PromptSetResolutionError(
+                "active_prompt_set",
+                "component_parent_not_found",
+                "PromptSet contains an unavailable platform prompt",
+            )
+        return PromptSetCompositionResponse(
+            system=PromptSetComponentResponse(
+                revision_id=system.id,
+                revision_number=system.revision_number,
+                key=system_parent.key,
+            ),
+            profile=PromptSetComponentResponse(
+                revision_id=profile.id,
+                revision_number=profile.revision_number,
+                key=profile_parent.key,
+            ),
+            tenant_prompt=PromptSetComponentResponse(
+                revision_id=tenant_prompt.id,
+                revision_number=tenant_prompt.revision_number,
+            ),
+            knowledge_base=PromptSetComponentResponse(
+                revision_id=knowledge.id,
+                revision_number=knowledge.revision_number,
+            ),
+        )
+
     async def _create_text_draft(
         self,
         revision_type: type[Any],
@@ -486,7 +881,11 @@ class PromptCompositionUseCases:
         return revision
 
     async def _validate_prompt_set(
-        self, tenant_id: UUID, revision: PromptSetRevision
+        self,
+        tenant_id: UUID,
+        revision: PromptSetRevision,
+        *,
+        validate_profile: bool = True,
     ) -> list[ValidationIssue]:
         sources = (
             (
@@ -536,7 +935,11 @@ class PromptCompositionUseCases:
                     )
                 )
         tenant = await self._tenants.get(tenant_id)
-        if tenant is not None and tenant.active_config_revision_id is not None:
+        if (
+            validate_profile
+            and tenant is not None
+            and tenant.active_config_revision_id is not None
+        ):
             config_revision = await self._configs.get(
                 tenant_id, tenant.active_config_revision_id
             )

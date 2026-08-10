@@ -7,19 +7,21 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.http_validation_error import HTTPValidationError
-from ...models.platform_prompt_publish_response import PlatformPromptPublishResponse
+from ...models.prompt_set_plan_response import PromptSetPlanResponse
+from ...models.prompt_set_resolution_error_response import (
+    PromptSetResolutionErrorResponse,
+)
 from ...types import Response
 
 
 def _get_kwargs(
-    revision_id: UUID,
+    tenant_id: UUID,
 ) -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
-        "method": "post",
-        "url": "/admin/v1/platform/prompts/profiles/drafts/{revision_id}/publish".format(
-            revision_id=quote(str(revision_id), safe=""),
+        "method": "get",
+        "url": "/admin/v1/tenants/{tenant_id}/prompt-set/plan".format(
+            tenant_id=quote(str(tenant_id), safe=""),
         ),
     }
 
@@ -28,14 +30,14 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | PlatformPromptPublishResponse | None:
+) -> PromptSetPlanResponse | PromptSetResolutionErrorResponse | None:
     if response.status_code == 200:
-        response_200 = PlatformPromptPublishResponse.from_dict(response.json())
+        response_200 = PromptSetPlanResponse.from_dict(response.json())
 
         return response_200
 
     if response.status_code == 422:
-        response_422 = HTTPValidationError.from_dict(response.json())
+        response_422 = PromptSetResolutionErrorResponse.from_dict(response.json())
 
         return response_422
 
@@ -47,7 +49,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | PlatformPromptPublishResponse]:
+) -> Response[PromptSetPlanResponse | PromptSetResolutionErrorResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -57,25 +59,25 @@ def _build_response(
 
 
 def sync_detailed(
-    revision_id: UUID,
+    tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | PlatformPromptPublishResponse]:
-    """Publish Profile Prompt Draft
+) -> Response[PromptSetPlanResponse | PromptSetResolutionErrorResponse]:
+    """Plan Prompt Set
 
     Args:
-        revision_id (UUID):
+        tenant_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | PlatformPromptPublishResponse]
+        Response[PromptSetPlanResponse | PromptSetResolutionErrorResponse]
     """
 
     kwargs = _get_kwargs(
-        revision_id=revision_id,
+        tenant_id=tenant_id,
     )
 
     response = client.get_httpx_client().request(
@@ -86,49 +88,49 @@ def sync_detailed(
 
 
 def sync(
-    revision_id: UUID,
+    tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | PlatformPromptPublishResponse | None:
-    """Publish Profile Prompt Draft
+) -> PromptSetPlanResponse | PromptSetResolutionErrorResponse | None:
+    """Plan Prompt Set
 
     Args:
-        revision_id (UUID):
+        tenant_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | PlatformPromptPublishResponse
+        PromptSetPlanResponse | PromptSetResolutionErrorResponse
     """
 
     return sync_detailed(
-        revision_id=revision_id,
+        tenant_id=tenant_id,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
-    revision_id: UUID,
+    tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | PlatformPromptPublishResponse]:
-    """Publish Profile Prompt Draft
+) -> Response[PromptSetPlanResponse | PromptSetResolutionErrorResponse]:
+    """Plan Prompt Set
 
     Args:
-        revision_id (UUID):
+        tenant_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | PlatformPromptPublishResponse]
+        Response[PromptSetPlanResponse | PromptSetResolutionErrorResponse]
     """
 
     kwargs = _get_kwargs(
-        revision_id=revision_id,
+        tenant_id=tenant_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -137,26 +139,26 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    revision_id: UUID,
+    tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | PlatformPromptPublishResponse | None:
-    """Publish Profile Prompt Draft
+) -> PromptSetPlanResponse | PromptSetResolutionErrorResponse | None:
+    """Plan Prompt Set
 
     Args:
-        revision_id (UUID):
+        tenant_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | PlatformPromptPublishResponse
+        PromptSetPlanResponse | PromptSetResolutionErrorResponse
     """
 
     return (
         await asyncio_detailed(
-            revision_id=revision_id,
+            tenant_id=tenant_id,
             client=client,
         )
     ).parsed

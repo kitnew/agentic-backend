@@ -26,6 +26,7 @@ from backend_core.modules.tenants.errors import (
     InboundRouteUnavailableError,
     InvalidTenantConfigError,
     PromptRevisionError,
+    PromptSetResolutionError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
@@ -50,7 +51,12 @@ from backend_core.modules.tenants.schemas import (
     InboundRouteResponse,
     KnowledgeBaseRevisionResponse,
     LegacyConfigImportResponse,
+    PlatformPromptPublishResponse,
     PlatformPromptRevisionResponse,
+    PromptSetApplyResponse,
+    PromptSetDetailResponse,
+    PromptSetPlanResponse,
+    PromptSetResolutionErrorResponse,
     PromptSetRevisionResponse,
     PromptTextRevisionResponse,
     ResolveTenantRouteRequest,
@@ -187,6 +193,20 @@ def prompt_http_exception(
     if isinstance(error, TenantNotFoundError):
         return HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="tenant not found"
+        )
+    if isinstance(error, PromptSetResolutionError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "message": "PromptSet dependency could not be resolved",
+                "errors": [
+                    {
+                        "path": error.path,
+                        "code": error.code,
+                        "message": error.message,
+                    }
+                ],
+            },
         )
     detail = "prompt revision conflict"
     if error.__class__.__name__.endswith("NotFoundError"):
@@ -356,13 +376,20 @@ async def update_system_prompt_draft(
 
 
 @platform_router.post(
-    "/system/drafts/{revision_id}/publish", response_model=PromptTextRevisionResponse
+    "/system/drafts/{revision_id}/publish", response_model=PlatformPromptPublishResponse
 )
 async def publish_system_prompt_draft(
     revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
 ) -> dict[str, object]:
     try:
-        return text_response(await use_cases.publish_system(revision_id))
+        revision, updated, unchanged = await use_cases.publish_system(revision_id)
+        return {
+            **text_response(revision),
+            "rollout": {
+                "updated_tenants": updated,
+                "unchanged_tenants": unchanged,
+            },
+        }
     except PromptRevisionError as error:
         raise prompt_http_exception(error) from error
 
@@ -416,13 +443,20 @@ async def update_profile_prompt_draft(
 
 
 @platform_router.post(
-    "/profiles/drafts/{revision_id}/publish", response_model=PromptTextRevisionResponse
+    "/profiles/drafts/{revision_id}/publish", response_model=PlatformPromptPublishResponse
 )
 async def publish_profile_prompt_draft(
     revision_id: UUID, use_cases: PromptCompositionUseCasesDependency
 ) -> dict[str, object]:
     try:
-        return text_response(await use_cases.publish_profile(revision_id))
+        revision, updated, unchanged = await use_cases.publish_profile(revision_id)
+        return {
+            **text_response(revision),
+            "rollout": {
+                "updated_tenants": updated,
+                "unchanged_tenants": unchanged,
+            },
+        }
     except PromptRevisionError as error:
         raise prompt_http_exception(error) from error
 
@@ -715,6 +749,56 @@ async def active_prompt_set(
         return PromptSetRevisionResponse.model_validate(
             await use_cases.active_prompt_set(tenant_id)
         )
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.get("/{tenant_id}/prompt-set", response_model=PromptSetDetailResponse)
+async def show_prompt_set(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> PromptSetDetailResponse:
+    try:
+        return await use_cases.prompt_set_detail(tenant_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.get(
+    "/{tenant_id}/prompt-set/history", response_model=list[PromptSetDetailResponse]
+)
+async def prompt_set_history(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> list[PromptSetDetailResponse]:
+    try:
+        return await use_cases.prompt_set_history(tenant_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.get(
+    "/{tenant_id}/prompt-set/plan",
+    response_model=PromptSetPlanResponse,
+    responses={422: {"model": PromptSetResolutionErrorResponse}},
+)
+async def plan_prompt_set(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> PromptSetPlanResponse:
+    try:
+        return await use_cases.plan_prompt_set(tenant_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+
+
+@router.post(
+    "/{tenant_id}/prompt-set/apply",
+    response_model=PromptSetApplyResponse,
+    responses={422: {"model": PromptSetResolutionErrorResponse}},
+)
+async def apply_prompt_set(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> PromptSetApplyResponse:
+    try:
+        return await use_cases.apply_prompt_set(tenant_id)
     except (TenantNotFoundError, PromptRevisionError) as error:
         raise prompt_http_exception(error) from error
 

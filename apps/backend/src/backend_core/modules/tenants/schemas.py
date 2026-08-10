@@ -242,6 +242,59 @@ class PromptSetRevisionResponse(BaseModel):
     version: int
 
 
+class PromptSetComponentResponse(BaseModel):
+    revision_id: UUID
+    revision_number: int
+    key: str | None = None
+
+
+class PromptSetCompositionResponse(BaseModel):
+    system: PromptSetComponentResponse
+    profile: PromptSetComponentResponse
+    tenant_prompt: PromptSetComponentResponse
+    knowledge_base: PromptSetComponentResponse
+
+
+class PromptSetDetailResponse(BaseModel):
+    revision: PromptSetRevisionResponse
+    components: PromptSetCompositionResponse
+
+
+class PromptSetComponentPlanResponse(BaseModel):
+    active: PromptSetComponentResponse | None
+    desired: PromptSetComponentResponse
+    changed: bool
+    reason: str | None = None
+
+
+class PromptSetPlanComponentsResponse(BaseModel):
+    system: PromptSetComponentPlanResponse
+    profile: PromptSetComponentPlanResponse
+    tenant_prompt: PromptSetComponentPlanResponse
+    knowledge_base: PromptSetComponentPlanResponse
+
+
+class PromptSetPlanResponse(BaseModel):
+    tenant_id: UUID
+    status: Literal["unchanged", "modified", "missing-active"]
+    active_revision_number: int | None
+    components: PromptSetPlanComponentsResponse
+
+
+class PromptSetApplyResponse(BaseModel):
+    changed: bool
+    prompt_set: PromptSetDetailResponse
+
+
+class PromptSetRolloutSummaryResponse(BaseModel):
+    updated_tenants: int
+    unchanged_tenants: int
+
+
+class PlatformPromptPublishResponse(PromptTextRevisionResponse):
+    rollout: PromptSetRolloutSummaryResponse
+
+
 class CreateDraftRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -307,6 +360,15 @@ class ValidateDraftResponse(BaseModel):
 
 class ValidateConfigResponse(ValidateDraftResponse):
     normalized_config: dict[str, Any] | None = None
+
+
+class PromptSetResolutionErrorDetail(BaseModel):
+    message: str
+    errors: list[ValidationIssue]
+
+
+class PromptSetResolutionErrorResponse(BaseModel):
+    detail: PromptSetResolutionErrorDetail
 
 
 class LegacyTenantIdentity(BaseModel):

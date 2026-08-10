@@ -6,6 +6,7 @@ from json import dumps, loads
 import httpx
 
 from control_plane import __version__
+from control_plane.commands.prompt_sets import run_tenant_prompt_set
 from control_plane.commands.prompts import (
     PromptCommandError,
     run_profile,
@@ -50,6 +51,15 @@ def parser() -> ArgumentParser:
     tenant_config_pull = tenant_config_actions.add_parser("pull")
     tenant_config_pull.add_argument("tenant_slug")
     tenant_config_pull.add_argument("--force", action="store_true")
+    tenant_prompt_set = tenant_actions.add_parser(
+        "prompt-set", help="inspect and reconcile the derived PromptSet"
+    )
+    tenant_prompt_set_actions = tenant_prompt_set.add_subparsers(
+        dest="tenant_prompt_set_action", required=True
+    )
+    for action in ("show", "revisions", "plan", "apply"):
+        command = tenant_prompt_set_actions.add_parser(action)
+        command.add_argument("tenant_slug")
 
     system = resources.add_parser(
         "system-prompt", help="manage the canonical SystemPrompt"
@@ -122,6 +132,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.tenant_config_action,
                 arguments.tenant_slug,
                 force=getattr(arguments, "force", False),
+            )
+            return 0
+        if (
+            arguments.resource == "tenant"
+            and arguments.tenant_action == "prompt-set"
+        ):
+            run_tenant_prompt_set(
+                settings,
+                arguments.tenant_prompt_set_action,
+                arguments.tenant_slug,
             )
             return 0
         response = fetch_tenants(settings)

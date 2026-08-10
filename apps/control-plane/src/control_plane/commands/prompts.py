@@ -35,6 +35,9 @@ from admin_client.generated.models.create_platform_prompt_draft_request import (
 from admin_client.generated.models.create_text_draft_request import (
     CreateTextDraftRequest,
 )
+from admin_client.generated.models.platform_prompt_publish_response import (
+    PlatformPromptPublishResponse,
+)
 from admin_client.generated.models.platform_prompt_revision_response import (
     PlatformPromptRevisionResponse,
 )
@@ -466,10 +469,23 @@ def _publish(
             state.draft.id, client=client
         )
     )
-    revision = _expect_revision(response, PromptTextRevisionResponse)
+    _response_error(response)
+    if not isinstance(
+        response.parsed, (PlatformPromptPublishResponse, PromptTextRevisionResponse)
+    ):
+        raise PromptCommandError(
+            "unexpected client failure: invalid Backend response", 1
+        )
+    revision = response.parsed
     print(
         f"Published {target.label} '{target.key}' revision {revision.revision_number}"
     )
+    if isinstance(revision, PlatformPromptPublishResponse):
+        print(
+            "PromptSet rollout: "
+            f"updated tenants: {revision.rollout.updated_tenants}, "
+            f"unchanged tenants: {revision.rollout.unchanged_tenants}"
+        )
 
 
 def _push_tenant_prompt(

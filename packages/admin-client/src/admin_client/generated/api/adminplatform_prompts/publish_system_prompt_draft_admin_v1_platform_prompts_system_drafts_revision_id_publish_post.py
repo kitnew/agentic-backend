@@ -8,7 +8,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.prompt_text_revision_response import PromptTextRevisionResponse
+from ...models.platform_prompt_publish_response import PlatformPromptPublishResponse
 from ...types import Response
 
 
@@ -28,9 +28,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | PromptTextRevisionResponse | None:
+) -> HTTPValidationError | PlatformPromptPublishResponse | None:
     if response.status_code == 200:
-        response_200 = PromptTextRevisionResponse.from_dict(response.json())
+        response_200 = PlatformPromptPublishResponse.from_dict(response.json())
 
         return response_200
 
@@ -47,7 +47,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | PromptTextRevisionResponse]:
+) -> Response[HTTPValidationError | PlatformPromptPublishResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -60,7 +60,7 @@ def sync_detailed(
     revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | PromptTextRevisionResponse]:
+) -> Response[HTTPValidationError | PlatformPromptPublishResponse]:
     """Publish System Prompt Draft
 
     Args:
@@ -71,7 +71,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | PromptTextRevisionResponse]
+        Response[HTTPValidationError | PlatformPromptPublishResponse]
     """
 
     kwargs = _get_kwargs(
@@ -89,7 +89,7 @@ def sync(
     revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | PromptTextRevisionResponse | None:
+) -> HTTPValidationError | PlatformPromptPublishResponse | None:
     """Publish System Prompt Draft
 
     Args:
@@ -100,7 +100,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | PromptTextRevisionResponse
+        HTTPValidationError | PlatformPromptPublishResponse
     """
 
     return sync_detailed(
@@ -113,7 +113,7 @@ async def asyncio_detailed(
     revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | PromptTextRevisionResponse]:
+) -> Response[HTTPValidationError | PlatformPromptPublishResponse]:
     """Publish System Prompt Draft
 
     Args:
@@ -124,7 +124,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | PromptTextRevisionResponse]
+        Response[HTTPValidationError | PlatformPromptPublishResponse]
     """
 
     kwargs = _get_kwargs(
@@ -140,7 +140,7 @@ async def asyncio(
     revision_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | PromptTextRevisionResponse | None:
+) -> HTTPValidationError | PlatformPromptPublishResponse | None:
     """Publish System Prompt Draft
 
     Args:
@@ -151,7 +151,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | PromptTextRevisionResponse
+        HTTPValidationError | PlatformPromptPublishResponse
     """
 
     return (

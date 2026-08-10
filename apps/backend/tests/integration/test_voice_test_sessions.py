@@ -5,63 +5,101 @@ import jwt
 import pytest
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
+from backend_core.modules.calls.models import CallSession
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.service import CallSessionService
+from backend_core.modules.conversations.models import Conversation, ConversationMessage
+from backend_core.modules.tenants.models import (
+    KnowledgeBase,
+    KnowledgeBaseRevision,
+    ProfilePrompt,
+    ProfilePromptRevision,
+    PromptSet,
+    PromptSetRevision,
+    SystemPrompt,
+    SystemPromptRevision,
+    Tenant,
+    TenantConfigRevision,
+    TenantPrompt,
+    TenantPromptRevision,
+)
 from backend_core.platform.database import Database
 from backend_core.platform.livekit import LiveKitAdapter
 from contracts import LiveKitJobMetadata
 from httpx import ASGITransport, AsyncClient
+from prompt_fixtures import publish_config, publish_prompt_set
+from sqlalchemy import delete, select, update
 
 
-def config_v2(prompt_id: str, greeting: str) -> dict[str, object]:
-    return {
-        "schema_version": 2,
-        "prompt_bundle_revision_id": prompt_id,
-        "localization": {
-            "default_locale": "sk-SK",
-            "timezone": "Europe/Bratislava",
-        },
-        "agent": {"display_name": "Amelia", "greeting": greeting},
-        "conversation": {"scope": "property_only"},
-        "capabilities": {},
-    }
-
-
-async def publish_prompt(
-    client: AsyncClient,
-    tenant_id: str,
-    system_instructions: str,
-) -> str:
-    drafts_url = f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts"
-    draft = await client.post(
-        drafts_url,
-        json={
-            "system_instructions": system_instructions,
-            "tenant_instructions": "Be concise.",
-            "knowledge_text": "Breakfast starts at seven.",
-        },
-    )
-    assert draft.status_code == 201
-    prompt_id = draft.json()["id"]
-    assert (await client.post(f"{drafts_url}/{prompt_id}/publish")).status_code == 200
-    return prompt_id
-
-
-async def publish_config(
-    client: AsyncClient,
-    tenant_id: str,
-    prompt_id: str,
-    greeting: str,
-) -> str:
-    drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
-    draft = await client.post(
-        drafts_url,
-        json={"config": config_v2(prompt_id, greeting)},
-    )
-    assert draft.status_code == 201
-    config_id = draft.json()["id"]
-    assert (await client.post(f"{drafts_url}/{config_id}/publish")).status_code == 200
-    return config_id
+async def cleanup_tenants(database: Database, *slugs: str) -> None:
+    async with database.transaction() as session:
+        tenant_ids = select(Tenant.id).where(Tenant.slug.in_(slugs))
+        await session.execute(
+            update(Tenant)
+            .where(Tenant.slug.in_(slugs))
+            .values(active_prompt_set_revision_id=None)
+        )
+        await session.execute(
+            update(Tenant)
+            .where(Tenant.slug.in_(slugs))
+            .values(active_config_revision_id=None)
+        )
+        await session.execute(
+            delete(ConversationMessage).where(
+                ConversationMessage.tenant_id.in_(tenant_ids)
+            )
+        )
+        await session.execute(
+            delete(Conversation).where(Conversation.tenant_id.in_(tenant_ids))
+        )
+        await session.execute(
+            delete(CallSession).where(CallSession.tenant_id.in_(tenant_ids))
+        )
+        await session.execute(
+            delete(PromptSetRevision).where(PromptSetRevision.tenant_id.in_(tenant_ids))
+        )
+        await session.execute(
+            delete(TenantPromptRevision).where(
+                TenantPromptRevision.tenant_id.in_(tenant_ids)
+            )
+        )
+        await session.execute(
+            delete(KnowledgeBaseRevision).where(
+                KnowledgeBaseRevision.tenant_id.in_(tenant_ids)
+            )
+        )
+        await session.execute(
+            delete(PromptSet).where(PromptSet.tenant_id.in_(tenant_ids))
+        )
+        await session.execute(
+            delete(TenantPrompt).where(TenantPrompt.tenant_id.in_(tenant_ids))
+        )
+        await session.execute(
+            delete(KnowledgeBase).where(KnowledgeBase.tenant_id.in_(tenant_ids))
+        )
+        await session.execute(
+            delete(TenantConfigRevision).where(
+                TenantConfigRevision.tenant_id.in_(tenant_ids)
+            )
+        )
+        await session.execute(delete(Tenant).where(Tenant.slug.in_(slugs)))
+        for revision_model, parent_model, parent_field in (
+            (SystemPromptRevision, SystemPrompt, "system_prompt_id"),
+            (ProfilePromptRevision, ProfilePrompt, "profile_prompt_id"),
+        ):
+            parent_ids = select(parent_model.id).where(
+                parent_model.key.in_(("default", "hotel_assistant"))
+            )
+            await session.execute(
+                delete(revision_model).where(
+                    getattr(revision_model, parent_field).in_(parent_ids)
+                )
+            )
+            await session.execute(
+                delete(parent_model).where(
+                    parent_model.key.in_(("default", "hotel_assistant"))
+                )
+            )
 
 
 class FakeLiveKit:
@@ -141,8 +179,8 @@ async def create_voice_ready_tenant(client: AsyncClient, slug: str) -> str:
     )
     assert tenant.status_code == 201
     tenant_id = tenant.json()["id"]
-    prompt_id = await publish_prompt(client, tenant_id, "Pinned system A")
-    await publish_config(client, tenant_id, prompt_id, "Pinned greeting A")
+    await publish_prompt_set(client, tenant_id, system_text="Pinned system A")
+    await publish_config(client, tenant_id, greeting="Pinned greeting A")
     return tenant_id
 
 
@@ -211,8 +249,8 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
                 "failure_reason",
             }
 
-            prompt_b = await publish_prompt(client, tenant_id, "System B")
-            await publish_config(client, tenant_id, prompt_b, "Greeting B")
+            await publish_prompt_set(client, tenant_id, system_text="System B")
+            await publish_config(client, tenant_id, greeting="Greeting B")
 
             runtime_token = service_token(
                 service="voice-agent",
@@ -226,9 +264,7 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
             )
             assert runtime.status_code == 200
             assert runtime.json()["greeting"] == "Pinned greeting A"
-            assert runtime.json()["prompt"]["system_instructions"] == (
-                "Pinned system A"
-            )
+            assert runtime.json()["prompt"]["system_prompt"] == ("Pinned system A")
             assert (
                 not {
                     "schema_version",
@@ -246,6 +282,7 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
                 )
             ).status_code == 403
     finally:
+        await cleanup_tenants(database, "web-call-hotel")
         await livekit.aclose()
         await database.close()
 
@@ -297,6 +334,7 @@ async def test_livekit_setup_failure_is_compensated_and_marks_call_failed(
             assert bool(livekit.deleted) is (failure != "dispatch")
             assert bool(livekit.deleted_rooms) is (failure != "dispatch")
     finally:
+        await cleanup_tenants(database, f"{failure}-failure-hotel")
         await livekit.aclose()
         await database.close()
 
@@ -345,5 +383,6 @@ async def test_admin_test_session_idempotency_creates_one_conversation(
             assert conversation.json()["status"] == "open"
             assert conversation.json()["messages"] == []
     finally:
+        await cleanup_tenants(database, "idempotent-test-session-hotel")
         await livekit.aclose()
         await database.close()

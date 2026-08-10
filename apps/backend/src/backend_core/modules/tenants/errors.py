@@ -66,6 +66,13 @@ class InvalidPromptSetError(PromptRevisionError):
     pass
 
 
+class PromptSetResolutionError(PromptRevisionError):
+    def __init__(self, path: str, code: str, message: str) -> None:
+        self.path = path
+        self.code = code
+        self.message = message
+
+
 class ConfigRevisionError(Exception):
     pass
 
