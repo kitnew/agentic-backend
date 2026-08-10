@@ -271,6 +271,13 @@ class UpdateDraftRequest(BaseModel):
         return self
 
 
+class ValidateConfigRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Annotated[int, Field(gt=0)]
+    config: dict[str, Any]
+
+
 class ConfigRevisionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -296,6 +303,10 @@ class ValidationIssue(BaseModel):
 class ValidateDraftResponse(BaseModel):
     valid: bool
     errors: list[ValidationIssue] = Field(default_factory=list)
+
+
+class ValidateConfigResponse(ValidateDraftResponse):
+    normalized_config: dict[str, Any] | None = None
 
 
 class LegacyTenantIdentity(BaseModel):

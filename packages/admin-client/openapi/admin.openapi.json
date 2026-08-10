@@ -1844,6 +1844,59 @@
         "title": "UpdateTextDraftRequest",
         "type": "object"
       },
+      "ValidateConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
+          "schema_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "config"
+        ],
+        "title": "ValidateConfigRequest",
+        "type": "object"
+      },
+      "ValidateConfigResponse": {
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "normalized_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Config"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid"
+        ],
+        "title": "ValidateConfigResponse",
+        "type": "object"
+      },
       "ValidateDraftResponse": {
         "properties": {
           "errors": {
@@ -3073,6 +3126,64 @@
           }
         ],
         "summary": "List Config Revisions",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/config/validate": {
+      "post": {
+        "operationId": "validate_config_admin_v1_tenants__tenant_id__config_validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Validate Config",
         "tags": [
           "admin:tenants"
         ]

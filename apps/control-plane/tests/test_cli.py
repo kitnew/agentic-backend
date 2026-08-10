@@ -183,6 +183,45 @@ def test_tenant_prompt_command_hierarchy_and_state_dir(
     }
 
 
+def test_tenant_config_command_hierarchy_and_state_dir(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
+    monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
+    seen: dict[str, object] = {}
+
+    def run(
+        settings: Settings,
+        action: str,
+        slug: str,
+        *,
+        force: bool = False,
+    ) -> None:
+        seen.update(settings=settings, action=action, slug=slug, force=force)
+
+    monkeypatch.setattr(cli, "run_tenant_config", run)
+    assert (
+        cli.main(
+            [
+                "--state-dir",
+                str(tmp_path),
+                "tenant",
+                "config",
+                "pull",
+                "penzion-grand",
+                "--force",
+            ]
+        )
+        == 0
+    )
+    assert seen == {
+        "settings": Settings("https://backend.example", "secret", tmp_path),
+        "action": "pull",
+        "slug": "penzion-grand",
+        "force": True,
+    }
+
+
 @pytest.mark.parametrize(
     ("failure", "code", "message"),
     [

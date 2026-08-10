@@ -3,12 +3,12 @@ from uuid import UUID
 import pytest
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
-from backend_core.modules.tenants.models import Tenant
+from backend_core.modules.tenants.models import ProfilePrompt, Tenant
 from backend_core.platform.database import Database
 from contracts import TenantConfigV1
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
-from sqlalchemy import update
+from sqlalchemy import delete, update
 from sqlalchemy.exc import IntegrityError
 
 
@@ -26,6 +26,109 @@ def config_v1(*, greeting: str = "Dobrý deň...") -> dict[str, object]:
         "conversation": {"scope": "property_only"},
         "capabilities": {},
     }
+
+
+def config_v3(*, profile: str = "hotel_assistant") -> dict[str, object]:
+    return {
+        "schema_version": 3,
+        "business": {"name": "Config Hotel", "type": "hotel"},
+        "localization": {
+            "default_locale": "sk-SK",
+            "timezone": "Europe/Bratislava",
+        },
+        "agent": {
+            "display_name": "Amélia",
+            "greeting": "Dobrý deň...",
+            "profile": profile,
+        },
+        "conversation": {"scope": "property_only"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_candidate_config_validation_is_read_only_and_normalizes_v3(
+    migrated_database_url: str,
+    app_settings: Settings,
+    admin_headers: dict[str, str],
+) -> None:
+    database = Database(migrated_database_url)
+    app = create_app(settings=app_settings, database=database)
+    transport = ASGITransport(app=app)
+
+    try:
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            headers=admin_headers,
+        ) as client:
+            tenant = await client.post(
+                "/admin/v1/tenants",
+                json={
+                    "slug": "candidate-config-hotel",
+                    "display_name": "Candidate Config Hotel",
+                    "business_type": "hotel",
+                },
+            )
+            tenant_id = tenant.json()["id"]
+            validate_url = f"/admin/v1/tenants/{tenant_id}/config/validate"
+
+            unknown_profile = await client.post(
+                validate_url,
+                json={"schema_version": 3, "config": config_v3()},
+            )
+            assert unknown_profile.status_code == 200
+            assert unknown_profile.json()["errors"] == [
+                {
+                    "path": "agent.profile",
+                    "code": "profile_not_found",
+                    "message": "ProfilePrompt key does not exist",
+                }
+            ]
+
+            profile = await client.post(
+                "/admin/v1/platform/prompts/profiles/drafts",
+                json={"key": "hotel_assistant", "text": "Hotel profile"},
+            )
+            assert profile.status_code == 201
+
+            valid = await client.post(
+                validate_url,
+                json={"schema_version": 3, "config": config_v3()},
+            )
+            assert valid.status_code == 200
+            assert valid.json()["valid"] is True
+            assert valid.json()["normalized_config"]["contact"] == {
+                "address": None,
+                "phones": [],
+                "emails": [],
+                "website": None,
+            }
+            assert valid.json()["normalized_config"]["capabilities"] == {}
+
+            invalid = await client.post(
+                validate_url,
+                json={
+                    "schema_version": 3,
+                    "config": {
+                        **config_v3(),
+                        "localization": {
+                            "default_locale": "sk-SK",
+                            "timezone": "Mars/Olympus",
+                        },
+                    },
+                },
+            )
+            assert invalid.status_code == 200
+            assert invalid.json()["errors"][0]["path"] == "localization.timezone"
+            assert (
+                await client.get(f"/admin/v1/tenants/{tenant_id}/config/revisions")
+            ).json() == []
+    finally:
+        async with database.transaction() as session:
+            await session.execute(
+                delete(ProfilePrompt).where(ProfilePrompt.key == "hotel_assistant")
+            )
+        await database.close()
 
 
 @pytest.mark.asyncio
@@ -139,8 +242,8 @@ async def test_config_revision_lifecycle(
             invalid_update_response = await client.patch(
                 f"{config_url}/drafts/{revision_2_id}",
                 json={
-                    "schema_version": 3,
-                    "config": {**config_v1(greeting="Ahoj"), "schema_version": 3},
+                    "schema_version": 4,
+                    "config": {**config_v1(greeting="Ahoj"), "schema_version": 4},
                 },
                 headers={"If-Match": '"1"'},
             )
@@ -164,7 +267,7 @@ async def test_config_revision_lifecycle(
                     {
                         "path": "schema_version",
                         "code": "unsupported_schema_version",
-                        "message": "Only schema_version 1 and 2 are supported",
+                        "message": "Only schema_version 1, 2 and 3 are supported",
                     }
                 ],
             }

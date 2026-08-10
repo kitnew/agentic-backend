@@ -12,6 +12,7 @@ from control_plane.commands.prompts import (
     run_system_prompt,
     run_tenant_prompt,
 )
+from control_plane.commands.tenant_configs import run_tenant_config
 from control_plane.commands.tenants import fetch_tenants
 from control_plane.settings import Settings, SettingsError
 
@@ -37,6 +38,18 @@ def parser() -> ArgumentParser:
     tenant_prompt_pull = tenant_prompt_actions.add_parser("pull")
     tenant_prompt_pull.add_argument("tenant_slug")
     tenant_prompt_pull.add_argument("--force", action="store_true")
+    tenant_config = tenant_actions.add_parser(
+        "config", help="manage the tenant-owned TenantConfig"
+    )
+    tenant_config_actions = tenant_config.add_subparsers(
+        dest="tenant_config_action", required=True
+    )
+    for action in ("show", "revisions", "plan", "push", "publish"):
+        command = tenant_config_actions.add_parser(action)
+        command.add_argument("tenant_slug")
+    tenant_config_pull = tenant_config_actions.add_parser("pull")
+    tenant_config_pull.add_argument("tenant_slug")
+    tenant_config_pull.add_argument("--force", action="store_true")
 
     system = resources.add_parser(
         "system-prompt", help="manage the canonical SystemPrompt"
@@ -99,6 +112,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_tenant_prompt(
                 settings,
                 arguments.tenant_prompt_action,
+                arguments.tenant_slug,
+                force=getattr(arguments, "force", False),
+            )
+            return 0
+        if arguments.resource == "tenant" and arguments.tenant_action == "config":
+            run_tenant_config(
+                settings,
+                arguments.tenant_config_action,
                 arguments.tenant_slug,
                 force=getattr(arguments, "force", False),
             )

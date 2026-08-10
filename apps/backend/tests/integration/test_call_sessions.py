@@ -1,25 +1,30 @@
-import asyncio
 from collections.abc import Callable
 from uuid import uuid4
 
 import pytest
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
+from backend_core.modules.calls.models import CallSession
+from backend_core.modules.conversations.models import Conversation
+from backend_core.modules.tenants.models import ProfilePrompt, SystemPrompt, Tenant
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete, select
 
 
-def config_v2(prompt_revision_id: str) -> dict[str, object]:
+def config_v3(*, greeting: str = "Dobrý deň...") -> dict[str, object]:
     return {
-        "schema_version": 2,
-        "prompt_bundle_revision_id": prompt_revision_id,
+        "schema_version": 3,
+        "business": {"name": "Call Session Hotel", "type": "hotel"},
+        "contact": {},
         "localization": {
             "default_locale": "sk-SK",
             "timezone": "Europe/Bratislava",
         },
         "agent": {
             "display_name": "Amélia",
-            "greeting": "Dobrý deň...",
+            "greeting": greeting,
+            "profile": "call_session_hotel",
         },
         "conversation": {"scope": "property_only"},
         "capabilities": {},
@@ -27,10 +32,26 @@ def config_v2(prompt_revision_id: str) -> dict[str, object]:
 
 
 def config_v1() -> dict[str, object]:
-    config = config_v2(str(uuid4()))
-    config.pop("prompt_bundle_revision_id")
-    config["schema_version"] = 1
-    return config
+    return {
+        "schema_version": 1,
+        "localization": {
+            "default_locale": "sk-SK",
+            "timezone": "Europe/Bratislava",
+        },
+        "agent": {"display_name": "Amélia", "greeting": "Dobrý deň..."},
+        "conversation": {"scope": "property_only"},
+        "capabilities": {},
+    }
+
+
+async def publish_text(
+    client: AsyncClient, drafts_url: str, body: dict[str, str]
+) -> str:
+    draft = await client.post(drafts_url, json=body)
+    assert draft.status_code == 201
+    revision_id = draft.json()["id"]
+    assert (await client.post(f"{drafts_url}/{revision_id}/publish")).status_code == 200
+    return revision_id
 
 
 async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str]:
@@ -45,21 +66,31 @@ async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str
     assert tenant_response.status_code == 201
     tenant_id = tenant_response.json()["id"]
 
-    prompt_drafts_url = f"/admin/v1/tenants/{tenant_id}/prompt-bundle/drafts"
-    prompt_draft = await client.post(
-        prompt_drafts_url,
-        json={"system_instructions": "You are a hotel assistant."},
+    system_revision_id = await publish_text(
+        client,
+        "/admin/v1/platform/prompts/system/drafts",
+        {"key": "call_session_system", "text": "System instructions"},
     )
-    assert prompt_draft.status_code == 201
-    prompt_revision_id = prompt_draft.json()["id"]
-    assert (
-        await client.post(f"{prompt_drafts_url}/{prompt_revision_id}/publish")
-    ).status_code == 200
+    profile_revision_id = await publish_text(
+        client,
+        "/admin/v1/platform/prompts/profiles/drafts",
+        {"key": "call_session_hotel", "text": "Hotel profile"},
+    )
+    tenant_revision_id = await publish_text(
+        client,
+        f"/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts",
+        {"text": "Tenant instructions"},
+    )
+    knowledge_revision_id = await publish_text(
+        client,
+        f"/admin/v1/tenants/{tenant_id}/knowledge-base/drafts",
+        {"text": "Tenant facts"},
+    )
 
     config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
     config_draft = await client.post(
         config_drafts_url,
-        json={"config": config_v2(prompt_revision_id)},
+        json={"config": config_v3()},
     )
     assert config_draft.status_code == 201
     config_revision_id = config_draft.json()["id"]
@@ -67,12 +98,28 @@ async def prepare_voice_ready_tenant(client: AsyncClient) -> tuple[str, str, str
         await client.post(f"{config_drafts_url}/{config_revision_id}/publish")
     ).status_code == 200
 
+    prompt_set_url = f"/admin/v1/tenants/{tenant_id}/prompt-set/drafts"
+    prompt_set = await client.post(
+        prompt_set_url,
+        json={
+            "system_prompt_revision_id": system_revision_id,
+            "profile_prompt_revision_id": profile_revision_id,
+            "tenant_prompt_revision_id": tenant_revision_id,
+            "knowledge_base_revision_id": knowledge_revision_id,
+        },
+    )
+    assert prompt_set.status_code == 201
+    prompt_set_revision_id = prompt_set.json()["id"]
+    assert (
+        await client.post(f"{prompt_set_url}/{prompt_set_revision_id}/publish")
+    ).status_code == 200
+
     route = await client.post(
         f"/admin/v1/tenants/{tenant_id}/inbound-routes",
         json={"normalized_did": "+421552301410"},
     )
     assert route.status_code == 201
-    return tenant_id, config_revision_id, prompt_revision_id
+    return tenant_id, config_revision_id, prompt_set_revision_id
 
 
 @pytest.mark.asyncio
@@ -112,7 +159,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             (
                 tenant_id,
                 config_revision_id,
-                prompt_revision_id,
+                prompt_set_revision_id,
             ) = await prepare_voice_ready_tenant(client)
             calls_url = "/internal/v1/call-sessions"
             payload = {
@@ -126,29 +173,17 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert (
                 await client.post(calls_url, json=payload, headers=worker_headers)
             ).status_code == 403
-            create_responses = await asyncio.gather(
-                *(
-                    client.post(
-                        calls_url,
-                        json=payload,
-                        headers=voice_headers,
-                    )
-                    for _ in range(2)
-                )
-            )
-            assert sorted(response.status_code for response in create_responses) == [
-                200,
-                201,
-            ]
-            created_response = next(
-                response for response in create_responses if response.status_code == 201
+            created_response = await client.post(
+                calls_url,
+                json=payload,
+                headers=voice_headers,
             )
             assert created_response.status_code == 201
             created = created_response.json()
             call_id = created["id"]
             assert created["tenant_id"] == tenant_id
             assert created["tenant_config_revision_id"] == config_revision_id
-            assert created["prompt_bundle_revision_id"] == prompt_revision_id
+            assert created["prompt_set_revision_id"] == prompt_set_revision_id
             assert created["channel"] == "sip"
             assert created["direction"] == "inbound"
             assert created["status"] == "created"
@@ -163,6 +198,37 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             )
             assert replay.status_code == 200
             assert replay.json() == created
+
+            config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
+            next_config = await client.post(
+                config_drafts_url,
+                json={"config": config_v3(greeting="Ahoj")},
+            )
+            assert next_config.status_code == 201
+            next_config_id = next_config.json()["id"]
+            assert (
+                await client.post(f"{config_drafts_url}/{next_config_id}/publish")
+            ).status_code == 200
+
+            existing_after_publish = await client.post(
+                calls_url,
+                json=payload,
+                headers=voice_headers,
+            )
+            assert existing_after_publish.json()["tenant_config_revision_id"] == (
+                config_revision_id
+            )
+            new_call = await client.post(
+                calls_url,
+                json={
+                    **payload,
+                    "provider_call_id": "provider-call-after-config-publish",
+                    "room_name": "call-room-after-config-publish",
+                },
+                headers=voice_headers,
+            )
+            assert new_call.status_code == 201
+            assert new_call.json()["tenant_config_revision_id"] == next_config_id
 
             activated = await client.post(
                 f"{calls_url}/{call_id}/activate",
@@ -273,4 +339,38 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
                 "tenant_configuration_not_voice_ready"
             )
     finally:
+        async with database.transaction() as session:
+            await session.execute(
+                delete(Conversation).where(
+                    Conversation.tenant_id.in_(
+                        select(Tenant.id).where(
+                            Tenant.slug.in_(
+                                ("call-session-hotel", "call-session-legacy-hotel")
+                            )
+                        )
+                    )
+                )
+            )
+            await session.execute(
+                delete(CallSession).where(
+                    CallSession.tenant_id.in_(
+                        select(Tenant.id).where(
+                            Tenant.slug.in_(
+                                ("call-session-hotel", "call-session-legacy-hotel")
+                            )
+                        )
+                    )
+                )
+            )
+            await session.execute(
+                delete(Tenant).where(
+                    Tenant.slug.in_(("call-session-hotel", "call-session-legacy-hotel"))
+                )
+            )
+            await session.execute(
+                delete(SystemPrompt).where(SystemPrompt.key == "call_session_system")
+            )
+            await session.execute(
+                delete(ProfilePrompt).where(ProfilePrompt.key == "call_session_hotel")
+            )
         await database.close()

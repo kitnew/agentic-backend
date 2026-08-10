@@ -8,6 +8,7 @@ Supported canonical paths:
 ```text
 platform/system_prompt.md
 platform/profiles/<profile_key>.md
+tenants/<tenant_slug>/tenant.yaml
 tenants/<tenant_slug>/tenant_prompt.md
 ```
 
@@ -40,6 +41,12 @@ agentctl tenant prompt pull penzion-grand
 agentctl tenant prompt plan penzion-grand
 agentctl tenant prompt push penzion-grand
 agentctl tenant prompt publish penzion-grand
+
+agentctl tenant config pull penzion-grand
+# edit control-plane/tenants/penzion-grand/tenant.yaml
+agentctl tenant config plan penzion-grand
+agentctl tenant config push penzion-grand
+agentctl tenant config publish penzion-grand
 ```
 
 `pull` creates parent directories and refuses to overwrite differing local
@@ -53,6 +60,48 @@ deterministic tenant data belongs in future TenantConfig, factual sources in
 KnowledgeBase, connection metadata in integrations/capability bindings, and
 credentials in secrets. Publishing a TenantPrompt revision does not activate
 it: a separately published PromptSet must reference that revision.
+
+`tenant.yaml` contains structured deterministic TenantConfig data;
+`tenant_prompt.md` contains tenant-specific behavioral instructions; and the
+future `knowledge/` directory will contain factual/document sources. YAML uses
+the current explicit `schema_version: 3`, stable model-field ordering, two-space
+indentation, Unicode text, block style, sorted free-form capability mappings,
+and one final newline. Mapping order and formatting do not affect comparison.
+An explicit `pull --force` writes canonical formatting and does not preserve
+comments. TenantConfig schema migrations are never implicit: historical V1/V2/V3
+revisions remain immutable and a future V4 will require an explicit migration
+workflow.
+
+`tenant config push` writes and validates only a draft. `tenant config publish`
+activates that revision for new calls according to Backend semantics; existing
+calls remain pinned to the revision with which they started. It does not alter
+PromptSet state.
+
+Current authoring shape:
+
+```yaml
+schema_version: 3
+business:
+  name: Penzión Grand
+  type: hotel
+contact:
+  address: null
+  phones:
+    - "+421900000000"
+  emails:
+    - info@example.com
+  website: null
+localization:
+  default_locale: sk-SK
+  timezone: Europe/Bratislava
+agent:
+  display_name: Amélia
+  greeting: Dobrý deň
+  profile: hotel_assistant
+conversation:
+  scope: property_only
+capabilities: {}
+```
 
 Future slices may extend this tree without changing these paths:
 

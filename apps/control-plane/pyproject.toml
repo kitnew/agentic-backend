@@ -6,6 +6,7 @@ requires-python = ">=3.14.6"
 dependencies = [
     "admin-client",
     "httpx>=0.28.1,<0.29.0",
+    "pyyaml>=6.0.3",
 ]
 
 [tool.uv.sources]

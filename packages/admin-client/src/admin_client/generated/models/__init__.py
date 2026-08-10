@@ -65,6 +65,12 @@ from .update_inbound_route_request import UpdateInboundRouteRequest
 from .update_integration_connection_request import UpdateIntegrationConnectionRequest
 from .update_prompt_set_draft_request import UpdatePromptSetDraftRequest
 from .update_text_draft_request import UpdateTextDraftRequest
+from .validate_config_request import ValidateConfigRequest
+from .validate_config_request_config import ValidateConfigRequestConfig
+from .validate_config_response import ValidateConfigResponse
+from .validate_config_response_normalized_config_type_0 import (
+    ValidateConfigResponseNormalizedConfigType0,
+)
 from .validate_draft_response import ValidateDraftResponse
 from .validation_error import ValidationError
 from .validation_error_context import ValidationErrorContext
@@ -130,6 +136,10 @@ __all__ = (
     "UpdateIntegrationConnectionRequest",
     "UpdatePromptSetDraftRequest",
     "UpdateTextDraftRequest",
+    "ValidateConfigRequest",
+    "ValidateConfigRequestConfig",
+    "ValidateConfigResponse",
+    "ValidateConfigResponseNormalizedConfigType0",
     "ValidateDraftResponse",
     "ValidationError",
     "ValidationErrorContext",

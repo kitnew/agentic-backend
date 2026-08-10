@@ -62,6 +62,8 @@ from backend_core.modules.tenants.schemas import (
     UpdateInboundRouteRequest,
     UpdatePromptSetDraftRequest,
     UpdateTextDraftRequest,
+    ValidateConfigRequest,
+    ValidateConfigResponse,
     ValidateDraftResponse,
 )
 from backend_core.modules.tenants.service import (
@@ -103,6 +105,7 @@ def get_config_use_cases(
         TenantRepository(session),
         ConfigRevisionRepository(session),
         IntegrationConnectionRepository(session),
+        PromptCompositionRepository(session),
     )
 
 
@@ -831,6 +834,26 @@ async def update_config_draft(
         raise config_http_exception(error) from error
     response.headers["ETag"] = etag(revision.version)
     return ConfigRevisionResponse.model_validate(revision)
+
+
+@router.post(
+    "/{tenant_id}/config/validate",
+    response_model=ValidateConfigResponse,
+)
+async def validate_config(
+    tenant_id: UUID,
+    data: ValidateConfigRequest,
+    use_cases: ConfigUseCasesDependency,
+) -> ValidateConfigResponse:
+    try:
+        config, errors = await use_cases.validate_config(tenant_id, data)
+    except (TenantNotFoundError, ConfigRevisionError) as error:
+        raise config_http_exception(error) from error
+    return ValidateConfigResponse(
+        valid=not errors,
+        errors=errors,
+        normalized_config=(config.model_dump(mode="json") if config else None),
+    )
 
 
 @router.post(

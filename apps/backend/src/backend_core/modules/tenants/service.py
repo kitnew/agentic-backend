@@ -79,6 +79,7 @@ from backend_core.modules.tenants.schemas import (
     UpdateInboundRouteRequest,
     UpdatePromptSetDraftRequest,
     UpdateTextDraftRequest,
+    ValidateConfigRequest,
     ValidationIssue,
 )
 
@@ -591,10 +592,12 @@ class ConfigUseCases:
         tenants: TenantRepository,
         revisions: ConfigRevisionRepository,
         connections: IntegrationConnectionRepository,
+        prompts: PromptCompositionRepository,
     ) -> None:
         self._tenants = tenants
         self._revisions = revisions
         self._connections = connections
+        self._prompts = prompts
 
     async def create_config_draft(
         self,
@@ -681,6 +684,21 @@ class ConfigUseCases:
             raise ConfigRevisionImmutableError
         _, errors = await self._validate_config(revision)
         return errors
+
+    async def validate_config(
+        self,
+        tenant_id: UUID,
+        data: ValidateConfigRequest,
+    ) -> tuple[TenantConfig | None, list[ValidationIssue]]:
+        if await self._tenants.get(tenant_id) is None:
+            raise TenantNotFoundError
+        revision = TenantConfigRevision(
+            tenant_id=tenant_id,
+            revision_number=1,
+            schema_version=data.schema_version,
+            config=data.config,
+        )
+        return await self._validate_config(revision)
 
     async def publish_config_draft(
         self,
@@ -842,6 +860,20 @@ class ConfigUseCases:
             )
             if capability_errors:
                 return None, capability_errors
+        if (
+            isinstance(config, TenantConfigV3)
+            and await self._prompts.profile_prompt(config.agent.profile) is None
+        ):
+            return (
+                None,
+                [
+                    ValidationIssue(
+                        path="agent.profile",
+                        code="profile_not_found",
+                        message="ProfilePrompt key does not exist",
+                    )
+                ],
+            )
         return config, []
 
     async def _validate_capabilities(

@@ -7,6 +7,7 @@ def test_admin_openapi_is_isolated_deterministic_and_unique() -> None:
 
     assert "/admin/v1/tenants" in paths
     assert "/admin/v1/tenants/by-slug/{slug}" in paths
+    assert "/admin/v1/tenants/{tenant_id}/config/validate" in paths
     assert all(path.startswith("/admin/v1/") for path in paths)
     assert "/admin/v1/tenants/{tenant_id}/config/import-yaml" not in paths
     assert not any(path.startswith("/internal/") for path in paths)

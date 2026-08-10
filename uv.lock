@@ -474,12 +474,14 @@ source = { editable = "apps/control-plane" }
 dependencies = [
     { name = "admin-client" },
     { name = "httpx" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "admin-client", editable = "packages/admin-client" },
     { name = "httpx", specifier = ">=0.28.1,<0.29.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [[package]]

@@ -1,0 +1,19 @@
+agent:
+  display_name: Amelia
+  greeting: Dobrý deň, tu je Amélia. Ako vám môžem pomôcť?
+  profile: hotel_assistant
+business:
+  name: Debug Hotel
+  type: hotel
+conversation:
+  scope: property_only
+localization:
+  default_locale: sk-SK
+  timezone: Europe/Bratislava
+schema_version: 3
+capabilities: {}
+contact:
+  address: null
+  emails: ["user.example@gmail.com", "user.example@example.com"]
+  phones: ["+421900000000"]
+  website: null
