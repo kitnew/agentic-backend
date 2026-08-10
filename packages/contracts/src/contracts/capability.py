@@ -1,11 +1,18 @@
+from __future__ import annotations
+
+import re
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 JsonScalar = str | int | float | bool | None
+_DECIMAL_PATTERN = re.compile(
+    r"^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$"
+)
 
 
 class _Contract(BaseModel):
@@ -29,6 +36,32 @@ class RuntimeCapabilityDefinition(_Contract):
     announcement: str = Field(min_length=1, max_length=1000)
     input_schema: dict[str, object]
     requires_confirmation: bool = False
+
+
+class CalculatorRequest(_Contract):
+    operation: Literal["add", "subtract", "multiply", "divide", "percentage"]
+    operands: list[str] = Field(min_length=2, max_length=10)
+
+    @field_validator("operands")
+    @classmethod
+    def validate_decimal_operands(cls, values: list[str]) -> list[str]:
+        for value in values:
+            if not _DECIMAL_PATTERN.fullmatch(value):
+                raise ValueError("operands must be decimal values")
+            try:
+                decimal = Decimal(value)
+            except InvalidOperation as exc:
+                raise ValueError("operands must be decimal values") from exc
+            if not decimal.is_finite():
+                raise ValueError("operands must be finite decimal values")
+        return values
+
+    @model_validator(mode="after")
+    def validate_operand_count(self) -> CalculatorRequest:
+        required = 2 if self.operation in {"subtract", "divide", "percentage"} else None
+        if required is not None and len(self.operands) != required:
+            raise ValueError(f"{self.operation} requires exactly 2 operands")
+        return self
 
 
 class GoogleSheetsIdempotency(_Contract):

@@ -16,6 +16,7 @@ from livekit.agents import llm
 from pydantic import ValidationError
 
 from voice_agent.backend import BackendClient, CallFinalizer
+from voice_agent.calculator import calculator_tool
 from voice_agent.persistence import ConversationPersistence
 from voice_agent.providers import create_agent_session
 from voice_agent.settings import VoiceAgentSettings
@@ -87,10 +88,25 @@ def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
             f"Timezone: {context.timezone}",
             f"Conversation scope: {context.conversation_scope}",
             "Use a capability tool when its inputs are known. Do not promise success before its result. reservation_submit_request submits a request; it never confirms a reservation.",
+            "Use the calculator whenever exact arithmetic is required. It performs one operation per call; decompose multi-step calculations into sequential calls and pass each result forward. It does not interpret business meaning. percentage(A, B) means B percent of A.",
             context.prompt.knowledge_context,
         )
         if part
     )
+
+
+def build_agent_tools(
+    context: VoiceAgentRuntimeContext,
+    backend: BackendClient,
+    call_id: UUID,
+) -> list[llm.Tool | llm.Toolset]:
+    return [
+        calculator_tool(),
+        *[
+            capability_tool(tool, backend, call_id)
+            for tool in context.capabilities
+        ],
+    ]
 
 
 def capability_tool(
@@ -224,10 +240,7 @@ async def run_job(
             room=ctx.room,
             agent=agents.Agent(
                 instructions=assemble_instructions(context),
-                tools=[
-                    capability_tool(tool, backend, metadata.call_session_id)
-                    for tool in context.capabilities
-                ],
+                tools=build_agent_tools(context, backend, metadata.call_session_id),
             ),
         )
         try:

@@ -1,4 +1,5 @@
 from contracts.capability import (
+    CalculatorRequest,
     CapabilityConfirmationConfirmRequest,
     CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
@@ -69,6 +70,7 @@ __all__ = [
     "TENANT_CONFIG_SCHEMAS",
     "ActiveTenantConfig",
     "AppendConversationMessage",
+    "CalculatorRequest",
     "CallLifecycleResponse",
     "CallLifecycleStatus",
     "CapabilityBusinessPolicy",

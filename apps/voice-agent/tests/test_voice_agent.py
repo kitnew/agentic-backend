@@ -13,8 +13,10 @@ from livekit import agents
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
 from voice_agent.backend import BackendClient
+from voice_agent.calculator import calculate, calculator_tool
 from voice_agent.main import (
     assemble_instructions,
+    build_agent_tools,
     capability_tool,
     close_failure_reason,
     on_request,
@@ -177,8 +179,69 @@ def test_prompt_assembly_uses_only_runtime_material() -> None:
         "Conversation scope: property_only\n\n"
         "Use a capability tool when its inputs are known. Do not promise success "
         "before its result. reservation_submit_request submits a request; it never "
-        "confirms a reservation.\n\nKnowledge"
+        "confirms a reservation.\n\n"
+        "Use the calculator whenever exact arithmetic is required. It performs one "
+        "operation per call; decompose multi-step calculations into sequential calls "
+        "and pass each result forward. It does not interpret business meaning. "
+        "percentage(A, B) means B percent of A.\n\nKnowledge"
     )
+
+
+@pytest.mark.parametrize(
+    ("operation", "operands", "expected"),
+    [
+        ("add", ["0.1", "0.2"], "0.3"),
+        ("subtract", ["5", "2.5"], "2.5"),
+        ("multiply", ["55", "3"], "165"),
+        ("divide", ["1", "4"], "0.25"),
+        ("percentage", ["200", "15"], "30"),
+    ],
+)
+def test_calculator_operations_are_exact(
+    operation: str, operands: list[str], expected: str
+) -> None:
+    from contracts import CalculatorRequest
+
+    assert calculate(CalculatorRequest(operation=operation, operands=operands)) == expected
+
+
+@pytest.mark.parametrize("operand", ["NaN", "Infinity", "1 + 2", ""])
+def test_calculator_rejects_invalid_decimal_values(operand: str) -> None:
+    from contracts import CalculatorRequest
+
+    with pytest.raises(ValidationError, match="decimal values"):
+        CalculatorRequest(operation="add", operands=[operand, "1"])
+
+
+@pytest.mark.asyncio
+async def test_calculator_tool_returns_result_and_structured_failures() -> None:
+    tool = calculator_tool()
+    context = SimpleNamespace()
+    assert await tool._func(  # type: ignore[attr-defined]
+        context, {"operation": "multiply", "operands": ["55", "3"]}
+    ) == {"result": "165"}
+    assert await tool._func(  # type: ignore[attr-defined]
+        context, {"operation": "divide", "operands": ["1", "0"]}
+    ) == {
+        "status": "failed",
+        "error_code": "division_by_zero",
+        "message": "The calculator cannot divide by zero",
+    }
+    assert await tool._func(  # type: ignore[attr-defined]
+        context, {"operation": "add", "operands": ["1 + 2", "3"]}
+    ) == {
+        "status": "failed",
+        "error_code": "invalid_input",
+        "message": "Invalid calculator input",
+    }
+
+
+def test_calculator_is_always_added_before_tenant_tools() -> None:
+    context = runtime_context()
+    tools = build_agent_tools(context.model_copy(update={"capabilities": []}), None, uuid4())  # type: ignore[arg-type]
+    assert len(tools) == 1
+    assert tools[0]._info.name == "calculator"  # type: ignore[attr-defined]
+    assert "one arithmetic operation per call" in tools[0]._info.raw_schema["description"]  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from contracts import (
+    CalculatorRequest,
     ExecutionPlan,
     GoogleSheetsAppendValuesPlan,
     IntegrationJob,
@@ -112,3 +113,37 @@ def test_runtime_capability_forbids_execution_details() -> None:
                 "spreadsheet_id": "secret-destination",
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("operation", "operands"),
+    [
+        ("add", ["1", "2"]),
+        ("multiply", ["2", "3", "4"]),
+        ("subtract", ["5", "2"]),
+        ("divide", ["5", "2"]),
+        ("percentage", ["200", "15"]),
+    ],
+)
+def test_calculator_request_accepts_supported_operations(
+    operation: str, operands: list[str]
+) -> None:
+    assert CalculatorRequest(operation=operation, operands=operands).operands == operands
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"operation": "unknown", "operands": ["1", "2"]},
+        {"operation": "add", "operands": ["1"]},
+        {"operation": "add", "operands": [str(index) for index in range(11)]},
+        {"operation": "subtract", "operands": ["1", "2", "3"]},
+        {"operation": "divide", "operands": ["1"]},
+        {"operation": "percentage", "operands": ["1", "2", "3"]},
+        {"operation": "add", "operands": [1, "2"]},
+        {"operation": "add", "operands": ["1", "2"], "extra": True},
+    ],
+)
+def test_calculator_request_rejects_invalid_shape(payload: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        CalculatorRequest.model_validate(payload)
