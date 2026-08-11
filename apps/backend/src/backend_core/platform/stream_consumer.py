@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from typing import cast
@@ -7,6 +8,7 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 StreamHandler = Callable[[dict[str, str]], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 class RedisStreamConsumer:
@@ -41,6 +43,34 @@ class RedisStreamConsumer:
             await self._task
 
     async def run(self) -> None:
+        while True:
+            try:
+                await self._ensure_group()
+                while True:
+                    await self.recover_stale()
+                    messages = cast(
+                        list[tuple[str, list[tuple[str, dict[str, str]]]]],
+                        await self._redis.xreadgroup(
+                            self._group,
+                            self._consumer,
+                            {self._stream: ">"},
+                            count=10,
+                            block=5000,
+                        ),
+                    )
+                    for _, batch in messages:
+                        for message_id, fields in batch:
+                            await self.handle(message_id, fields)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Redis stream consumer cycle failed; retrying",
+                    extra={"stream": self._stream, "group": self._group},
+                )
+            await asyncio.sleep(1)
+
+    async def _ensure_group(self) -> None:
         try:
             await self._redis.xgroup_create(
                 self._stream, self._group, id="0", mkstream=True
@@ -48,21 +78,6 @@ class RedisStreamConsumer:
         except ResponseError as error:
             if "BUSYGROUP" not in str(error):
                 raise
-        while True:
-            await self.recover_stale()
-            messages = cast(
-                list[tuple[str, list[tuple[str, dict[str, str]]]]],
-                await self._redis.xreadgroup(
-                    self._group,
-                    self._consumer,
-                    {self._stream: ">"},
-                    count=10,
-                    block=5000,
-                ),
-            )
-            for _, batch in messages:
-                for message_id, fields in batch:
-                    await self.handle(message_id, fields)
 
     async def recover_stale(self) -> None:
         claimed = cast(

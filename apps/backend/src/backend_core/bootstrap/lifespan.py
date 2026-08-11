@@ -28,7 +28,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     consumers: list[RedisStreamConsumer] = []
     reconciliation_task: asyncio.Task[None] | None = None
     if app.state.settings.outbox_dispatch_enabled:
-        redis = Redis.from_url(str(app.state.settings.redis_url), decode_responses=True)
+        redis = Redis.from_url(
+            str(app.state.settings.redis_url),
+            decode_responses=True,
+            socket_timeout=None,
+        )
         dispatcher = OutboxDispatcher(
             app.state.database,
             redis,

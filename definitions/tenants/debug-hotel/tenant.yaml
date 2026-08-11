@@ -52,23 +52,3 @@ post_call_actions:
         }
       }
     timeout_seconds: 10
-
-  - id: send_recording
-    type: http.post_json
-    connection: recording_webhook
-    inputs:
-      recording:
-        artifact: call_recording
-        representation: base64_text
-    request_mapping: |
-      {
-        "type": "post_call_audio",
-        "data": {
-          "agent_id": agent.id,
-          "agent_name": agent.name,
-          "conversation_id": call.conversation_id,
-          "user_id": call.caller_number,
-          "full_audio": inputs.recording.body
-        }
-      }
-    timeout_seconds: 10
