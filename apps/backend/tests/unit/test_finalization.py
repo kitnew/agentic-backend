@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -9,6 +10,7 @@ from backend_core.modules.calls.models import (
     CallSession,
     CallSessionStatus,
 )
+from backend_core.modules.conversations.models import Conversation, ConversationMessage
 from backend_core.modules.integrations.models import (
     IntegrationConnection,
     IntegrationConnectionStatus,
@@ -28,6 +30,7 @@ from contracts import (
     CallEventPayload,
     CommandError,
     CommandResult,
+    ConversationMessageRole,
     MessageEnvelope,
     PostCallAction,
     PostCallActionInput,
@@ -39,6 +42,10 @@ class Session:
         self.call = call
         self.finalization: CallFinalization | None = None
         self.recording: CallRecording | None = None
+        self.conversation = Conversation(
+            id=uuid4(), tenant_id=call.tenant_id, call_session_id=call.id
+        )
+        self.messages: list[ConversationMessage] = []
         self.actions: list[PostCallActionExecution] = []
         self.representations: list[ArtifactRepresentation] = []
         self.revisions: dict[UUID, object] = {}
@@ -70,6 +77,8 @@ class Session:
             return self.finalization
         if model is CallRecording:
             return self.recording
+        if model is Conversation:
+            return self.conversation
         if model is PostCallActionExecution:
             return self._matching(self.actions, values)
         if model is ArtifactRepresentation:
@@ -82,6 +91,8 @@ class Session:
             return self.actions
         if model is ArtifactRepresentation:
             return self.representations
+        if model is ConversationMessage:
+            return self.messages
         return []
 
     @staticmethod
@@ -152,7 +163,10 @@ class Service(FinalizationService):
         self.actions = actions
 
     async def _config(self, call):
-        return SimpleNamespace(post_call_actions=self.actions)
+        return SimpleNamespace(
+            post_call_actions=self.actions,
+            agent=SimpleNamespace(profile="hotel_assistant", display_name="Amelia"),
+        )
 
 
 def action(
@@ -192,8 +206,12 @@ def ended_call() -> CallSession:
         direction=CallDirection.INBOUND,
         provider="livekit",
         provider_call_id=str(uuid4()),
+        caller_phone_e164="+421900000000",
         room_name="room",
         status=CallSessionStatus.ENDED,
+        started_at=datetime(2026, 8, 11, 12, 0, tzinfo=UTC),
+        connected_at=datetime(2026, 8, 11, 12, 0, 1, tzinfo=UTC),
+        ended_at=datetime(2026, 8, 11, 12, 5, tzinfo=UTC),
     )
 
 
@@ -583,6 +601,188 @@ async def test_small_post_call_payload_still_uses_jsonata() -> None:
 
     assert plan.payload == {"call": str(call.id)}
     assert plan.body_bindings == []
+
+
+@pytest.mark.asyncio
+async def test_transcript_mapping_uses_bounded_canonical_call_context() -> None:
+    call = ended_call()
+    configured = action(
+        "transcript",
+        {
+            "summary": {"artifact": "call_summary", "representation": "plain_text"},
+            "transcript": {"artifact": "transcript", "representation": "raw_json"},
+        },
+        """{
+          "type": "post_call_transcription",
+          "data": {
+            "analysis": {"transcript_summary": inputs.summary.value},
+            "transcript": inputs.transcript.value.{
+              "role": role = "assistant" ? "agent" : role,
+              "message": content
+            },
+            "conversation_initiation_client_data": {
+              "dynamic_variables": {"system__time": call.ended_at}
+            },
+            "user_id": call.caller_number,
+            "conversation_id": call.conversation_id
+          }
+        }""",
+    )
+    session = Session(call)
+    session.messages = [
+        ConversationMessage(
+            tenant_id=call.tenant_id,
+            conversation_id=session.conversation.id,
+            sequence_number=1,
+            role=ConversationMessageRole.USER,
+            content="Hello",
+            interrupted=False,
+        ),
+        ConversationMessage(
+            tenant_id=call.tenant_id,
+            conversation_id=session.conversation.id,
+            sequence_number=2,
+            role=ConversationMessageRole.ASSISTANT,
+            content="How can I help?",
+            interrupted=False,
+        ),
+    ]
+    session.connections[configured.execution.connection_id] = connection(
+        call, configured
+    )
+    finalization = CallFinalization(
+        id=uuid4(),
+        call_id=call.id,
+        tenant_id=call.tenant_id,
+        status=FinalizationStatus.PROCESSING,
+        summary="Call summary",
+    )
+    command_id = uuid4()
+    session.finalization = finalization
+    session.actions.append(
+        PostCallActionExecution(
+            finalization_id=finalization.id,
+            action_id=configured.action_id,
+            status=WorkStatus.PROCESSING,
+            command_id=command_id,
+        )
+    )
+
+    context = await Service(session, Commands(), [configured])._mapping_context(
+        call, {}
+    )
+    plan = await Service(session, Commands(), [configured]).action_plan(
+        call.id, finalization.id, configured.action_id, command_id
+    )
+
+    assert context == {
+        "call_id": str(call.id),
+        "call": {
+            "id": str(call.id),
+            "conversation_id": str(session.conversation.id),
+            "caller_number": "+421900000000",
+            "started_at": "2026-08-11T12:00:00+00:00",
+            "ended_at": "2026-08-11T12:05:00+00:00",
+        },
+        "agent": {"id": "hotel_assistant", "name": "Amelia"},
+        "inputs": {},
+    }
+    assert "secret" not in str(context).lower()
+    assert plan.payload == {
+        "type": "post_call_transcription",
+        "data": {
+            "analysis": {"transcript_summary": "Call summary"},
+            "transcript": [
+                {"role": "user", "message": "Hello"},
+                {"role": "agent", "message": "How can I help?"},
+            ],
+            "conversation_initiation_client_data": {
+                "dynamic_variables": {"system__time": "2026-08-11T12:05:00+00:00"}
+            },
+            "user_id": "+421900000000",
+            "conversation_id": str(session.conversation.id),
+        },
+    }
+
+
+@pytest.mark.asyncio
+async def test_recording_mapping_keeps_base64_as_a_body_binding() -> None:
+    call = ended_call()
+    configured = action(
+        "recording",
+        {
+            "recording": {
+                "artifact": "call_recording",
+                "representation": "base64_text",
+            }
+        },
+        """{
+          "type": "post_call_audio",
+          "data": {
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "conversation_id": call.conversation_id,
+            "user_id": call.caller_number,
+            "full_audio": inputs.recording.body
+          }
+        }""",
+    )
+    session = Session(call)
+    session.connections[configured.execution.connection_id] = connection(
+        call, configured
+    )
+    representation = ArtifactRepresentation(
+        id=uuid4(),
+        tenant_id=call.tenant_id,
+        call_id=call.id,
+        artifact_type="call_recording",
+        representation="base64_text",
+        status=WorkStatus.COMPLETED,
+        command_id=uuid4(),
+        content=b"must-not-enter-jsonata",
+        content_type="text/plain",
+        byte_size=22,
+        sha256="stored",
+    )
+    session.representations.append(representation)
+    finalization = CallFinalization(
+        id=uuid4(),
+        call_id=call.id,
+        tenant_id=call.tenant_id,
+        status=FinalizationStatus.PROCESSING,
+    )
+    command_id = uuid4()
+    session.finalization = finalization
+    session.actions.append(
+        PostCallActionExecution(
+            finalization_id=finalization.id,
+            action_id=configured.action_id,
+            status=WorkStatus.PROCESSING,
+            command_id=command_id,
+        )
+    )
+
+    plan = await Service(session, Commands(), [configured]).action_plan(
+        call.id, finalization.id, configured.action_id, command_id
+    )
+
+    assert plan.payload == {
+        "type": "post_call_audio",
+        "data": {
+            "agent_id": "hotel_assistant",
+            "agent_name": "Amelia",
+            "conversation_id": str(session.conversation.id),
+            "user_id": "+421900000000",
+            "full_audio": None,
+        },
+    }
+    assert plan.body_bindings == [
+        finalization_service.ManagedWebhookBodyBinding(
+            representation_id=representation.id,
+            payload_path="/data/full_audio",
+        )
+    ]
+    assert representation.content.decode() not in str(plan.model_dump())
 
 
 @pytest.mark.asyncio

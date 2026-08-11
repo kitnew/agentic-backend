@@ -150,6 +150,7 @@ def test_managed_webhook_plan_contains_payload_not_provider_details() -> None:
     )
     assert plan.plan_type == "managed_webhook.post_json.v1"
     assert plan.payload == {"check_in": "2026-08-12", "guest_name": "Alice"}
+    assert plan.response_contract == "managed_webhook_envelope.v1"
     assert not hasattr(plan, "url")
 
 

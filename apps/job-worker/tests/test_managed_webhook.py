@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 import httpx
@@ -18,7 +19,10 @@ from job_worker.worker import (
 OPERATION_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 
-def webhook_plan() -> ManagedWebhookPostJsonPlan:
+def webhook_plan(
+    *,
+    response_contract: Literal["http_2xx", "managed_webhook_envelope.v1"] = "http_2xx",
+) -> ManagedWebhookPostJsonPlan:
     return ManagedWebhookPostJsonPlan(
         plan_type="managed_webhook.post_json.v1",
         connection_ref="tenant-hook",
@@ -27,6 +31,7 @@ def webhook_plan() -> ManagedWebhookPostJsonPlan:
             semantic_key="reservation.submit_request", semantic_version=1
         ),
         payload={"guest_name": "Alice"},
+        response_contract=response_contract,
         timeout_seconds=10,
     )
 
@@ -57,45 +62,24 @@ def resolver(
 
 
 @pytest.mark.asyncio
-async def test_managed_webhook_posts_generic_envelope_without_logging_payload(
+async def test_managed_webhook_posts_mapping_as_root_body_without_internal_metadata(
     tmp_path: Path,
 ) -> None:
     requests: list[httpx.Request] = []
 
     def transport(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(
-            200,
-            headers={"content-type": "application/json"},
-            json={
-                "contract_version": 1,
-                "operation_id": str(OPERATION_ID),
-                "status": "succeeded",
-                "result": {
-                    "reference": "accepted-1",
-                    "deduplicated": False,
-                    "data": {},
-                },
-            },
-        )
+        return httpx.Response(204)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
         result = await ManagedWebhookPostJsonHandler(
             resolver(tmp_path), client
         ).execute(webhook_plan())
-    assert result.reference == "accepted-1"
+    assert result.reference is None
     assert requests[0].headers["x-make-apikey"] == "secret"
     assert requests[0].headers["content-type"] == "application/json"
-    envelope = json.loads(requests[0].content)
-    assert envelope == {
-        "contract_version": 1,
-        "operation_id": str(OPERATION_ID),
-        "capability": {
-            "semantic_key": "reservation.submit_request",
-            "semantic_version": 1,
-        },
-        "payload": {"guest_name": "Alice"},
-    }
+    assert requests[0].headers["x-operation-id"] == str(OPERATION_ID)
+    assert json.loads(requests[0].content) == {"guest_name": "Alice"}
 
 
 @pytest.mark.asyncio
@@ -110,16 +94,7 @@ async def test_managed_webhook_streams_generic_artifact_body_binding(
 
     def transport(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(
-            200,
-            headers={"content-type": "application/json"},
-            json={
-                "contract_version": 1,
-                "operation_id": str(OPERATION_ID),
-                "status": "succeeded",
-                "result": {"reference": "accepted", "deduplicated": False, "data": {}},
-            },
-        )
+        return httpx.Response(200)
 
     plan = webhook_plan().model_copy(
         update={
@@ -137,7 +112,7 @@ async def test_managed_webhook_streams_generic_artifact_body_binding(
             plan, {"/recording": body()}
         )
 
-    assert json.loads(requests[0].content)["payload"] == {
+    assert json.loads(requests[0].content) == {
         "recording": "YXVkaW8=",
         "kind": "completed",
     }
@@ -160,7 +135,7 @@ async def test_managed_webhook_rejects_operation_id_mismatch(tmp_path: Path) -> 
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
         with pytest.raises(ExecutionError, match="operation ID mismatch"):
             await ManagedWebhookPostJsonHandler(resolver(tmp_path), client).execute(
-                webhook_plan()
+                webhook_plan(response_contract="managed_webhook_envelope.v1")
             )
 
 
@@ -212,16 +187,7 @@ async def test_managed_webhook_can_omit_api_key(tmp_path: Path) -> None:
 
     def transport(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(
-            200,
-            headers={"content-type": "application/json"},
-            json={
-                "contract_version": 1,
-                "operation_id": str(OPERATION_ID),
-                "status": "succeeded",
-                "result": {"reference": "accepted", "deduplicated": False, "data": {}},
-            },
-        )
+        return httpx.Response(200)
 
     connection_map = {
         "tenant-hook": {
@@ -287,16 +253,7 @@ async def test_webhook_normalizes_allowlisted_hostname_and_rejects_literal_ip(
     tmp_path: Path,
 ) -> None:
     def response(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            headers={"content-type": "application/json"},
-            json={
-                "contract_version": 1,
-                "operation_id": str(OPERATION_ID),
-                "status": "succeeded",
-                "result": {"deduplicated": True, "data": {}},
-            },
-        )
+        return httpx.Response(200)
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(response)) as client:
         result = await ManagedWebhookPostJsonHandler(
@@ -307,7 +264,7 @@ async def test_webhook_normalizes_allowlisted_hostname_and_rejects_literal_ip(
             ),
             client,
         ).execute(webhook_plan())
-        assert result.deduplicated is True
+        assert result.deduplicated is False
         with pytest.raises(ExecutionError, match="destination is not allowed"):
             await ManagedWebhookPostJsonHandler(
                 resolver(
@@ -320,7 +277,7 @@ async def test_webhook_normalizes_allowlisted_hostname_and_rejects_literal_ip(
 
 
 @pytest.mark.asyncio
-async def test_webhook_does_not_follow_redirects_or_accept_invalid_2xx_response(
+async def test_webhook_does_not_follow_redirects_and_strict_contract_is_opt_in(
     tmp_path: Path,
 ) -> None:
     requests: list[httpx.Request] = []
@@ -341,7 +298,7 @@ async def test_webhook_does_not_follow_redirects_or_accept_invalid_2xx_response(
     ) as client:
         with pytest.raises(ExecutionError, match="must be JSON"):
             await ManagedWebhookPostJsonHandler(resolver(tmp_path), client).execute(
-                webhook_plan()
+                webhook_plan(response_contract="managed_webhook_envelope.v1")
             )
 
 

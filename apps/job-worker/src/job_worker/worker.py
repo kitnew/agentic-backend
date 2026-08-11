@@ -392,7 +392,7 @@ class ManagedWebhookPostJsonHandler:
                 "Managed webhook destination is not allowed",
                 transient=False,
             )
-        encoded = self._bounded_envelope(plan)
+        encoded = self._bounded_payload(plan)
         if len(encoded.encode()) > 64_000:
             raise ExecutionError(
                 "request_too_large",
@@ -409,13 +409,14 @@ class ManagedWebhookPostJsonHandler:
                     "Managed webhook artifact body is unavailable",
                     transient=False,
                 )
-            content: bytes | AsyncIterator[bytes] = self._stream_envelope(
+            content: bytes | AsyncIterator[bytes] = self._stream_payload(
                 plan, body_streams
             )
         else:
             content = encoded.encode()
         headers = {
             "Content-Type": "application/json",
+            "X-Operation-Id": str(plan.operation_id),
         }
         if connection.api_key:
             headers[connection.api_key_header] = connection.api_key
@@ -465,6 +466,14 @@ class ManagedWebhookPostJsonHandler:
                 "Managed webhook returned an unsupported status",
                 transient=False,
             )
+        if plan.response_contract == "http_2xx":
+            return ManagedWebhookPostJsonResult(
+                result_type="managed_webhook.post_json.v1",
+                status="succeeded",
+                operation_id=plan.operation_id,
+                reference=None,
+                deduplicated=False,
+            )
         content_type = response.headers.get("content-type", "")
         if "application/json" not in content_type.lower():
             raise ExecutionError(
@@ -506,35 +515,16 @@ class ManagedWebhookPostJsonHandler:
         )
 
     @staticmethod
-    def _bounded_envelope(plan: ManagedWebhookPostJsonPlan) -> str:
-        return json.dumps(
-            {
-                "contract_version": 1,
-                "operation_id": str(plan.operation_id),
-                "capability": plan.capability.model_dump(mode="json"),
-                "payload": plan.payload,
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
+    def _bounded_payload(plan: ManagedWebhookPostJsonPlan) -> str:
+        return json.dumps(plan.payload, ensure_ascii=False, separators=(",", ":"))
 
-    async def _stream_envelope(
+    async def _stream_payload(
         self,
         plan: ManagedWebhookPostJsonPlan,
         bodies: dict[str, AsyncIterator[bytes]],
     ) -> AsyncIterator[bytes]:
-        yield b'{"contract_version":1,"operation_id":'
-        yield json.dumps(str(plan.operation_id)).encode()
-        yield b',"capability":'
-        yield json.dumps(
-            plan.capability.model_dump(mode="json"),
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode()
-        yield b',"payload":'
         async for chunk in self._stream_json(plan.payload, "", bodies):
             yield chunk
-        yield b"}"
 
     async def _stream_json(
         self,

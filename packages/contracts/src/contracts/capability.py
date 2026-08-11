@@ -101,6 +101,7 @@ class ManagedWebhookPostJsonPlan(_Contract):
     operation_id: UUID
     capability: ManagedWebhookCapability
     payload: dict[str, object]
+    response_contract: Literal["http_2xx", "managed_webhook_envelope.v1"] = "http_2xx"
     body_bindings: list[ManagedWebhookBodyBinding] = Field(
         default_factory=list, max_length=10
     )

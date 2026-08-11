@@ -256,7 +256,7 @@ class FinalizationService:
         for name, requested in action.inputs.items():
             inputs[name], body_ids = await self._mapping_input(finalization, requested)
             available_bodies.update(body_ids)
-        context: dict[str, object] = {"call_id": str(call_id), "inputs": inputs}
+        context = await self._mapping_context(call, inputs)
         payload = JsonataMappingEngine().evaluate(
             action.execution.request_mapping, context
         )
@@ -661,6 +661,31 @@ class FinalizationService:
 
     async def _conversation_context(self, call_id: UUID) -> dict[str, object]:
         return {"call_id": str(call_id), "messages": await self._transcript(call_id)}
+
+    async def _mapping_context(
+        self, call: CallSession, inputs: dict[str, object]
+    ) -> dict[str, object]:
+        conversation = await self._session.scalar(
+            select(Conversation).where(Conversation.call_session_id == call.id)
+        )
+        if conversation is None:
+            raise FinalizationError("conversation not found")
+        config = await self._config(call)
+        return {
+            "call_id": str(call.id),
+            "call": {
+                "id": str(call.id),
+                "conversation_id": str(conversation.id),
+                "caller_number": call.caller_phone_e164,
+                "started_at": call.started_at.isoformat() if call.started_at else None,
+                "ended_at": call.ended_at.isoformat() if call.ended_at else None,
+            },
+            "agent": {
+                "id": config.agent.profile,
+                "name": config.agent.display_name,
+            },
+            "inputs": inputs,
+        }
 
     async def _transcript(self, call_id: UUID) -> list[dict[str, str]]:
         conversation = await self._session.scalar(

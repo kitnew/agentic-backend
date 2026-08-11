@@ -22,9 +22,53 @@ contact:
   website: null
 post_call_actions:
   - id: send_transcript
+    type: http.post_json
     connection: transcript_webhook
-    preset: transcript.raw_json
+    inputs:
+      summary:
+        artifact: call_summary
+        representation: plain_text
+      transcript:
+        artifact: transcript
+        representation: raw_json
+    request_mapping: |
+      {
+        "type": "post_call_transcription",
+        "data": {
+          "analysis": {
+            "transcript_summary": inputs.summary.value
+          },
+          "transcript": inputs.transcript.value.{
+            "role": role = "assistant" ? "agent" : role,
+            "message": content
+          },
+          "conversation_initiation_client_data": {
+            "dynamic_variables": {
+              "system__time": call.ended_at
+            }
+          },
+          "user_id": call.caller_number,
+          "conversation_id": call.conversation_id
+        }
+      }
+    timeout_seconds: 10
 
   - id: send_recording
+    type: http.post_json
     connection: recording_webhook
-    preset: recording.base64
+    inputs:
+      recording:
+        artifact: call_recording
+        representation: base64_text
+    request_mapping: |
+      {
+        "type": "post_call_audio",
+        "data": {
+          "agent_id": agent.id,
+          "agent_name": agent.name,
+          "conversation_id": call.conversation_id,
+          "user_id": call.caller_number,
+          "full_audio": inputs.recording.body
+        }
+      }
+    timeout_seconds: 10

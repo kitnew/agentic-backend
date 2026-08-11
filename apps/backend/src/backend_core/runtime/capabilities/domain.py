@@ -436,13 +436,6 @@ def compile_plan(
         source,
     )
     if isinstance(execution, ManagedWebhookExecution):
-        reserved = {"contract_version", "operation_id", "capability"}
-        if reserved.intersection(mapped):
-            raise CapabilityValidationError(
-                "mapping_reserved_field",
-                "Webhook mapping cannot define authoritative envelope fields",
-                "execution.request_mapping",
-            )
         return ManagedWebhookPostJsonPlan(
             plan_type=execution.plan_type,
             connection_ref=credential_ref,
@@ -452,6 +445,7 @@ def compile_plan(
                 semantic_version=profile.semantic_version,
             ),
             payload=mapped,
+            response_contract="managed_webhook_envelope.v1",
             timeout_seconds=execution.timeout_seconds,
         )
     rows = mapped_rows(mapped)
