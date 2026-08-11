@@ -22,27 +22,6 @@ from pydantic import ValidationError
 
 from backend_core.modules.calls.models import CallSessionStatus
 from backend_core.modules.calls.repository import CallSessionRepository
-from backend_core.modules.capabilities.domain import (
-    SEMANTIC_KEY,
-    CapabilityValidationError,
-    compile_plan,
-    definition,
-    normalize_input,
-    semantic_result,
-    validate_agent_input,
-    validate_business_input,
-    validate_result_for_plan,
-)
-from backend_core.modules.capabilities.execution import (
-    TechnicalResultProjectionError,
-    project_execution_outcome,
-)
-from backend_core.modules.capabilities.models import (
-    CapabilityConfirmation,
-    CapabilityInvocation,
-    OutboxMessage,
-)
-from backend_core.modules.capabilities.repository import CapabilityInvocationRepository
 from backend_core.modules.conversations.repository import ConversationRepository
 from backend_core.modules.integrations.models import (
     IntegrationConnectionStatus,
@@ -54,6 +33,27 @@ from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     TenantRepository,
 )
+from backend_core.runtime.capabilities.domain import (
+    SEMANTIC_KEY,
+    CapabilityValidationError,
+    compile_plan,
+    definition,
+    normalize_input,
+    semantic_result,
+    validate_agent_input,
+    validate_business_input,
+    validate_result_for_plan,
+)
+from backend_core.runtime.capabilities.execution import (
+    TechnicalResultProjectionError,
+    project_execution_outcome,
+)
+from backend_core.runtime.capabilities.models import (
+    CapabilityConfirmation,
+    CapabilityInvocation,
+    OutboxMessage,
+)
+from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from backend_core.modules.capabilities.domain import (
+from backend_core.runtime.capabilities.domain import (
     compile_plan,
     definition,
     normalize_input,
@@ -13,7 +13,7 @@ from backend_core.modules.capabilities.domain import (
     validate_agent_schema,
     validate_business_input,
 )
-from backend_core.modules.capabilities.execution import project_execution_outcome
+from backend_core.runtime.capabilities.execution import project_execution_outcome
 from contracts import TenantCapabilityProfile
 from job_worker.worker import GoogleSheetsAppendValuesHandler
 

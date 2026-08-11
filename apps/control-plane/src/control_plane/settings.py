@@ -44,7 +44,7 @@ class Settings:
         if not token:
             raise SettingsError("AGENTCTL_TOKEN is required by the current Admin API")
         raw_state_dir = (
-            state_dir or os.environ.get("AGENTCTL_STATE_DIR") or "control-plane"
+            state_dir or os.environ.get("AGENTCTL_STATE_DIR") or "definitions"
         )
         return cls(
             api_url=raw_url.rstrip("/"),

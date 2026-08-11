@@ -39,9 +39,9 @@ from backend_core.modules.tenants.repository import (
     PromptCompositionRepository,
     TenantRepository,
 )
-from backend_core.modules.voice_runtime.repository import VoiceRuntimeRepository
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import Database, DatabaseSession
+from backend_core.runtime.voice.repository import VoiceRuntimeRepository
 
 router = APIRouter(prefix="/internal/v1/call-sessions", tags=["internal:calls"])
 admin_router = APIRouter(

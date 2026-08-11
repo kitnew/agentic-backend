@@ -17,7 +17,7 @@ from pydantic import ValidationError
 
 from voice_agent.backend import BackendClient, CallFinalizer
 from voice_agent.calculator import calculator_tool
-from voice_agent.persistence import ConversationPersistence
+from voice_agent.event_delivery import ConversationPersistence
 from voice_agent.providers import create_agent_session
 from voice_agent.settings import VoiceAgentSettings
 

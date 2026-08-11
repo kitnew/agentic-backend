@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 
 import pytest
-from backend_core.modules.capabilities.domain import CapabilityValidationError
-from backend_core.modules.capabilities.service import CapabilityInvocationService
+from backend_core.runtime.capabilities.domain import CapabilityValidationError
+from backend_core.runtime.capabilities.service import CapabilityInvocationService
 from contracts import TenantConfigV2, TenantConfigV3
 
 V2_FIXTURE = (

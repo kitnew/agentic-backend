@@ -4,7 +4,7 @@ from contracts import CapabilityInvocationStatus
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend_core.modules.capabilities.models import (
+from backend_core.runtime.capabilities.models import (
     CapabilityConfirmation,
     CapabilityInvocation,
     OutboxMessage,

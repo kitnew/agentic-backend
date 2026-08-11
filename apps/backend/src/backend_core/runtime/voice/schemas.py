@@ -9,7 +9,7 @@ from contracts import (
 )
 from pydantic import BaseModel, ConfigDict
 
-from backend_core.modules.voice_runtime.models import RuntimeRevisionStatus
+from backend_core.runtime.voice.models import RuntimeRevisionStatus
 
 
 class PlatformRuntimeRequest(BaseModel):

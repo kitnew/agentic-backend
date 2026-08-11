@@ -14,6 +14,7 @@ from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
 from voice_agent.backend import BackendClient
 from voice_agent.calculator import calculate, calculator_tool
+from voice_agent.event_delivery import MESSAGE_NAMESPACE, message_from_event
 from voice_agent.main import (
     assemble_instructions,
     build_agent_tools,
@@ -23,7 +24,6 @@ from voice_agent.main import (
     parse_metadata,
     run_job,
 )
-from voice_agent.persistence import MESSAGE_NAMESPACE, message_from_event
 from voice_agent.providers import (
     azure_endpoint,
     create_agent_session,

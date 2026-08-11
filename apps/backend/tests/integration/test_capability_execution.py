@@ -7,8 +7,6 @@ from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.modules.calls.models import CallSession
 from backend_core.modules.calls.router import build_call_session_service
-from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
-from backend_core.modules.capabilities.retention import CapabilityRetentionService
 from backend_core.modules.conversations.models import Conversation
 from backend_core.modules.integrations.models import IntegrationConnection
 from backend_core.modules.tenants.models import (
@@ -27,6 +25,8 @@ from backend_core.modules.tenants.models import (
 )
 from backend_core.platform.database import Database
 from backend_core.platform.outbox import OutboxDispatcher
+from backend_core.runtime.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.runtime.capabilities.retention import CapabilityRetentionService
 from httpx import ASGITransport, AsyncClient
 from redis.exceptions import RedisError
 from runtime_fixtures import apply_voice_runtime

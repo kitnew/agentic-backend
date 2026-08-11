@@ -3,16 +3,16 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from backend_core.modules.capabilities.domain import (
+from backend_core.runtime.capabilities.domain import (
     CapabilityValidationError,
     semantic_result,
 )
-from backend_core.modules.capabilities.execution import (
+from backend_core.runtime.capabilities.execution import (
     ExecutionOutcome,
     project_execution_outcome,
 )
-from backend_core.modules.capabilities.models import CapabilityInvocation
-from backend_core.modules.capabilities.service import CapabilityInvocationService
+from backend_core.runtime.capabilities.models import CapabilityInvocation
+from backend_core.runtime.capabilities.service import CapabilityInvocationService
 from contracts import (
     CapabilityInvocationStatus,
     GoogleSheetsAppendValuesResult,

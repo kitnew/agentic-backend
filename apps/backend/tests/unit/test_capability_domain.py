@@ -2,7 +2,7 @@ from datetime import date
 from uuid import UUID, uuid4
 
 import pytest
-from backend_core.modules.capabilities.domain import (
+from backend_core.runtime.capabilities.domain import (
     REGISTRY,
     CapabilityValidationError,
     compile_plan,

@@ -2,12 +2,6 @@ from backend_core.interfaces.http.health import router as health_router
 from backend_core.modules.calls.router import admin_router as voice_admin_router
 from backend_core.modules.calls.router import router as calls_router
 from backend_core.modules.calls.router import runtime_router as call_runtime_router
-from backend_core.modules.capabilities.router import (
-    voice_router as capability_voice_router,
-)
-from backend_core.modules.capabilities.router import (
-    worker_router as capability_worker_router,
-)
 from backend_core.modules.conversations.router import (
     admin_router as conversation_admin_router,
 )
@@ -17,10 +11,16 @@ from backend_core.modules.conversations.router import (
 from backend_core.modules.integrations.router import router as integrations_router
 from backend_core.modules.tenants import router as tenants_router
 from backend_core.modules.tenants.router import internal_router, platform_router
-from backend_core.modules.voice_runtime.router import (
+from backend_core.runtime.capabilities.router import (
+    voice_router as capability_voice_router,
+)
+from backend_core.runtime.capabilities.router import (
+    worker_router as capability_worker_router,
+)
+from backend_core.runtime.voice.router import (
     platform_router as platform_runtime_router,
 )
-from backend_core.modules.voice_runtime.router import (
+from backend_core.runtime.voice.router import (
     tenant_router as tenant_runtime_router,
 )
 from fastapi import APIRouter

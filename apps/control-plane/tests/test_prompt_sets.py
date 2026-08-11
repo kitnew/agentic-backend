@@ -147,7 +147,7 @@ def test_prompt_set_commands_use_generated_client(
     )
 
     prompt_sets.run_tenant_prompt_set(
-        Settings("https://backend.example", "secret", Path("control-plane")),
+        Settings("https://backend.example", "secret", Path("definitions")),
         action,
         "debug-hotel",
     )

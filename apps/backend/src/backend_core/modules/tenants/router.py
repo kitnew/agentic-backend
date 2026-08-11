@@ -4,7 +4,6 @@ from uuid import UUID
 from contracts import ActiveTenantConfig
 from fastapi import (
     APIRouter,
-    Body,
     Depends,
     Header,
     HTTPException,
@@ -30,10 +29,6 @@ from backend_core.modules.tenants.errors import (
     TenantNotFoundError,
     TenantSlugConflictError,
 )
-from backend_core.modules.tenants.legacy_yaml import (
-    LegacyYamlError,
-    parse_legacy_yaml,
-)
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     InboundRouteRepository,
@@ -56,7 +51,6 @@ from backend_core.modules.tenants.schemas import (
     KnowledgeBaseSnapshotResponse,
     KnowledgeBaseStateResponse,
     KnowledgeDocumentsRequest,
-    LegacyConfigImportResponse,
     PlatformPromptPublishResponse,
     PlatformPromptRevisionResponse,
     PromptSetApplyResponse,
@@ -1003,71 +997,6 @@ async def publish_config_draft(
     except (TenantNotFoundError, ConfigRevisionError) as error:
         raise config_http_exception(error) from error
     return ConfigRevisionResponse.model_validate(revision)
-
-
-@router.post(
-    "/{tenant_id}/config/import-yaml",
-    response_model=LegacyConfigImportResponse,
-    status_code=status.HTTP_201_CREATED,
-    include_in_schema=False,
-)
-async def import_legacy_yaml(
-    tenant_id: UUID,
-    raw_yaml: Annotated[
-        str,
-        Body(
-            media_type="application/yaml",
-            min_length=1,
-            max_length=1_000_000,
-        ),
-    ],
-    service: TenantServiceDependency,
-    use_cases: ConfigUseCasesDependency,
-    publish: Annotated[bool, Query()] = False,
-) -> LegacyConfigImportResponse:
-    try:
-        document = parse_legacy_yaml(raw_yaml)
-        tenant = await service.get(tenant_id)
-        identity_errors = document.validate_tenant(tenant)
-        if identity_errors:
-            raise LegacyYamlError(identity_errors)
-
-        revision = await use_cases.create_config_draft(
-            tenant_id,
-            CreateDraftRequest(
-                config=document.config,
-                comment="Imported from legacy YAML",
-            ),
-        )
-        validation_errors = await use_cases.validate_config_draft(
-            tenant_id,
-            revision.id,
-        )
-        if publish and not validation_errors:
-            revision = await use_cases.publish_config_draft(
-                tenant_id,
-                revision.id,
-            )
-    except LegacyYamlError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail={
-                "message": "invalid legacy YAML",
-                "errors": [item.model_dump() for item in error.errors],
-            },
-        ) from error
-    except (TenantNotFoundError, ConfigRevisionError) as error:
-        raise config_http_exception(error) from error
-
-    return LegacyConfigImportResponse(
-        revision=ConfigRevisionResponse.model_validate(revision),
-        validation=ValidateDraftResponse(
-            valid=not validation_errors,
-            errors=validation_errors,
-        ),
-        source_tenant=document.identity,
-        unsupported_fields=document.unsupported_fields,
-    )
 
 
 @router.get(

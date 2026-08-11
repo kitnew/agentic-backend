@@ -8,7 +8,9 @@ from backend_core.modules.tenants.repository import (
     TenantRepository,
 )
 from backend_core.modules.tenants.router import parse_if_match
-from backend_core.modules.voice_runtime.errors import (
+from backend_core.platform.auth import require_admin
+from backend_core.platform.database import DatabaseSession
+from backend_core.runtime.voice.errors import (
     RuntimeDraftExistsError,
     RuntimeNotFoundError,
     RuntimeRevisionImmutableError,
@@ -16,8 +18,8 @@ from backend_core.modules.voice_runtime.errors import (
     VoiceRuntimeError,
     VoiceRuntimeResolutionError,
 )
-from backend_core.modules.voice_runtime.repository import VoiceRuntimeRepository
-from backend_core.modules.voice_runtime.schemas import (
+from backend_core.runtime.voice.repository import VoiceRuntimeRepository
+from backend_core.runtime.voice.schemas import (
     PlatformRuntimeRequest,
     PlatformRuntimeRevisionResponse,
     PlatformRuntimeStateResponse,
@@ -29,9 +31,7 @@ from backend_core.modules.voice_runtime.schemas import (
     VoiceRuntimePlanResponse,
     VoiceRuntimeRevisionResponse,
 )
-from backend_core.modules.voice_runtime.service import VoiceRuntimeUseCases
-from backend_core.platform.auth import require_admin
-from backend_core.platform.database import DatabaseSession
+from backend_core.runtime.voice.service import VoiceRuntimeUseCases
 
 platform_router = APIRouter(
     prefix="/admin/v1/platform/runtime",

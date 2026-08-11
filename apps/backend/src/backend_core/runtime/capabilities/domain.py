@@ -30,7 +30,7 @@ from jsonschema.exceptions import (  # type: ignore[import-untyped]
 )
 from pydantic import TypeAdapter
 
-from backend_core.modules.capabilities.execution import ExecutionOutcome
+from backend_core.runtime.capabilities.execution import ExecutionOutcome
 
 CANONICAL_FIELDS = {
     "guest.name": "string",

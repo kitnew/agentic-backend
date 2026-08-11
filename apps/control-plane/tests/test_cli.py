@@ -44,7 +44,7 @@ def test_api_url_override_and_token_are_loaded(monkeypatch: pytest.MonkeyPatch) 
     assert settings == Settings(
         api_url="https://backend.example",
         token="secret",
-        state_dir=Path("control-plane"),
+        state_dir=Path("definitions"),
     )
 
 
@@ -110,7 +110,7 @@ def test_tenant_command_uses_generated_client(monkeypatch: pytest.MonkeyPatch) -
         Settings(
             api_url="https://backend.example",
             token="secret",
-            state_dir=Path("control-plane"),
+            state_dir=Path("definitions"),
         )
     )
     assert response.status_code is HTTPStatus.OK

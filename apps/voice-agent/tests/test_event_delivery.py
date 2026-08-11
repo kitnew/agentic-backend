@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 from livekit.agents import llm
-from voice_agent.persistence import ConversationPersistence
+from voice_agent.event_delivery import ConversationPersistence
 
 
 def event(item_id: str, content: str, role: str = "user") -> object:

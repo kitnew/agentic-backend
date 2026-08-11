@@ -9,8 +9,8 @@ from backend_core.modules.tenants.models import (
     Tenant,
     TenantStatus,
 )
-from backend_core.modules.voice_runtime.errors import VoiceRuntimeResolutionError
-from backend_core.modules.voice_runtime.models import (
+from backend_core.runtime.voice.errors import VoiceRuntimeResolutionError
+from backend_core.runtime.voice.models import (
     PlatformRuntime,
     PlatformRuntimeRevision,
     RuntimeRevisionStatus,
@@ -18,7 +18,7 @@ from backend_core.modules.voice_runtime.models import (
     TenantRuntimeRevision,
     VoiceRuntimeRevision,
 )
-from backend_core.modules.voice_runtime.service import VoiceRuntimeUseCases
+from backend_core.runtime.voice.service import VoiceRuntimeUseCases
 
 
 def policy(voice: str = "platform-voice") -> dict[str, object]:

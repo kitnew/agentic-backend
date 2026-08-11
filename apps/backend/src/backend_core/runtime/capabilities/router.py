@@ -13,12 +13,6 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.calls.repository import CallSessionRepository
-from backend_core.modules.capabilities.domain import CapabilityValidationError
-from backend_core.modules.capabilities.repository import CapabilityInvocationRepository
-from backend_core.modules.capabilities.service import (
-    CapabilityInvocationService,
-    invocation_response,
-)
 from backend_core.modules.conversations.repository import ConversationRepository
 from backend_core.modules.integrations.repository import IntegrationConnectionRepository
 from backend_core.modules.tenants.repository import (
@@ -27,6 +21,12 @@ from backend_core.modules.tenants.repository import (
 )
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
+from backend_core.runtime.capabilities.domain import CapabilityValidationError
+from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
+from backend_core.runtime.capabilities.service import (
+    CapabilityInvocationService,
+    invocation_response,
+)
 
 logger = logging.getLogger(__name__)
 voice_router = APIRouter(prefix="/internal/v1/calls", tags=["internal:capabilities"])

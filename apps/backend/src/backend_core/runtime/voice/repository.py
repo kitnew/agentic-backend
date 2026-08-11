@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend_core.modules.voice_runtime.models import (
+from backend_core.runtime.voice.models import (
     PlatformRuntime,
     PlatformRuntimeRevision,
     RuntimeRevisionStatus,

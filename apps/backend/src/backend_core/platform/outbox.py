@@ -10,9 +10,9 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import select
 
-from backend_core.modules.capabilities.models import CapabilityInvocation, OutboxMessage
-from backend_core.modules.capabilities.retention import CapabilityRetentionService
 from backend_core.platform.database import Database
+from backend_core.runtime.capabilities.models import CapabilityInvocation, OutboxMessage
+from backend_core.runtime.capabilities.retention import CapabilityRetentionService
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-# Canonical Control Plane State
+# Declarative Platform Definitions
 
 This directory contains Git-managed, human-editable authoring state. Executable
 client code remains in `apps/control-plane`.
@@ -52,32 +52,32 @@ synthesizing prompt prose.
 
 ```bash
 agentctl system-prompt pull
-# edit control-plane/platform/system_prompt.md
+# edit definitions/platform/system_prompt.md
 agentctl system-prompt plan
 agentctl system-prompt push
 agentctl system-prompt publish
 
 agentctl profile pull hotel_assistant
-# edit control-plane/platform/profiles/hotel_assistant.md
+# edit definitions/platform/profiles/hotel_assistant.md
 # for a new key: agentctl profile create hotel_assistant
 agentctl profile plan hotel_assistant
 agentctl profile push hotel_assistant
 agentctl profile publish hotel_assistant
 
 agentctl tenant prompt pull penzion-grand
-# edit control-plane/tenants/penzion-grand/tenant_prompt.md
+# edit definitions/tenants/penzion-grand/tenant_prompt.md
 agentctl tenant prompt plan penzion-grand
 agentctl tenant prompt push penzion-grand
 agentctl tenant prompt publish penzion-grand
 
 agentctl tenant config pull penzion-grand
-# edit control-plane/tenants/penzion-grand/tenant.yaml
+# edit definitions/tenants/penzion-grand/tenant.yaml
 agentctl tenant config plan penzion-grand
 agentctl tenant config push penzion-grand
 agentctl tenant config publish penzion-grand
 
 agentctl tenant knowledge pull penzion-grand
-# edit control-plane/tenants/penzion-grand/knowledge/*.md
+# edit definitions/tenants/penzion-grand/knowledge/*.md
 agentctl tenant knowledge plan penzion-grand
 agentctl tenant knowledge push penzion-grand
 agentctl tenant knowledge publish penzion-grand
@@ -85,13 +85,13 @@ agentctl tenant prompt-set plan penzion-grand
 agentctl tenant prompt-set apply penzion-grand
 
 agentctl runtime pull
-# edit control-plane/platform/runtime.yaml
+# edit definitions/platform/runtime.yaml
 agentctl runtime plan
 agentctl runtime push
 agentctl runtime publish
 
 agentctl tenant runtime pull penzion-grand
-# edit control-plane/tenants/penzion-grand/runtime.yaml
+# edit definitions/tenants/penzion-grand/runtime.yaml
 agentctl tenant runtime plan penzion-grand
 agentctl tenant runtime push penzion-grand
 agentctl tenant runtime publish penzion-grand
@@ -224,7 +224,7 @@ capabilities: {}
 Canonical authoring uses a flat Markdown-only knowledge directory:
 
 ```text
-control-plane/
+definitions/
 ├── platform/
 │   ├── system_prompt.md
 │   ├── profiles/

@@ -458,16 +458,3 @@ class PromptSetResolutionErrorDetail(BaseModel):
 
 class PromptSetResolutionErrorResponse(BaseModel):
     detail: PromptSetResolutionErrorDetail
-
-
-class LegacyTenantIdentity(BaseModel):
-    legacy_id: str
-    display_name: str
-    business_type: str
-
-
-class LegacyConfigImportResponse(BaseModel):
-    revision: ConfigRevisionResponse
-    validation: ValidateDraftResponse
-    source_tenant: LegacyTenantIdentity
-    unsupported_fields: list[str] = Field(default_factory=list)

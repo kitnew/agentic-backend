@@ -21,14 +21,14 @@ from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     TenantRepository,
 )
-from backend_core.modules.voice_runtime.errors import (
+from backend_core.runtime.voice.errors import (
     RuntimeDraftExistsError,
     RuntimeNotFoundError,
     RuntimeRevisionImmutableError,
     RuntimeRevisionVersionConflictError,
     VoiceRuntimeResolutionError,
 )
-from backend_core.modules.voice_runtime.models import (
+from backend_core.runtime.voice.models import (
     PlatformRuntime,
     PlatformRuntimeRevision,
     RuntimeRevisionStatus,
@@ -37,8 +37,8 @@ from backend_core.modules.voice_runtime.models import (
     VoiceRuntime,
     VoiceRuntimeRevision,
 )
-from backend_core.modules.voice_runtime.repository import VoiceRuntimeRepository
-from backend_core.modules.voice_runtime.schemas import (
+from backend_core.runtime.voice.repository import VoiceRuntimeRepository
+from backend_core.runtime.voice.schemas import (
     PlatformRuntimeRevisionResponse,
     PlatformRuntimeStateResponse,
     TenantRuntimeRevisionResponse,

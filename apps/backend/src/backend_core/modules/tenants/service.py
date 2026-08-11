@@ -13,15 +13,6 @@ from contracts import (
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from backend_core.modules.capabilities.domain import (
-    CapabilityValidationError,
-    compile_plan,
-    definition,
-    normalize_input,
-    validate_agent_input,
-    validate_agent_schema,
-    validate_business_input,
-)
 from backend_core.modules.integrations.models import (
     IntegrationConnectionStatus,
     provider_for_plan_type,
@@ -107,6 +98,15 @@ from backend_core.modules.tenants.schemas import (
     UpdateTextDraftRequest,
     ValidateConfigRequest,
     ValidationIssue,
+)
+from backend_core.runtime.capabilities.domain import (
+    CapabilityValidationError,
+    compile_plan,
+    definition,
+    normalize_input,
+    validate_agent_input,
+    validate_agent_schema,
+    validate_business_input,
 )
 
 SYSTEM_PROMPT_KEY = "default"

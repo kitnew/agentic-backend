@@ -5,7 +5,7 @@
 ```bash
 export AGENTCTL_API_URL=http://localhost:8000
 export AGENTCTL_TOKEN=development-admin-token-change-me-now
-export AGENTCTL_STATE_DIR=./control-plane
+export AGENTCTL_STATE_DIR=./definitions
 
 uv run agentctl --help
 uv run agentctl --version
@@ -17,7 +17,7 @@ uv run agentctl sync plan
 
 `--api-url` overrides `AGENTCTL_API_URL`. The token is accepted only through the
 environment and is never printed. `--state-dir` overrides `AGENTCTL_STATE_DIR`;
-the default canonical state root is `./control-plane`.
+the default canonical state root is `./definitions`.
 
 Use `sync plan`, `sync push`, `sync publish`, and `sync pull [--force]` to
 orchestrate the same resource workflows across the locally represented desired
@@ -26,7 +26,7 @@ absence as remote deletion and never creates remote tenants.
 
 ```bash
 uv run agentctl system-prompt pull
-# edit control-plane/platform/system_prompt.md
+# edit definitions/platform/system_prompt.md
 uv run agentctl system-prompt plan
 uv run agentctl system-prompt push
 uv run agentctl system-prompt publish
@@ -39,13 +39,13 @@ uv run agentctl profile push hotel_assistant
 uv run agentctl profile publish hotel_assistant
 
 uv run agentctl tenant prompt pull penzion-grand
-# edit control-plane/tenants/penzion-grand/tenant_prompt.md
+# edit definitions/tenants/penzion-grand/tenant_prompt.md
 uv run agentctl tenant prompt plan penzion-grand
 uv run agentctl tenant prompt push penzion-grand
 uv run agentctl tenant prompt publish penzion-grand
 
 uv run agentctl tenant knowledge pull penzion-grand
-# edit control-plane/tenants/penzion-grand/knowledge/*.md
+# edit definitions/tenants/penzion-grand/knowledge/*.md
 uv run agentctl tenant knowledge plan penzion-grand
 uv run agentctl tenant knowledge push penzion-grand
 uv run agentctl tenant knowledge publish penzion-grand

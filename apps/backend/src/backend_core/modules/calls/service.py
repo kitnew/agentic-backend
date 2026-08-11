@@ -30,7 +30,6 @@ from backend_core.modules.calls.models import (
 )
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.schemas import CreateCallSessionRequest
-from backend_core.modules.capabilities.domain import runtime_definition
 from backend_core.modules.conversations.errors import ConversationConflictError
 from backend_core.modules.conversations.service import ConversationService
 from backend_core.modules.tenants.errors import TenantNotFoundError
@@ -53,11 +52,12 @@ from backend_core.modules.tenants.repository import (
     PromptCompositionRepository,
     TenantRepository,
 )
-from backend_core.modules.voice_runtime.models import (
+from backend_core.runtime.capabilities.domain import runtime_definition
+from backend_core.runtime.voice.models import (
     RuntimeRevisionStatus,
     VoiceRuntimeRevision,
 )
-from backend_core.modules.voice_runtime.repository import VoiceRuntimeRepository
+from backend_core.runtime.voice.repository import VoiceRuntimeRepository
 
 
 class CallSessionService:

@@ -18,7 +18,7 @@ def test_state_dir_precedence(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
     monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
     monkeypatch.delenv("AGENTCTL_STATE_DIR", raising=False)
-    assert Settings.load().state_dir == Path("control-plane")
+    assert Settings.load().state_dir == Path("definitions")
 
     environment = tmp_path / "environment"
     monkeypatch.setenv("AGENTCTL_STATE_DIR", str(environment))
