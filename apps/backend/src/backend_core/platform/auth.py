@@ -31,6 +31,8 @@ SERVICE_SCOPES = {
             "capability-result:write",
             "finalization-context:read",
             "post-call-action:read",
+            "artifact-representation:read",
+            "artifact-representation:write",
         }
     ),
 }

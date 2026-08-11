@@ -180,6 +180,66 @@ def test_managed_webhook_secret_paths_are_allowlisted(tmp_path: Path) -> None:
         )
 
 
+def test_managed_webhook_map_can_be_loaded_from_file(tmp_path: Path) -> None:
+    (tmp_path / "url").write_text("https://example.test/hook", encoding="utf-8")
+    (tmp_path / "key").write_text("secret", encoding="utf-8")
+    map_file = tmp_path / "managed-webhooks.json"
+    map_file.write_text(
+        json.dumps(
+            {
+                "tenant-hook": {
+                    "url_file": str(tmp_path / "url"),
+                    "api_key_file": str(tmp_path / "key"),
+                    "allowed_hosts": ["example.test"],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    connection = ManagedWebhookConnectionResolver(
+        "{}", str(tmp_path), str(map_file)
+    ).resolve("tenant-hook")
+
+    assert connection.url == "https://example.test/hook"
+    assert connection.api_key == "secret"
+
+
+@pytest.mark.asyncio
+async def test_managed_webhook_can_omit_api_key(tmp_path: Path) -> None:
+    (tmp_path / "url").write_text("https://example.test/hook", encoding="utf-8")
+    requests: list[httpx.Request] = []
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={
+                "contract_version": 1,
+                "operation_id": str(OPERATION_ID),
+                "status": "succeeded",
+                "result": {"reference": "accepted", "deduplicated": False, "data": {}},
+            },
+        )
+
+    connection_map = {
+        "tenant-hook": {
+            "url_file": str(tmp_path / "url"),
+            "allowed_hosts": ["example.test"],
+        }
+    }
+    webhook_resolver = ManagedWebhookConnectionResolver(
+        json.dumps(connection_map), str(tmp_path)
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        await ManagedWebhookPostJsonHandler(webhook_resolver, client).execute(
+            webhook_plan()
+        )
+
+    assert "x-api-key" not in requests[0].headers
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("status_code", "body", "transient"),

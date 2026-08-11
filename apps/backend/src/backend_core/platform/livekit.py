@@ -55,6 +55,12 @@ class LiveKitAdapter:
     async def delete_room(self, room_name: str) -> None:
         await self.client.room.delete_room(room_proto.DeleteRoomRequest(room=room_name))
 
+    async def room_exists(self, room_name: str) -> bool:
+        response = await self.client.room.list_rooms(
+            room_proto.ListRoomsRequest(names=[room_name])
+        )
+        return any(room.name == room_name for room in response.rooms)
+
     def issue_participant_token(self, *, room_name: str, identity: str) -> str:
         grants = api.VideoGrants(
             room_join=True,

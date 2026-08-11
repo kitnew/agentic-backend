@@ -155,6 +155,7 @@ activemq-data/
 .venv
 secrets/*.json
 !secrets/README.md
+infrastructure/compose/secrets/
 *.json
 !debug-chat/package.json
 !debug-chat/package-lock.json

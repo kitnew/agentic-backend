@@ -1487,7 +1487,9 @@ def _preflight_pull_tenant(
         resource = f"{desired.slug} TenantConfig"
         try:
             config_state = tenant_configs._state(client, tenant.id)
-            active = tenant_configs._active_config(config_state)
+            active = tenant_configs.authoring_config(
+                client, tenant.id, tenant_configs._active_config(config_state)
+            )
             writes.append(
                 _PullWrite(
                     resource,

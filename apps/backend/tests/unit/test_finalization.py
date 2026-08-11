@@ -448,7 +448,7 @@ async def test_action_retries_read_the_same_stored_representation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_large_representation_is_a_body_binding_not_jsonata_input(
+async def test_base64_representation_is_always_a_body_binding_not_jsonata_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     call = ended_call()
@@ -492,7 +492,7 @@ async def test_large_representation_is_a_body_binding_not_jsonata_input(
         command_id=uuid4(),
         content=b"must-not-enter-jsonata",
         content_type="text/plain",
-        byte_size=64_001,
+        byte_size=8,
         sha256="stored",
     )
     session.representations.append(representation)
@@ -514,7 +514,7 @@ async def test_large_representation_is_a_body_binding_not_jsonata_input(
             "representation": "base64_text",
             "representation_id": str(representation.id),
             "content_type": "text/plain",
-            "byte_size": 64_001,
+            "byte_size": 8,
             "sha256": "stored",
             "body": {"artifact_representation_id": str(representation.id)},
         }
@@ -524,6 +524,32 @@ async def test_large_representation_is_a_body_binding_not_jsonata_input(
     assert plan.payload == {"recording": None}
     assert plan.body_bindings[0].representation_id == representation.id
     assert plan.body_bindings[0].payload_path == "/recording"
+
+
+@pytest.mark.asyncio
+async def test_small_artifact_input_has_the_same_value_envelope() -> None:
+    call = ended_call()
+    finalization = CallFinalization(
+        id=uuid4(),
+        call_id=call.id,
+        tenant_id=call.tenant_id,
+        status=FinalizationStatus.PROCESSING,
+        summary="Call completed",
+    )
+
+    value, body_references = await Service(
+        Session(call), Commands(), []
+    )._mapping_input(
+        finalization,
+        PostCallActionInput(artifact="call_summary", representation="plain_text"),
+    )
+
+    assert value == {
+        "artifact": "call_summary",
+        "representation": "plain_text",
+        "value": "Call completed",
+    }
+    assert not body_references
 
 
 @pytest.mark.asyncio

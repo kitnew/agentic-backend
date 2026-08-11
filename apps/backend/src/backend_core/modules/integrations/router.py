@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from backend_core.modules.integrations.repository import IntegrationConnectionRepository
 from backend_core.modules.integrations.schemas import (
@@ -79,3 +79,16 @@ async def update_connection(
     except IntegrationConnectionError as error:
         raise http_error(error) from error
     return IntegrationConnectionResponse.model_validate(connection)
+
+
+@router.delete("/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_connection(
+    tenant_id: UUID,
+    connection_id: UUID,
+    connections: Service,
+) -> Response:
+    try:
+        await connections.delete(tenant_id, connection_id)
+    except IntegrationConnectionError as error:
+        raise http_error(error) from error
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

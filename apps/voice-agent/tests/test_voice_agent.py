@@ -16,6 +16,7 @@ from voice_agent.backend import BackendClient
 from voice_agent.calculator import calculate, calculator_tool
 from voice_agent.event_delivery import MESSAGE_NAMESPACE, message_from_event
 from voice_agent.main import (
+    SessionTerminalizer,
     assemble_instructions,
     build_agent_tools,
     capability_tool,
@@ -202,7 +203,9 @@ def test_calculator_operations_are_exact(
 ) -> None:
     from contracts import CalculatorRequest
 
-    assert calculate(CalculatorRequest(operation=operation, operands=operands)) == expected
+    assert (
+        calculate(CalculatorRequest(operation=operation, operands=operands)) == expected
+    )
 
 
 @pytest.mark.parametrize("operand", ["NaN", "Infinity", "1 + 2", ""])
@@ -238,10 +241,14 @@ async def test_calculator_tool_returns_result_and_structured_failures() -> None:
 
 def test_calculator_is_always_added_before_tenant_tools() -> None:
     context = runtime_context()
-    tools = build_agent_tools(context.model_copy(update={"capabilities": []}), None, uuid4())  # type: ignore[arg-type]
+    tools = build_agent_tools(
+        context.model_copy(update={"capabilities": []}), None, uuid4()
+    )  # type: ignore[arg-type]
     assert len(tools) == 1
     assert tools[0]._info.name == "calculator"  # type: ignore[attr-defined]
-    assert "one arithmetic operation per call" in tools[0]._info.raw_schema["description"]  # type: ignore[attr-defined]
+    assert (
+        "one arithmetic operation per call" in tools[0]._info.raw_schema["description"]
+    )  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -443,6 +450,9 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
         )
         room = object()
 
+        def add_shutdown_callback(self, callback) -> None:
+            return None
+
         async def wait_for_participant(self, **kwargs):
             await asyncio.sleep(1)
 
@@ -452,3 +462,112 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
     )
     assert backend.failed == ["participant_timeout"]
     assert not backend.activated
+
+
+@pytest.mark.asyncio
+async def test_participant_disconnect_terminalizes_while_session_is_alive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = runtime_context()
+
+    class FakeBackend:
+        def __init__(self) -> None:
+            self.completed: list[str] = []
+            self.failed: list[str] = []
+
+        async def runtime_context(self, call_id):
+            return context
+
+        async def observe(self, call_id, observation_type: str) -> None:
+            return None
+
+        async def activate(self, call_id) -> None:
+            return None
+
+        async def complete(self, call_id, conversation_status: str) -> None:
+            self.completed.append(conversation_status)
+
+        async def fail(self, call_id, reason: str, conversation_status: str) -> None:
+            self.failed.append(reason)
+
+        async def aclose(self) -> None:
+            return None
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.callbacks: dict[str, object] = {}
+            self.greeted = asyncio.Event()
+
+        def on(self, event, callback):
+            self.callbacks[event] = callback
+
+        def off(self, event, callback):
+            return None
+
+        async def start(self, agent, *, room) -> None:
+            return None
+
+        async def say(self, text) -> None:
+            self.greeted.set()
+
+        async def aclose(self) -> None:
+            return None
+
+    backend = FakeBackend()
+    session = FakeSession()
+    monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: backend)
+    monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: session)
+
+    class Context:
+        job = SimpleNamespace(
+            metadata=f'{{"call_session_id":"{context.call_session_id}"}}'
+        )
+        room = object()
+        shutdown = None
+
+        def add_shutdown_callback(self, callback) -> None:
+            self.shutdown = callback
+
+        async def wait_for_participant(self, **kwargs):
+            return object()
+
+    job = Context()
+    task = asyncio.create_task(run_job(job, settings()))
+    await session.greeted.wait()
+    callback = session.callbacks["close"]
+    callback(SimpleNamespace(reason=agents.CloseReason.PARTICIPANT_DISCONNECTED))
+    assert job.shutdown is not None
+    await job.shutdown("job_shutdown")
+    await task
+
+    assert backend.completed == ["complete"]
+    assert backend.failed == []
+
+
+@pytest.mark.asyncio
+async def test_terminalizer_uses_the_first_terminal_signal_only() -> None:
+    class Finalizer:
+        def __init__(self) -> None:
+            self.completed = 0
+            self.failed: list[str] = []
+
+        async def complete(self, conversation_status: str) -> None:
+            self.completed += 1
+
+        async def fail(self, reason: str, conversation_status: str) -> None:
+            self.failed.append(reason)
+
+    class Persistence:
+        async def finish(self) -> bool:
+            await asyncio.sleep(0)
+            return True
+
+    finalizer = Finalizer()
+    terminalizer = SessionTerminalizer(finalizer, Persistence())  # type: ignore[arg-type]
+    await asyncio.gather(
+        terminalizer.terminalize(None),
+        terminalizer.terminalize("job_shutdown"),
+    )
+
+    assert finalizer.completed == 1
+    assert finalizer.failed == []

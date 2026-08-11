@@ -30,10 +30,7 @@ from backend_core.modules.integrations.models import (
     IntegrationProvider,
 )
 from backend_core.modules.tenants.models import TenantConfigRevision
-from backend_core.runtime.capabilities.domain import (
-    MAX_MAPPING_INPUT_BYTES,
-    JsonataMappingEngine,
-)
+from backend_core.runtime.capabilities.domain import JsonataMappingEngine
 from backend_core.runtime.finalization.models import (
     ArtifactRepresentation,
     CallFinalization,
@@ -586,19 +583,17 @@ class FinalizationService:
     async def _mapping_input(
         self, finalization: CallFinalization, requested: PostCallActionInput
     ) -> tuple[object, set[UUID]]:
-        stored = await self._session.scalar(
-            select(ArtifactRepresentation).where(
-                ArtifactRepresentation.call_id == finalization.call_id,
-                ArtifactRepresentation.artifact_type == requested.artifact,
-                ArtifactRepresentation.representation == requested.representation,
-                ArtifactRepresentation.status == WorkStatus.COMPLETED,
+        if requested.representation == "base64_text":
+            stored = await self._session.scalar(
+                select(ArtifactRepresentation).where(
+                    ArtifactRepresentation.call_id == finalization.call_id,
+                    ArtifactRepresentation.artifact_type == requested.artifact,
+                    ArtifactRepresentation.representation == requested.representation,
+                    ArtifactRepresentation.status == WorkStatus.COMPLETED,
+                )
             )
-        )
-        if (
-            stored is not None
-            and stored.byte_size is not None
-            and stored.byte_size > MAX_MAPPING_INPUT_BYTES
-        ):
+            if stored is None:
+                raise FinalizationError("artifact representation is unavailable")
             return (
                 {
                     "artifact": stored.artifact_type,
@@ -611,7 +606,14 @@ class FinalizationService:
                 },
                 {stored.id},
             )
-        return await self._input_value(finalization, requested), set()
+        return (
+            {
+                "artifact": requested.artifact,
+                "representation": requested.representation,
+                "value": await self._input_value(finalization, requested),
+            },
+            set(),
+        )
 
     @staticmethod
     def _body_bindings(

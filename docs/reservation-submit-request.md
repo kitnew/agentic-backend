@@ -10,13 +10,12 @@ Tenants that set `business_policy.requires_final_confirmation` use the Backend-o
 
 ## Credential setup
 
-Create the Backend connection through the admin API; the credential value stays only in Job Worker:
+Create the Backend connection metadata with `agentctl`; the credential value stays only in Job Worker:
 
 ```bash
-curl -X POST "$BACKEND_URL/admin/v1/tenants/$TENANT_ID/integration-connections" \
-  -H "Authorization: Bearer $ADMIN_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"key":"reservations","provider":"google_sheets","credential_ref":"tenant-a-sheets"}'
+agentctl integration create tenant-a reservations \
+  --provider google_sheets \
+  --credential-ref tenant-a-sheets
 ```
 
 Mount each Google service-account JSON file read-only into Job Worker and bind the opaque Backend `credential_ref` to its file path in deployment configuration. The path map contains no secret material and is never read from PostgreSQL:
@@ -32,10 +31,12 @@ Share the target test spreadsheet with the service-account `client_email`.
 
 ## Penzión Grand managed webhook configuration
 
-Create a Backend integration connection with `provider: "managed_webhook"`; PostgreSQL stores only its `credential_ref`:
+Create a Backend integration connection with `provider: managed_webhook`; PostgreSQL stores only its `credential_ref`:
 
-```json
-{"key":"penzion-grand-reservation-submit","provider":"managed_webhook","credential_ref":"penzion-grand-reservation-submit"}
+```bash
+agentctl integration create penzion-grand penzion-grand-reservation-submit \
+  --provider managed_webhook \
+  --credential-ref penzion-grand-reservation-submit
 ```
 
 The published capability execution uses the generic managed webhook plan:
@@ -56,7 +57,19 @@ The published capability execution uses the generic managed webhook plan:
 Job Worker deployment configuration contains only the managed connection binding:
 
 ```text
-MANAGED_WEBHOOK_CONNECTION_MAP={"penzion-grand-reservation-submit":{"url_file":"/run/secrets/penzion-grand-reservation-webhook-url","api_key_file":"/run/secrets/penzion-grand-reservation-webhook-api-key","api_key_header":"x-make-apikey","allowed_hosts":["hook.eu1.make.com"]}}
+MANAGED_WEBHOOK_CONNECTION_MAP_FILE=/secrets/managed-webhooks.json
+
+The mounted `/secrets/managed-webhooks.json` file contains the connection map;
+its entries reference the separately mounted URL and API-key files.
+
+```json
+{
+  "penzion-grand-reservation-submit": {
+    "url_file": "/run/secrets/penzion-grand-reservation-webhook-url",
+    "allowed_hosts": ["hook.eu1.make.com"]
+  }
+}
+```
 ```
 
 The Make scenario receives the generic envelope, uses `operation_id` for its hidden `reservations_new` column K, and returns the standard success/failure response envelope. Backend and Worker do not know the Sheet layout.

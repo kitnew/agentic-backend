@@ -59,6 +59,7 @@ class Settings:
     service_secret: str
     credential_file_map_json: str
     managed_webhook_map_json: str = "{}"
+    managed_webhook_map_file: str = "/secrets/managed-webhooks.json"
     allow_insecure_webhooks: bool = False
     credential_secrets_dir: str = "/run/secrets"
     provider_timeout_seconds: float = 10.0
@@ -96,6 +97,9 @@ class Settings:
                 "GOOGLE_SHEETS_CREDENTIAL_FILE_MAP", "{}"
             ),
             managed_webhook_map_json=os.getenv("MANAGED_WEBHOOK_CONNECTION_MAP", "{}"),
+            managed_webhook_map_file=os.getenv(
+                "MANAGED_WEBHOOK_CONNECTION_MAP_FILE", "/secrets/managed-webhooks.json"
+            ),
             allow_insecure_webhooks=os.getenv(
                 "ALLOW_INSECURE_MANAGED_WEBHOOKS", "false"
             ).lower()
@@ -184,7 +188,21 @@ class MountedSecretFileCredentialResolver:
 
 
 class ManagedWebhookConnectionResolver:
-    def __init__(self, encoded_map: str, secrets_dir: str = "/run/secrets") -> None:
+    def __init__(
+        self,
+        encoded_map: str,
+        secrets_dir: str = "/run/secrets",
+        map_file: str | None = None,
+    ) -> None:
+        if map_file:
+            try:
+                encoded_map = Path(map_file).read_text(encoding="utf-8")
+            except FileNotFoundError:
+                pass
+            except OSError as error:
+                raise ValueError(
+                    "managed webhook connection map file could not be read"
+                ) from error
         try:
             value = json.loads(encoded_map)
         except json.JSONDecodeError as error:
@@ -205,7 +223,12 @@ class ManagedWebhookConnectionResolver:
             if not isinstance(raw, dict):
                 raise TypeError("managed webhook connection values must be objects")
             url_file = self._safe_path(raw.get("url_file"), self._root)
-            api_key_file = self._safe_path(raw.get("api_key_file"), self._root)
+            raw_api_key_file = raw.get("api_key_file")
+            api_key_file = (
+                self._safe_path(raw_api_key_file, self._root)
+                if raw_api_key_file is not None
+                else None
+            )
             header = raw.get("api_key_header", "x-api-key")
             if not isinstance(header, str) or not re.fullmatch(
                 r"[A-Za-z0-9-]{1,64}", header
@@ -272,8 +295,12 @@ class ManagedWebhookConnectionResolver:
                 transient=False,
             )
         url = self._read_secret(connection.url_file)
-        api_key = self._read_secret(connection.api_key_file)
-        if not url or not api_key:
+        api_key = (
+            self._read_secret(connection.api_key_file)
+            if connection.api_key_file is not None
+            else ""
+        )
+        if not url or connection.api_key_file is not None and not api_key:
             raise ExecutionError(
                 "credential_resolution_failed",
                 "Managed webhook credentials are empty",
@@ -290,7 +317,7 @@ class ManagedWebhookConnectionResolver:
 @dataclass(frozen=True)
 class ManagedWebhookConnectionConfig:
     url_file: Path
-    api_key_file: Path
+    api_key_file: Path | None
     api_key_header: str
     allowed_hosts: frozenset[str]
 
@@ -387,13 +414,15 @@ class ManagedWebhookPostJsonHandler:
             )
         else:
             content = encoded.encode()
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if connection.api_key:
+            headers[connection.api_key_header] = connection.api_key
         try:
             response = await self._client.post(
                 connection.url,
-                headers={
-                    connection.api_key_header: connection.api_key,
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 content=content,
                 timeout=plan.timeout_seconds,
                 follow_redirects=False,
@@ -1086,7 +1115,9 @@ async def run_worker(settings: Settings) -> None:
         )
         webhooks = ManagedWebhookPostJsonHandler(
             ManagedWebhookConnectionResolver(
-                settings.managed_webhook_map_json, settings.credential_secrets_dir
+                settings.managed_webhook_map_json,
+                settings.credential_secrets_dir,
+                settings.managed_webhook_map_file,
             ),
             provider_client,
             allow_insecure=settings.allow_insecure_webhooks,

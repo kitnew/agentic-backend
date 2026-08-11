@@ -14,6 +14,17 @@ schema_version: 3
 capabilities: {}
 contact:
   address: null
-  emails: ["user.example@gmail.com", "user.example@example.com"]
-  phones: ["+421900000000"]
+  emails:
+  - user.example@gmail.com
+  - user.example@example.com
+  phones:
+  - '+421900000000'
   website: null
+post_call_actions:
+  - id: send_transcript
+    connection: transcript_webhook
+    preset: transcript.raw_json
+
+  - id: send_recording
+    connection: recording_webhook
+    preset: recording.base64

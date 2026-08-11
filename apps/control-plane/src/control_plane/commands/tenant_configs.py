@@ -9,6 +9,9 @@ from uuid import UUID
 
 import yaml  # type: ignore[import-untyped]
 from admin_client import AuthenticatedClient
+from admin_client.generated.api.adminintegrations import (
+    list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+)
 from admin_client.generated.api.admintenants import (
     create_config_draft_admin_v1_tenants_tenant_id_config_drafts_post,
     get_active_config_admin_v1_tenants_tenant_id_config_active_get,
@@ -27,6 +30,13 @@ from admin_client.generated.models.create_draft_request import CreateDraftReques
 from admin_client.generated.models.create_draft_request_config_type_0 import (
     CreateDraftRequestConfigType0,
 )
+from admin_client.generated.models.integration_connection_response import (
+    IntegrationConnectionResponse,
+)
+from admin_client.generated.models.integration_connection_status import (
+    IntegrationConnectionStatus,
+)
+from admin_client.generated.models.integration_provider import IntegrationProvider
 from admin_client.generated.models.tenant_response import TenantResponse
 from admin_client.generated.models.update_draft_request import UpdateDraftRequest
 from admin_client.generated.models.update_draft_request_config_type_0 import (
@@ -56,6 +66,42 @@ from control_plane.settings import Settings
 
 CURRENT_SCHEMA_VERSION = 3
 MAX_DIFFS = 20
+_POST_CALL_EXECUTION = {
+    "plan_type": "managed_webhook.post_json.v1",
+    "mapping_language": "jsonata",
+    "mapping_contract_version": 1,
+    "mapping_engine": "jsonata-python",
+    "mapping_engine_version": "0.7.0",
+}
+_POST_CALL_ACTION_FIELDS = {
+    "id",
+    "type",
+    "connection",
+    "inputs",
+    "request_mapping",
+    "timeout_seconds",
+}
+_POST_CALL_PRESET_FIELDS = {"id", "connection", "preset"}
+_POST_CALL_PRESETS: dict[str, tuple[dict[str, Any], str]] = {
+    "transcript.raw_json": (
+        {
+            "transcript": {
+                "artifact": "transcript",
+                "representation": "raw_json",
+            }
+        },
+        '{"call_id": call_id, "messages": inputs.transcript.value}',
+    ),
+    "recording.base64": (
+        {
+            "recording": {
+                "artifact": "call_recording",
+                "representation": "base64_text",
+            }
+        },
+        '{"call_id": call_id, "recording": inputs.recording.body}',
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -135,6 +181,198 @@ def canonical_config(config: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(capabilities, dict):
         result["capabilities"] = _sorted_free_mapping(capabilities)
     return result
+
+
+def _connections(
+    client: AuthenticatedClient, tenant_id: UUID
+) -> list[IntegrationConnectionResponse]:
+    response = list_connections_admin_v1_tenants_tenant_id_integration_connections_get.sync_detailed(
+        tenant_id, client=client
+    )
+    _config_response_error(response)
+    if not isinstance(response.parsed, list) or not all(
+        isinstance(item, IntegrationConnectionResponse) for item in response.parsed
+    ):
+        raise PromptCommandError(
+            "unexpected client failure: invalid Backend response", 1
+        )
+    return response.parsed
+
+
+def _connections_by_key(
+    client: AuthenticatedClient, tenant_id: UUID
+) -> dict[str, IntegrationConnectionResponse]:
+    result: dict[str, IntegrationConnectionResponse] = {}
+    for connection in _connections(client, tenant_id):
+        if connection.key in result:
+            raise PromptCommandError(
+                f"ambiguous integration connection: {connection.key}", 1
+            )
+        result[connection.key] = connection
+    return result
+
+
+def compile_authoring_config(
+    client: AuthenticatedClient, tenant_id: UUID, config: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Compile the small authoring surface into the pinned runtime contract."""
+    result = canonical_config(config)
+    actions = result.get("post_call_actions")
+    if actions is None:
+        return result
+    if not isinstance(actions, list):
+        raise PromptCommandError("post_call_actions must be a list", 2)
+    if all(isinstance(action, dict) and "action_id" in action for action in actions):
+        return result
+    if any(isinstance(action, dict) and "action_id" in action for action in actions):
+        raise PromptCommandError(
+            "post_call_actions cannot mix authoring actions with runtime actions", 2
+        )
+
+    connections = _connections_by_key(client, tenant_id)
+    compiled: list[dict[str, Any]] = []
+    action_ids: set[str] = set()
+    for index, action in enumerate(actions):
+        label = f"post_call_actions[{index}]"
+        if not isinstance(action, dict):
+            raise PromptCommandError(f"{label} must be a mapping", 2)
+        preset_name = action.get("preset")
+        fields = (
+            _POST_CALL_PRESET_FIELDS
+            if preset_name is not None
+            else _POST_CALL_ACTION_FIELDS
+        )
+        unknown = set(action) - fields
+        if unknown:
+            raise PromptCommandError(
+                f"{label} has unknown fields: {', '.join(sorted(unknown))}", 2
+            )
+        action_id = action.get("id")
+        if not isinstance(action_id, str) or not action_id:
+            raise PromptCommandError(f"{label}.id must be a non-empty string", 2)
+        if action_id in action_ids:
+            raise PromptCommandError("post_call_actions IDs must be unique", 2)
+        action_ids.add(action_id)
+        connection = action.get("connection")
+        if not isinstance(connection, str) or not connection:
+            raise PromptCommandError(
+                f"{label}.connection must be a non-empty string", 2
+            )
+        resolved = connections.get(connection)
+        if resolved is None:
+            raise PromptCommandError(
+                f"{label}.connection references unknown integration connection {connection!r}",
+                2,
+            )
+        if (
+            resolved.provider is not IntegrationProvider.MANAGED_WEBHOOK
+            or resolved.status is not IntegrationConnectionStatus.ACTIVE
+        ):
+            raise PromptCommandError(
+                f"{label}.connection must reference an active managed_webhook connection",
+                2,
+            )
+        if preset_name is not None:
+            if (
+                not isinstance(preset_name, str)
+                or preset_name not in _POST_CALL_PRESETS
+            ):
+                raise PromptCommandError(f"{label}.preset is unknown", 2)
+            inputs, request_mapping = _POST_CALL_PRESETS[preset_name]
+            timeout_seconds = 10
+        else:
+            if action.get("type") != "http.post_json":
+                raise PromptCommandError(f"{label}.type must be http.post_json", 2)
+            inputs = action.get("inputs", {})
+            custom_mapping = action.get("request_mapping")
+            if not isinstance(custom_mapping, str) or not custom_mapping:
+                raise PromptCommandError(
+                    f"{label}.request_mapping must be a non-empty string", 2
+                )
+            request_mapping = custom_mapping
+            timeout_seconds = action.get("timeout_seconds", 10)
+            if type(timeout_seconds) is not int:
+                raise PromptCommandError(
+                    f"{label}.timeout_seconds must be an integer", 2
+                )
+        compiled.append(
+            {
+                "action_id": action_id,
+                "type": "http.post_json",
+                "inputs": inputs,
+                "semantic_key": f"post_call.{action_id}",
+                "semantic_version": 1,
+                "execution": {
+                    **_POST_CALL_EXECUTION,
+                    "connection_id": str(resolved.id),
+                    "request_mapping": request_mapping,
+                    "timeout_seconds": timeout_seconds,
+                },
+            }
+        )
+    return canonical_config({**result, "post_call_actions": compiled})
+
+
+def authoring_config(
+    client: AuthenticatedClient, tenant_id: UUID, config: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Render a pinned runtime config back to its small authoring surface."""
+    result = canonical_config(config)
+    actions = result.get("post_call_actions")
+    if not isinstance(actions, list) or not actions:
+        return result
+    connections = {str(item.id): item.key for item in _connections(client, tenant_id)}
+    authored: list[dict[str, Any]] = []
+    for index, action in enumerate(actions):
+        label = f"post_call_actions[{index}]"
+        if not isinstance(action, dict) or not isinstance(
+            action.get("execution"), dict
+        ):
+            raise PromptCommandError(f"Active TenantConfig has invalid {label}", 1)
+        execution = action["execution"]
+        connection = connections.get(str(execution.get("connection_id")))
+        if connection is None:
+            raise PromptCommandError(
+                f"Active TenantConfig {label} references an unavailable integration connection",
+                1,
+            )
+        action_id = action.get("action_id")
+        request_mapping = execution.get("request_mapping")
+        if not isinstance(action_id, str) or not isinstance(request_mapping, str):
+            raise PromptCommandError(f"Active TenantConfig has invalid {label}", 1)
+        preset = next(
+            (
+                name
+                for name, (inputs, mapping) in _POST_CALL_PRESETS.items()
+                if action.get("type", "http.post_json") == "http.post_json"
+                and action.get("inputs", {}) == inputs
+                and request_mapping == mapping
+                and action.get("semantic_key") == f"post_call.{action_id}"
+                and action.get("semantic_version") == 1
+                and execution.get("timeout_seconds") == 10
+                and all(
+                    execution.get(key) == value
+                    for key, value in _POST_CALL_EXECUTION.items()
+                )
+            ),
+            None,
+        )
+        if preset is not None:
+            authored.append(
+                {"id": action_id, "connection": connection, "preset": preset}
+            )
+            continue
+        rendered: dict[str, Any] = {
+            "id": action_id,
+            "type": action.get("type", "http.post_json"),
+            "connection": connection,
+            "request_mapping": request_mapping,
+            "timeout_seconds": execution.get("timeout_seconds", 10),
+        }
+        if action.get("inputs"):
+            rendered["inputs"] = action["inputs"]
+        authored.append(rendered)
+    return canonical_config({**result, "post_call_actions": authored})
 
 
 def serialize_tenant_yaml(config: Mapping[str, Any]) -> str:
@@ -240,12 +478,13 @@ def _validate(
     *,
     local: bool,
 ) -> dict[str, Any] | None:
+    runtime_config = compile_authoring_config(client, tenant_id, config)
     response = (
         validate_config_admin_v1_tenants_tenant_id_config_validate_post.sync_detailed(
             tenant_id,
             client=client,
             body=ValidateConfigRequest(
-                config=ValidateConfigRequestConfig.from_dict(config),
+                config=ValidateConfigRequestConfig.from_dict(runtime_config),
                 schema_version=schema_version,
             ),
         )
@@ -348,8 +587,15 @@ def _write(path: Path, content: str) -> None:
         ) from error
 
 
-def _pull(path: Path, state: ConfigState, *, force: bool) -> None:
-    remote = _active_config(state)
+def _pull(
+    client: AuthenticatedClient,
+    tenant_id: UUID,
+    path: Path,
+    state: ConfigState,
+    *,
+    force: bool,
+) -> None:
+    remote = authoring_config(client, tenant_id, _active_config(state))
     if path.exists() and not force:
         local = _read(path, required=True)
         assert local is not None
@@ -555,7 +801,7 @@ def run_tenant_config(
         elif action == "revisions":
             _revisions(_state(client, tenant.id))
         elif action == "pull":
-            _pull(path, _state(client, tenant.id), force=force)
+            _pull(client, tenant.id, path, _state(client, tenant.id), force=force)
         elif action == "plan":
             _plan(client, tenant, path)
         elif action == "push":

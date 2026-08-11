@@ -120,7 +120,7 @@ def test_v3_validates_unique_declarative_post_call_actions() -> None:
             "mapping_contract_version": 1,
             "mapping_engine": "jsonata-python",
             "mapping_engine_version": "0.7.0",
-            "request_mapping": "{'recording': inputs.recording}",
+            "request_mapping": "{'recording': inputs.recording.body}",
             "timeout_seconds": 10,
         },
     }

@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     capability_retention_maintenance_interval_seconds: Annotated[int, Field(gt=0)] = (
         3600
     )
+    call_runtime_reconciliation_enabled: bool = True
+    call_runtime_reconciliation_interval_seconds: Annotated[
+        float, Field(gt=0, le=3600)
+    ] = 60.0
+    call_runtime_reconciliation_grace_seconds: Annotated[
+        float, Field(gt=0, le=86400)
+    ] = 120.0
+    call_runtime_reconciliation_batch_size: Annotated[int, Field(gt=0, le=1000)] = 100
 
     @model_validator(mode="after")
     def credentials_must_be_distinct(self) -> Self:

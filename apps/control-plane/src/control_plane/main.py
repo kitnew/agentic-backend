@@ -6,6 +6,7 @@ from json import dumps, loads
 import httpx
 
 from control_plane import __version__
+from control_plane.commands.integrations import run_integration
 from control_plane.commands.knowledge import run_tenant_knowledge
 from control_plane.commands.prompt_sets import run_tenant_prompt_set
 from control_plane.commands.prompts import (
@@ -131,6 +132,25 @@ def parser() -> ArgumentParser:
         sync_actions.add_parser(action)
     sync_pull = sync_actions.add_parser("pull")
     sync_pull.add_argument("--force", action="store_true")
+    integration = resources.add_parser(
+        "integration", help="manage tenant integration connection metadata"
+    )
+    integration_actions = integration.add_subparsers(dest="action", required=True)
+    integration_list = integration_actions.add_parser("list")
+    integration_list.add_argument("tenant_slug")
+    for action in ("show", "delete"):
+        command = integration_actions.add_parser(action)
+        command.add_argument("tenant_slug")
+        command.add_argument("key")
+    integration_create = integration_actions.add_parser("create")
+    integration_create.add_argument("tenant_slug")
+    integration_create.add_argument("key")
+    integration_create.add_argument(
+        "--provider",
+        choices=("managed_webhook", "google_sheets"),
+        required=True,
+    )
+    integration_create.add_argument("--credential-ref", required=True)
     return root
 
 
@@ -181,6 +201,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.action,
                 getattr(arguments, "profile_key", None),
                 force=getattr(arguments, "force", False),
+            )
+            return 0
+        if arguments.resource == "integration":
+            run_integration(
+                settings,
+                arguments.action,
+                arguments.tenant_slug,
+                getattr(arguments, "key", None),
+                provider=getattr(arguments, "provider", None),
+                credential_ref=getattr(arguments, "credential_ref", None),
             )
             return 0
         if arguments.resource == "tenant" and arguments.tenant_action == "prompt":

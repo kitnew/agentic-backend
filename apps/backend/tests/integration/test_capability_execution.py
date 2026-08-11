@@ -190,6 +190,29 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             },
         )
         assert connection.status_code == 201
+        temporary_connection = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/integration-connections",
+            headers=admin_headers,
+            json={
+                "key": "temporary",
+                "provider": "managed_webhook",
+                "credential_ref": "capability-test-temporary",
+            },
+        )
+        assert temporary_connection.status_code == 201
+        assert (
+            await client.delete(
+                f"/admin/v1/tenants/{tenant_id}/integration-connections/"
+                f"{temporary_connection.json()['id']}",
+                headers=admin_headers,
+            )
+        ).status_code == 204
+        listed_connections = await client.get(
+            f"/admin/v1/tenants/{tenant_id}/integration-connections",
+            headers=admin_headers,
+        )
+        assert listed_connections.status_code == 200
+        assert {item["key"] for item in listed_connections.json()} == {"reservations"}
         other_tenant = await client.post(
             "/admin/v1/tenants",
             headers=admin_headers,

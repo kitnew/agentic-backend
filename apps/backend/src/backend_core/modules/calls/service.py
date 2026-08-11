@@ -119,7 +119,9 @@ class CallSessionService:
             call, created = await self._calls.add_or_get(call)
             if created:
                 await self._conversations.create_for_call(call.id, call.tenant_id)
-                await self._events.publish(call_event(call.id, call.tenant_id, "created"))
+                await self._events.publish(
+                    call_event(call.id, call.tenant_id, "created")
+                )
             return call, created
         except IntegrityError as error:
             raise CallSessionConflictError from error
@@ -161,9 +163,7 @@ class CallSessionService:
             or config_revision.published_at is None
         ):
             raise CallSessionConfigUnavailableError
-        _, prompt_set, voice_runtime = await self._voice_config(
-            tenant, config_revision
-        )
+        _, prompt_set, voice_runtime = await self._voice_config(tenant, config_revision)
 
         call_id = uuid4()
         room_name = f"call_{call_id}"
@@ -392,6 +392,20 @@ class CallSessionService:
         conversation_status: ConversationPersistenceStatus,
     ) -> CallSession:
         return await self.end(call_id, conversation_status)
+
+    async def reconcile_missing_runtime(self, call_id: UUID) -> CallSession | None:
+        call = await self._get_for_update(call_id)
+        if call.status in (CallSessionStatus.ENDED, CallSessionStatus.FAILED):
+            return None
+        if call.status is CallSessionStatus.CONNECTED:
+            return await self.end(call_id, ConversationPersistenceStatus.INCOMPLETE)
+        if call.status is CallSessionStatus.STARTED:
+            return await self.fail(
+                call_id,
+                "runtime_unavailable",
+                ConversationPersistenceStatus.INCOMPLETE,
+            )
+        return None
 
     async def fail(
         self,

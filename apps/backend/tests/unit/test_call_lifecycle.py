@@ -86,6 +86,13 @@ async def test_allowed_lifecycle_transitions_emit_authoritative_events() -> None
         "call.ended",
     ]
 
+    await lifecycle.end(current.id, ConversationPersistenceStatus.COMPLETE)
+    assert [message.message_type for message in events.messages] == [
+        "call.started",
+        "call.connected",
+        "call.ended",
+    ]
+
 
 @pytest.mark.asyncio
 async def test_rejected_transition_and_failure_from_each_nonterminal_state() -> None:
@@ -111,3 +118,25 @@ async def test_rejected_transition_and_failure_from_each_nonterminal_state() -> 
         )
         assert current.status is CallSessionStatus.FAILED
         assert events.messages[-1].message_type == "call.failed"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_missing_runtime_uses_existing_terminal_transitions() -> None:
+    connected = call()
+    lifecycle, events = service(connected)
+    await lifecycle.mark_started(connected.id)
+    await lifecycle.mark_connected(connected.id)
+
+    assert await lifecycle.reconcile_missing_runtime(connected.id) is connected
+    assert connected.status is CallSessionStatus.ENDED
+    assert events.messages[-1].message_type == "call.ended"
+    assert await lifecycle.reconcile_missing_runtime(connected.id) is None
+    assert [event.message_type for event in events.messages].count("call.ended") == 1
+
+    started = call()
+    lifecycle, events = service(started)
+    await lifecycle.mark_started(started.id)
+    assert await lifecycle.reconcile_missing_runtime(started.id) is started
+    assert started.status is CallSessionStatus.FAILED
+    assert started.failure_reason == "runtime_unavailable"
+    assert events.messages[-1].message_type == "call.failed"

@@ -51,3 +51,7 @@ class IntegrationConnectionRepository:
 
     async def refresh(self, connection: IntegrationConnection) -> None:
         await self._session.refresh(connection)
+
+    async def delete(self, connection: IntegrationConnection) -> None:
+        await self._session.delete(connection)
+        await self._session.flush()

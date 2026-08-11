@@ -55,3 +55,9 @@ class IntegrationConnectionService:
         await self._connections.flush()
         await self._connections.refresh(connection)
         return connection
+
+    async def delete(self, tenant_id: UUID, connection_id: UUID) -> None:
+        connection = await self._connections.get_for_update(tenant_id, connection_id)
+        if connection is None:
+            raise IntegrationConnectionError("connection_not_found")
+        await self._connections.delete(connection)

@@ -102,10 +102,7 @@ def build_agent_tools(
 ) -> list[llm.Tool | llm.Toolset]:
     return [
         calculator_tool(),
-        *[
-            capability_tool(tool, backend, call_id)
-            for tool in context.capabilities
-        ],
+        *[capability_tool(tool, backend, call_id) for tool in context.capabilities],
     ]
 
 
@@ -201,6 +198,38 @@ def close_failure_reason(reason: agents.CloseReason) -> str | None:
     return "provider_session_error"
 
 
+class SessionTerminalizer:
+    def __init__(
+        self,
+        finalizer: CallFinalizer,
+        persistence: ConversationPersistence,
+    ) -> None:
+        self._finalizer = finalizer
+        self._persistence = persistence
+        self._task: asyncio.Task[None] | None = None
+
+    def start(self, failure_reason: str | None) -> asyncio.Task[None]:
+        if self._task is None:
+            self._task = asyncio.create_task(self._deliver(failure_reason))
+        return self._task
+
+    async def terminalize(self, failure_reason: str | None) -> None:
+        task = self.start(failure_reason)
+        await asyncio.shield(task)
+
+    async def _deliver(self, failure_reason: str | None) -> None:
+        conversation_complete = False
+        try:
+            conversation_complete = await self._persistence.finish()
+        except Exception:
+            logger.exception("conversation persistence drain failed")
+        conversation_status = "complete" if conversation_complete else "incomplete"
+        if failure_reason is None:
+            await self._finalizer.complete(conversation_status)
+        else:
+            await self._finalizer.fail(failure_reason, conversation_status)
+
+
 async def on_request(request: agents.JobRequest) -> None:
     try:
         parse_metadata(request.job.metadata)
@@ -219,6 +248,7 @@ async def run_job(
     finalizer = CallFinalizer(backend, metadata.call_session_id)
     session: agents.AgentSession | None = None
     persistence: ConversationPersistence | None = None
+    terminalizer: SessionTerminalizer | None = None
     failure_reason: str | None = None
     cancelled = False
     try:
@@ -226,11 +256,19 @@ async def run_job(
         log_runtime_binding(settings, context)
         session = create_agent_session(settings, context.voice_runtime)
         persistence = ConversationPersistence(backend, metadata.call_session_id)
+        terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()
+
+        async def on_shutdown(_: str) -> None:
+            await terminalizer.terminalize("job_shutdown")
+
+        ctx.add_shutdown_callback(on_shutdown)
 
         def on_close(event: agents.CloseEvent) -> None:
             if not closed.done():
                 closed.set_result(event)
+            task = terminalizer.start(close_failure_reason(event.reason))
+            task.add_done_callback(log_terminalization_failure)
 
         session.on("close", on_close)
         session.on("conversation_item_added", persistence.on_conversation_item_added)
@@ -285,22 +323,24 @@ async def run_job(
             off = getattr(session, "off", None)
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
-        conversation_complete = False
-        if persistence is not None:
-            try:
-                conversation_complete = await persistence.finish()
-            except Exception:
-                logger.exception("conversation persistence drain failed")
-        conversation_status = "complete" if conversation_complete else "incomplete"
         try:
-            if failure_reason is None:
-                await finalizer.complete(conversation_status)
+            if terminalizer is not None:
+                await terminalizer.terminalize(failure_reason)
+            elif failure_reason is None:
+                await finalizer.complete("incomplete")
             else:
-                await finalizer.fail(failure_reason, conversation_status)
+                await finalizer.fail(failure_reason, "incomplete")
         finally:
             await backend.aclose()
     if cancelled:
         raise asyncio.CancelledError
+
+
+def log_terminalization_failure(task: asyncio.Task[None]) -> None:
+    if task.cancelled():
+        return
+    if error := task.exception():
+        logger.exception("Voice Agent terminalization failed", exc_info=error)
 
 
 async def entrypoint(ctx: agents.JobContext) -> None:

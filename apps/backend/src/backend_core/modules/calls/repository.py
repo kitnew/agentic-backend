@@ -1,10 +1,19 @@
+from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend_core.modules.calls.models import CallSession
+from backend_core.modules.calls.models import CallSession, CallSessionStatus
+
+
+@dataclass(frozen=True)
+class StaleRuntimeCall:
+    id: UUID
+    status: CallSessionStatus
+    room_name: str
 
 
 class CallSessionRepository:
@@ -67,6 +76,28 @@ class CallSessionRepository:
         return await self._session.scalar(
             select(CallSession).where(CallSession.id == call_id).with_for_update()
         )
+
+    async def list_stale_runtime_calls(
+        self, cutoff: datetime, limit: int
+    ) -> list[StaleRuntimeCall]:
+        rows = await self._session.execute(
+            select(CallSession.id, CallSession.status, CallSession.room_name)
+            .where(
+                or_(
+                    and_(
+                        CallSession.status == CallSessionStatus.STARTED,
+                        CallSession.started_at <= cutoff,
+                    ),
+                    and_(
+                        CallSession.status == CallSessionStatus.CONNECTED,
+                        CallSession.connected_at <= cutoff,
+                    ),
+                )
+            )
+            .order_by(CallSession.started_at)
+            .limit(limit)
+        )
+        return [StaleRuntimeCall(*row) for row in rows.tuples()]
 
     async def flush(self) -> None:
         await self._session.flush()

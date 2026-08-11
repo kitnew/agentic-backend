@@ -127,6 +127,84 @@ activates that revision for new calls according to Backend semantics; existing
 calls remain pinned to the revision with which they started. It does not alter
 PromptSet state.
 
+## Post-call actions
+
+Create connection metadata once. `agentctl` resolves the tenant slug; the
+credential reference is not a secret:
+
+```bash
+agentctl integration create penzion-grand transcript_webhook \
+  --provider managed_webhook \
+  --credential-ref penzion-grand-transcript
+agentctl integration create penzion-grand recording_webhook \
+  --provider managed_webhook \
+  --credential-ref penzion-grand-recording
+```
+
+Provision each referenced webhook URL/API key separately in the deployment's
+mounted secrets and `/secrets/managed-webhooks.json`. `agentctl integration`
+manages Backend metadata only; it never reads or writes deployment secrets.
+
+Normal `tenant.yaml` authoring uses platform-owned presets:
+
+```yaml
+post_call_actions:
+  - id: send_transcript
+    connection: transcript_webhook
+    preset: transcript.raw_json
+
+  - id: send_recording
+    connection: recording_webhook
+    preset: recording.base64
+```
+
+Then validate and publish the pinned runtime revision:
+
+```bash
+agentctl tenant config plan penzion-grand
+agentctl tenant config push penzion-grand
+agentctl tenant config publish penzion-grand
+```
+
+The only supported presets are `transcript.raw_json` and `recording.base64`.
+Control Plane expands them into strict artifact inputs and the standard HTTP
+payload mapping. Backend never receives the `preset` or connection alias.
+
+For a custom payload, use the advanced bounded JSONata form instead of a
+preset:
+
+```yaml
+post_call_actions:
+  - id: custom_delivery
+    type: http.post_json
+    connection: crm_webhook
+    inputs:
+      transcript:
+        artifact: transcript
+        representation: raw_json
+    request_mapping: |
+      {
+        "call_id": call_id,
+        "conversation": inputs.transcript.value
+      }
+    timeout_seconds: 10
+```
+
+`agentctl tenant config plan`, `push`, and global `sync` compile this into the
+pinned runtime revision: `id` becomes the stable action identity,
+`connection` becomes its managed connection ID, and the generic HTTP/JSONata
+execution contract is filled by the platform. Runtime-only execution metadata
+and connection IDs do not belong in `tenant.yaml`.
+
+Preset and advanced fields cannot be mixed. JSONata maps bounded JSON only and
+is not required in preset authoring. Each advanced structured input is
+available as `inputs.<name>.value`. A body-capable representation is always
+available as `inputs.<name>.body`, independent of its size; for example,
+`call_recording/base64_text` is streamed to the generic HTTP executor rather
+than entering JSONata or Redis. The mapping selects where that body is placed
+in the outbound JSON; it cannot define scheduling, retries, conditions, or
+workflow dependencies.
+
 ## Voice runtime policy
 
 `platform/runtime.yaml` is a complete logical runtime policy. It contains no

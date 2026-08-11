@@ -255,6 +255,42 @@ def test_tenant_config_command_hierarchy_and_state_dir(
     }
 
 
+def test_integration_command_hierarchy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
+    monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli,
+        "run_integration",
+        lambda settings, action, slug, key=None, **options: seen.update(
+            action=action, slug=slug, key=key, **options
+        ),
+    )
+
+    assert (
+        cli.main(
+            [
+                "integration",
+                "create",
+                "penzion-grand",
+                "recording_webhook",
+                "--provider",
+                "managed_webhook",
+                "--credential-ref",
+                "penzion-grand-recording",
+            ]
+        )
+        == 0
+    )
+    assert seen == {
+        "action": "create",
+        "slug": "penzion-grand",
+        "key": "recording_webhook",
+        "provider": "managed_webhook",
+        "credential_ref": "penzion-grand-recording",
+    }
+
+
 @pytest.mark.parametrize("action", ["show", "revisions", "plan", "apply"])
 def test_tenant_prompt_set_command_hierarchy(
     monkeypatch: pytest.MonkeyPatch, action: str

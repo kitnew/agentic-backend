@@ -12,6 +12,9 @@ from admin_client.generated.models.active_tenant_config import ActiveTenantConfi
 from admin_client.generated.models.config_revision_response import (
     ConfigRevisionResponse,
 )
+from admin_client.generated.models.integration_connection_response import (
+    IntegrationConnectionResponse,
+)
 from admin_client.generated.models.tenant_response import TenantResponse
 from admin_client.generated.models.tenant_status import TenantStatus
 from admin_client.generated.models.validate_config_response import (
@@ -19,6 +22,7 @@ from admin_client.generated.models.validate_config_response import (
 )
 from admin_client.generated.models.validate_draft_response import ValidateDraftResponse
 from admin_client.generated.types import Response
+from contracts import TenantConfigV3
 from control_plane.commands import prompts, tenant_configs
 from control_plane.settings import Settings
 
@@ -113,6 +117,87 @@ def response(
         content=content,
         headers=httpx.Headers(),
         parsed=parsed,
+    )
+
+
+def integration_connection(
+    *,
+    key: str = "recording_webhook",
+    connection_id: int = 99,
+    provider: str = "managed_webhook",
+    status: str = "active",
+) -> IntegrationConnectionResponse:
+    return IntegrationConnectionResponse.from_dict(
+        {
+            "created_at": NOW.isoformat(),
+            "credential_ref": "managed-webhook-recording",
+            "id": f"00000000-0000-0000-0000-{connection_id:012d}",
+            "key": key,
+            "provider": provider,
+            "status": status,
+            "tenant_id": str(TENANT_ID),
+            "updated_at": NOW.isoformat(),
+        }
+    )
+
+
+def authoring_post_call_config() -> dict[str, Any]:
+    return {
+        **CONFIG,
+        "post_call_actions": [
+            {
+                "id": "send_recording",
+                "type": "http.post_json",
+                "connection": "recording_webhook",
+                "inputs": {
+                    "recording": {
+                        "artifact": "call_recording",
+                        "representation": "base64_text",
+                    }
+                },
+                "request_mapping": '{"recording": inputs.recording.body}',
+                "timeout_seconds": 10,
+            }
+        ],
+    }
+
+
+def preset_post_call_config() -> dict[str, Any]:
+    return {
+        **CONFIG,
+        "post_call_actions": [
+            {
+                "id": "send_transcript",
+                "connection": "transcript_webhook",
+                "preset": "transcript.raw_json",
+            },
+            {
+                "id": "send_recording",
+                "connection": "recording_webhook",
+                "preset": "recording.base64",
+            },
+        ],
+    }
+
+
+def mock_connections(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        tenant_configs.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response([integration_connection()]),
+    )
+
+
+def mock_preset_connections(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        tenant_configs.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response(
+            [
+                integration_connection(key="transcript_webhook", connection_id=98),
+                integration_connection(),
+            ]
+        ),
     )
 
 
@@ -211,6 +296,217 @@ def test_serialization_is_deterministic_unicode_and_metadata_free() -> None:
         assert not any(line.startswith(f"{field}:") for line in first.splitlines())
 
 
+def test_post_call_authoring_actions_compile_and_render_without_runtime_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_connections(monkeypatch)
+    authored = authoring_post_call_config()
+
+    compiled = tenant_configs.compile_authoring_config(
+        object(),
+        TENANT_ID,
+        authored,  # type: ignore[arg-type]
+    )
+
+    action = compiled["post_call_actions"][0]
+    assert action == {
+        "action_id": "send_recording",
+        "type": "http.post_json",
+        "inputs": authored["post_call_actions"][0]["inputs"],
+        "semantic_key": "post_call.send_recording",
+        "semantic_version": 1,
+        "execution": {
+            "plan_type": "managed_webhook.post_json.v1",
+            "connection_id": "00000000-0000-0000-0000-000000000099",
+            "mapping_language": "jsonata",
+            "mapping_contract_version": 1,
+            "mapping_engine": "jsonata-python",
+            "mapping_engine_version": "0.7.0",
+            "request_mapping": '{"recording": inputs.recording.body}',
+            "timeout_seconds": 10,
+        },
+    }
+    assert (
+        tenant_configs.authoring_config(
+            object(),
+            TENANT_ID,
+            compiled,  # type: ignore[arg-type]
+        )
+        == authored
+    )
+
+
+def test_post_call_presets_compile_to_strict_runtime_and_round_trip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_preset_connections(monkeypatch)
+    authored = preset_post_call_config()
+
+    compiled = tenant_configs.compile_authoring_config(
+        object(),
+        TENANT_ID,
+        authored,  # type: ignore[arg-type]
+    )
+
+    transcript, recording = compiled["post_call_actions"]
+    assert transcript["inputs"] == {
+        "transcript": {"artifact": "transcript", "representation": "raw_json"}
+    }
+    assert transcript["execution"]["request_mapping"] == (
+        '{"call_id": call_id, "messages": inputs.transcript.value}'
+    )
+    assert recording["inputs"] == {
+        "recording": {
+            "artifact": "call_recording",
+            "representation": "base64_text",
+        }
+    }
+    assert recording["execution"]["request_mapping"] == (
+        '{"call_id": call_id, "recording": inputs.recording.body}'
+    )
+    TenantConfigV3.model_validate(compiled)
+    pulled = tenant_configs.authoring_config(
+        object(),
+        TENANT_ID,
+        compiled,  # type: ignore[arg-type]
+    )
+    assert pulled == authored
+    assert "execution" not in pulled["post_call_actions"][0]
+    assert "credential_ref" not in str(pulled)
+
+
+def test_post_call_preset_validation_is_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_connections(monkeypatch)
+    unknown = {
+        **CONFIG,
+        "post_call_actions": [
+            {
+                "id": "send_recording",
+                "connection": "recording_webhook",
+                "preset": "recording.unknown",
+            }
+        ],
+    }
+    with pytest.raises(tenant_configs.PromptCommandError, match="preset is unknown"):
+        tenant_configs.compile_authoring_config(
+            object(),
+            TENANT_ID,
+            unknown,  # type: ignore[arg-type]
+        )
+
+    mixed = {
+        **unknown,
+        "post_call_actions": [
+            {
+                **unknown["post_call_actions"][0],
+                "preset": "recording.base64",
+                "request_mapping": "{}",
+            }
+        ],
+    }
+    with pytest.raises(tenant_configs.PromptCommandError, match="unknown fields"):
+        tenant_configs.compile_authoring_config(
+            object(),
+            TENANT_ID,
+            mixed,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    ("provider", "status"),
+    [("google_sheets", "active"), ("managed_webhook", "disabled")],
+)
+def test_post_call_actions_reject_incompatible_connections(
+    monkeypatch: pytest.MonkeyPatch, provider: str, status: str
+) -> None:
+    monkeypatch.setattr(
+        tenant_configs.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response(
+            [integration_connection(provider=provider, status=status)]
+        ),
+    )
+    with pytest.raises(
+        tenant_configs.PromptCommandError, match="active managed_webhook"
+    ):
+        tenant_configs.compile_authoring_config(
+            object(),
+            TENANT_ID,
+            {
+                **CONFIG,
+                "post_call_actions": [
+                    {
+                        "id": "send_recording",
+                        "connection": "recording_webhook",
+                        "preset": "recording.base64",
+                    }
+                ],
+            },  # type: ignore[arg-type]
+        )
+
+
+def test_post_call_actions_reject_ambiguous_connection_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tenant_configs.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response(
+            [integration_connection(), integration_connection(connection_id=100)]
+        ),
+    )
+    with pytest.raises(
+        tenant_configs.PromptCommandError, match="ambiguous integration"
+    ):
+        tenant_configs.compile_authoring_config(
+            object(),
+            TENANT_ID,
+            authoring_post_call_config(),  # type: ignore[arg-type]
+        )
+
+
+def test_post_call_authoring_action_requires_a_known_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tenant_configs.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response([]),
+    )
+
+    with pytest.raises(tenant_configs.PromptCommandError, match="unknown integration"):
+        tenant_configs.compile_authoring_config(
+            object(),
+            TENANT_ID,
+            authoring_post_call_config(),  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("action", ["plan", "push"])
+def test_plan_and_push_reject_missing_post_call_connection_before_backend_validation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, action: str
+) -> None:
+    write_yaml(
+        tenant_configs.tenant_config_path(tmp_path, SLUG), preset_post_call_config()
+    )
+    mock_tenant(monkeypatch)
+    monkeypatch.setattr(
+        tenant_configs.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response([]),
+    )
+    monkeypatch.setattr(
+        tenant_configs.validate_config_admin_v1_tenants_tenant_id_config_validate_post,
+        "sync_detailed",
+        lambda *args, **kwargs: pytest.fail("invalid authoring must not reach Backend"),
+    )
+
+    with pytest.raises(tenant_configs.PromptCommandError, match="unknown integration"):
+        tenant_configs.run_tenant_config(settings(tmp_path), action, SLUG)
+
+
 def test_semantic_comparison_ignores_mapping_order_but_not_list_order() -> None:
     reordered = dict(reversed(list(CONFIG.items())))
     assert not tenant_configs.semantic_diff(CONFIG, reordered)
@@ -302,6 +598,24 @@ def test_pull_creates_semantic_noop_refuses_and_force_overwrites(
     path.write_bytes(b"\xff")
     tenant_configs.run_tenant_config(settings(tmp_path), "pull", SLUG, force=True)
     assert tenant_configs.parse_tenant_yaml(path.read_text()) == CONFIG
+
+
+def test_pull_renders_post_call_actions_as_authoring_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    mock_preset_connections(monkeypatch)
+    authored = preset_post_call_config()
+    runtime = tenant_configs.compile_authoring_config(
+        object(),
+        TENANT_ID,
+        authored,  # type: ignore[arg-type]
+    )
+    mock_state(monkeypatch, [revision(4, "published", runtime)], active(4, runtime))
+
+    path = tenant_configs.tenant_config_path(tmp_path, SLUG)
+    tenant_configs.run_tenant_config(settings(tmp_path), "pull", SLUG)
+
+    assert tenant_configs.parse_tenant_yaml(path.read_text()) == authored
 
 
 def test_plan_validates_then_reads_remote_and_prints_path_diff_without_mutation(

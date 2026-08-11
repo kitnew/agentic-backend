@@ -10,6 +10,7 @@ export AGENTCTL_STATE_DIR=./definitions
 uv run agentctl --help
 uv run agentctl --version
 uv run agentctl tenant list
+uv run agentctl integration list penzion-grand
 uv run agentctl system-prompt plan
 uv run agentctl profile list
 uv run agentctl sync plan
@@ -55,6 +56,40 @@ uv run agentctl tenant prompt-set apply penzion-grand
 
 TenantPrompt publication remains separate from PromptSet composition and
 activation; publishing the artifact alone does not change runtime behavior.
+
+## Integrations and post-call presets
+
+Create and inspect tenant connection metadata by slug:
+
+```bash
+uv run agentctl integration create penzion-grand transcript_webhook \
+  --provider managed_webhook \
+  --credential-ref penzion-grand-transcript
+uv run agentctl integration list penzion-grand
+uv run agentctl integration show penzion-grand transcript_webhook
+uv run agentctl integration delete penzion-grand transcript_webhook
+```
+
+These commands store only `key`, `provider`, and `credential_ref`. The referenced
+URL/API key and hostname allowlist must still be provisioned in the Job Worker
+deployment through mounted secrets and `/secrets/managed-webhooks.json`, selected
+with `MANAGED_WEBHOOK_CONNECTION_MAP_FILE`. Credentials remain in the mounted
+secret files.
+
+Normal post-call authoring in `definitions/tenants/<slug>/tenant.yaml` is short:
+
+```yaml
+post_call_actions:
+  - id: send_transcript
+    connection: transcript_webhook
+    preset: transcript.raw_json
+  - id: send_recording
+    connection: recording_webhook
+    preset: recording.base64
+```
+
+Control Plane expands presets during plan/push. Use the documented advanced
+JSONata action form only when the outbound payload must differ from the preset.
 
 Knowledge authoring is a flat UTF-8 Markdown tree under
 `tenants/<tenant_slug>/knowledge/*.md`. Filenames are stable document keys.
