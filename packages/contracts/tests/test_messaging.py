@@ -5,6 +5,7 @@ from contracts import (
     CommandError,
     CommandResult,
     GenerateCallSummary,
+    MaterializeArtifactRepresentation,
     MessageEnvelope,
     command_envelope,
     parse_command,
@@ -15,9 +16,7 @@ from pydantic import ValidationError
 def test_versioned_command_round_trip_and_type_validation() -> None:
     call_id = uuid4()
     command = GenerateCallSummary(call_id=call_id, finalization_id=uuid4())
-    envelope = command_envelope(
-        command, tenant_id=uuid4(), correlation_id=call_id
-    )
+    envelope = command_envelope(command, tenant_id=uuid4(), correlation_id=call_id)
 
     parsed = MessageEnvelope.model_validate_json(envelope.model_dump_json())
 
@@ -37,3 +36,15 @@ def test_command_result_requires_exactly_one_outcome() -> None:
             error=CommandError(code="failed", message="failed", transient=False),
             attempt=1,
         )
+
+
+def test_materialization_command_carries_only_references() -> None:
+    command = MaterializeArtifactRepresentation(
+        call_id=uuid4(), finalization_id=uuid4(), representation_id=uuid4()
+    )
+    envelope = command_envelope(
+        command, tenant_id=uuid4(), correlation_id=command.call_id
+    )
+
+    assert parse_command(envelope) == command
+    assert "content" not in envelope.payload

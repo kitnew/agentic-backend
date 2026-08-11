@@ -4,7 +4,11 @@ from uuid import UUID
 
 import httpx
 import pytest
-from contracts import ManagedWebhookCapability, ManagedWebhookPostJsonPlan
+from contracts import (
+    ManagedWebhookBodyBinding,
+    ManagedWebhookCapability,
+    ManagedWebhookPostJsonPlan,
+)
 from job_worker.worker import (
     ExecutionError,
     ManagedWebhookConnectionResolver,
@@ -91,6 +95,51 @@ async def test_managed_webhook_posts_generic_envelope_without_logging_payload(
             "semantic_version": 1,
         },
         "payload": {"guest_name": "Alice"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_managed_webhook_streams_generic_artifact_body_binding(
+    tmp_path: Path,
+) -> None:
+    requests: list[httpx.Request] = []
+
+    async def body():
+        yield b"YXV"
+        yield b"kaW8="
+
+    def transport(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={
+                "contract_version": 1,
+                "operation_id": str(OPERATION_ID),
+                "status": "succeeded",
+                "result": {"reference": "accepted", "deduplicated": False, "data": {}},
+            },
+        )
+
+    plan = webhook_plan().model_copy(
+        update={
+            "payload": {"recording": None, "kind": "completed"},
+            "body_bindings": [
+                ManagedWebhookBodyBinding(
+                    representation_id=UUID("00000000-0000-0000-0000-000000000099"),
+                    payload_path="/recording",
+                )
+            ],
+        }
+    )
+    async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
+        await ManagedWebhookPostJsonHandler(resolver(tmp_path), client).execute(
+            plan, {"/recording": body()}
+        )
+
+    assert json.loads(requests[0].content)["payload"] == {
+        "recording": "YXVkaW8=",
+        "kind": "completed",
     }
 
 

@@ -63,6 +63,10 @@ from .platform_runtime_request import PlatformRuntimeRequest
 from .platform_runtime_revision_response import PlatformRuntimeRevisionResponse
 from .platform_runtime_state_response import PlatformRuntimeStateResponse
 from .post_call_action import PostCallAction
+from .post_call_action_input import PostCallActionInput
+from .post_call_action_input_artifact import PostCallActionInputArtifact
+from .post_call_action_input_representation import PostCallActionInputRepresentation
+from .post_call_action_inputs import PostCallActionInputs
 from .prompt_set_apply_response import PromptSetApplyResponse
 from .prompt_set_component_plan_response import PromptSetComponentPlanResponse
 from .prompt_set_component_response import PromptSetComponentResponse
@@ -187,6 +191,10 @@ __all__ = (
     "PlatformRuntimeRevisionResponse",
     "PlatformRuntimeStateResponse",
     "PostCallAction",
+    "PostCallActionInput",
+    "PostCallActionInputArtifact",
+    "PostCallActionInputRepresentation",
+    "PostCallActionInputs",
     "PromptSetApplyResponse",
     "PromptSetComponentPlanResponse",
     "PromptSetComponentResponse",

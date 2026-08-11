@@ -2,7 +2,8 @@ from typing import Annotated
 from uuid import UUID
 
 from contracts import ManagedWebhookPostJsonPlan
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
@@ -13,6 +14,28 @@ from backend_core.runtime.finalization.service import (
 )
 
 router = APIRouter(prefix="/internal/v1/calls", tags=["internal:finalization"])
+# ponytail: PostgreSQL-backed v1 ceiling; move recordings to object storage if 32 MiB is insufficient.
+MAX_RECORDING_BYTES = 32 * 1024 * 1024
+MAX_REPRESENTATION_BYTES = (MAX_RECORDING_BYTES + 2) // 3 * 4
+_TRANSFER_CHUNK_BYTES = 64 * 1024
+
+
+async def body(request: Request, max_bytes: int) -> bytes:
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > max_bytes:
+            raise HTTPException(
+                status.HTTP_413_CONTENT_TOO_LARGE, "artifact is too large"
+            )
+    if not content:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "artifact is empty")
+    return bytes(content)
+
+
+def chunks(content: bytes):
+    for offset in range(0, len(content), _TRANSFER_CHUNK_BYTES):
+        yield content[offset : offset + _TRANSFER_CHUNK_BYTES]
 
 
 def service(session: DatabaseSession, request: Request) -> FinalizationService:
@@ -63,3 +86,105 @@ async def post_call_action(
         )
     except FinalizationError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.put(
+    "/{call_id}/recording",
+    dependencies=[Depends(require_internal_scope("call-recording:write"))],
+)
+async def persist_recording(
+    call_id: UUID, request: Request, finalization: Service
+) -> dict[str, object]:
+    try:
+        recording = await finalization.persist_recording(
+            call_id,
+            await body(request, MAX_RECORDING_BYTES),
+            request.headers.get("content-type", "application/octet-stream")[:255],
+        )
+        return {
+            "recording_id": str(recording.id),
+            "byte_size": recording.byte_size,
+            "sha256": recording.sha256,
+        }
+    except FinalizationError as error:
+        status_code = (
+            status.HTTP_409_CONFLICT
+            if "different content" in str(error)
+            else status.HTTP_404_NOT_FOUND
+        )
+        raise HTTPException(status_code, str(error)) from error
+
+
+@router.get(
+    "/artifact-representations/{representation_id}/source",
+    dependencies=[Depends(require_internal_scope("artifact-representation:read"))],
+)
+async def materialization_source(
+    representation_id: UUID,
+    command_id: UUID,
+    finalization: Service,
+) -> Response:
+    try:
+        (
+            representation,
+            content,
+            content_type,
+        ) = await finalization.materialization_source(representation_id, command_id)
+        return Response(
+            content,
+            media_type=content_type,
+            headers={
+                "X-Artifact-Type": representation.artifact_type,
+                "X-Target-Representation": representation.representation,
+            },
+        )
+    except FinalizationError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.get(
+    "/artifact-representations/{representation_id}/content",
+    dependencies=[Depends(require_internal_scope("artifact-representation:read"))],
+)
+async def representation_content(
+    representation_id: UUID,
+    command_id: UUID,
+    finalization: Service,
+) -> StreamingResponse:
+    try:
+        representation, content = await finalization.representation_content(
+            representation_id, command_id
+        )
+        return StreamingResponse(
+            chunks(content),
+            media_type=representation.content_type,
+            headers={"Content-Length": str(representation.byte_size)},
+        )
+    except FinalizationError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.put(
+    "/artifact-representations/{representation_id}/content",
+    dependencies=[Depends(require_internal_scope("artifact-representation:write"))],
+)
+async def store_representation(
+    representation_id: UUID,
+    command_id: UUID,
+    request: Request,
+    finalization: Service,
+) -> dict[str, object]:
+    try:
+        representation = await finalization.store_representation(
+            representation_id,
+            command_id,
+            await body(request, MAX_REPRESENTATION_BYTES),
+            request.headers.get("content-type", "application/octet-stream")[:255],
+        )
+        return {
+            "representation_id": str(representation.id),
+            "byte_size": representation.byte_size,
+            "sha256": representation.sha256,
+        }
+    except FinalizationError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error

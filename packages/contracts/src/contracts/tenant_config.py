@@ -103,8 +103,29 @@ class ManagedWebhookExecution(_TenantConfigModel):
     timeout_seconds: int = Field(gt=0, le=60)
 
 
+class PostCallActionInput(_TenantConfigModel):
+    artifact: Literal["transcript", "call_recording", "call_summary"]
+    representation: Literal["raw_json", "plain_text", "original", "base64_text"]
+
+    @model_validator(mode="after")
+    def representation_matches_artifact(self) -> PostCallActionInput:
+        supported = {
+            "transcript": {"raw_json", "plain_text"},
+            "call_recording": {"original", "base64_text"},
+            "call_summary": {"plain_text"},
+        }
+        if self.representation not in supported[self.artifact]:
+            raise ValueError("unsupported artifact representation")
+        return self
+
+
 class PostCallAction(_TenantConfigModel):
     action_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    type: Literal["http.post_json"] = "http.post_json"
+    inputs: dict[
+        Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")],
+        PostCallActionInput,
+    ] = Field(default_factory=dict, max_length=10)
     semantic_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
     semantic_version: int = Field(gt=0)
     execution: ManagedWebhookExecution

@@ -30,8 +30,17 @@ class ExecutePostCallAction(_Message):
     action_id: str = Field(min_length=1, max_length=128)
 
 
+class MaterializeArtifactRepresentation(_Message):
+    command_type: Literal["artifact.materialize_representation.v1"] = (
+        "artifact.materialize_representation.v1"
+    )
+    call_id: UUID
+    finalization_id: UUID
+    representation_id: UUID
+
+
 CommandPayload = Annotated[
-    GenerateCallSummary | ExecutePostCallAction,
+    GenerateCallSummary | ExecutePostCallAction | MaterializeArtifactRepresentation,
     Field(discriminator="command_type"),
 ]
 
@@ -45,7 +54,9 @@ class CommandError(_Message):
 class CommandResult(_Message):
     command_id: UUID
     command_type: Literal[
-        "call.generate_summary.v1", "call.execute_post_call_action.v1"
+        "call.generate_summary.v1",
+        "call.execute_post_call_action.v1",
+        "artifact.materialize_representation.v1",
     ]
     status: Literal["succeeded", "failed"]
     output: dict[str, object] | None = None
@@ -75,7 +86,9 @@ class MessageEnvelope(_Message):
 
 
 def command_envelope(
-    command: GenerateCallSummary | ExecutePostCallAction,
+    command: GenerateCallSummary
+    | ExecutePostCallAction
+    | MaterializeArtifactRepresentation,
     *,
     tenant_id: UUID,
     correlation_id: UUID,
@@ -94,9 +107,9 @@ def command_envelope(
 def parse_command(message: MessageEnvelope) -> CommandPayload:
     if message.message_kind != "command":
         raise ValueError("message is not a command")
-    command: GenerateCallSummary | ExecutePostCallAction = TypeAdapter(
-        CommandPayload
-    ).validate_python(message.payload)
+    command: (
+        GenerateCallSummary | ExecutePostCallAction | MaterializeArtifactRepresentation
+    ) = TypeAdapter(CommandPayload).validate_python(message.payload)
     if command.command_type != message.message_type:
         raise ValueError("command type does not match envelope")
     return command

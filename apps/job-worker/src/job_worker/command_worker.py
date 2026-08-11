@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from base64 import b64encode
 from collections.abc import Awaitable, Callable
 from typing import cast
 
@@ -10,6 +11,7 @@ from contracts import (
     CommandResult,
     ExecutePostCallAction,
     GenerateCallSummary,
+    MaterializeArtifactRepresentation,
     MessageEnvelope,
     parse_command,
 )
@@ -25,7 +27,10 @@ from job_worker.worker import (
 )
 
 CommandHandler = Callable[
-    [GenerateCallSummary | ExecutePostCallAction, MessageEnvelope],
+    [
+        GenerateCallSummary | ExecutePostCallAction | MaterializeArtifactRepresentation,
+        MessageEnvelope,
+    ],
     Awaitable[dict[str, object]],
 ]
 
@@ -40,11 +45,15 @@ class GenerateCallSummaryHandler:
 
     async def __call__(
         self,
-        command: GenerateCallSummary | ExecutePostCallAction,
+        command: GenerateCallSummary
+        | ExecutePostCallAction
+        | MaterializeArtifactRepresentation,
         envelope: MessageEnvelope,
     ) -> dict[str, object]:
         if not isinstance(command, GenerateCallSummary):
-            raise ExecutionError("invalid_command", "Invalid summary command", transient=False)
+            raise ExecutionError(
+                "invalid_command", "Invalid summary command", transient=False
+            )
         if not all(
             (
                 self._settings.azure_openai_api_key,
@@ -75,7 +84,10 @@ class GenerateCallSummaryHandler:
                         "role": "system",
                         "content": "Summarize this call accurately and concisely.",
                     },
-                    {"role": "user", "content": json.dumps(context, ensure_ascii=False)},
+                    {
+                        "role": "user",
+                        "content": json.dumps(context, ensure_ascii=False),
+                    },
                 ]
             },
         )
@@ -112,22 +124,85 @@ class ExecutePostCallActionHandler:
         self._webhooks = webhooks
 
     async def __call__(
-        self, command: GenerateCallSummary | ExecutePostCallAction, envelope: MessageEnvelope
+        self,
+        command: GenerateCallSummary
+        | ExecutePostCallAction
+        | MaterializeArtifactRepresentation,
+        envelope: MessageEnvelope,
     ) -> dict[str, object]:
         if not isinstance(command, ExecutePostCallAction):
-            raise ExecutionError("invalid_command", "Invalid action command", transient=False)
+            raise ExecutionError(
+                "invalid_command", "Invalid action command", transient=False
+            )
         plan = await self._backend.post_call_action(
             command.call_id,
             command.finalization_id,
             command.action_id,
             envelope.message_id,
         )
-        result = await self._webhooks.execute(plan)
+        if plan.body_bindings:
+            result = await self._webhooks.execute(
+                plan,
+                {
+                    binding.payload_path: self._backend.representation_content(
+                        binding.representation_id, envelope.message_id
+                    )
+                    for binding in plan.body_bindings
+                },
+            )
+        else:
+            result = await self._webhooks.execute(plan)
         return {
             "reference": result.reference,
             "deduplicated": result.deduplicated,
             "data": result.data,
         }
+
+
+class MaterializeArtifactRepresentationHandler:
+    def __init__(self, backend: BackendClient) -> None:
+        self._backend = backend
+
+    async def __call__(
+        self,
+        command: GenerateCallSummary
+        | ExecutePostCallAction
+        | MaterializeArtifactRepresentation,
+        envelope: MessageEnvelope,
+    ) -> dict[str, object]:
+        if not isinstance(command, MaterializeArtifactRepresentation):
+            raise ExecutionError(
+                "invalid_command", "Invalid materialization command", transient=False
+            )
+        source, artifact, target = await self._backend.materialization_source(
+            command.representation_id, envelope.message_id
+        )
+        if (artifact, target) == ("call_recording", "base64_text"):
+            content = b64encode(source)
+        elif (artifact, target) == ("transcript", "plain_text"):
+            try:
+                messages = json.loads(source)
+                content = "\n".join(
+                    f"{item['role']}: {item['content']}" for item in messages
+                ).encode()
+            except (KeyError, TypeError, ValueError) as error:
+                raise ExecutionError(
+                    "artifact_source_invalid",
+                    "Artifact source is invalid",
+                    transient=False,
+                ) from error
+        else:
+            raise ExecutionError(
+                "representation_unsupported",
+                "Artifact representation is unsupported",
+                transient=False,
+            )
+        return await self._backend.store_representation(
+            command.representation_id,
+            envelope.message_id,
+            content,
+            "text/plain; charset=utf-8",
+        )
 
 
 class CommandWorker:
@@ -192,7 +267,7 @@ class CommandWorker:
             attempt = int(fields.get("attempt", "1"))
             if attempt < 1 or attempt > self._settings.max_retries + 1:
                 raise ValueError("invalid command attempt")
-        except (KeyError, ValueError, ValidationError):
+        except KeyError, ValueError, ValidationError:
             await self._dead_letter(message_id, "unknown", "invalid_command")
             return
         completed_key = f"application:commands:completed:{envelope.message_id}"
@@ -216,7 +291,7 @@ class CommandWorker:
             return
         try:
             output = await handler(command, envelope)
-        except (httpx.HTTPError, OSError):
+        except httpx.HTTPError, OSError:
             execution_error = ExecutionError(
                 "command_transport_error", "Command transport failed", transient=True
             )
@@ -230,15 +305,16 @@ class CommandWorker:
                 )
                 await self._ack(message_id)
                 return
-            await self._terminal_failure(
-                message_id, envelope, attempt, execution_error
-            )
+            await self._terminal_failure(message_id, envelope, attempt, execution_error)
             return
         except ExecutionError as error:
             if error.transient and attempt <= self._settings.max_retries:
                 await self._redis.xadd(
                     self._settings.command_stream,
-                    {"message": envelope.model_dump_json(), "attempt": str(attempt + 1)},
+                    {
+                        "message": envelope.model_dump_json(),
+                        "attempt": str(attempt + 1),
+                    },
                 )
                 await self._ack(message_id)
                 return

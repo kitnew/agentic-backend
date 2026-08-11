@@ -90,12 +90,20 @@ class ManagedWebhookCapability(_Contract):
     semantic_version: int = Field(gt=0)
 
 
+class ManagedWebhookBodyBinding(_Contract):
+    representation_id: UUID
+    payload_path: str = Field(min_length=1, max_length=2048)
+
+
 class ManagedWebhookPostJsonPlan(_Contract):
     plan_type: Literal["managed_webhook.post_json.v1"]
     connection_ref: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
     operation_id: UUID
     capability: ManagedWebhookCapability
     payload: dict[str, object]
+    body_bindings: list[ManagedWebhookBodyBinding] = Field(
+        default_factory=list, max_length=10
+    )
     timeout_seconds: float = Field(gt=0, le=60)
 
 

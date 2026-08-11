@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 import ipaddress
 import json
 import logging
 import os
 import re
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -318,7 +320,9 @@ class ManagedWebhookPostJsonHandler:
         self._allow_insecure = allow_insecure
 
     async def execute(
-        self, plan: ManagedWebhookPostJsonPlan
+        self,
+        plan: ManagedWebhookPostJsonPlan,
+        bodies: dict[str, AsyncIterator[bytes]] | None = None,
     ) -> ManagedWebhookPostJsonResult:
         connection = self._connections.resolve(plan.connection_ref)
         parsed = urlparse(connection.url)
@@ -361,19 +365,28 @@ class ManagedWebhookPostJsonHandler:
                 "Managed webhook destination is not allowed",
                 transient=False,
             )
-        envelope = {
-            "contract_version": 1,
-            "operation_id": str(plan.operation_id),
-            "capability": plan.capability.model_dump(mode="json"),
-            "payload": plan.payload,
-        }
-        encoded = json.dumps(envelope, ensure_ascii=False, separators=(",", ":"))
+        encoded = self._bounded_envelope(plan)
         if len(encoded.encode()) > 64_000:
             raise ExecutionError(
                 "request_too_large",
                 "Managed webhook request is too large",
                 transient=False,
             )
+        if plan.body_bindings:
+            body_streams = bodies or {}
+            if {binding.payload_path for binding in plan.body_bindings} != set(
+                body_streams
+            ):
+                raise ExecutionError(
+                    "artifact_body_unavailable",
+                    "Managed webhook artifact body is unavailable",
+                    transient=False,
+                )
+            content: bytes | AsyncIterator[bytes] = self._stream_envelope(
+                plan, body_streams
+            )
+        else:
+            content = encoded.encode()
         try:
             response = await self._client.post(
                 connection.url,
@@ -381,7 +394,7 @@ class ManagedWebhookPostJsonHandler:
                     connection.api_key_header: connection.api_key,
                     "Content-Type": "application/json",
                 },
-                content=encoded.encode(),
+                content=content,
                 timeout=plan.timeout_seconds,
                 follow_redirects=False,
             )
@@ -462,6 +475,88 @@ class ManagedWebhookPostJsonHandler:
             deduplicated=success.result.deduplicated,
             data=success.result.data,
         )
+
+    @staticmethod
+    def _bounded_envelope(plan: ManagedWebhookPostJsonPlan) -> str:
+        return json.dumps(
+            {
+                "contract_version": 1,
+                "operation_id": str(plan.operation_id),
+                "capability": plan.capability.model_dump(mode="json"),
+                "payload": plan.payload,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+
+    async def _stream_envelope(
+        self,
+        plan: ManagedWebhookPostJsonPlan,
+        bodies: dict[str, AsyncIterator[bytes]],
+    ) -> AsyncIterator[bytes]:
+        yield b'{"contract_version":1,"operation_id":'
+        yield json.dumps(str(plan.operation_id)).encode()
+        yield b',"capability":'
+        yield json.dumps(
+            plan.capability.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+        yield b',"payload":'
+        async for chunk in self._stream_json(plan.payload, "", bodies):
+            yield chunk
+        yield b"}"
+
+    async def _stream_json(
+        self,
+        value: object,
+        path: str,
+        bodies: dict[str, AsyncIterator[bytes]],
+    ) -> AsyncIterator[bytes]:
+        body = bodies.get(path)
+        if body is not None:
+            yield b'"'
+            decoder = codecs.getincrementaldecoder("utf-8")()
+            try:
+                async for chunk in body:
+                    text = decoder.decode(chunk)
+                    if text:
+                        yield json.dumps(text, ensure_ascii=False)[1:-1].encode()
+                text = decoder.decode(b"", final=True)
+                if text:
+                    yield json.dumps(text, ensure_ascii=False)[1:-1].encode()
+            except UnicodeDecodeError as error:
+                raise ExecutionError(
+                    "artifact_body_invalid",
+                    "Managed webhook artifact body is not UTF-8 text",
+                    transient=False,
+                ) from error
+            yield b'"'
+            return
+        if isinstance(value, dict):
+            yield b"{"
+            for index, (key, child) in enumerate(value.items()):
+                if index:
+                    yield b","
+                yield json.dumps(key, ensure_ascii=False).encode()
+                yield b":"
+                escaped = key.replace("~", "~0").replace("/", "~1")
+                async for chunk in self._stream_json(
+                    child, f"{path}/{escaped}", bodies
+                ):
+                    yield chunk
+            yield b"}"
+            return
+        if isinstance(value, list):
+            yield b"["
+            for index, child in enumerate(value):
+                if index:
+                    yield b","
+                async for chunk in self._stream_json(child, f"{path}/{index}", bodies):
+                    yield chunk
+            yield b"]"
+            return
+        yield json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
 
 
 class GoogleSheetsAppendValuesHandler:
@@ -627,6 +722,8 @@ class BackendClient:
                     "capability-result:write",
                     "finalization-context:read",
                     "post-call-action:read",
+                    "artifact-representation:read",
+                    "artifact-representation:write",
                 ],
             },
             self._settings.service_secret,
@@ -679,6 +776,67 @@ class BackendClient:
         )
         response.raise_for_status()
         return ManagedWebhookPostJsonPlan.model_validate(response.json())
+
+    async def representation_content(
+        self, representation_id: UUID, command_id: UUID
+    ) -> AsyncIterator[bytes]:
+        request = self._client.build_request(
+            "GET",
+            f"{self._settings.backend_url}/internal/v1/calls/"
+            f"artifact-representations/{representation_id}/content",
+            params={"command_id": str(command_id)},
+            headers={"Authorization": f"Bearer {self._token()}"},
+        )
+        response = await self._client.send(request, stream=True)
+        try:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                yield chunk
+        finally:
+            await response.aclose()
+
+    async def materialization_source(
+        self, representation_id: UUID, command_id: UUID
+    ) -> tuple[bytes, str, str]:
+        response = await self._client.get(
+            f"{self._settings.backend_url}/internal/v1/calls/"
+            f"artifact-representations/{representation_id}/source",
+            params={"command_id": str(command_id)},
+            headers={"Authorization": f"Bearer {self._token()}"},
+        )
+        response.raise_for_status()
+        return (
+            response.content,
+            response.headers["X-Artifact-Type"],
+            response.headers["X-Target-Representation"],
+        )
+
+    async def store_representation(
+        self,
+        representation_id: UUID,
+        command_id: UUID,
+        content: bytes,
+        content_type: str,
+    ) -> dict[str, object]:
+        response = await self._client.put(
+            f"{self._settings.backend_url}/internal/v1/calls/"
+            f"artifact-representations/{representation_id}/content",
+            params={"command_id": str(command_id)},
+            headers={
+                "Authorization": f"Bearer {self._token()}",
+                "Content-Type": content_type,
+            },
+            content=content,
+        )
+        response.raise_for_status()
+        value = response.json()
+        if not isinstance(value, dict):
+            raise ExecutionError(
+                "representation_response_invalid",
+                "Representation response is invalid",
+                transient=False,
+            )
+        return value
 
 
 class CapabilityWorker:
@@ -911,6 +1069,7 @@ async def run_worker(settings: Settings) -> None:
         CommandWorker,
         ExecutePostCallActionHandler,
         GenerateCallSummaryHandler,
+        MaterializeArtifactRepresentationHandler,
     )
 
     redis = Redis.from_url(
@@ -949,6 +1108,9 @@ async def run_worker(settings: Settings) -> None:
                 ),
                 "call.execute_post_call_action.v1": ExecutePostCallActionHandler(
                     backend, webhooks
+                ),
+                "artifact.materialize_representation.v1": (
+                    MaterializeArtifactRepresentationHandler(backend)
                 ),
             },
         )

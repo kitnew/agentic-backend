@@ -100,6 +100,60 @@ def test_v3_keeps_prompt_text_out_of_deterministic_configuration() -> None:
         TenantConfigV3.model_validate({**config, "knowledge_text": "Breakfast"})
 
 
+def test_v3_validates_unique_declarative_post_call_actions() -> None:
+    document = config_v3()
+    action = {
+        "action_id": "send_recording",
+        "type": "http.post_json",
+        "inputs": {
+            "recording": {
+                "artifact": "call_recording",
+                "representation": "base64_text",
+            }
+        },
+        "semantic_key": "post_call.recording",
+        "semantic_version": 1,
+        "execution": {
+            "plan_type": "managed_webhook.post_json.v1",
+            "connection_id": "00000000-0000-0000-0000-000000000001",
+            "mapping_language": "jsonata",
+            "mapping_contract_version": 1,
+            "mapping_engine": "jsonata-python",
+            "mapping_engine_version": "0.7.0",
+            "request_mapping": "{'recording': inputs.recording}",
+            "timeout_seconds": 10,
+        },
+    }
+    document["post_call_actions"] = [action]
+
+    parsed = TenantConfigV3.model_validate(document)
+
+    assert (
+        parsed.post_call_actions[0].inputs["recording"].representation == "base64_text"
+    )
+    with pytest.raises(ValidationError, match="unsupported artifact representation"):
+        TenantConfigV3.model_validate(
+            {
+                **document,
+                "post_call_actions": [
+                    {
+                        **action,
+                        "inputs": {
+                            "recording": {
+                                "artifact": "transcript",
+                                "representation": "base64_text",
+                            }
+                        },
+                    }
+                ],
+            }
+        )
+    with pytest.raises(ValidationError, match="IDs must be unique"):
+        TenantConfigV3.model_validate(
+            {**document, "post_call_actions": [action, action]}
+        )
+
+
 def test_v1_rejects_unknown_timezone() -> None:
     document = json.loads(fixture_json())
     document["localization"]["timezone"] = "Mars/Olympus"

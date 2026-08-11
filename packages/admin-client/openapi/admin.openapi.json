@@ -1822,6 +1822,16 @@
           "execution": {
             "$ref": "#/components/schemas/ManagedWebhookExecution"
           },
+          "inputs": {
+            "maxProperties": 10,
+            "patternProperties": {
+              "^[a-z][a-z0-9_]{0,63}$": {
+                "$ref": "#/components/schemas/PostCallActionInput"
+              }
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
           "semantic_key": {
             "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
             "title": "Semantic Key",
@@ -1831,6 +1841,12 @@
             "exclusiveMinimum": 0.0,
             "title": "Semantic Version",
             "type": "integer"
+          },
+          "type": {
+            "const": "http.post_json",
+            "default": "http.post_json",
+            "title": "Type",
+            "type": "string"
           }
         },
         "required": [
@@ -1840,6 +1856,36 @@
           "execution"
         ],
         "title": "PostCallAction",
+        "type": "object"
+      },
+      "PostCallActionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "enum": [
+              "transcript",
+              "call_recording",
+              "call_summary"
+            ],
+            "title": "Artifact",
+            "type": "string"
+          },
+          "representation": {
+            "enum": [
+              "raw_json",
+              "plain_text",
+              "original",
+              "base64_text"
+            ],
+            "title": "Representation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact",
+          "representation"
+        ],
+        "title": "PostCallActionInput",
         "type": "object"
       },
       "PromptSetApplyResponse": {
