@@ -154,9 +154,14 @@ class OutboxMessage(Base):
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     job_id: Mapped[UUID] = mapped_column(Uuid, unique=True)
-    capability_invocation_id: Mapped[UUID] = mapped_column(
+    capability_invocation_id: Mapped[UUID | None] = mapped_column(
         Uuid,
         ForeignKey("capability_invocations.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    stream: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payload_field: Mapped[str] = mapped_column(
+        String(32), default="job", server_default="job"
     )
     payload: Mapped[dict[str, object]] = mapped_column(JSONB)
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

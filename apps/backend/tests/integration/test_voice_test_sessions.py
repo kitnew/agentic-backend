@@ -252,6 +252,7 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
                 "call_session_id",
                 "status",
                 "started_at",
+                "connected_at",
                 "ended_at",
                 "failure_reason",
             }

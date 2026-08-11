@@ -243,6 +243,9 @@ async def run_job(
                 tools=build_agent_tools(context, backend, metadata.call_session_id),
             ),
         )
+        observe = getattr(backend, "observe", None)
+        if observe is not None:
+            await observe(metadata.call_session_id, "session_started")
         try:
             await asyncio.wait_for(
                 ctx.wait_for_participant(

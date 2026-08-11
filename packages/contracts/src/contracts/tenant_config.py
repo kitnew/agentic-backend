@@ -4,7 +4,14 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 
 
@@ -96,6 +103,13 @@ class ManagedWebhookExecution(_TenantConfigModel):
     timeout_seconds: int = Field(gt=0, le=60)
 
 
+class PostCallAction(_TenantConfigModel):
+    action_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    semantic_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    semantic_version: int = Field(gt=0)
+    execution: ManagedWebhookExecution
+
+
 CapabilityExecution = Annotated[
     GoogleSheetsAppendExecution | ManagedWebhookExecution,
     Field(discriminator="plan_type"),
@@ -143,6 +157,14 @@ class TenantConfigV3(_TenantConfigModel):
     capabilities: dict[str, StrictBool | TenantCapabilityProfile] = Field(
         default_factory=dict
     )
+    post_call_actions: list[PostCallAction] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def post_call_action_ids_are_unique(self) -> TenantConfigV3:
+        action_ids = [action.action_id for action in self.post_call_actions]
+        if len(action_ids) != len(set(action_ids)):
+            raise ValueError("post_call action IDs must be unique")
+        return self
 
 
 TenantConfig = TenantConfigV1 | TenantConfigV2 | TenantConfigV3

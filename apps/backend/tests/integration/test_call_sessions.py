@@ -169,6 +169,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             "call-session:activate",
             "call-session:complete",
             "call-session:fail",
+            "call-session:observe",
         ],
         secret=app_settings.voice_agent_service_secret.get_secret_value(),
     )
@@ -287,26 +288,44 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
                 next_voice_runtime_revision_id
             )
 
-            activated = await client.post(
-                f"{calls_url}/{call_id}/activate",
+            started = await client.post(
+                f"/internal/v1/calls/{call_id}/observations",
                 headers=voice_headers,
+                json={"schema_version": 1, "observation_type": "session_started"},
             )
-            assert activated.status_code == 200
-            assert activated.json()["status"] == "active"
-            assert activated.json()["started_at"] is not None
+            assert started.status_code == 200
+            assert started.json()["status"] == "started"
+            assert started.json()["started_at"] is not None
             assert (
                 await client.post(
-                    f"{calls_url}/{call_id}/activate",
+                    f"/internal/v1/calls/{call_id}/observations",
                     headers=voice_headers,
+                    json={
+                        "schema_version": 1,
+                        "observation_type": "session_started",
+                    },
                 )
-            ).json() == activated.json()
+            ).json() == started.json()
+
+            connected = await client.post(
+                f"/internal/v1/calls/{call_id}/observations",
+                headers=voice_headers,
+                json={
+                    "schema_version": 1,
+                    "observation_type": "participant_connected",
+                },
+            )
+            assert connected.status_code == 200
+            assert connected.json()["status"] == "connected"
+            assert connected.json()["connected_at"] is not None
 
             completed = await client.post(
-                f"{calls_url}/{call_id}/complete",
+                f"/internal/v1/calls/{call_id}/observations",
                 headers=voice_headers,
+                json={"schema_version": 1, "observation_type": "session_finished"},
             )
             assert completed.status_code == 200
-            assert completed.json()["status"] == "completed"
+            assert completed.json()["status"] == "ended"
             assert completed.json()["ended_at"] is not None
             assert (
                 await client.post(

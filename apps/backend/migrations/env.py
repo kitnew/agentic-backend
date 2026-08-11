@@ -15,6 +15,7 @@ from backend_core.runtime.capabilities.models import (  # noqa: F401
     CapabilityInvocation,
     OutboxMessage,
 )
+from backend_core.runtime.finalization.models import CallFinalization  # noqa: F401
 from backend_core.runtime.voice.models import VoiceRuntime  # noqa: F401
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config

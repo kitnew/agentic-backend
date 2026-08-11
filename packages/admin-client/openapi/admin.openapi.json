@@ -133,6 +133,18 @@
             "title": "Call Session Id",
             "type": "string"
           },
+          "connected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected At"
+          },
           "ended_at": {
             "anyOf": [
               {
@@ -185,8 +197,9 @@
       "CallLifecycleStatus": {
         "enum": [
           "created",
-          "active",
-          "completed",
+          "started",
+          "connected",
+          "ended",
           "failed"
         ],
         "title": "CallLifecycleStatus",
@@ -1798,6 +1811,37 @@
         "title": "PlatformRuntimeStateResponse",
         "type": "object"
       },
+      "PostCallAction": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "execution": {
+            "$ref": "#/components/schemas/ManagedWebhookExecution"
+          },
+          "semantic_key": {
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+            "title": "Semantic Key",
+            "type": "string"
+          },
+          "semantic_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Semantic Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "action_id",
+          "semantic_key",
+          "semantic_version",
+          "execution"
+        ],
+        "title": "PostCallAction",
+        "type": "object"
+      },
       "PromptSetApplyResponse": {
         "properties": {
           "changed": {
@@ -2474,6 +2518,14 @@
           },
           "localization": {
             "$ref": "#/components/schemas/LocalizationConfig"
+          },
+          "post_call_actions": {
+            "items": {
+              "$ref": "#/components/schemas/PostCallAction"
+            },
+            "maxItems": 20,
+            "title": "Post Call Actions",
+            "type": "array"
           },
           "schema_version": {
             "const": 3,

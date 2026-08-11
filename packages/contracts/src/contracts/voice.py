@@ -1,8 +1,9 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from contracts.capability import RuntimeCapabilityDefinition
 from contracts.voice_runtime import EffectiveVoiceRuntime
@@ -14,9 +15,29 @@ class _VoiceModel(BaseModel):
 
 class CallLifecycleStatus(StrEnum):
     CREATED = "created"
-    ACTIVE = "active"
-    COMPLETED = "completed"
+    STARTED = "started"
+    CONNECTED = "connected"
+    ENDED = "ended"
     FAILED = "failed"
+
+
+class VoiceCallObservation(_VoiceModel):
+    schema_version: Literal[1] = 1
+    observation_type: Literal[
+        "session_started",
+        "participant_connected",
+        "session_finished",
+        "session_failed",
+    ]
+    failure_reason: str | None = Field(default=None, min_length=1, max_length=4000)
+    conversation_status: Literal["complete", "incomplete"] = "complete"
+
+    @model_validator(mode="after")
+    def failure_reason_matches_observation(self) -> VoiceCallObservation:
+        failed = self.observation_type == "session_failed"
+        if failed != (self.failure_reason is not None):
+            raise ValueError("failure_reason is required only for session_failed")
+        return self
 
 
 class LiveKitJobMetadata(_VoiceModel):
@@ -55,5 +76,6 @@ class CallLifecycleResponse(_VoiceModel):
     call_session_id: UUID
     status: CallLifecycleStatus
     started_at: datetime | None
+    connected_at: datetime | None = None
     ended_at: datetime | None
     failure_reason: str | None

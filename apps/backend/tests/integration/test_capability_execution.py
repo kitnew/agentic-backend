@@ -30,7 +30,7 @@ from backend_core.runtime.capabilities.retention import CapabilityRetentionServi
 from httpx import ASGITransport, AsyncClient
 from redis.exceptions import RedisError
 from runtime_fixtures import apply_voice_runtime
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 
 def agent_schema() -> dict[str, object]:
@@ -308,7 +308,9 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
 
         async with database.transaction() as session:
             call, _ = await build_call_session_service(session).create_manual(tenant_id)
-            await build_call_session_service(session).activate(call.id)
+            calls = build_call_session_service(session)
+            await calls.mark_started(call.id)
+            await calls.mark_connected(call.id)
 
         voice_headers = {
             "Authorization": "Bearer "
@@ -350,7 +352,11 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
                 == 1
             )
             assert (
-                await session.scalar(select(func.count()).select_from(OutboxMessage))
+                await session.scalar(
+                    select(func.count())
+                    .select_from(OutboxMessage)
+                    .where(OutboxMessage.capability_invocation_id == invocation_id)
+                )
                 == 1
             )
             invocation = await session.get(CapabilityInvocation, invocation_id)
@@ -363,6 +369,11 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
                 "2030-08-15",
             ]
             job_id = invocation.job_id
+            await session.execute(
+                update(OutboxMessage)
+                .where(OutboxMessage.capability_invocation_id.is_(None))
+                .values(dispatched_at=datetime.now(UTC))
+            )
 
         redis = FakeRedis(raise_after_publish=True)
         dispatcher = OutboxDispatcher(database, redis, "capability:jobs", 1)  # type: ignore[arg-type]
@@ -420,7 +431,11 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
 
         async with database.transaction() as session:
             invocation = await session.get(CapabilityInvocation, invocation_id)
-            outbox = await session.scalar(select(OutboxMessage))
+            outbox = await session.scalar(
+                select(OutboxMessage).where(
+                    OutboxMessage.capability_invocation_id == invocation_id
+                )
+            )
             assert invocation is not None and outbox is not None
             old = datetime.now(UTC) - timedelta(days=31)
             invocation.completed_at = old

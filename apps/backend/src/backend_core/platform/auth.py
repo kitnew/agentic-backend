@@ -20,12 +20,19 @@ SERVICE_SCOPES = {
             "call-session:activate",
             "call-session:complete",
             "call-session:fail",
+            "call-session:observe",
             "conversation-message:append",
             "capability-invocation:create",
             "capability-invocation:read",
         }
     ),
-    JOB_WORKER: frozenset({"capability-result:write"}),
+    JOB_WORKER: frozenset(
+        {
+            "capability-result:write",
+            "finalization-context:read",
+            "post-call-action:read",
+        }
+    ),
 }
 
 admin_bearer = HTTPBearer(scheme_name="AdminToken", auto_error=False)

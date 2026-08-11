@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from ..models.contact_config import ContactConfig
     from ..models.conversation_config import ConversationConfig
     from ..models.localization_config import LocalizationConfig
+    from ..models.post_call_action import PostCallAction
     from ..models.tenant_config_v3_capabilities import TenantConfigV3Capabilities
 
 
@@ -37,6 +38,7 @@ class TenantConfigV3:
         schema_version (Literal[3]):
         capabilities (TenantConfigV3Capabilities | Unset):
         contact (ContactConfig | Unset):
+        post_call_actions (list[PostCallAction] | Unset):
     """
 
     agent: AgentConfigV3
@@ -46,6 +48,7 @@ class TenantConfigV3:
     schema_version: Literal[3]
     capabilities: TenantConfigV3Capabilities | Unset = UNSET
     contact: ContactConfig | Unset = UNSET
+    post_call_actions: list[PostCallAction] | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         agent = self.agent.to_dict()
@@ -66,6 +69,13 @@ class TenantConfigV3:
         if not isinstance(self.contact, Unset):
             contact = self.contact.to_dict()
 
+        post_call_actions: list[dict[str, Any]] | Unset = UNSET
+        if not isinstance(self.post_call_actions, Unset):
+            post_call_actions = []
+            for post_call_actions_item_data in self.post_call_actions:
+                post_call_actions_item = post_call_actions_item_data.to_dict()
+                post_call_actions.append(post_call_actions_item)
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -81,6 +91,8 @@ class TenantConfigV3:
             field_dict["capabilities"] = capabilities
         if contact is not UNSET:
             field_dict["contact"] = contact
+        if post_call_actions is not UNSET:
+            field_dict["post_call_actions"] = post_call_actions
 
         return field_dict
 
@@ -91,6 +103,7 @@ class TenantConfigV3:
         from ..models.contact_config import ContactConfig
         from ..models.conversation_config import ConversationConfig
         from ..models.localization_config import LocalizationConfig
+        from ..models.post_call_action import PostCallAction
         from ..models.tenant_config_v3_capabilities import TenantConfigV3Capabilities
 
         d = dict(src_dict)
@@ -122,6 +135,17 @@ class TenantConfigV3:
         else:
             contact = ContactConfig.from_dict(_contact)
 
+        _post_call_actions = d.pop("post_call_actions", UNSET)
+        post_call_actions: list[PostCallAction] | Unset = UNSET
+        if _post_call_actions is not UNSET:
+            post_call_actions = []
+            for post_call_actions_item_data in _post_call_actions:
+                post_call_actions_item = PostCallAction.from_dict(
+                    post_call_actions_item_data
+                )
+
+                post_call_actions.append(post_call_actions_item)
+
         tenant_config_v3 = cls(
             agent=agent,
             business=business,
@@ -130,6 +154,7 @@ class TenantConfigV3:
             schema_version=schema_version,
             capabilities=capabilities,
             contact=contact,
+            post_call_actions=post_call_actions,
         )
 
         return tenant_config_v3

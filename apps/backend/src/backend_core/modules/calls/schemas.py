@@ -80,5 +80,6 @@ class CallSessionResponse(BaseModel):
     status: CallSessionStatus
     created_at: datetime
     started_at: datetime | None
+    connected_at: datetime | None
     ended_at: datetime | None
     failure_reason: str | None

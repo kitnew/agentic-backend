@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, cast
 from urllib.parse import quote, urlparse
+from uuid import UUID
 
 import httpx
 import jwt
@@ -61,6 +62,14 @@ class Settings:
     provider_timeout_seconds: float = 10.0
     max_retries: int = 3
     stale_idle_ms: int = 30_000
+    command_stream: str = "application:commands"
+    command_group: str = "job-workers"
+    command_result_stream: str = "application:command-results"
+    command_dead_letter_stream: str = "application:commands:dead-letter"
+    azure_openai_api_key: str = ""
+    azure_openai_endpoint: str = ""
+    azure_openai_deployment: str = ""
+    azure_openai_api_version: str = ""
 
     def __post_init__(self) -> None:
         if not 0 <= self.max_retries <= 9:
@@ -95,6 +104,18 @@ class Settings:
             provider_timeout_seconds=float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "10")),
             max_retries=int(os.getenv("CAPABILITY_JOB_MAX_RETRIES", "3")),
             stale_idle_ms=int(os.getenv("CAPABILITY_JOB_STALE_IDLE_MS", "30000")),
+            command_stream=os.getenv("COMMAND_STREAM", "application:commands"),
+            command_group=os.getenv("COMMAND_CONSUMER_GROUP", "job-workers"),
+            command_result_stream=os.getenv(
+                "COMMAND_RESULT_STREAM", "application:command-results"
+            ),
+            command_dead_letter_stream=os.getenv(
+                "COMMAND_DEAD_LETTER_STREAM", "application:commands:dead-letter"
+            ),
+            azure_openai_api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
+            azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
+            azure_openai_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", ""),
+            azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", ""),
         )
 
 
@@ -602,7 +623,11 @@ class BackendClient:
                 "aud": self._settings.backend_audience,
                 "iat": now,
                 "exp": now.timestamp() + 60,
-                "scopes": ["capability-result:write"],
+                "scopes": [
+                    "capability-result:write",
+                    "finalization-context:read",
+                    "post-call-action:read",
+                ],
             },
             self._settings.service_secret,
             algorithm="HS256",
@@ -615,6 +640,45 @@ class BackendClient:
             json=report.model_dump(mode="json"),
         )
         response.raise_for_status()
+
+    async def finalization_context(
+        self, call_id: UUID, finalization_id: UUID, command_id: UUID
+    ) -> dict[str, object]:
+        response = await self._client.get(
+            f"{self._settings.backend_url}/internal/v1/calls/{call_id}/finalization-context",
+            params={
+                "finalization_id": str(finalization_id),
+                "command_id": str(command_id),
+            },
+            headers={"Authorization": f"Bearer {self._token()}"},
+        )
+        response.raise_for_status()
+        value = response.json()
+        if not isinstance(value, dict):
+            raise ExecutionError(
+                "finalization_context_invalid",
+                "Finalization context is invalid",
+                transient=False,
+            )
+        return value
+
+    async def post_call_action(
+        self,
+        call_id: UUID,
+        finalization_id: UUID,
+        action_id: str,
+        command_id: UUID,
+    ) -> ManagedWebhookPostJsonPlan:
+        response = await self._client.get(
+            f"{self._settings.backend_url}/internal/v1/calls/{call_id}/post-call-actions/{action_id}",
+            params={
+                "finalization_id": str(finalization_id),
+                "command_id": str(command_id),
+            },
+            headers={"Authorization": f"Bearer {self._token()}"},
+        )
+        response.raise_for_status()
+        return ManagedWebhookPostJsonPlan.model_validate(response.json())
 
 
 class CapabilityWorker:
@@ -843,6 +907,12 @@ class CapabilityWorker:
 
 
 async def run_worker(settings: Settings) -> None:
+    from job_worker.command_worker import (
+        CommandWorker,
+        ExecutePostCallActionHandler,
+        GenerateCallSummaryHandler,
+    )
+
     redis = Redis.from_url(
         settings.redis_url,
         decode_responses=True,
@@ -862,14 +932,27 @@ async def run_worker(settings: Settings) -> None:
             provider_client,
             allow_insecure=settings.allow_insecure_webhooks,
         )
+        backend = BackendClient(settings, backend_client)
         worker = CapabilityWorker(
             settings,
             redis,
-            BackendClient(settings, backend_client),
+            backend,
             GoogleSheetsAppendValuesHandler(credentials, provider_client),
             webhooks,
         )
+        command_worker = CommandWorker(
+            settings,
+            redis,
+            {
+                "call.generate_summary.v1": GenerateCallSummaryHandler(
+                    settings, backend, provider_client
+                ),
+                "call.execute_post_call_action.v1": ExecutePostCallActionHandler(
+                    backend, webhooks
+                ),
+            },
+        )
         try:
-            await worker.run()
+            await asyncio.gather(worker.run(), command_worker.run())
         finally:
             await redis.aclose()

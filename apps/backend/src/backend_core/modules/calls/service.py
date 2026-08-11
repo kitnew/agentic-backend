@@ -15,6 +15,7 @@ from contracts import (
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
+from backend_core.application.messaging import EventBus
 from backend_core.modules.calls.errors import (
     CallSessionConfigUnavailableError,
     CallSessionConflictError,
@@ -22,6 +23,7 @@ from backend_core.modules.calls.errors import (
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
 )
+from backend_core.modules.calls.events import call_event
 from backend_core.modules.calls.models import (
     CallChannel,
     CallDirection,
@@ -70,6 +72,7 @@ class CallSessionService:
         configs: ConfigRevisionRepository,
         runtimes: VoiceRuntimeRepository,
         conversations: ConversationService,
+        events: EventBus,
     ) -> None:
         self._calls = calls
         self._routes = routes
@@ -78,6 +81,7 @@ class CallSessionService:
         self._configs = configs
         self._runtimes = runtimes
         self._conversations = conversations
+        self._events = events
 
     async def create(
         self,
@@ -115,6 +119,7 @@ class CallSessionService:
             call, created = await self._calls.add_or_get(call)
             if created:
                 await self._conversations.create_for_call(call.id, call.tenant_id)
+                await self._events.publish(call_event(call.id, call.tenant_id, "created"))
             return call, created
         except IntegrityError as error:
             raise CallSessionConflictError from error
@@ -192,6 +197,7 @@ class CallSessionService:
                     raise CallSessionConflictError
                 return call, False
             await self._conversations.create_for_call(call.id, call.tenant_id)
+            await self._events.publish(call_event(call.id, call.tenant_id, "created"))
             return call, True
         except IntegrityError as error:
             raise CallSessionConflictError from error
@@ -329,14 +335,54 @@ class CallSessionService:
             raise CallSessionConfigUnavailableError
         return config, prompt_set, voice_runtime
 
-    async def activate(self, call_id: UUID) -> CallSession:
+    async def mark_started(self, call_id: UUID) -> CallSession:
         call = await self._get_for_update(call_id)
-        if call.status is CallSessionStatus.ACTIVE:
+        if call.status is CallSessionStatus.STARTED:
             return call
         if call.status is not CallSessionStatus.CREATED:
             raise CallSessionConflictError
-        call.status = CallSessionStatus.ACTIVE
+        call.status = CallSessionStatus.STARTED
         call.started_at = datetime.now(UTC)
+        await self._events.publish(call_event(call.id, call.tenant_id, "started"))
+        await self._calls.flush()
+        return call
+
+    async def mark_connected(self, call_id: UUID) -> CallSession:
+        call = await self._get_for_update(call_id)
+        if call.status is CallSessionStatus.CONNECTED:
+            return call
+        if call.status is not CallSessionStatus.STARTED:
+            raise CallSessionConflictError
+        call.status = CallSessionStatus.CONNECTED
+        call.connected_at = datetime.now(UTC)
+        await self._events.publish(call_event(call.id, call.tenant_id, "connected"))
+        await self._calls.flush()
+        return call
+
+    async def activate(self, call_id: UUID) -> CallSession:
+        return await self.mark_started(call_id)
+
+    async def end(
+        self,
+        call_id: UUID,
+        conversation_status: ConversationPersistenceStatus,
+    ) -> CallSession:
+        call = await self._get_for_update(call_id)
+        if call.status is CallSessionStatus.ENDED:
+            try:
+                await self._conversations.close_for_call(call_id, conversation_status)
+            except ConversationConflictError as error:
+                raise CallSessionConflictError from error
+            return call
+        if call.status is not CallSessionStatus.CONNECTED:
+            raise CallSessionConflictError
+        try:
+            await self._conversations.close_for_call(call_id, conversation_status)
+        except ConversationConflictError as error:
+            raise CallSessionConflictError from error
+        call.status = CallSessionStatus.ENDED
+        call.ended_at = datetime.now(UTC)
+        await self._events.publish(call_event(call.id, call.tenant_id, "ended"))
         await self._calls.flush()
         return call
 
@@ -345,23 +391,7 @@ class CallSessionService:
         call_id: UUID,
         conversation_status: ConversationPersistenceStatus,
     ) -> CallSession:
-        call = await self._get_for_update(call_id)
-        if call.status is CallSessionStatus.COMPLETED:
-            try:
-                await self._conversations.close_for_call(call_id, conversation_status)
-            except ConversationConflictError as error:
-                raise CallSessionConflictError from error
-            return call
-        if call.status is not CallSessionStatus.ACTIVE:
-            raise CallSessionConflictError
-        try:
-            await self._conversations.close_for_call(call_id, conversation_status)
-        except ConversationConflictError as error:
-            raise CallSessionConflictError from error
-        call.status = CallSessionStatus.COMPLETED
-        call.ended_at = datetime.now(UTC)
-        await self._calls.flush()
-        return call
+        return await self.end(call_id, conversation_status)
 
     async def fail(
         self,
@@ -378,11 +408,18 @@ class CallSessionService:
             except ConversationConflictError as error:
                 raise CallSessionConflictError from error
             return call
-        if call.status not in (CallSessionStatus.CREATED, CallSessionStatus.ACTIVE):
+        if call.status not in (
+            CallSessionStatus.CREATED,
+            CallSessionStatus.STARTED,
+            CallSessionStatus.CONNECTED,
+        ):
             raise CallSessionConflictError
         call.status = CallSessionStatus.FAILED
         call.ended_at = datetime.now(UTC)
         call.failure_reason = reason
+        await self._events.publish(
+            call_event(call.id, call.tenant_id, "failed", failure_reason=reason)
+        )
         try:
             await self._conversations.close_for_call(call_id, conversation_status)
         except ConversationConflictError as error:

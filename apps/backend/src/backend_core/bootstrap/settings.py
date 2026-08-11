@@ -36,6 +36,15 @@ class Settings(BaseSettings):
     capability_job_dead_letter_stream: Annotated[
         str, Field(min_length=1, max_length=255)
     ] = "capability:jobs:dead-letter"
+    domain_event_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
+        "domain:events"
+    )
+    command_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
+        "application:commands"
+    )
+    command_result_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
+        "application:command-results"
+    )
     outbox_dispatch_enabled: bool = False
     outbox_dispatch_interval_seconds: Annotated[float, Field(gt=0, le=60)] = 1.0
     capability_invocation_pii_retention_seconds: Annotated[int, Field(gt=0)] = (

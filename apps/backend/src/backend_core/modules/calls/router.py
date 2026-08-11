@@ -9,6 +9,7 @@ from contracts import (
     ConversationPersistenceStatus,
     LiveKitJobMetadata,
     VoiceAgentRuntimeContext,
+    VoiceCallObservation,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +42,7 @@ from backend_core.modules.tenants.repository import (
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import Database, DatabaseSession
+from backend_core.platform.messaging import TransactionalOutboxBus
 from backend_core.runtime.voice.repository import VoiceRuntimeRepository
 
 router = APIRouter(prefix="/internal/v1/call-sessions", tags=["internal:calls"])
@@ -52,7 +54,11 @@ admin_router = APIRouter(
 runtime_router = APIRouter(prefix="/internal/v1/calls", tags=["internal:calls"])
 
 
-def build_call_session_service(session: AsyncSession) -> CallSessionService:
+def build_call_session_service(
+    session: AsyncSession,
+    event_stream: str = "domain:events",
+    command_stream: str = "application:commands",
+) -> CallSessionService:
     return CallSessionService(
         CallSessionRepository(session),
         InboundRouteRepository(session),
@@ -61,11 +67,18 @@ def build_call_session_service(session: AsyncSession) -> CallSessionService:
         ConfigRevisionRepository(session),
         VoiceRuntimeRepository(session),
         build_conversation_service(session),
+        TransactionalOutboxBus(session, event_stream, command_stream),
     )
 
 
-def get_call_session_service(session: DatabaseSession) -> CallSessionService:
-    return build_call_session_service(session)
+def get_call_session_service(
+    session: DatabaseSession, request: Request
+) -> CallSessionService:
+    return build_call_session_service(
+        session,
+        request.app.state.settings.domain_event_stream,
+        request.app.state.settings.command_stream,
+    )
 
 
 CallSessionServiceDependency = Annotated[
@@ -79,15 +92,49 @@ def lifecycle_response(call: CallSession) -> CallLifecycleResponse:
         call_session_id=call.id,
         status=CallLifecycleStatus(call.status.value),
         started_at=call.started_at,
+        connected_at=call.connected_at,
         ended_at=call.ended_at,
         failure_reason=call.failure_reason,
     )
 
 
-async def fail_test_call(database: Database, call_id: UUID) -> None:
+@runtime_router.post(
+    "/{call_id}/observations",
+    response_model=CallLifecycleResponse,
+    dependencies=[Depends(require_internal_scope("call-session:observe"))],
+)
+async def observe_call(
+    call_id: UUID,
+    data: VoiceCallObservation,
+    service: CallSessionServiceDependency,
+) -> CallLifecycleResponse:
+    try:
+        if data.observation_type == "session_started":
+            call = await service.mark_started(call_id)
+        elif data.observation_type == "participant_connected":
+            call = await service.mark_connected(call_id)
+        elif data.observation_type == "session_finished":
+            call = await service.end(
+                call_id, ConversationPersistenceStatus(data.conversation_status)
+            )
+        else:
+            assert data.failure_reason is not None
+            call = await service.fail(
+                call_id,
+                data.failure_reason,
+                ConversationPersistenceStatus(data.conversation_status),
+            )
+        return lifecycle_response(call)
+    except (CallSessionNotFoundError, CallSessionConflictError) as error:
+        raise call_http_exception(error) from error
+
+
+async def fail_test_call(
+    database: Database, call_id: UUID, event_stream: str = "domain:events"
+) -> None:
     with suppress(Exception):
         async with database.transaction() as session:
-            await build_call_session_service(session).fail(
+            await build_call_session_service(session, event_stream).fail(
                 call_id,
                 "livekit_setup_failed",
                 ConversationPersistenceStatus.INCOMPLETE,
@@ -219,7 +266,9 @@ async def create_test_voice_session(
                 await livekit.delete_dispatch(dispatch_id, call.room_name)
             with suppress(Exception):
                 await livekit.delete_room(call.room_name)
-        await fail_test_call(database, call.id)
+        await fail_test_call(
+            database, call.id, request.app.state.settings.domain_event_stream
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={

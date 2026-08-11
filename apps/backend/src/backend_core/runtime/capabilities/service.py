@@ -84,7 +84,7 @@ class CapabilityInvocationService:
         tenant = await self._tenants.get(call.tenant_id)
         if tenant is None or tenant.status is not TenantStatus.ACTIVE:
             raise CapabilityValidationError("tenant_inactive", "Tenant is not active")
-        if call.status is not CallSessionStatus.ACTIVE:
+        if call.status is not CallSessionStatus.CONNECTED:
             raise CapabilityValidationError(
                 "call_not_active", "Call does not allow capability execution"
             )
@@ -262,7 +262,7 @@ class CapabilityInvocationService:
         tenant = await self._tenants.get(call.tenant_id)
         if tenant is None or tenant.status is not TenantStatus.ACTIVE:
             raise CapabilityValidationError("tenant_inactive", "Tenant is not active")
-        if call.status is not CallSessionStatus.ACTIVE:
+        if call.status is not CallSessionStatus.CONNECTED:
             raise CapabilityValidationError(
                 "call_not_active", "Call does not allow capability execution"
             )

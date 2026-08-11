@@ -29,6 +29,7 @@ async def test_conversation_append_is_ordered_idempotent_and_closes_with_call(
             "call-session:activate",
             "call-session:complete",
             "call-session:fail",
+            "call-session:observe",
             "conversation-message:append",
         ],
         secret=app_settings.voice_agent_service_secret.get_secret_value(),
@@ -125,13 +126,19 @@ async def test_conversation_append_is_ordered_idempotent_and_closes_with_call(
                 headers=headers,
             )
             assert activated.status_code == 200
+            connected = await client.post(
+                f"/internal/v1/calls/{call_id}/observations",
+                json={"schema_version": 1, "observation_type": "participant_connected"},
+                headers=headers,
+            )
+            assert connected.status_code == 200
             completed = await client.post(
                 f"/internal/v1/call-sessions/{call_id}/complete",
                 json={"conversation_status": "complete"},
                 headers=headers,
             )
             assert completed.status_code == 200
-            assert completed.json()["status"] == "completed"
+            assert completed.json()["status"] == "ended"
 
             final = await client.get(f"/admin/v1/calls/{call_id}/conversation")
             assert [

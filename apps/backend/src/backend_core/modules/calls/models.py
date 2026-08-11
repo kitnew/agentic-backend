@@ -31,8 +31,9 @@ class CallDirection(StrEnum):
 
 class CallSessionStatus(StrEnum):
     CREATED = "created"
-    ACTIVE = "active"
-    COMPLETED = "completed"
+    STARTED = "started"
+    CONNECTED = "connected"
+    ENDED = "ended"
     FAILED = "failed"
 
 
@@ -80,9 +81,14 @@ class CallSession(Base):
             """
             (status = 'created' AND started_at IS NULL AND ended_at IS NULL
                 AND failure_reason IS NULL)
-            OR (status = 'active' AND started_at IS NOT NULL AND ended_at IS NULL
+            OR (status = 'started' AND started_at IS NOT NULL
+                AND connected_at IS NULL AND ended_at IS NULL
                 AND failure_reason IS NULL)
-            OR (status = 'completed' AND started_at IS NOT NULL
+            OR (status = 'connected' AND started_at IS NOT NULL
+                AND connected_at IS NOT NULL AND ended_at IS NULL
+                AND failure_reason IS NULL)
+            OR (status = 'ended' AND started_at IS NOT NULL
+                AND connected_at IS NOT NULL
                 AND ended_at IS NOT NULL AND failure_reason IS NULL)
             OR (status = 'failed' AND ended_at IS NOT NULL
                 AND failure_reason IS NOT NULL)
@@ -147,6 +153,10 @@ class CallSession(Base):
         server_default=func.now(),
     )
     started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    connected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

@@ -14,6 +14,7 @@ from contracts import (
     CapabilityInvocationStatus,
     ConversationMessageResponse,
     VoiceAgentRuntimeContext,
+    VoiceCallObservation,
 )
 
 from voice_agent.settings import VoiceAgentSettings
@@ -179,18 +180,33 @@ class BackendClient:
         return invocation
 
     async def activate(self, call_id: UUID) -> None:
+        await self.observe(call_id, "participant_connected")
+
+    async def observe(
+        self,
+        call_id: UUID,
+        observation_type: str,
+        *,
+        failure_reason: str | None = None,
+        conversation_status: str = "complete",
+    ) -> None:
+        observation = VoiceCallObservation(
+            observation_type=observation_type,  # type: ignore[arg-type]
+            failure_reason=failure_reason,
+            conversation_status=conversation_status,  # type: ignore[arg-type]
+        )
         await self.request(
             "POST",
-            f"/internal/v1/call-sessions/{call_id}/activate",
-            "call-session:activate",
+            f"/internal/v1/calls/{call_id}/observations",
+            "call-session:observe",
+            json=observation.model_dump(mode="json"),
         )
 
     async def complete(self, call_id: UUID, conversation_status: str) -> None:
-        await self.request(
-            "POST",
-            f"/internal/v1/call-sessions/{call_id}/complete",
-            "call-session:complete",
-            json={"conversation_status": conversation_status},
+        await self.observe(
+            call_id,
+            "session_finished",
+            conversation_status=conversation_status,
         )
 
     async def fail(
@@ -199,14 +215,11 @@ class BackendClient:
         reason: str,
         conversation_status: str,
     ) -> None:
-        await self.request(
-            "POST",
-            f"/internal/v1/call-sessions/{call_id}/fail",
-            "call-session:fail",
-            json={
-                "failure_reason": reason,
-                "conversation_status": conversation_status,
-            },
+        await self.observe(
+            call_id,
+            "session_failed",
+            failure_reason=reason,
+            conversation_status=conversation_status,
         )
 
     async def aclose(self) -> None:

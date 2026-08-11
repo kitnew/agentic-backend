@@ -83,8 +83,12 @@ class OutboxDispatcher:
             for message in messages:
                 try:
                     await self._redis.xadd(
-                        self._stream,
-                        {"job": json.dumps(message.payload, separators=(",", ":"))},
+                        message.stream or self._stream,
+                        {
+                            message.payload_field: json.dumps(
+                                message.payload, separators=(",", ":")
+                            )
+                        },
                     )
                 except RedisError as error:
                     message.attempts += 1
@@ -94,9 +98,13 @@ class OutboxDispatcher:
                 message.dispatched_at = now
                 message.attempts += 1
                 message.last_error = None
-                invocation = await session.get(
-                    CapabilityInvocation,
-                    message.capability_invocation_id,
+                invocation = (
+                    await session.get(
+                        CapabilityInvocation,
+                        message.capability_invocation_id,
+                    )
+                    if message.capability_invocation_id is not None
+                    else None
                 )
                 if (
                     invocation is not None
@@ -106,7 +114,9 @@ class OutboxDispatcher:
                     invocation.queued_at = now
                 dispatched += 1
                 logger.info(
-                    "capability_job_queued",
+                    "capability_job_queued"
+                    if invocation is not None
+                    else "outbox_message_dispatched",
                     extra={
                         "invocation_id": str(message.capability_invocation_id),
                         "job_id": str(message.job_id),
