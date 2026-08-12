@@ -143,10 +143,10 @@ def test_production_restore_requires_confirmation_unless_yes(tmp_path: Path) -> 
     backend_stop = commands.index("stop backend")
     writers_stop = commands.index("stop job-worker voice-agent")
     restore = commands.index("pg_restore --clean --if-exists --exit-on-error")
-    assert "run --rm --no-deps --user root backend sh -ec" in commands
+    assert "run --rm --no-deps --user root --entrypoint /bin/sh backend -ec" in commands
     assert "cat /run/secrets/postgres_password" in commands
     migrate = commands.index("alembic -c apps/backend/alembic.ini upgrade head")
-    restart = commands.index("up -d --wait --remove-orphans")
+    restart = commands.index("up -d --wait --wait-timeout 180 --remove-orphans")
     assert backend_stop < writers_stop < restore < migrate < restart
 
 

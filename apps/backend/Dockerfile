@@ -19,11 +19,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY apps/backend apps/backend
 COPY packages/contracts packages/contracts
+COPY apps/runtime-entrypoint.py /usr/local/bin/runtime-entrypoint.py
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package backend-core
 
 RUN useradd --create-home --uid 10001 app
-USER app
 
+ENTRYPOINT ["python", "/usr/local/bin/runtime-entrypoint.py"]
 CMD ["uvicorn", "backend_core.main:app", "--host", "0.0.0.0", "--port", "8000"]

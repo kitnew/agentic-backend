@@ -19,11 +19,12 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY apps/voice-agent apps/voice-agent
 COPY packages/contracts packages/contracts
+COPY apps/runtime-entrypoint.py /usr/local/bin/runtime-entrypoint.py
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package voice-agent
 
 RUN useradd --create-home --uid 10001 app
-USER app
 
+ENTRYPOINT ["python", "/usr/local/bin/runtime-entrypoint.py"]
 CMD ["up", "start"]

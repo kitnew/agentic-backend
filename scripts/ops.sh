@@ -88,11 +88,11 @@ validate() {
 }
 
 ensure_postgres() {
-  compose up -d --wait postgres
+  compose up -d --wait --wait-timeout 180 postgres
 }
 
 run_migration() {
-  compose run --rm --no-deps --user root backend sh -ec '
+  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
     export DATABASE_URL="postgresql+asyncpg://postgres:$(cat /run/secrets/postgres_password)@postgres:5432/backend"
     exec alembic -c apps/backend/alembic.ini upgrade head
   '
@@ -105,7 +105,7 @@ migrate() {
 }
 
 verify_stack() {
-  compose up -d --wait --remove-orphans
+  compose up -d --wait --wait-timeout 180 --remove-orphans
   compose ps
 }
 
