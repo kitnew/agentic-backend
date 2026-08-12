@@ -4,12 +4,39 @@ x-service-logging: &service-logging
     max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
     max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
+secrets:
+  postgres_password:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/postgres_password
+  admin_api_token:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/admin_api_token
+  voice_agent_service_secret:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/voice_agent_service_secret
+  job_worker_service_secret:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/job_worker_service_secret
+  livekit_api_secret:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/livekit_api_secret
+  elevenlabs_api_key:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/elevenlabs_api_key
+  azure_openai_api_key:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/azure_openai_api_key
+  minio_root_password:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/minio_root_password
+  minio_egress_secret_key:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/minio_egress_secret_key
+  minio_worker_secret_key:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/minio_worker_secret_key
+  debug_chat_basic_auth_hash:
+    file: ${SECRETS_DIR:?set SECRETS_DIR}/debug_chat_basic_auth_hash
+
 services:
   redis:
     restart: unless-stopped
     logging: *service-logging
 
   postgres:
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
     restart: unless-stopped
     logging: *service-logging
 
@@ -24,6 +51,12 @@ services:
       LIVEKIT_URL: ws://livekit:7880
       LIVEKIT_SIP_OUTBOUND_TRUNK_ID: ${LIVEKIT_SIP_OUTBOUND_TRUNK_ID:?set LIVEKIT_SIP_OUTBOUND_TRUNK_ID}
     networks: [application, edge]
+    secrets:
+      - postgres_password
+      - admin_api_token
+      - voice_agent_service_secret
+      - job_worker_service_secret
+      - livekit_api_secret
 
   voice-agent:
     restart: unless-stopped
@@ -39,6 +72,11 @@ services:
         condition: service_healthy
       livekit:
         condition: service_healthy
+    secrets:
+      - livekit_api_secret
+      - voice_agent_service_secret
+      - elevenlabs_api_key
+      - azure_openai_api_key
 
   job-worker:
     restart: unless-stopped
@@ -50,11 +88,10 @@ services:
     environment:
       MINIO_ENDPOINT: ${MINIO_WORKER_ENDPOINT:-minio:9000}
       MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?set MINIO_WORKER_ACCESS_KEY}
-      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:?set MINIO_WORKER_SECRET_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET:-call-recordings}
       MINIO_SECURE: ${MINIO_SECURE:-false}
+      GOOGLE_SHEETS_CREDENTIAL_SECRETS_DIR: /secrets
     volumes:
-      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/run/secrets:ro
       - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/secrets:ro
     depends_on:
       backend:
@@ -63,6 +100,10 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+    secrets:
+      - job_worker_service_secret
+      - azure_openai_api_key
+      - minio_worker_secret_key
 
   debug-chat:
     restart: unless-stopped
@@ -71,21 +112,26 @@ services:
 
   livekit:
     image: livekit/livekit-server:v1.13.1
-    environment:
-      LIVEKIT_CONFIG: |
-        port: 7880
-        rtc:
-          tcp_port: ${LIVEKIT_TCP_PORT:-7881}
-          udp_port: ${LIVEKIT_UDP_PORT:-7882}
-          use_external_ip: true
-        redis:
-          address: redis:6379
-        keys:
-          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
-        webhook:
-          api_key: ${LIVEKIT_API_KEY}
-          urls:
-            - http://backend:8000/webhooks/livekit
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        livekit_secret=$$(cat /run/secrets/livekit_api_secret)
+        printf '%s\n' \
+          'port: 7880' \
+          'rtc:' \
+          "  tcp_port: ${LIVEKIT_TCP_PORT:-7881}" \
+          "  udp_port: ${LIVEKIT_UDP_PORT:-7882}" \
+          '  use_external_ip: true' \
+          'redis:' \
+          '  address: redis:6379' \
+          'keys:' \
+          "  ${LIVEKIT_API_KEY}: $$livekit_secret" \
+          'webhook:' \
+          "  api_key: ${LIVEKIT_API_KEY}" \
+          '  urls:' \
+          '    - http://backend:8000/webhooks/livekit' > /tmp/livekit.yml
+        exec /livekit-server --config /tmp/livekit.yml
+    secrets: [livekit_api_secret]
     ports:
       - "${LIVEKIT_TCP_PORT:-7881}:7881"
       - "${LIVEKIT_UDP_PORT:-7882}:7882/udp"
@@ -106,7 +152,7 @@ services:
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/minio_root_password
     expose: ["9000", "9001"]
     volumes:
       - minio-data:/data
@@ -118,25 +164,26 @@ services:
       retries: 20
     logging: *service-logging
     networks: [application]
+    secrets: [minio_root_password]
 
   minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
       MINIO_EGRESS_ACCESS_KEY: ${MINIO_EGRESS_ACCESS_KEY:?set MINIO_EGRESS_ACCESS_KEY}
-      MINIO_EGRESS_SECRET_KEY: ${MINIO_EGRESS_SECRET_KEY:?set MINIO_EGRESS_SECRET_KEY}
       MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?set MINIO_WORKER_ACCESS_KEY}
-      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:?set MINIO_WORKER_SECRET_KEY}
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        root_password=$$(cat /run/secrets/minio_root_password)
+        egress_secret=$$(cat /run/secrets/minio_egress_secret_key)
+        worker_secret=$$(cat /run/secrets/minio_worker_secret_key)
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$$root_password"
         mc mb --ignore-existing local/call-recordings
         mc anonymous set none local/call-recordings
-        mc admin user add local "$${MINIO_EGRESS_ACCESS_KEY}" "$${MINIO_EGRESS_SECRET_KEY}" || true
+        mc admin user add local "$${MINIO_EGRESS_ACCESS_KEY}" "$$egress_secret" || true
         mc admin policy attach local readwrite --user "$${MINIO_EGRESS_ACCESS_KEY}"
-        mc admin user add local "$${MINIO_WORKER_ACCESS_KEY}" "$${MINIO_WORKER_SECRET_KEY}" || true
+        mc admin user add local "$${MINIO_WORKER_ACCESS_KEY}" "$$worker_secret" || true
         mc admin policy attach local readonly --user "$${MINIO_WORKER_ACCESS_KEY}"
     restart: "no"
     depends_on:
@@ -144,28 +191,43 @@ services:
         condition: service_healthy
     logging: *service-logging
     networks: [application]
+    secrets:
+      - minio_root_password
+      - minio_egress_secret_key
+      - minio_worker_secret_key
 
   livekit-egress:
     image: livekit/egress:v1.13.0
     security_opt:
       - seccomp=../livekit/egress/chrome-sandboxing-seccomp-profile.json
+    entrypoint: ["/bin/sh", "-ec"]
     environment:
-      EGRESS_CONFIG_BODY: |
-        api_key: "${LIVEKIT_API_KEY}"
-        api_secret: "${LIVEKIT_API_SECRET}"
-        ws_url: "ws://livekit:7880"
-        redis:
-          address: "${LIVEKIT_EGRESS_REDIS_ADDRESS:-redis:6379}"
-        health_port: ${LIVEKIT_EGRESS_HEALTH_PORT:-8080}
-        enable_chrome_sandbox: true
-        storage:
-          s3:
-            access_key: "${MINIO_EGRESS_ACCESS_KEY}"
-            secret: "${MINIO_EGRESS_SECRET_KEY}"
-            region: "${MINIO_REGION:-us-east-1}"
-            endpoint: "${MINIO_ENDPOINT_INTERNAL:-http://minio:9000}"
-            bucket: "${MINIO_BUCKET:-call-recordings}"
-            force_path_style: true
+      EGRESS_CONFIG_FILE: /tmp/egress.yml
+    command:
+      - |
+        livekit_secret=$$(cat /run/secrets/livekit_api_secret)
+        egress_secret=$$(cat /run/secrets/minio_egress_secret_key)
+        # address: "${LIVEKIT_EGRESS_REDIS_ADDRESS:-redis:6379}"
+        printf '%s\n' \
+          "api_key: ${LIVEKIT_API_KEY}" \
+          "api_secret: $$livekit_secret" \
+          'ws_url: "ws://livekit:7880"' \
+          'redis:' \
+          "  address: ${LIVEKIT_EGRESS_REDIS_ADDRESS:-redis:6379}" \
+          "health_port: ${LIVEKIT_EGRESS_HEALTH_PORT:-8080}" \
+          'enable_chrome_sandbox: true' \
+          'storage:' \
+          '  s3:' \
+          "    access_key: ${MINIO_EGRESS_ACCESS_KEY}" \
+          "    secret: $$egress_secret" \
+          "    region: ${MINIO_REGION:-us-east-1}" \
+          "    endpoint: ${MINIO_ENDPOINT_INTERNAL:-http://minio:9000}" \
+          "    bucket: ${MINIO_BUCKET:-call-recordings}" \
+          '    force_path_style: true' > /tmp/egress.yml
+        exec /entrypoint.sh
+    secrets:
+      - livekit_api_secret
+      - minio_egress_secret_key
     expose: ["${LIVEKIT_EGRESS_HEALTH_PORT:-8080}"]
     restart: unless-stopped
     depends_on:
@@ -185,18 +247,26 @@ services:
 
   livekit-sip:
     image: livekit/sip:v1.2.0
+    entrypoint: ["/bin/sh", "-ec"]
     environment:
-      SIP_CONFIG_BODY: |
-        api_key: "${LIVEKIT_API_KEY}"
-        api_secret: "${LIVEKIT_API_SECRET}"
-        ws_url: "ws://livekit:7880"
-        redis:
-          address: "${LIVEKIT_SIP_REDIS_ADDRESS:-redis:6379}"
-        sip_port: ${LIVEKIT_SIP_PORT:-5060}
-        rtp_port: "${LIVEKIT_SIP_RTP_PORT:-10000-20000}"
-        health_port: ${LIVEKIT_SIP_HEALTH_PORT:-8080}
-        logging:
-          level: info
+      SIP_CONFIG_FILE: /tmp/sip.yml
+    command:
+      - |
+        livekit_secret=$$(cat /run/secrets/livekit_api_secret)
+        # address: "${LIVEKIT_SIP_REDIS_ADDRESS:-redis:6379}"
+        printf '%s\n' \
+          "api_key: ${LIVEKIT_API_KEY}" \
+          "api_secret: $$livekit_secret" \
+          'ws_url: "ws://livekit:7880"' \
+          'redis:' \
+          "  address: ${LIVEKIT_SIP_REDIS_ADDRESS:-redis:6379}" \
+          "sip_port: ${LIVEKIT_SIP_PORT:-5060}" \
+          "rtp_port: \"${LIVEKIT_SIP_RTP_PORT:-10000-20000}\"" \
+          "health_port: ${LIVEKIT_SIP_HEALTH_PORT:-8080}" \
+          'logging:' \
+          '  level: info' > /tmp/sip.yml
+        exec livekit-sip
+    secrets: [livekit_api_secret]
     ports:
       - "${LIVEKIT_SIP_PORT:-5060}:5060/tcp"
       - "${LIVEKIT_SIP_PORT:-5060}:5060/udp"
@@ -224,7 +294,13 @@ services:
       DEBUG_CHAT_DOMAIN: ${DEBUG_CHAT_DOMAIN:?set DEBUG_CHAT_DOMAIN}
       LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN:?set LIVEKIT_DOMAIN}
       DEBUG_CHAT_BASIC_AUTH_USER: ${DEBUG_CHAT_BASIC_AUTH_USER:?set DEBUG_CHAT_BASIC_AUTH_USER}
-      DEBUG_CHAT_BASIC_AUTH_HASH: ${DEBUG_CHAT_BASIC_AUTH_HASH:?set DEBUG_CHAT_BASIC_AUTH_HASH}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        auth_hash=$$(cat /run/secrets/debug_chat_basic_auth_hash)
+        awk -v hash="$$auth_hash" '{ sub(/\{\$$[^}]+_HASH\}/, hash); print }' /etc/caddy/Caddyfile > /tmp/Caddyfile
+        exec caddy run --config /tmp/Caddyfile --adapter caddyfile
+    secrets: [debug_chat_basic_auth_hash]
     ports:
       - "80:80"
       - "443:443"
@@ -237,7 +313,7 @@ services:
     tmpfs: [/tmp]
     security_opt: [no-new-privileges:true]
     healthcheck:
-      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      test: ["CMD", "caddy", "validate", "--config", "/tmp/Caddyfile", "--adapter", "caddyfile"]
       interval: 30s
       timeout: 5s
       retries: 3

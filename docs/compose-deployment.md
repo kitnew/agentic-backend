@@ -40,6 +40,28 @@ Docker uses the `local` logging driver, defaulting to five 10 MiB files per serv
 
 Production runs only built application images: deployment files have no application source bind mounts. Mounted configuration is read-only where applicable. Do not put MinIO behind Caddy.
 
+## Staging/production secrets
+
+`.env.staging` and `.env.production` contain deployment configuration only. `SECRETS_DIR` points to a host directory outside Git; Compose maps the required files there to `/run/secrets/<name>` only for the services that consume them. Compose file-backed secrets are host-file mounts, not Swarm/Vault-managed secrets. Keep the directory owned by the deployment user, mode `0700`, files mode `0600`, and create files with `umask 077`.
+
+The current required files are:
+
+```text
+postgres_password
+admin_api_token
+voice_agent_service_secret
+job_worker_service_secret
+livekit_api_secret
+elevenlabs_api_key
+azure_openai_api_key
+minio_root_password
+minio_egress_secret_key
+minio_worker_secret_key
+debug_chat_basic_auth_hash
+```
+
+The Worker’s optional Google Sheets and managed-webhook credential directory is a separate host path (`GOOGLE_SHEETS_CREDENTIALS_DIR`) and is mounted only at `/secrets`; it must also remain outside the repository. It is not copied into environment variables. Backend and Voice Agent use pydantic-settings `secrets_dir=/run/secrets` first for deployment, while development retains existing environment fallback. The Worker uses the same file-first, environment-fallback rule for its three migrated credentials.
+
 Back up PostgreSQL, MinIO recordings according to retention policy, and optionally Caddy data; Git already contains Compose/config definitions. `scripts/ops.sh` now performs PostgreSQL dumps only. A persistent MinIO volume is not an off-host backup; recording retention and off-host copies remain a separate operations slice.
 
 ## Canonical commands
@@ -63,7 +85,7 @@ docker compose --env-file infrastructure/compose/.env.production \
 
 Future deployment tooling must run migrations deliberately, not from Backend startup: bring up PostgreSQL, then run `docker compose ... run --rm --no-deps backend alembic -c apps/backend/alembic.ini upgrade head`, then start the remaining services.
 
-Validate each environment with the same file list and `config`, `config --services`; validate Caddy with `docker compose ... run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
+Validate each environment with the same file list and `config`, `config --services`; `./scripts/ops.sh <env> validate` also checks the absolute secret directory, required non-empty files, and validates a temporary Caddyfile after substituting the Basic Auth hash from `/run/secrets`. Secret contents are never printed.
 
 ## Operations CLI
 

@@ -52,3 +52,38 @@ def test_deployment_environments_are_selected_only_by_env_file() -> None:
     assert not (COMPOSE / "docker-compose.prod.yml").exists()
     assert "COMPOSE_PROJECT_NAME=agentic-backend-staging" in STAGING_ENV
     assert "COMPOSE_PROJECT_NAME=agentic-backend-production" in PRODUCTION_ENV
+
+
+def test_deployment_secrets_are_file_backed_and_scoped() -> None:
+    for secret in (
+        "postgres_password",
+        "admin_api_token",
+        "voice_agent_service_secret",
+        "job_worker_service_secret",
+        "livekit_api_secret",
+        "elevenlabs_api_key",
+        "azure_openai_api_key",
+        "minio_root_password",
+        "minio_egress_secret_key",
+        "minio_worker_secret_key",
+        "debug_chat_basic_auth_hash",
+    ):
+        assert f"  {secret}:\n    file: ${'{'}SECRETS_DIR:?set SECRETS_DIR{'}'}/" in DEPLOY
+    for name in (
+        "POSTGRES_PASSWORD",
+        "ADMIN_API_TOKEN",
+        "VOICE_AGENT_SERVICE_SECRET",
+        "JOB_WORKER_SERVICE_SECRET",
+        "LIVEKIT_API_SECRET",
+        "ELEVENLABS_API_KEY",
+        "AZURE_OPENAI_API_KEY",
+        "MINIO_ROOT_PASSWORD",
+        "MINIO_EGRESS_SECRET_KEY",
+        "MINIO_WORKER_SECRET_KEY",
+        "DEBUG_CHAT_BASIC_AUTH_HASH",
+    ):
+        assert f"{name}:" not in DEPLOY
+        assert f"{name}=" not in STAGING_ENV + PRODUCTION_ENV
+    assert "secrets: [postgres_password]" in DEPLOY
+    assert "secrets: [minio_root_password]" in DEPLOY
+    assert "secrets: [debug_chat_basic_auth_hash]" in DEPLOY

@@ -14,7 +14,7 @@ def create_app(
 ) -> FastAPI:
     settings = settings or Settings()  # type: ignore[call-arg]
     if database is None:
-        database = Database(str(settings.database_url))
+        database = Database(settings.database_connection_url())
     if livekit is None:
         livekit = LiveKitAdapter(
             url=settings.livekit_url,

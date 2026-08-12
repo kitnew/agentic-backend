@@ -8,12 +8,34 @@ services:
   postgres:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
 
   backend:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/backend
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+      VOICE_AGENT_SERVICE_SECRET: ${VOICE_AGENT_SERVICE_SECRET:?set VOICE_AGENT_SERVICE_SECRET}
+      JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET}
       CALL_RECORDING_ENABLED: "false"
+
+  voice-agent:
+    environment:
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET}
+      VOICE_AGENT_SERVICE_SECRET: ${VOICE_AGENT_SERVICE_SECRET:?set VOICE_AGENT_SERVICE_SECRET}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:?set ELEVENLABS_API_KEY}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:?set AZURE_OPENAI_API_KEY}
+    depends_on:
+      livekit:
+        condition: service_started
+
+  job-worker:
+    environment:
+      JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:?set AZURE_OPENAI_API_KEY}
 
   livekit:
     image: livekit/livekit-server:v1.13.1
@@ -45,11 +67,6 @@ services:
       redis:
         condition: service_healthy
     networks: [application]
-
-  voice-agent:
-    depends_on:
-      livekit:
-        condition: service_started
 
   debug-chat:
     ports:
