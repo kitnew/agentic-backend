@@ -7,6 +7,7 @@ import httpx
 from contracts import (
     CapabilityInvocationRequest,
     CapabilityInvocationStatus,
+    HumanHandoffRequest,
     InboundSipClaimRequest,
     LiveKitJobMetadata,
     RuntimeCapabilityDefinition,
@@ -164,8 +165,82 @@ def build_agent_tools(
 ) -> list[llm.Tool | llm.Toolset]:
     return [
         calculator_tool(),
+        *(
+            [handoff_tool(context, backend, call_id)]
+            if context.handoff_destinations
+            else []
+        ),
         *[capability_tool(tool, backend, call_id) for tool in context.capabilities],
     ]
+
+
+def handoff_tool(
+    runtime: VoiceAgentRuntimeContext,
+    backend: BackendClient,
+    call_id: UUID,
+) -> llm.RawFunctionTool:
+    destinations = runtime.handoff_destinations
+    description = "; ".join(
+        f"{key}: {value.description}" for key, value in destinations.items()
+    )
+
+    async def invoke(
+        context: agents.RunContext[Any],
+        raw_arguments: dict[str, object],
+    ) -> dict[str, object]:
+        request = HumanHandoffRequest.model_validate(
+            {"tool_call_id": context.function_call.call_id, **raw_arguments}
+        )
+        try:
+            result = await backend.transfer_to_human(call_id, request)
+        except httpx.HTTPStatusError as error:
+            code = "transfer_failed"
+            try:
+                candidate = error.response.json()["detail"]["code"]
+                if candidate in {
+                    "handoff_not_configured",
+                    "unknown_destination",
+                    "call_not_transferable",
+                    "transfer_failed",
+                }:
+                    code = candidate
+            except KeyError, TypeError, ValueError:
+                pass
+            return {"status": "failed", "error_code": code}
+        except httpx.HTTPError:
+            return {"status": "failed", "error_code": "transfer_failed"}
+        context.session.shutdown(drain=True)
+        return result.model_dump(mode="json")
+
+    return cast(
+        llm.RawFunctionTool,
+        agents.function_tool(
+            raw_schema={
+                "name": "transfer_to_human",
+                "description": (
+                    "Transfer the caller to one configured human destination. "
+                    f"Available destinations: {description}"
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "destination": {
+                            "type": "string",
+                            "enum": list(destinations),
+                            "description": "Semantic destination key",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "maxLength": 500,
+                            "description": "Optional short reason for the transfer",
+                        },
+                    },
+                    "required": ["destination"],
+                    "additionalProperties": False,
+                },
+            }
+        )(invoke),
+    )
 
 
 def capability_tool(

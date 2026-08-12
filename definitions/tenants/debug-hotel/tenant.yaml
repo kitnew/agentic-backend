@@ -10,7 +10,7 @@ conversation:
 localization:
   default_locale: sk-SK
   timezone: Europe/Bratislava
-schema_version: 3
+schema_version: 4
 capabilities: {}
 contact:
   address: null

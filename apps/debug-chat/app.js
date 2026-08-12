@@ -46,7 +46,7 @@ async function createPrompt() {
 
 async function createConfig() {
   const tenantId = $("config-tenant-id").value.trim();
-  const config = await api(`/admin/v1/tenants/${tenantId}/config/drafts`, { method: "POST", body: JSON.stringify({ config: { schema_version: 3, business: { name: $("tenant-name").value.trim(), type: $("business-type").value.trim() }, contact: {}, localization: { default_locale: $("locale").value.trim(), timezone: $("timezone").value.trim() }, agent: { display_name: $("agent-name").value.trim(), greeting: $("greeting").value.trim(), profile: "hotel_assistant" }, conversation: { scope: "property_only" }, capabilities: {} } }) });
+  const config = await api(`/admin/v1/tenants/${tenantId}/config/drafts`, { method: "POST", body: JSON.stringify({ config: { schema_version: 4, business: { name: $("tenant-name").value.trim(), type: $("business-type").value.trim() }, contact: {}, localization: { default_locale: $("locale").value.trim(), timezone: $("timezone").value.trim() }, agent: { display_name: $("agent-name").value.trim(), greeting: $("greeting").value.trim(), profile: "hotel_assistant" }, conversation: { scope: "property_only" }, capabilities: {} } }) });
   const published = await api(`/admin/v1/tenants/${tenantId}/config/drafts/${config.id}/publish`, { method: "POST" });
   $("config-result").textContent = `Published: ${published.id}`;
   setStatus(published);

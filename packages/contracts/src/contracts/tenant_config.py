@@ -188,15 +188,35 @@ class TenantConfigV3(_TenantConfigModel):
         return self
 
 
-TenantConfig = TenantConfigV1 | TenantConfigV2 | TenantConfigV3
+HandoffDestinationKey = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
+
+
+class HandoffDestination(_TenantConfigModel):
+    description: str = Field(min_length=1, max_length=1000)
+    phone_number: str = Field(pattern=r"^\+[1-9]\d{1,14}$")
+
+
+class HandoffConfig(_TenantConfigModel):
+    destinations: dict[HandoffDestinationKey, HandoffDestination] = Field(
+        default_factory=dict, max_length=20
+    )
+
+
+class TenantConfigV4(TenantConfigV3):
+    schema_version: Literal[4]  # type: ignore[assignment]
+    handoff: HandoffConfig = Field(default_factory=HandoffConfig)
+
+
+TenantConfig = TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4
 
 # The persisted revision schema version is the dispatch key for deserialization.
 TENANT_CONFIG_SCHEMAS: dict[
-    int, type[TenantConfigV1 | TenantConfigV2 | TenantConfigV3]
+    int, type[TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4]
 ] = {
     1: TenantConfigV1,
     2: TenantConfigV2,
     3: TenantConfigV3,
+    4: TenantConfigV4,
 }
 
 

@@ -114,7 +114,7 @@ it: a separately published PromptSet must reference that revision.
 `tenant.yaml` contains structured deterministic TenantConfig data;
 `tenant_prompt.md` contains tenant-specific behavioral instructions; and
 `knowledge/*.md` contains factual source documents. YAML uses
-the current explicit `schema_version: 3`, stable model-field ordering, two-space
+the current explicit `schema_version: 4`, stable model-field ordering, two-space
 indentation, Unicode text, block style, sorted free-form capability mappings,
 and one final newline. Mapping order and formatting do not affect comparison.
 An explicit `pull --force` writes canonical formatting and does not preserve
@@ -276,7 +276,7 @@ place a new call without restarting Voice Agent; the old call stays pinned.
 Current authoring shape:
 
 ```yaml
-schema_version: 3
+schema_version: 4
 business:
   name: Penzión Grand
   type: hotel
@@ -297,7 +297,16 @@ agent:
 conversation:
   scope: property_only
 capabilities: {}
+handoff:
+  destinations:
+    reception:
+      description: Reservations, check-in, payments and general reception requests
+      phone_number: "+421900000001"
 ```
+
+`phone_number` stays in Backend-owned TenantConfig and is never projected into
+the Voice Agent tool schema. Existing version 3 revisions remain readable;
+create and publish an explicit version 4 draft to configure handoff for new calls.
 
 Canonical authoring uses a flat Markdown-only knowledge directory:
 

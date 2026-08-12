@@ -165,7 +165,7 @@ def test_push_order_and_never_pushes_prompt_set(
     profile = sync.DesiredPrompt(
         "hotel", tmp_path / "hotel.md", "profile", profile=True
     )
-    config = sync.DesiredConfig(tmp_path / "tenant.yaml", {"schema_version": 3})
+    config = sync.DesiredConfig(tmp_path / "tenant.yaml", {"schema_version": 4})
     prompt = sync.DesiredPrompt("alpha-hotel", tmp_path / "prompt.md", "prompt")
     kb = sync.DesiredKnowledge(tmp_path / "knowledge", {})
     tenant_runtime = sync.DesiredRuntime(tmp_path / "runtime.yaml", {})

@@ -80,6 +80,32 @@ def test_voice_contracts_round_trip_and_forbid_authoring_fields() -> None:
         VoiceAgentRuntimeContext.model_validate({**payload, "capabilities": {}})
 
 
+def test_runtime_handoff_destinations_never_expose_phone_numbers() -> None:
+    context = VoiceAgentRuntimeContext.model_validate(
+        {
+            **runtime_context(),
+            "handoff_destinations": {
+                "reception": {"description": "Reservations and reception requests"}
+            },
+        }
+    )
+    assert context.handoff_destinations["reception"].description.startswith(
+        "Reservations"
+    )
+    with pytest.raises(ValidationError):
+        VoiceAgentRuntimeContext.model_validate(
+            {
+                **runtime_context(),
+                "handoff_destinations": {
+                    "reception": {
+                        "description": "Reception",
+                        "phone_number": "+421900000001",
+                    }
+                },
+            }
+        )
+
+
 def test_metadata_contains_only_call_session_id() -> None:
     metadata = LiveKitJobMetadata(call_session_id=uuid4())
     assert set(metadata.model_dump(mode="json")) == {"call_session_id"}

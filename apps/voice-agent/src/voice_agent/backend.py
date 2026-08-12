@@ -13,6 +13,8 @@ from contracts import (
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
     ConversationMessageResponse,
+    HumanHandoffRequest,
+    HumanHandoffResponse,
     InboundSipClaimRequest,
     InboundSipClaimResponse,
     VoiceAgentRuntimeContext,
@@ -118,6 +120,17 @@ class BackendClient:
             json=request.model_dump(mode="json"),
         )
         return InboundSipClaimResponse.model_validate(response.json())
+
+    async def transfer_to_human(
+        self, call_id: UUID, request: HumanHandoffRequest
+    ) -> HumanHandoffResponse:
+        response = await self.request(
+            "POST",
+            f"/internal/v1/calls/{call_id}/handoff",
+            "call-session:handoff",
+            json=request.model_dump(mode="json"),
+        )
+        return HumanHandoffResponse.model_validate(response.json())
 
     async def invoke_capability(
         self,

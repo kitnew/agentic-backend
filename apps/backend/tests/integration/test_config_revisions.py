@@ -242,8 +242,8 @@ async def test_config_revision_lifecycle(
             invalid_update_response = await client.patch(
                 f"{config_url}/drafts/{revision_2_id}",
                 json={
-                    "schema_version": 4,
-                    "config": {**config_v1(greeting="Ahoj"), "schema_version": 4},
+                    "schema_version": 5,
+                    "config": {**config_v1(greeting="Ahoj"), "schema_version": 5},
                 },
                 headers={"If-Match": '"1"'},
             )

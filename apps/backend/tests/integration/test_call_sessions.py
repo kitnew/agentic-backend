@@ -46,6 +46,21 @@ def config_v1() -> dict[str, object]:
     }
 
 
+def config_v4(*, reception: str = "+421900000001") -> dict[str, object]:
+    return {
+        **config_v3(),
+        "schema_version": 4,
+        "handoff": {
+            "destinations": {
+                "reception": {
+                    "description": "Reservations and general reception requests",
+                    "phone_number": reception,
+                }
+            }
+        },
+    }
+
+
 async def publish_text(
     client: AsyncClient, drafts_url: str, body: dict[str, str]
 ) -> str:
@@ -58,6 +73,7 @@ async def publish_text(
 
 async def prepare_voice_ready_tenant(
     client: AsyncClient,
+    config: dict[str, object] | None = None,
 ) -> tuple[str, str, str, str]:
     tenant_response = await client.post(
         "/admin/v1/tenants",
@@ -114,7 +130,10 @@ async def prepare_voice_ready_tenant(
     config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
     config_draft = await client.post(
         config_drafts_url,
-        json={"config": config_v3()},
+        json={
+            "config": config or config_v3(),
+            "schema_version": (config or config_v3())["schema_version"],
+        },
     )
     assert config_draft.status_code == 201
     config_revision_id = config_draft.json()["id"]
@@ -458,12 +477,29 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
     admin_headers: dict[str, str],
     service_token: Callable[..., str],
 ) -> None:
+    class LiveKit:
+        def __init__(self) -> None:
+            self.transfers: list[tuple[str, str, str]] = []
+            self.fail = False
+
+        async def transfer_sip_participant(
+            self, *, room_name: str, participant_identity: str, phone_number: str
+        ) -> None:
+            if self.fail:
+                raise RuntimeError("provider detail")
+            self.transfers.append((room_name, participant_identity, phone_number))
+
     database = Database(migrated_database_url)
-    app = create_app(settings=app_settings, database=database)
+    livekit = LiveKit()
+    app = create_app(settings=app_settings, database=database, livekit=livekit)  # type: ignore[arg-type]
     transport = ASGITransport(app=app)
     voice_token = service_token(
         service="voice-agent",
-        scopes=["call-session:inbound-sip:claim"],
+        scopes=[
+            "call-session:inbound-sip:claim",
+            "call-session:handoff",
+            "call-session:observe",
+        ],
         secret=app_settings.voice_agent_service_secret.get_secret_value(),
     )
     voice_headers = {"Authorization": f"Bearer {voice_token}"}
@@ -487,7 +523,7 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
                 config_revision_id,
                 prompt_set_revision_id,
                 voice_runtime_revision_id,
-            ) = await prepare_voice_ready_tenant(client)
+            ) = await prepare_voice_ready_tenant(client, config_v4())
 
             assert (await client.post(claim_url, json=payload)).status_code == 401
             assert (
@@ -532,6 +568,100 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
             assert call["room_name"] == "sip-call-example"
             assert call["livekit_participant_identity"] == "sip-caller-example"
 
+            context = await client.get(
+                f"/internal/v1/calls/{call_id}/runtime-context",
+                headers={
+                    "Authorization": "Bearer "
+                    + service_token(
+                        service="voice-agent",
+                        scopes=["call-session:runtime-context:read"],
+                        secret=app_settings.voice_agent_service_secret.get_secret_value(),
+                    )
+                },
+            )
+            assert context.json()["handoff_destinations"] == {
+                "reception": {
+                    "description": "Reservations and general reception requests"
+                }
+            }
+            assert "+421900000001" not in context.text
+
+            config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
+            next_config = await client.post(
+                config_drafts_url,
+                json={
+                    "config": config_v4(reception="+421900000002"),
+                    "schema_version": 4,
+                },
+            )
+            assert next_config.status_code == 201
+            assert (
+                await client.post(
+                    f"{config_drafts_url}/{next_config.json()['id']}/publish"
+                )
+            ).status_code == 200
+
+            for observation in ("session_started", "participant_connected"):
+                assert (
+                    await client.post(
+                        f"/internal/v1/calls/{call_id}/observations",
+                        json={"observation_type": observation},
+                        headers=voice_headers,
+                    )
+                ).status_code == 200
+            handoff_url = f"/internal/v1/calls/{call_id}/handoff"
+            unknown = await client.post(
+                handoff_url,
+                json={"tool_call_id": "tool-unknown", "destination": "manager"},
+                headers=voice_headers,
+            )
+            assert unknown.status_code == 409
+            assert unknown.json()["detail"]["code"] == "unknown_destination"
+            assert (
+                await client.post(
+                    handoff_url,
+                    json={
+                        "tool_call_id": "tool-extra",
+                        "destination": "reception",
+                        "phone_number": "+421900000099",
+                    },
+                    headers=voice_headers,
+                )
+            ).status_code == 422
+            assert (
+                await client.post(
+                    handoff_url,
+                    json={
+                        "tool_call_id": "tool-cross-tenant",
+                        "destination": "reception",
+                        "tenant_id": str(uuid4()),
+                    },
+                    headers=voice_headers,
+                )
+            ).status_code == 422
+            transfer = await client.post(
+                handoff_url,
+                json={
+                    "tool_call_id": "tool-transfer",
+                    "destination": "reception",
+                    "reason": "Guest requested reception",
+                },
+                headers=voice_headers,
+            )
+            assert transfer.json() == {
+                "status": "transferred",
+                "destination": "reception",
+            }
+            duplicate = await client.post(
+                handoff_url,
+                json={"tool_call_id": "tool-transfer", "destination": "reception"},
+                headers=voice_headers,
+            )
+            assert duplicate.json() == transfer.json()
+            assert livekit.transfers == [
+                ("sip-call-example", "sip-caller-example", "+421900000001")
+            ]
+
             conflict = await client.post(
                 claim_url,
                 json={**payload, "room_name": "different-room"},
@@ -574,6 +704,23 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
             )
             assert different.status_code == 200
             assert different.json()["call_session_id"] != call_id
+            different_id = different.json()["call_session_id"]
+            for observation in ("session_started", "participant_connected"):
+                assert (
+                    await client.post(
+                        f"/internal/v1/calls/{different_id}/observations",
+                        json={"observation_type": observation},
+                        headers=voice_headers,
+                    )
+                ).status_code == 200
+            livekit.fail = True
+            failed_transfer = await client.post(
+                f"/internal/v1/calls/{different_id}/handoff",
+                json={"tool_call_id": "tool-failed", "destination": "reception"},
+                headers=voice_headers,
+            )
+            assert failed_transfer.status_code == 502
+            assert failed_transfer.json()["detail"]["code"] == "transfer_failed"
 
             unknown = await client.post(
                 claim_url,

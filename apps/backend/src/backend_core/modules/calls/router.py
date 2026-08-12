@@ -8,6 +8,8 @@ from contracts import (
     CallLifecycleResponse,
     CallLifecycleStatus,
     ConversationPersistenceStatus,
+    HumanHandoffRequest,
+    HumanHandoffResponse,
     InboundSipClaimRequest,
     InboundSipClaimResponse,
     LiveKitJobMetadata,
@@ -23,6 +25,7 @@ from backend_core.modules.calls.errors import (
     CallSessionLegacyRuntimeError,
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
+    HumanHandoffError,
 )
 from backend_core.modules.calls.models import CallSession
 from backend_core.modules.calls.repository import CallSessionRepository
@@ -241,6 +244,36 @@ async def claim_inbound_sip_call(
         )
         raise call_http_exception(error) from error
     return InboundSipClaimResponse(call_session_id=call.id, created=created)
+
+
+@runtime_router.post(
+    "/{call_id}/handoff",
+    response_model=HumanHandoffResponse,
+    dependencies=[Depends(require_internal_scope("call-session:handoff"))],
+)
+async def transfer_call_to_human(
+    call_id: UUID,
+    data: HumanHandoffRequest,
+    service: CallSessionServiceDependency,
+    request: Request,
+) -> HumanHandoffResponse:
+    try:
+        return await service.transfer_to_human(call_id, data, request.app.state.livekit)
+    except HumanHandoffError as error:
+        messages = {
+            "handoff_not_configured": "Human handoff is not configured",
+            "unknown_destination": "The requested handoff destination is unavailable",
+            "call_not_transferable": "This call cannot be transferred",
+            "transfer_failed": "The call could not be transferred",
+        }
+        raise HTTPException(
+            status_code=(
+                status.HTTP_502_BAD_GATEWAY
+                if error.code == "transfer_failed"
+                else status.HTTP_409_CONFLICT
+            ),
+            detail={"code": error.code, "message": messages[error.code]},
+        ) from error
 
 
 @call_admin_router.get("/{call_id}", response_model=CallSessionResponse)

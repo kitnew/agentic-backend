@@ -10,6 +10,7 @@ from contracts import (
     TenantConfigV1,
     TenantConfigV2,
     TenantConfigV3,
+    TenantConfigV4,
 )
 from pydantic import ValidationError
 
@@ -37,18 +38,34 @@ def config_v3() -> dict[str, object]:
     }
 
 
+def config_v4() -> dict[str, object]:
+    return {
+        **config_v3(),
+        "schema_version": 4,
+        "handoff": {
+            "destinations": {
+                "reception": {
+                    "description": "Reservations and general reception requests",
+                    "phone_number": "+421900000001",
+                }
+            }
+        },
+    }
+
+
 @pytest.mark.parametrize(
     ("version", "document"),
     [
         (1, lambda: json.loads(fixture_json())),
         (2, lambda: json.loads(V2_FIXTURE.read_text())),
         (3, config_v3),
+        (4, config_v4),
     ],
 )
 def test_registered_schema_versions_parse_through_canonical_dispatch(
     version: int, document: Callable[[], dict[str, object]]
 ) -> None:
-    assert sorted(TENANT_CONFIG_SCHEMAS) == [1, 2, 3]
+    assert sorted(TENANT_CONFIG_SCHEMAS) == [1, 2, 3, 4]
     assert (
         TENANT_CONFIG_SCHEMAS[version].model_validate(document()).schema_version
         == version
@@ -56,7 +73,20 @@ def test_registered_schema_versions_parse_through_canonical_dispatch(
 
 
 def test_canonical_schema_dispatch_rejects_unregistered_versions() -> None:
-    assert TENANT_CONFIG_SCHEMAS.get(4) is None
+    assert TENANT_CONFIG_SCHEMAS.get(5) is None
+
+
+def test_v4_handoff_requires_semantic_keys_and_canonical_e164() -> None:
+    parsed = TenantConfigV4.model_validate(config_v4())
+    assert parsed.handoff.destinations["reception"].phone_number == "+421900000001"
+    invalid = config_v4()
+    invalid["handoff"] = {
+        "destinations": {
+            "reception": {"description": "Reception", "phone_number": "0900 1"}
+        }
+    }
+    with pytest.raises(ValidationError):
+        TenantConfigV4.model_validate(invalid)
 
 
 def test_v1_json_round_trip() -> None:

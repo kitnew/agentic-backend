@@ -61,6 +61,18 @@ class LiveKitAdapter:
         )
         return any(room.name == room_name for room in response.rooms)
 
+    async def transfer_sip_participant(
+        self, *, room_name: str, participant_identity: str, phone_number: str
+    ) -> None:
+        await self.client.sip.transfer_sip_participant(
+            api.TransferSIPParticipantRequest(
+                room_name=room_name,
+                participant_identity=participant_identity,
+                transfer_to=f"tel:{phone_number}",
+                play_dialtone=True,
+            )
+        )
+
     def issue_participant_token(self, *, room_name: str, identity: str) -> str:
         grants = api.VideoGrants(
             room_join=True,

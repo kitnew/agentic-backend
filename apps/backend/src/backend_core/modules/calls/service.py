@@ -7,10 +7,14 @@ from contracts import (
     TENANT_CONFIG_SCHEMAS,
     ConversationPersistenceStatus,
     EffectiveVoiceRuntime,
+    HandoffDestinationDefinition,
+    HumanHandoffRequest,
+    HumanHandoffResponse,
     InboundSipClaimRequest,
     TenantCapabilityProfile,
     TenantConfigV2,
     TenantConfigV3,
+    TenantConfigV4,
     VoiceAgentPrompt,
     VoiceAgentRuntimeContext,
 )
@@ -24,6 +28,7 @@ from backend_core.modules.calls.errors import (
     CallSessionLegacyRuntimeError,
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
+    HumanHandoffError,
 )
 from backend_core.modules.calls.events import call_event
 from backend_core.modules.calls.models import (
@@ -57,6 +62,7 @@ from backend_core.modules.tenants.repository import (
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import normalize_e164
+from backend_core.platform.livekit import LiveKitAdapter
 from backend_core.runtime.capabilities.domain import runtime_definition
 from backend_core.runtime.voice.models import (
     RuntimeRevisionStatus,
@@ -423,7 +429,87 @@ class CallSessionService:
                 for key, profile in config.capabilities.items()
                 if isinstance(profile, TenantCapabilityProfile) and profile.enabled
             ],
+            handoff_destinations=(
+                {
+                    key: HandoffDestinationDefinition(
+                        description=destination.description
+                    )
+                    for key, destination in config.handoff.destinations.items()
+                }
+                if isinstance(config, TenantConfigV4)
+                else {}
+            ),
         )
+
+    async def transfer_to_human(
+        self,
+        call_id: UUID,
+        data: HumanHandoffRequest,
+        livekit: LiveKitAdapter,
+    ) -> HumanHandoffResponse:
+        call = await self._calls.get_for_update(call_id)
+        if call is None:
+            raise HumanHandoffError("call_not_transferable")
+        if call.handoff_tool_call_id is not None:
+            if (
+                call.handoff_tool_call_id == data.tool_call_id
+                and call.handoff_destination == data.destination
+            ):
+                return HumanHandoffResponse(destination=data.destination)
+            raise HumanHandoffError("call_not_transferable")
+        if (
+            call.status is not CallSessionStatus.CONNECTED
+            or call.channel is not CallChannel.SIP
+            or call.provider != "livekit"
+            or call.livekit_participant_identity is None
+        ):
+            raise HumanHandoffError("call_not_transferable")
+        tenant = await self._tenants.get(call.tenant_id)
+        if tenant is None or tenant.status is not TenantStatus.ACTIVE:
+            raise HumanHandoffError("call_not_transferable")
+        revision = await self._configs.get(
+            call.tenant_id, call.tenant_config_revision_id
+        )
+        if revision is None:
+            raise HumanHandoffError("handoff_not_configured")
+        try:
+            config = TenantConfigV4.model_validate(revision.config)
+        except ValidationError as error:
+            raise HumanHandoffError("handoff_not_configured") from error
+        if not config.handoff.destinations:
+            raise HumanHandoffError("handoff_not_configured")
+        destination = config.handoff.destinations.get(data.destination)
+        if destination is None:
+            raise HumanHandoffError("unknown_destination")
+        try:
+            await livekit.transfer_sip_participant(
+                room_name=call.room_name,
+                participant_identity=call.livekit_participant_identity,
+                phone_number=destination.phone_number,
+            )
+        except Exception as error:
+            logger.exception(
+                "LiveKit SIP transfer failed",
+                extra={
+                    "call_session_id": str(call.id),
+                    "tenant_id": str(call.tenant_id),
+                    "destination": data.destination,
+                },
+            )
+            raise HumanHandoffError("transfer_failed") from error
+        call.handoff_tool_call_id = data.tool_call_id
+        call.handoff_destination = data.destination
+        await self._calls.flush()
+        logger.info(
+            "Human handoff transferred",
+            extra={
+                "call_session_id": str(call.id),
+                "tenant_id": str(call.tenant_id),
+                "destination": data.destination,
+                "reason_supplied": data.reason is not None,
+            },
+        )
+        return HumanHandoffResponse(destination=data.destination)
 
     async def _voice_config(
         self,
@@ -431,9 +517,14 @@ class CallSessionService:
         config_revision: TenantConfigRevision,
     ) -> tuple[TenantConfigV3, PromptSetRevision, VoiceRuntimeRevision]:
         try:
-            config = TenantConfigV3.model_validate(config_revision.config)
+            model = TENANT_CONFIG_SCHEMAS.get(config_revision.schema_version)
+            if model is None:
+                raise CallSessionConfigUnavailableError
+            config = model.model_validate(config_revision.config)
         except ValidationError as error:
             raise CallSessionConfigUnavailableError from error
+        if not isinstance(config, TenantConfigV3):
+            raise CallSessionConfigUnavailableError
         if tenant.active_prompt_set_revision_id is None:
             raise CallSessionConfigUnavailableError
         if tenant.active_voice_runtime_revision_id is None:

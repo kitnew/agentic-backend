@@ -64,7 +64,7 @@ from control_plane.commands.prompts import (
 )
 from control_plane.settings import Settings
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 MAX_DIFFS = 20
 _POST_CALL_EXECUTION = {
     "plan_type": "managed_webhook.post_json.v1",

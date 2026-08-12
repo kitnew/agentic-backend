@@ -4,6 +4,7 @@ from hashlib import sha256
 from uuid import UUID, uuid4
 
 from contracts import (
+    TENANT_CONFIG_SCHEMAS,
     CallEventPayload,
     CommandResult,
     ExecutePostCallAction,
@@ -726,6 +727,12 @@ class FinalizationService:
         revision = await self._session.get(
             TenantConfigRevision, call.tenant_config_revision_id
         )
-        if revision is None or revision.schema_version != 3:
+        if revision is None:
             raise FinalizationError("pinned tenant configuration unavailable")
-        return TenantConfigV3.model_validate(revision.config)
+        model = TENANT_CONFIG_SCHEMAS.get(revision.schema_version)
+        if model is None:
+            raise FinalizationError("pinned tenant configuration unavailable")
+        config = model.model_validate(revision.config)
+        if not isinstance(config, TenantConfigV3):
+            raise FinalizationError("pinned tenant configuration unavailable")
+        return config

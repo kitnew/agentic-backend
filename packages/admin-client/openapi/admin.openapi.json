@@ -14,6 +14,9 @@
               },
               {
                 "$ref": "#/components/schemas/TenantConfigV3"
+              },
+              {
+                "$ref": "#/components/schemas/TenantConfigV4"
               }
             ],
             "title": "Config"
@@ -312,6 +315,28 @@
             ],
             "title": "Failure Reason"
           },
+          "handoff_destination": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Destination"
+          },
+          "handoff_tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Tool Call Id"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -457,6 +482,8 @@
           "sip_trunk_id",
           "sip_dispatch_rule_id",
           "livekit_participant_identity",
+          "handoff_tool_call_id",
+          "handoff_destination",
           "provider_dispatch_id",
           "room_name",
           "status",
@@ -1211,6 +1238,45 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HandoffConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "destinations": {
+            "maxProperties": 20,
+            "patternProperties": {
+              "^[a-z][a-z0-9_]{0,63}$": {
+                "$ref": "#/components/schemas/HandoffDestination"
+              }
+            },
+            "title": "Destinations",
+            "type": "object"
+          }
+        },
+        "title": "HandoffConfig",
+        "type": "object"
+      },
+      "HandoffDestination": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "phone_number": {
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "title": "Phone Number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "phone_number"
+        ],
+        "title": "HandoffDestination",
         "type": "object"
       },
       "InboundRouteResponse": {
@@ -2862,6 +2928,65 @@
           "conversation"
         ],
         "title": "TenantConfigV3",
+        "type": "object"
+      },
+      "TenantConfigV4": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfigV3"
+          },
+          "business": {
+            "$ref": "#/components/schemas/BusinessConfig"
+          },
+          "capabilities": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "$ref": "#/components/schemas/TenantCapabilityProfile"
+                }
+              ]
+            },
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "contact": {
+            "$ref": "#/components/schemas/ContactConfig"
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/ConversationConfig"
+          },
+          "handoff": {
+            "$ref": "#/components/schemas/HandoffConfig"
+          },
+          "localization": {
+            "$ref": "#/components/schemas/LocalizationConfig"
+          },
+          "post_call_actions": {
+            "items": {
+              "$ref": "#/components/schemas/PostCallAction"
+            },
+            "maxItems": 20,
+            "title": "Post Call Actions",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 4,
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business",
+          "localization",
+          "agent",
+          "conversation"
+        ],
+        "title": "TenantConfigV4",
         "type": "object"
       },
       "TenantPromptRevisionResponse": {

@@ -22,7 +22,7 @@ from admin_client.generated.models.validate_config_response import (
 )
 from admin_client.generated.models.validate_draft_response import ValidateDraftResponse
 from admin_client.generated.types import Response
-from contracts import TenantConfigV3
+from contracts import TenantConfigV4
 from control_plane.commands import prompts, tenant_configs
 from control_plane.settings import Settings
 
@@ -30,7 +30,7 @@ NOW = datetime(2026, 8, 10, tzinfo=UTC)
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000010")
 SLUG = "penzion-grand"
 CONFIG: dict[str, Any] = {
-    "schema_version": 3,
+    "schema_version": 4,
     "business": {"name": "Penzión Grand", "type": "hotel"},
     "contact": {
         "address": None,
@@ -75,7 +75,7 @@ def revision(
     status: str,
     config: dict[str, Any] | None = None,
     *,
-    schema_version: int = 3,
+    schema_version: int = 4,
     version: int = 1,
 ) -> ConfigRevisionResponse:
     return ConfigRevisionResponse.from_dict(
@@ -271,14 +271,14 @@ def test_yaml_parser_is_safe_single_mapping_current_schema() -> None:
     )
     for document, message in (
         ("schema_version: [", "invalid TenantConfig YAML"),
-        ("- schema_version: 3\n", "root must be a mapping"),
-        ("schema_version: 3\n---\nschema_version: 3\n", "exactly one document"),
+        ("- schema_version: 4\n", "root must be a mapping"),
+        ("schema_version: 4\n---\nschema_version: 4\n", "exactly one document"),
         (
             "!!python/object/apply:os.system ['echo unsafe']",
             "invalid TenantConfig YAML",
         ),
         ("schema_version: 2\n", "not writable"),
-        ("schema_version: 3\ncreated: 2026-08-10\n", "JSON-compatible"),
+        ("schema_version: 4\ncreated: 2026-08-10\n", "JSON-compatible"),
     ):
         with pytest.raises(tenant_configs.PromptCommandError, match=message):
             tenant_configs.parse_tenant_yaml(document)
@@ -364,7 +364,7 @@ def test_post_call_presets_compile_to_strict_runtime_and_round_trip(
     assert recording["execution"]["request_mapping"] == (
         '{"call_id": call_id, "recording": inputs.recording.body}'
     )
-    TenantConfigV3.model_validate(compiled)
+    TenantConfigV4.model_validate(compiled)
     pulled = tenant_configs.authoring_config(
         object(),
         TENANT_ID,
@@ -562,7 +562,7 @@ def test_show_and_revisions_read_backend_only(
     tenant_configs.run_tenant_config(settings(tmp_path), "revisions", SLUG)
     output = capsys.readouterr().out
     assert "1\t1\tarchived" in output
-    assert "2\t3\tdraft" in output
+    assert "2\t4\tdraft" in output
 
 
 def test_pull_creates_semantic_noop_refuses_and_force_overwrites(

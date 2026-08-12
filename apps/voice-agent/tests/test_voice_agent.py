@@ -6,6 +6,7 @@ import jwt
 import pytest
 from contracts import (
     EffectiveVoiceRuntime,
+    HumanHandoffResponse,
     InboundSipClaimResponse,
     RuntimeCapabilityDefinition,
     VoiceAgentRuntimeContext,
@@ -22,6 +23,7 @@ from voice_agent.main import (
     build_agent_tools,
     capability_tool,
     close_failure_reason,
+    handoff_tool,
     on_request,
     parse_metadata,
     resolve_call_session_id,
@@ -359,6 +361,60 @@ def test_calculator_is_always_added_before_tenant_tools() -> None:
     assert (
         "one arithmetic operation per call" in tools[0]._info.raw_schema["description"]
     )  # type: ignore[attr-defined]
+
+
+@pytest.mark.asyncio
+async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
+    class Backend:
+        def __init__(self) -> None:
+            self.requests: list[object] = []
+
+        async def transfer_to_human(self, call_id, request):
+            self.requests.append(request)
+            return HumanHandoffResponse(destination=request.destination)
+
+    class Session:
+        def __init__(self) -> None:
+            self.shutdowns: list[bool] = []
+
+        def shutdown(self, *, drain: bool = True) -> None:
+            self.shutdowns.append(drain)
+
+    call_id = uuid4()
+    backend = Backend()
+    runtime = VoiceAgentRuntimeContext.model_validate(
+        {
+            **runtime_context().model_dump(),
+            "handoff_destinations": {
+                "reception": {"description": "Reservations and reception requests"}
+            },
+        }
+    )
+    tools = build_agent_tools(runtime, backend, call_id)  # type: ignore[arg-type]
+    assert [tool._info.name for tool in tools] == [  # type: ignore[attr-defined]
+        "calculator",
+        "transfer_to_human",
+    ]
+    tool = handoff_tool(runtime, backend, call_id)  # type: ignore[arg-type]
+    schema = tool._info.raw_schema  # type: ignore[attr-defined]
+    assert schema["parameters"]["properties"]["destination"]["enum"] == ["reception"]
+    assert "phone" not in str(schema).lower()
+    session = Session()
+    result = await tool._func(  # type: ignore[attr-defined]
+        SimpleNamespace(
+            session=session,
+            function_call=SimpleNamespace(call_id="tool-handoff-1"),
+        ),
+        {"destination": "reception", "reason": "Guest asked for reception"},
+    )
+    assert result == {"status": "transferred", "destination": "reception"}
+    assert session.shutdowns == [True]
+    assert backend.requests[0].destination == "reception"  # type: ignore[union-attr]
+
+
+def test_handoff_tool_is_absent_when_unconfigured() -> None:
+    tools = build_agent_tools(runtime_context(), None, uuid4())  # type: ignore[arg-type]
+    assert [tool._info.name for tool in tools] == ["calculator"]  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

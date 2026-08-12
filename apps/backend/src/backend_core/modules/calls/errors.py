@@ -20,3 +20,9 @@ class CallSessionLegacyRuntimeError(CallSessionError):
 
 class CallSessionRouteUnavailableError(CallSessionError):
     pass
+
+
+class HumanHandoffError(CallSessionError):
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(code)

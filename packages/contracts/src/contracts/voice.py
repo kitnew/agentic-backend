@@ -60,6 +60,21 @@ class InboundSipClaimResponse(_VoiceModel):
     created: bool
 
 
+class HandoffDestinationDefinition(_VoiceModel):
+    description: str = Field(min_length=1, max_length=1000)
+
+
+class HumanHandoffRequest(_VoiceModel):
+    tool_call_id: str = Field(min_length=1, max_length=255)
+    destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    reason: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class HumanHandoffResponse(_VoiceModel):
+    status: Literal["transferred"] = "transferred"
+    destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+
+
 class VoiceAgentPrompt(_VoiceModel):
     system_prompt: str = Field(min_length=1)
     profile_prompt: str = ""
@@ -80,6 +95,9 @@ class VoiceAgentRuntimeContext(_VoiceModel):
     conversation_scope: str = Field(min_length=1, max_length=64)
     prompt: VoiceAgentPrompt
     capabilities: list[RuntimeCapabilityDefinition] = Field(default_factory=list)
+    handoff_destinations: dict[str, HandoffDestinationDefinition] = Field(
+        default_factory=dict
+    )
 
 
 class CallLifecycleResponse(_VoiceModel):

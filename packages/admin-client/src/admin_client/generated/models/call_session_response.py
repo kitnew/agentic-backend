@@ -30,6 +30,8 @@ class CallSessionResponse:
         direction (CallDirection):
         ended_at (datetime.datetime | None):
         failure_reason (None | str):
+        handoff_destination (None | str):
+        handoff_tool_call_id (None | str):
         id (UUID):
         livekit_participant_identity (None | str):
         prompt_set_revision_id (UUID):
@@ -58,6 +60,8 @@ class CallSessionResponse:
     direction: CallDirection
     ended_at: datetime.datetime | None
     failure_reason: None | str
+    handoff_destination: None | str
+    handoff_tool_call_id: None | str
     id: UUID
     livekit_participant_identity: None | str
     prompt_set_revision_id: UUID
@@ -109,6 +113,12 @@ class CallSessionResponse:
 
         failure_reason: None | str
         failure_reason = self.failure_reason
+
+        handoff_destination: None | str
+        handoff_destination = self.handoff_destination
+
+        handoff_tool_call_id: None | str
+        handoff_tool_call_id = self.handoff_tool_call_id
 
         id = str(self.id)
 
@@ -170,6 +180,8 @@ class CallSessionResponse:
                 "direction": direction,
                 "ended_at": ended_at,
                 "failure_reason": failure_reason,
+                "handoff_destination": handoff_destination,
+                "handoff_tool_call_id": handoff_tool_call_id,
                 "id": id,
                 "livekit_participant_identity": livekit_participant_identity,
                 "prompt_set_revision_id": prompt_set_revision_id,
@@ -265,6 +277,22 @@ class CallSessionResponse:
             return cast(None | str, data)
 
         failure_reason = _parse_failure_reason(d.pop("failure_reason"))
+
+        def _parse_handoff_destination(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        handoff_destination = _parse_handoff_destination(d.pop("handoff_destination"))
+
+        def _parse_handoff_tool_call_id(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        handoff_tool_call_id = _parse_handoff_tool_call_id(
+            d.pop("handoff_tool_call_id")
+        )
 
         id = UUID(d.pop("id"))
 
@@ -373,6 +401,8 @@ class CallSessionResponse:
             direction=direction,
             ended_at=ended_at,
             failure_reason=failure_reason,
+            handoff_destination=handoff_destination,
+            handoff_tool_call_id=handoff_tool_call_id,
             id=id,
             livekit_participant_identity=livekit_participant_identity,
             prompt_set_revision_id=prompt_set_revision_id,

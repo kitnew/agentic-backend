@@ -822,7 +822,7 @@ class PromptCompositionUseCases:
                 )
             return None
         revision = await self._configs.get(tenant.id, tenant.active_config_revision_id)
-        if revision is None or revision.schema_version != 3:
+        if revision is None or revision.schema_version not in {3, 4}:
             if required:
                 raise PromptSetResolutionError(
                     "tenant.active_config_revision",
@@ -831,7 +831,10 @@ class PromptCompositionUseCases:
                 )
             return None
         try:
-            return TenantConfigV3.model_validate(revision.config)
+            model = TENANT_CONFIG_SCHEMAS[revision.schema_version]
+            config = model.model_validate(revision.config)
+            assert isinstance(config, TenantConfigV3)
+            return config
         except ValidationError as error:
             raise PromptSetResolutionError(
                 "tenant.active_config_revision",
@@ -1270,8 +1273,10 @@ class PromptCompositionUseCases:
             config_revision = await self._configs.get(
                 tenant_id, tenant.active_config_revision_id
             )
-            if config_revision is not None and config_revision.schema_version == 3:
-                config = TenantConfigV3.model_validate(config_revision.config)
+            if config_revision is not None and config_revision.schema_version in {3, 4}:
+                model = TENANT_CONFIG_SCHEMAS[config_revision.schema_version]
+                config = model.model_validate(config_revision.config)
+                assert isinstance(config, TenantConfigV3)
                 profile_revision = await self._revisions.revision(
                     ProfilePromptRevision, revision.profile_prompt_revision_id
                 )

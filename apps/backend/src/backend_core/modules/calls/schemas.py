@@ -83,6 +83,8 @@ class CallSessionResponse(BaseModel):
     sip_trunk_id: str | None
     sip_dispatch_rule_id: str | None
     livekit_participant_identity: str | None
+    handoff_tool_call_id: str | None
+    handoff_destination: str | None
     provider_dispatch_id: str | None
     room_name: str
     status: CallSessionStatus

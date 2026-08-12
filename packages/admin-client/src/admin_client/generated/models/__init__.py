@@ -37,6 +37,9 @@ from .google_sheets_append_execution_value_input_option import (
     GoogleSheetsAppendExecutionValueInputOption,
 )
 from .google_sheets_execution_idempotency import GoogleSheetsExecutionIdempotency
+from .handoff_config import HandoffConfig
+from .handoff_config_destinations import HandoffConfigDestinations
+from .handoff_destination import HandoffDestination
 from .http_validation_error import HTTPValidationError
 from .inbound_route_response import InboundRouteResponse
 from .integration_connection_response import IntegrationConnectionResponse
@@ -101,6 +104,8 @@ from .tenant_config_v2 import TenantConfigV2
 from .tenant_config_v2_capabilities import TenantConfigV2Capabilities
 from .tenant_config_v3 import TenantConfigV3
 from .tenant_config_v3_capabilities import TenantConfigV3Capabilities
+from .tenant_config_v4 import TenantConfigV4
+from .tenant_config_v4_capabilities import TenantConfigV4Capabilities
 from .tenant_prompt_revision_response import TenantPromptRevisionResponse
 from .tenant_response import TenantResponse
 from .tenant_runtime_override import TenantRuntimeOverride
@@ -170,6 +175,9 @@ __all__ = (
     "GoogleSheetsAppendExecutionValueInputOption",
     "GoogleSheetsExecutionIdempotency",
     "HTTPValidationError",
+    "HandoffConfig",
+    "HandoffConfigDestinations",
+    "HandoffDestination",
     "InboundRouteResponse",
     "IntegrationConnectionResponse",
     "IntegrationConnectionStatus",
@@ -230,6 +238,8 @@ __all__ = (
     "TenantConfigV2Capabilities",
     "TenantConfigV3",
     "TenantConfigV3Capabilities",
+    "TenantConfigV4",
+    "TenantConfigV4Capabilities",
     "TenantPromptRevisionResponse",
     "TenantResponse",
     "TenantRuntimeOverride",
