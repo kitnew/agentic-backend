@@ -16,6 +16,7 @@ SERVICE_SCOPES = {
             "tenant-config:read",
             "tenant-routing:resolve",
             "call-session:create",
+            "call-session:inbound-sip:claim",
             "call-session:runtime-context:read",
             "call-session:activate",
             "call-session:complete",

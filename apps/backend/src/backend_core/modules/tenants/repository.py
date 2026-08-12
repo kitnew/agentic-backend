@@ -98,6 +98,10 @@ class InboundRouteRepository:
     async def refresh(self, route: InboundRoute) -> None:
         await self._session.refresh(route)
 
+    async def delete(self, route: InboundRoute) -> None:
+        await self._session.delete(route)
+        await self._session.flush()
+
     async def resolve(
         self,
         normalized_did: str,

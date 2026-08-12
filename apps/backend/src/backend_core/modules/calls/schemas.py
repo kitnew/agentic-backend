@@ -75,6 +75,14 @@ class CallSessionResponse(BaseModel):
     provider: str
     provider_call_id: str
     caller_phone_e164: str | None
+    called_phone_e164: str | None
+    caller_phone_raw: str | None
+    called_phone_raw: str | None
+    sip_call_id: str | None
+    sip_call_id_full: str | None
+    sip_trunk_id: str | None
+    sip_dispatch_rule_id: str | None
+    livekit_participant_identity: str | None
     provider_dispatch_id: str | None
     room_name: str
     status: CallSessionStatus

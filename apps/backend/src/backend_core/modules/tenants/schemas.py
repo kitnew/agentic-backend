@@ -36,6 +36,18 @@ E164Did = Annotated[
 ]
 
 
+def normalize_e164(value: str) -> str | None:
+    normalized = value.strip().replace(" ", "").replace("-", "")
+    if (
+        normalized.startswith("+")
+        and 3 <= len(normalized) <= 16
+        and normalized[1:].isdigit()
+        and normalized[1] != "0"
+    ):
+        return normalized
+    return None
+
+
 class CreateTenantRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 

@@ -44,6 +44,22 @@ class LiveKitJobMetadata(_VoiceModel):
     call_session_id: UUID
 
 
+class InboundSipClaimRequest(_VoiceModel):
+    sip_call_id: str = Field(min_length=1, max_length=255)
+    sip_call_id_full: str | None = Field(default=None, min_length=1, max_length=255)
+    trunk_id: str = Field(min_length=1, max_length=255)
+    dispatch_rule_id: str = Field(min_length=1, max_length=255)
+    caller_number: str = Field(min_length=1, max_length=64)
+    called_number: str = Field(min_length=1, max_length=64)
+    room_name: str = Field(min_length=1, max_length=255)
+    participant_identity: str = Field(min_length=1, max_length=255)
+
+
+class InboundSipClaimResponse(_VoiceModel):
+    call_session_id: UUID
+    created: bool
+
+
 class VoiceAgentPrompt(_VoiceModel):
     system_prompt: str = Field(min_length=1)
     profile_prompt: str = ""

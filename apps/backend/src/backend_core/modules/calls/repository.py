@@ -32,10 +32,7 @@ class CallSessionRepository:
         self,
         call: CallSession,
     ) -> tuple[CallSession, bool]:
-        existing = await self.get_by_provider_call(
-            call.provider,
-            call.provider_call_id,
-        )
+        existing = await self._existing_for(call)
         if existing is not None:
             return existing, False
         try:
@@ -43,14 +40,36 @@ class CallSessionRepository:
                 self._session.add(call)
                 await self._session.flush()
         except IntegrityError:
-            existing = await self.get_by_provider_call(
-                call.provider,
-                call.provider_call_id,
-            )
+            existing = await self._existing_for(call)
             if existing is None:
                 raise
             return existing, False
         return call, True
+
+    async def _existing_for(self, call: CallSession) -> CallSession | None:
+        if call.sip_call_id is not None:
+            existing = await self.get_by_sip_call(
+                call.provider, call.sip_call_id, call.sip_call_id_full
+            )
+            if existing is not None:
+                return existing
+        return await self.get_by_provider_call(call.provider, call.provider_call_id)
+
+    async def get_by_sip_call(
+        self,
+        provider: str,
+        sip_call_id: str,
+        sip_call_id_full: str | None,
+    ) -> CallSession | None:
+        identities = [CallSession.sip_call_id == sip_call_id]
+        if sip_call_id_full is not None:
+            identities.append(CallSession.sip_call_id_full == sip_call_id_full)
+        return await self._session.scalar(
+            select(CallSession).where(
+                CallSession.provider == provider,
+                or_(*identities),
+            )
+        )
 
     async def get_by_provider_call(
         self,

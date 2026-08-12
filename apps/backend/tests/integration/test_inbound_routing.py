@@ -5,10 +5,25 @@ import pytest
 from backend_core.bootstrap import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.models import InboundRoute, Tenant, TenantStatus
+from backend_core.modules.tenants.schemas import normalize_e164
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("+421552301299", "+421552301299"),
+        (" +421 55-230-1299 ", "+421552301299"),
+        ("00421552301299", None),
+        ("421552301299", None),
+        ("+0421552301299", None),
+    ],
+)
+def test_transport_phone_normalization(raw: str, expected: str | None) -> None:
+    assert normalize_e164(raw) == expected
 
 
 def config_v1() -> dict[str, object]:
@@ -191,6 +206,15 @@ async def test_inbound_route_management_and_resolution(
                     json={"enabled": False},
                 )
             ).status_code == 404
+            assert (
+                await client.delete(f"{routes_url}/{route_id}")
+            ).status_code == 204
+            reassigned = await client.post(
+                f"/admin/v1/tenants/{other_tenant_id}/inbound-routes",
+                json={"normalized_did": "+421552301300"},
+            )
+            assert reassigned.status_code == 201
+            assert reassigned.json()["tenant_id"] == other_tenant_id
 
             route_without_config = await client.post(
                 f"/admin/v1/tenants/{other_tenant_id}/inbound-routes",

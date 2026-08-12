@@ -125,6 +125,21 @@
         "title": "BusinessConfig",
         "type": "object"
       },
+      "CallChannel": {
+        "enum": [
+          "sip",
+          "web"
+        ],
+        "title": "CallChannel",
+        "type": "string"
+      },
+      "CallDirection": {
+        "enum": [
+          "inbound"
+        ],
+        "title": "CallDirection",
+        "type": "string"
+      },
       "CallLifecycleResponse": {
         "additionalProperties": false,
         "properties": {
@@ -203,6 +218,266 @@
           "failed"
         ],
         "title": "CallLifecycleStatus",
+        "type": "string"
+      },
+      "CallSessionResponse": {
+        "properties": {
+          "called_phone_e164": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Called Phone E164"
+          },
+          "called_phone_raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Called Phone Raw"
+          },
+          "caller_phone_e164": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caller Phone E164"
+          },
+          "caller_phone_raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Caller Phone Raw"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/CallChannel"
+          },
+          "connected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/CallDirection"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "livekit_participant_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Livekit Participant Identity"
+          },
+          "prompt_set_revision_id": {
+            "format": "uuid",
+            "title": "Prompt Set Revision Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "provider_call_id": {
+            "title": "Provider Call Id",
+            "type": "string"
+          },
+          "provider_dispatch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Dispatch Id"
+          },
+          "room_name": {
+            "title": "Room Name",
+            "type": "string"
+          },
+          "sip_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Call Id"
+          },
+          "sip_call_id_full": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Call Id Full"
+          },
+          "sip_dispatch_rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Dispatch Rule Id"
+          },
+          "sip_trunk_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sip Trunk Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/CallSessionStatus"
+          },
+          "tenant_config_revision_id": {
+            "format": "uuid",
+            "title": "Tenant Config Revision Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "voice_runtime_revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice Runtime Revision Id"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "tenant_config_revision_id",
+          "prompt_set_revision_id",
+          "voice_runtime_revision_id",
+          "channel",
+          "direction",
+          "provider",
+          "provider_call_id",
+          "caller_phone_e164",
+          "called_phone_e164",
+          "caller_phone_raw",
+          "called_phone_raw",
+          "sip_call_id",
+          "sip_call_id_full",
+          "sip_trunk_id",
+          "sip_dispatch_rule_id",
+          "livekit_participant_identity",
+          "provider_dispatch_id",
+          "room_name",
+          "status",
+          "created_at",
+          "started_at",
+          "connected_at",
+          "ended_at",
+          "failure_reason"
+        ],
+        "title": "CallSessionResponse",
+        "type": "object"
+      },
+      "CallSessionStatus": {
+        "enum": [
+          "created",
+          "started",
+          "connected",
+          "ended",
+          "failed"
+        ],
+        "title": "CallSessionStatus",
         "type": "string"
       },
       "CapabilityBusinessPolicy": {
@@ -3381,6 +3656,54 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/v1/calls/{call_id}": {
+      "get": {
+        "operationId": "get_admin_call_admin_v1_calls__call_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "call_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Call Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CallSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Get Admin Call",
+        "tags": [
+          "admin:calls"
+        ]
+      }
+    },
     "/admin/v1/calls/{call_session_id}/conversation": {
       "get": {
         "operationId": "get_admin_conversation_admin_v1_calls__call_session_id__conversation_get",
@@ -4955,6 +5278,55 @@
       }
     },
     "/admin/v1/tenants/{tenant_id}/inbound-routes/{route_id}": {
+      "delete": {
+        "operationId": "delete_inbound_route_admin_v1_tenants__tenant_id__inbound_routes__route_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "route_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Route Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Delete Inbound Route",
+        "tags": [
+          "admin:tenants"
+        ]
+      },
       "patch": {
         "operationId": "update_inbound_route_admin_v1_tenants__tenant_id__inbound_routes__route_id__patch",
         "parameters": [

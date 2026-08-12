@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
@@ -6,6 +7,7 @@ from contracts import (
     TENANT_CONFIG_SCHEMAS,
     ConversationPersistenceStatus,
     EffectiveVoiceRuntime,
+    InboundSipClaimRequest,
     TenantCapabilityProfile,
     TenantConfigV2,
     TenantConfigV3,
@@ -54,12 +56,15 @@ from backend_core.modules.tenants.repository import (
     PromptCompositionRepository,
     TenantRepository,
 )
+from backend_core.modules.tenants.schemas import normalize_e164
 from backend_core.runtime.capabilities.domain import runtime_definition
 from backend_core.runtime.voice.models import (
     RuntimeRevisionStatus,
     VoiceRuntimeRevision,
 )
 from backend_core.runtime.voice.repository import VoiceRuntimeRepository
+
+logger = logging.getLogger(__name__)
 
 
 class CallSessionService:
@@ -125,6 +130,124 @@ class CallSessionService:
             return call, created
         except IntegrityError as error:
             raise CallSessionConflictError from error
+
+    async def claim_inbound_sip(
+        self,
+        data: InboundSipClaimRequest,
+    ) -> tuple[CallSession, bool]:
+        called_number = normalize_e164(data.called_number)
+        if called_number is None:
+            raise CallSessionRouteUnavailableError
+        caller_number = normalize_e164(data.caller_number)
+        existing = await self._calls.get_by_sip_call(
+            "livekit", data.sip_call_id, data.sip_call_id_full
+        )
+        if existing is not None:
+            await self._validate_sip_replay(existing, data, caller_number, called_number)
+            logger.info(
+                "Existing inbound SIP CallSession reused",
+                extra={
+                    "call_session_id": str(existing.id),
+                    "sip_call_id": data.sip_call_id,
+                    "room": data.room_name,
+                    "tenant_id": str(existing.tenant_id),
+                },
+            )
+            return existing, False
+
+        resolution = await self._routes.resolve(called_number, lock_tenant=True)
+        if resolution is None:
+            raise CallSessionRouteUnavailableError
+        tenant, config_revision = resolution
+        logger.info(
+            "Inbound SIP DID resolved",
+            extra={"called_number": called_number, "tenant_id": str(tenant.id)},
+        )
+        _, prompt_set, voice_runtime = await self._voice_config(
+            tenant, config_revision
+        )
+        call = CallSession(
+            tenant_id=tenant.id,
+            tenant_config_revision_id=config_revision.id,
+            prompt_set_revision_id=prompt_set.id,
+            voice_runtime_revision_id=voice_runtime.id,
+            channel=CallChannel.SIP,
+            direction=CallDirection.INBOUND,
+            provider="livekit",
+            provider_call_id=data.sip_call_id_full or data.sip_call_id,
+            caller_phone_e164=caller_number,
+            called_phone_e164=called_number,
+            caller_phone_raw=data.caller_number,
+            called_phone_raw=data.called_number,
+            sip_call_id=data.sip_call_id,
+            sip_call_id_full=data.sip_call_id_full,
+            sip_trunk_id=data.trunk_id,
+            sip_dispatch_rule_id=data.dispatch_rule_id,
+            livekit_participant_identity=data.participant_identity,
+            room_name=data.room_name,
+        )
+        try:
+            call, created = await self._calls.add_or_get(call)
+            if not created:
+                await self._validate_sip_replay(
+                    call, data, caller_number, called_number
+                )
+                logger.info(
+                    "Existing inbound SIP CallSession reused",
+                    extra={
+                        "call_session_id": str(call.id),
+                        "sip_call_id": data.sip_call_id,
+                        "room": data.room_name,
+                        "tenant_id": str(call.tenant_id),
+                    },
+                )
+                return call, False
+            await self._conversations.create_for_call(call.id, call.tenant_id)
+            await self._events.publish(call_event(call.id, call.tenant_id, "created"))
+            logger.info(
+                "Inbound SIP CallSession created",
+                extra={
+                    "call_session_id": str(call.id),
+                    "sip_call_id": data.sip_call_id,
+                    "room": data.room_name,
+                    "tenant_id": str(call.tenant_id),
+                },
+            )
+            return call, True
+        except IntegrityError as error:
+            raise CallSessionConflictError from error
+
+    async def _validate_sip_replay(
+        self,
+        call: CallSession,
+        data: InboundSipClaimRequest,
+        caller_number: str | None,
+        called_number: str,
+    ) -> None:
+        if (
+            call.channel is not CallChannel.SIP
+            or call.provider != "livekit"
+            or call.sip_call_id != data.sip_call_id
+            or (
+                call.sip_call_id_full is not None
+                and data.sip_call_id_full is not None
+                and call.sip_call_id_full != data.sip_call_id_full
+            )
+            or call.caller_phone_e164 != caller_number
+            or (
+                caller_number is None
+                and call.caller_phone_raw != data.caller_number
+            )
+            or call.called_phone_e164 != called_number
+            or call.sip_trunk_id != data.trunk_id
+            or call.sip_dispatch_rule_id != data.dispatch_rule_id
+            or call.room_name != data.room_name
+            or call.livekit_participant_identity != data.participant_identity
+        ):
+            raise CallSessionConflictError
+        if call.sip_call_id_full is None and data.sip_call_id_full is not None:
+            call.sip_call_id_full = data.sip_call_id_full
+            await self._calls.flush()
 
     async def create_manual(
         self,

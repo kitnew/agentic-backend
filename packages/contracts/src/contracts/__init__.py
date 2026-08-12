@@ -63,6 +63,8 @@ from contracts.tenant_config import (
 from contracts.voice import (
     CallLifecycleResponse,
     CallLifecycleStatus,
+    InboundSipClaimRequest,
+    InboundSipClaimResponse,
     LiveKitJobMetadata,
     VoiceAgentPrompt,
     VoiceAgentRuntimeContext,
@@ -111,6 +113,8 @@ __all__ = [
     "GoogleSheetsAppendValuesResult",
     "GoogleSheetsExecutionIdempotency",
     "GoogleSheetsIdempotency",
+    "InboundSipClaimRequest",
+    "InboundSipClaimResponse",
     "IntegrationJob",
     "JsonScalar",
     "LLMRuntimeSettings",

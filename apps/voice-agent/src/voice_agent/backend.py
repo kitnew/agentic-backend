@@ -13,6 +13,8 @@ from contracts import (
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
     ConversationMessageResponse,
+    InboundSipClaimRequest,
+    InboundSipClaimResponse,
     VoiceAgentRuntimeContext,
     VoiceCallObservation,
 )
@@ -105,6 +107,17 @@ class BackendClient:
             "call-session:runtime-context:read",
         )
         return VoiceAgentRuntimeContext.model_validate(response.json())
+
+    async def claim_inbound_sip(
+        self, request: InboundSipClaimRequest
+    ) -> InboundSipClaimResponse:
+        response = await self.request(
+            "POST",
+            "/internal/v1/calls/inbound-sip/claim",
+            "call-session:inbound-sip:claim",
+            json=request.model_dump(mode="json"),
+        )
+        return InboundSipClaimResponse.model_validate(response.json())
 
     async def invoke_capability(
         self,

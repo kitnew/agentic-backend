@@ -885,6 +885,21 @@ async def update_inbound_route(
     return InboundRouteResponse.model_validate(route)
 
 
+@router.delete(
+    "/{tenant_id}/inbound-routes/{route_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_inbound_route(
+    tenant_id: UUID,
+    route_id: UUID,
+    service: InboundRouteServiceDependency,
+) -> None:
+    try:
+        await service.delete(tenant_id, route_id)
+    except (TenantNotFoundError, InboundRouteNotFoundError) as error:
+        raise inbound_route_http_exception(error) from error
+
+
 @router.post(
     "/{tenant_id}/config/drafts",
     response_model=ConfigRevisionResponse,

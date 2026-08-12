@@ -1,3 +1,4 @@
+import logging
 from contextlib import suppress
 from hashlib import sha256
 from typing import Annotated
@@ -7,6 +8,8 @@ from contracts import (
     CallLifecycleResponse,
     CallLifecycleStatus,
     ConversationPersistenceStatus,
+    InboundSipClaimRequest,
+    InboundSipClaimResponse,
     LiveKitJobMetadata,
     VoiceAgentRuntimeContext,
     VoiceCallObservation,
@@ -52,6 +55,13 @@ admin_router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 runtime_router = APIRouter(prefix="/internal/v1/calls", tags=["internal:calls"])
+call_admin_router = APIRouter(
+    prefix="/admin/v1/calls",
+    tags=["admin:calls"],
+    dependencies=[Depends(require_admin)],
+)
+
+logger = logging.getLogger(__name__)
 
 
 def build_call_session_service(
@@ -195,6 +205,53 @@ async def create_call_session(
         raise call_http_exception(error) from error
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     return CallSessionResponse.model_validate(call)
+
+
+@runtime_router.post(
+    "/inbound-sip/claim",
+    response_model=InboundSipClaimResponse,
+    dependencies=[Depends(require_internal_scope("call-session:inbound-sip:claim"))],
+)
+async def claim_inbound_sip_call(
+    data: InboundSipClaimRequest,
+    service: CallSessionServiceDependency,
+) -> InboundSipClaimResponse:
+    logger.info(
+        "Inbound SIP claim requested",
+        extra={
+            "sip_call_id": data.sip_call_id,
+            "room": data.room_name,
+            "trunk_id": data.trunk_id,
+        },
+    )
+    try:
+        call, created = await service.claim_inbound_sip(data)
+    except (
+        CallSessionConfigUnavailableError,
+        CallSessionConflictError,
+        CallSessionRouteUnavailableError,
+    ) as error:
+        logger.warning(
+            "Inbound SIP claim rejected",
+            extra={
+                "sip_call_id": data.sip_call_id,
+                "room": data.room_name,
+                "reason": type(error).__name__,
+            },
+        )
+        raise call_http_exception(error) from error
+    return InboundSipClaimResponse(call_session_id=call.id, created=created)
+
+
+@call_admin_router.get("/{call_id}", response_model=CallSessionResponse)
+async def get_admin_call(
+    call_id: UUID,
+    service: CallSessionServiceDependency,
+) -> CallSessionResponse:
+    try:
+        return CallSessionResponse.model_validate(await service.get(call_id))
+    except CallSessionNotFoundError as error:
+        raise call_http_exception(error) from error
 
 
 @admin_router.post(

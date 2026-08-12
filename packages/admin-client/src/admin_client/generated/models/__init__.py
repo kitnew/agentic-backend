@@ -4,8 +4,12 @@ from .active_tenant_config import ActiveTenantConfig
 from .agent_config import AgentConfig
 from .agent_config_v3 import AgentConfigV3
 from .business_config import BusinessConfig
+from .call_channel import CallChannel
+from .call_direction import CallDirection
 from .call_lifecycle_response import CallLifecycleResponse
 from .call_lifecycle_status import CallLifecycleStatus
+from .call_session_response import CallSessionResponse
+from .call_session_status import CallSessionStatus
 from .capability_business_policy import CapabilityBusinessPolicy
 from .config_revision_response import ConfigRevisionResponse
 from .config_revision_response_config import ConfigRevisionResponseConfig
@@ -134,8 +138,12 @@ __all__ = (
     "AgentConfig",
     "AgentConfigV3",
     "BusinessConfig",
+    "CallChannel",
+    "CallDirection",
     "CallLifecycleResponse",
     "CallLifecycleStatus",
+    "CallSessionResponse",
+    "CallSessionStatus",
     "CapabilityBusinessPolicy",
     "ConfigRevisionResponse",
     "ConfigRevisionResponseConfig",

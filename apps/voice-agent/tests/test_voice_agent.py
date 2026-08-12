@@ -6,10 +6,11 @@ import jwt
 import pytest
 from contracts import (
     EffectiveVoiceRuntime,
+    InboundSipClaimResponse,
     RuntimeCapabilityDefinition,
     VoiceAgentRuntimeContext,
 )
-from livekit import agents
+from livekit import agents, rtc
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
 from voice_agent.backend import BackendClient
@@ -23,6 +24,7 @@ from voice_agent.main import (
     close_failure_reason,
     on_request,
     parse_metadata,
+    resolve_call_session_id,
     run_job,
 )
 from voice_agent.providers import (
@@ -130,7 +132,7 @@ def test_metadata_rejects_empty_malformed_missing_extra_and_invalid_uuid(
 
 
 @pytest.mark.asyncio
-async def test_on_request_accepts_only_valid_metadata() -> None:
+async def test_on_request_accepts_valid_metadata_or_sip_bootstrap() -> None:
     class Request:
         def __init__(self, metadata: str) -> None:
             self.job = SimpleNamespace(metadata=metadata)
@@ -152,6 +154,114 @@ async def test_on_request_accepts_only_valid_metadata() -> None:
     await on_request(accepted)  # type: ignore[arg-type]
     assert accepted.accepted
     assert accepted.terminated is None
+
+    sip = Request("")
+    await on_request(sip)  # type: ignore[arg-type]
+    assert sip.accepted
+    assert sip.terminated is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_call_session_id_keeps_metadata_flow_unchanged() -> None:
+    call_id = uuid4()
+
+    class Context:
+        job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
+
+        async def wait_for_participant(self, **kwargs):
+            raise AssertionError("metadata flow must not wait for SIP")
+
+    assert (
+        await resolve_call_session_id(Context(), object(), 1)  # type: ignore[arg-type]
+        == call_id
+    )
+
+
+@pytest.mark.asyncio
+async def test_resolve_call_session_id_claims_sip_attributes() -> None:
+    call_id = uuid4()
+
+    class Backend:
+        request = None
+
+        async def claim_inbound_sip(self, request):
+            self.request = request
+            return InboundSipClaimResponse(call_session_id=call_id, created=True)
+
+    participant = SimpleNamespace(
+        kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+        identity="sip-caller",
+        attributes={
+            "sip.callID": "SCL_test",
+            "sip.callIDFull": "telnyx@example.net",
+            "sip.phoneNumber": "+421900111222",
+            "sip.trunkPhoneNumber": "+421552301410",
+            "sip.trunkID": "ST_test",
+            "sip.ruleID": "SDR_test",
+        },
+    )
+
+    class Context:
+        job = SimpleNamespace(metadata="")
+        room = SimpleNamespace(name="sip-call-test")
+
+        async def wait_for_participant(self, **kwargs):
+            assert rtc.ParticipantKind.PARTICIPANT_KIND_SIP in kwargs["kind"]
+            return participant
+
+    backend = Backend()
+    assert (
+        await resolve_call_session_id(Context(), backend, 1)  # type: ignore[arg-type]
+        == call_id
+    )
+    assert backend.request is not None
+    assert backend.request.model_dump(mode="json") == {
+        "sip_call_id": "SCL_test",
+        "sip_call_id_full": "telnyx@example.net",
+        "trunk_id": "ST_test",
+        "dispatch_rule_id": "SDR_test",
+        "caller_number": "+421900111222",
+        "called_number": "+421552301410",
+        "room_name": "sip-call-test",
+        "participant_identity": "sip-caller",
+    }
+
+
+@pytest.mark.asyncio
+async def test_resolve_call_session_id_rejects_non_sip_and_missing_attributes() -> None:
+    class Context:
+        job = SimpleNamespace(metadata="")
+        room = SimpleNamespace(name="room")
+
+        def __init__(self, participant) -> None:
+            self.participant = participant
+
+        async def wait_for_participant(self, **kwargs):
+            return self.participant
+
+    standard = SimpleNamespace(
+        kind=rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+        identity="browser",
+        attributes={},
+    )
+    with pytest.raises(ValueError, match="no inbound SIP participant"):
+        await resolve_call_session_id(
+            Context(standard),
+            object(),
+            1,  # type: ignore[arg-type]
+        )
+
+    incomplete = SimpleNamespace(
+        kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+        identity="sip-caller",
+        attributes={"sip.callID": "SCL_test"},
+    )
+    with pytest.raises(ValueError, match="sip.phoneNumber"):
+        await resolve_call_session_id(
+            Context(incomplete),
+            object(),
+            1,  # type: ignore[arg-type]
+        )
 
 
 @pytest.mark.asyncio
@@ -462,6 +572,98 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
     )
     assert backend.failed == ["participant_timeout"]
     assert not backend.activated
+
+
+@pytest.mark.asyncio
+async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = runtime_context()
+    order: list[str] = []
+
+    class FakeBackend:
+        async def claim_inbound_sip(self, request):
+            order.append("claim")
+            return InboundSipClaimResponse(
+                call_session_id=context.call_session_id, created=True
+            )
+
+        async def runtime_context(self, call_id):
+            order.append("runtime-context")
+            assert call_id == context.call_session_id
+            return context
+
+        async def observe(self, call_id, observation_type: str) -> None:
+            return None
+
+        async def activate(self, call_id) -> None:
+            return None
+
+        async def complete(self, call_id, conversation_status: str) -> None:
+            order.append("complete")
+
+        async def fail(self, call_id, reason: str, conversation_status: str) -> None:
+            raise AssertionError("successful SIP call must not fail")
+
+        async def aclose(self) -> None:
+            return None
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.callbacks: dict[str, object] = {}
+
+        def on(self, event, callback):
+            self.callbacks[event] = callback
+
+        def off(self, event, callback):
+            return None
+
+        async def start(self, agent, *, room) -> None:
+            order.append("session-start")
+
+        async def say(self, text) -> None:
+            callback = self.callbacks["close"]
+            callback(SimpleNamespace(reason=agents.CloseReason.TASK_COMPLETED))
+
+        async def aclose(self) -> None:
+            return None
+
+    participant = SimpleNamespace(
+        kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+        identity="sip-caller",
+        attributes={
+            "sip.callID": "SCL_run_job",
+            "sip.callIDFull": "telnyx-run-job@example.net",
+            "sip.phoneNumber": "+421900111222",
+            "sip.trunkPhoneNumber": "+421552301410",
+            "sip.trunkID": "ST_run_job",
+            "sip.ruleID": "SDR_run_job",
+        },
+    )
+
+    class Context:
+        job = SimpleNamespace(metadata="")
+        room = SimpleNamespace(name="sip-call-run-job")
+
+        def add_shutdown_callback(self, callback) -> None:
+            return None
+
+        async def wait_for_participant(self, **kwargs):
+            return participant
+
+    backend = FakeBackend()
+    sessions: list[FakeSession] = []
+
+    def session_factory(*args):
+        sessions.append(FakeSession())
+        return sessions[0]
+
+    monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: backend)
+    monkeypatch.setattr("voice_agent.main.create_agent_session", session_factory)
+    await run_job(Context(), settings())  # type: ignore[arg-type]
+    assert order[:3] == ["claim", "runtime-context", "session-start"]
+    assert order[-1] == "complete"
+    assert len(sessions) == 1
 
 
 @pytest.mark.asyncio

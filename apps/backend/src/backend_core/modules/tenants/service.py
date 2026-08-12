@@ -187,6 +187,12 @@ class InboundRouteService:
             raise InboundRouteDidConflictError from error
         return route
 
+    async def delete(self, tenant_id: UUID, route_id: UUID) -> None:
+        route = await self._routes.get(tenant_id, route_id)
+        if route is None:
+            raise InboundRouteNotFoundError
+        await self._routes.delete(route)
+
     async def resolve(
         self,
         normalized_did: str,

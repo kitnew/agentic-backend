@@ -7,6 +7,7 @@ import httpx
 from contracts import (
     CapabilityInvocationRequest,
     CapabilityInvocationStatus,
+    InboundSipClaimRequest,
     LiveKitJobMetadata,
     RuntimeCapabilityDefinition,
     VoiceAgentRuntimeContext,
@@ -75,6 +76,67 @@ def parse_metadata(raw_metadata: str) -> LiveKitJobMetadata:
     if not raw_metadata:
         raise ValueError("missing job metadata")
     return LiveKitJobMetadata.model_validate_json(raw_metadata)
+
+
+async def resolve_call_session_id(
+    ctx: agents.JobContext,
+    backend: BackendClient,
+    timeout: float,
+) -> UUID:
+    if ctx.job.metadata.strip():
+        return parse_metadata(ctx.job.metadata).call_session_id
+    participant = await asyncio.wait_for(
+        ctx.wait_for_participant(
+            kind=[
+                rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+                rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+            ]
+        ),
+        timeout=timeout,
+    )
+    if participant.kind != rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
+        raise ValueError("job without call_session_id has no inbound SIP participant")
+    attributes = participant.attributes
+    required = {
+        "sip.callID": "sip_call_id",
+        "sip.phoneNumber": "caller_number",
+        "sip.trunkPhoneNumber": "called_number",
+        "sip.trunkID": "trunk_id",
+        "sip.ruleID": "dispatch_rule_id",
+    }
+    missing = [key for key in required if not attributes.get(key)]
+    if missing:
+        raise ValueError(f"inbound SIP participant missing {', '.join(missing)}")
+    logger.info(
+        "Inbound SIP participant discovered",
+        extra={
+            "sip_call_id": attributes["sip.callID"],
+            "room": ctx.room.name,
+            "participant_identity": participant.identity,
+        },
+    )
+    claim = await backend.claim_inbound_sip(
+        InboundSipClaimRequest(
+            sip_call_id=attributes["sip.callID"],
+            sip_call_id_full=attributes.get("sip.callIDFull") or None,
+            trunk_id=attributes["sip.trunkID"],
+            dispatch_rule_id=attributes["sip.ruleID"],
+            caller_number=attributes["sip.phoneNumber"],
+            called_number=attributes["sip.trunkPhoneNumber"],
+            room_name=ctx.room.name,
+            participant_identity=participant.identity,
+        )
+    )
+    logger.info(
+        "Inbound SIP claim completed",
+        extra={
+            "call_session_id": str(claim.call_session_id),
+            "sip_call_id": attributes["sip.callID"],
+            "room": ctx.room.name,
+            "call_session_created": claim.created,
+        },
+    )
+    return claim.call_session_id
 
 
 def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
@@ -231,11 +293,12 @@ class SessionTerminalizer:
 
 
 async def on_request(request: agents.JobRequest) -> None:
-    try:
-        parse_metadata(request.job.metadata)
-    except ValueError, ValidationError:
-        await request.reject(terminate=True)
-        return
+    if request.job.metadata.strip():
+        try:
+            parse_metadata(request.job.metadata)
+        except ValueError, ValidationError:
+            await request.reject(terminate=True)
+            return
     await request.accept()
 
 
@@ -243,19 +306,27 @@ async def run_job(
     ctx: agents.JobContext,
     settings: VoiceAgentSettings,
 ) -> None:
-    metadata = parse_metadata(ctx.job.metadata)
     backend = BackendClient(settings)
-    finalizer = CallFinalizer(backend, metadata.call_session_id)
+    call_id: UUID | None = None
+    finalizer: CallFinalizer | None = None
     session: agents.AgentSession | None = None
     persistence: ConversationPersistence | None = None
     terminalizer: SessionTerminalizer | None = None
     failure_reason: str | None = None
     cancelled = False
     try:
-        context = await backend.runtime_context(metadata.call_session_id)
+        call_id = await resolve_call_session_id(
+            ctx, backend, settings.participant_wait_timeout_seconds
+        )
+        finalizer = CallFinalizer(backend, call_id)
+        context = await backend.runtime_context(call_id)
+        logger.info(
+            "Voice runtime context loaded",
+            extra={"call_session_id": str(call_id), "room": context.room_name},
+        )
         log_runtime_binding(settings, context)
         session = create_agent_session(settings, context.voice_runtime)
-        persistence = ConversationPersistence(backend, metadata.call_session_id)
+        persistence = ConversationPersistence(backend, call_id)
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()
 
@@ -278,16 +349,19 @@ async def run_job(
             room=ctx.room,
             agent=agents.Agent(
                 instructions=assemble_instructions(context),
-                tools=build_agent_tools(context, backend, metadata.call_session_id),
+                tools=build_agent_tools(context, backend, call_id),
             ),
         )
         observe = getattr(backend, "observe", None)
         if observe is not None:
-            await observe(metadata.call_session_id, "session_started")
+            await observe(call_id, "session_started")
         try:
             await asyncio.wait_for(
                 ctx.wait_for_participant(
-                    kind=rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD
+                    kind=[
+                        rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+                        rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+                    ]
                 ),
                 timeout=settings.participant_wait_timeout_seconds,
             )
@@ -296,7 +370,7 @@ async def run_job(
             await session.aclose()
             return
 
-        await backend.activate(metadata.call_session_id)
+        await backend.activate(call_id)
         if not closed.done():
             try:
                 await session.say(context.greeting)
@@ -313,7 +387,10 @@ async def run_job(
     except Exception:
         logger.exception(
             "Voice Agent job failed",
-            extra={"call_session_id": str(metadata.call_session_id)},
+            extra={
+                "call_session_id": str(call_id) if call_id is not None else None,
+                "room": getattr(ctx.room, "name", None),
+            },
         )
         failure_reason = "provider_session_error"
         if session is not None:
@@ -326,9 +403,10 @@ async def run_job(
         try:
             if terminalizer is not None:
                 await terminalizer.terminalize(failure_reason)
-            elif failure_reason is None:
+            elif finalizer is not None and failure_reason is None:
                 await finalizer.complete("incomplete")
-            else:
+            elif finalizer is not None:
+                assert failure_reason is not None
                 await finalizer.fail(failure_reason, "incomplete")
         finally:
             await backend.aclose()

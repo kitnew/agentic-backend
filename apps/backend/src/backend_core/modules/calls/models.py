@@ -15,6 +15,9 @@ from sqlalchemy import (
     Uuid,
     func,
 )
+from sqlalchemy import (
+    text as sql_text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend_core.platform.database import Base
@@ -96,6 +99,20 @@ class CallSession(Base):
             name="ck_call_sessions_lifecycle_fields",
         ),
         Index("ix_call_sessions_tenant_created_at", "tenant_id", "created_at"),
+        Index(
+            "uq_call_sessions_provider_sip_call_id",
+            "provider",
+            "sip_call_id",
+            unique=True,
+            postgresql_where=sql_text("sip_call_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_call_sessions_provider_sip_call_id_full",
+            "provider",
+            "sip_call_id_full",
+            unique=True,
+            postgresql_where=sql_text("sip_call_id_full IS NOT NULL"),
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -126,6 +143,18 @@ class CallSession(Base):
     provider: Mapped[str] = mapped_column(String(64))
     provider_call_id: Mapped[str] = mapped_column(String(255))
     caller_phone_e164: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    called_phone_e164: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    caller_phone_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    called_phone_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sip_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sip_call_id_full: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sip_trunk_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sip_dispatch_rule_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    livekit_participant_identity: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
     provider_dispatch_id: Mapped[str | None] = mapped_column(
         String(255),
         nullable=True,

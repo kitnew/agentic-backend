@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Callable
 from uuid import uuid4
 
@@ -10,7 +11,7 @@ from backend_core.modules.tenants.models import ProfilePrompt, SystemPrompt, Ten
 from backend_core.platform.database import Database
 from httpx import ASGITransport, AsyncClient
 from runtime_fixtures import apply_voice_runtime
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 
 
 def config_v3(*, greeting: str = "Dobrý deň...") -> dict[str, object]:
@@ -247,9 +248,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
                 f"/admin/v1/tenants/{tenant_id}/voice-runtime/apply"
             )
             assert runtime_apply.status_code == 200
-            next_voice_runtime_revision_id = runtime_apply.json()["voice_runtime"][
-                "id"
-            ]
+            next_voice_runtime_revision_id = runtime_apply.json()["voice_runtime"]["id"]
 
             config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
             next_config = await client.post(
@@ -442,6 +441,197 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
                 delete(Tenant).where(
                     Tenant.slug.in_(("call-session-hotel", "call-session-legacy-hotel"))
                 )
+            )
+            await session.execute(
+                delete(SystemPrompt).where(SystemPrompt.key == "call_session_system")
+            )
+            await session.execute(
+                delete(ProfilePrompt).where(ProfilePrompt.key == "call_session_hotel")
+            )
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
+    migrated_database_url: str,
+    app_settings: Settings,
+    admin_headers: dict[str, str],
+    service_token: Callable[..., str],
+) -> None:
+    database = Database(migrated_database_url)
+    app = create_app(settings=app_settings, database=database)
+    transport = ASGITransport(app=app)
+    voice_token = service_token(
+        service="voice-agent",
+        scopes=["call-session:inbound-sip:claim"],
+        secret=app_settings.voice_agent_service_secret.get_secret_value(),
+    )
+    voice_headers = {"Authorization": f"Bearer {voice_token}"}
+    claim_url = "/internal/v1/calls/inbound-sip/claim"
+    payload = {
+        "sip_call_id": "SCL_inbound_1",
+        "sip_call_id_full": "telnyx-call-1@example.net",
+        "trunk_id": "ST_telnyx",
+        "dispatch_rule_id": "SDR_individual",
+        "caller_number": "+421 900-111-222",
+        "called_number": "+421 55-230-1410",
+        "room_name": "sip-call-example",
+        "participant_identity": "sip-caller-example",
+    }
+    try:
+        async with AsyncClient(
+            transport=transport, base_url="http://test", headers=admin_headers
+        ) as client:
+            (
+                tenant_id,
+                config_revision_id,
+                prompt_set_revision_id,
+                voice_runtime_revision_id,
+            ) = await prepare_voice_ready_tenant(client)
+
+            assert (await client.post(claim_url, json=payload)).status_code == 401
+            assert (
+                await client.post(
+                    claim_url,
+                    json={**payload, "tenant_id": tenant_id},
+                    headers=voice_headers,
+                )
+            ).status_code == 422
+
+            responses = await asyncio.gather(
+                *(
+                    client.post(claim_url, json=payload, headers=voice_headers)
+                    for _ in range(4)
+                )
+            )
+            assert sorted(response.status_code for response in responses) == [
+                200,
+                200,
+                200,
+                200,
+            ]
+            bodies = [response.json() for response in responses]
+            call_ids = {body["call_session_id"] for body in bodies}
+            assert len(call_ids) == 1
+            assert sum(body["created"] for body in bodies) == 1
+            call_id = call_ids.pop()
+
+            detail = await client.get(f"/admin/v1/calls/{call_id}")
+            assert detail.status_code == 200
+            call = detail.json()
+            assert call["tenant_id"] == tenant_id
+            assert call["tenant_config_revision_id"] == config_revision_id
+            assert call["prompt_set_revision_id"] == prompt_set_revision_id
+            assert call["voice_runtime_revision_id"] == voice_runtime_revision_id
+            assert call["caller_phone_e164"] == "+421900111222"
+            assert call["called_phone_e164"] == "+421552301410"
+            assert call["sip_call_id"] == "SCL_inbound_1"
+            assert call["sip_call_id_full"] == "telnyx-call-1@example.net"
+            assert call["sip_trunk_id"] == "ST_telnyx"
+            assert call["sip_dispatch_rule_id"] == "SDR_individual"
+            assert call["room_name"] == "sip-call-example"
+            assert call["livekit_participant_identity"] == "sip-caller-example"
+
+            conflict = await client.post(
+                claim_url,
+                json={**payload, "room_name": "different-room"},
+                headers=voice_headers,
+            )
+            assert conflict.status_code == 409
+
+            fallback = {
+                **payload,
+                "sip_call_id": "SCL_fallback",
+                "sip_call_id_full": None,
+                "room_name": "sip-call-fallback",
+                "participant_identity": "sip-caller-fallback",
+            }
+            first_fallback = await client.post(
+                claim_url, json=fallback, headers=voice_headers
+            )
+            assert first_fallback.status_code == 200
+            full_retry = await client.post(
+                claim_url,
+                json={**fallback, "sip_call_id_full": "telnyx-fallback@example.net"},
+                headers=voice_headers,
+            )
+            assert full_retry.status_code == 200
+            assert (
+                full_retry.json()["call_session_id"]
+                == first_fallback.json()["call_session_id"]
+            )
+
+            different = await client.post(
+                claim_url,
+                json={
+                    **payload,
+                    "sip_call_id": "SCL_inbound_2",
+                    "sip_call_id_full": "telnyx-call-2@example.net",
+                    "room_name": "sip-call-example-2",
+                    "participant_identity": "sip-caller-example-2",
+                },
+                headers=voice_headers,
+            )
+            assert different.status_code == 200
+            assert different.json()["call_session_id"] != call_id
+
+            unknown = await client.post(
+                claim_url,
+                json={
+                    **payload,
+                    "sip_call_id": "SCL_unknown",
+                    "sip_call_id_full": "telnyx-unknown@example.net",
+                    "called_number": "+421999999999",
+                },
+                headers=voice_headers,
+            )
+            assert unknown.status_code == 404
+            invalid = await client.post(
+                claim_url,
+                json={
+                    **payload,
+                    "sip_call_id": "SCL_invalid",
+                    "sip_call_id_full": "telnyx-invalid@example.net",
+                    "called_number": "00421552301410",
+                },
+                headers=voice_headers,
+            )
+            assert invalid.status_code == 404
+
+            async with database.transaction() as session:
+                before = await session.scalar(
+                    select(func.count()).select_from(CallSession)
+                )
+                await session.execute(
+                    update(Tenant)
+                    .where(Tenant.id == tenant_id)
+                    .values(active_voice_runtime_revision_id=None)
+                )
+            unavailable = await client.post(
+                claim_url,
+                json={
+                    **payload,
+                    "sip_call_id": "SCL_no_runtime",
+                    "sip_call_id_full": "telnyx-no-runtime@example.net",
+                },
+                headers=voice_headers,
+            )
+            assert unavailable.status_code == 409
+            async with database.transaction() as session:
+                assert await session.scalar(
+                    select(func.count()).select_from(CallSession)
+                ) == before
+    finally:
+        async with database.transaction() as session:
+            tenant_ids = select(Tenant.id).where(Tenant.slug == "call-session-hotel")
+            await session.execute(
+                delete(Conversation).where(Conversation.tenant_id.in_(tenant_ids))
+            )
+            await session.execute(
+                delete(CallSession).where(CallSession.tenant_id.in_(tenant_ids))
+            )
+            await session.execute(
+                delete(Tenant).where(Tenant.slug == "call-session-hotel")
             )
             await session.execute(
                 delete(SystemPrompt).where(SystemPrompt.key == "call_session_system")

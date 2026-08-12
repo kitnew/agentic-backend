@@ -1,5 +1,6 @@
 from backend_core.interfaces.http.health import router as health_router
 from backend_core.modules.calls.router import admin_router as voice_admin_router
+from backend_core.modules.calls.router import call_admin_router
 from backend_core.modules.calls.router import router as calls_router
 from backend_core.modules.calls.router import runtime_router as call_runtime_router
 from backend_core.modules.conversations.router import (
@@ -32,6 +33,7 @@ admin_router.include_router(platform_router)
 admin_router.include_router(platform_runtime_router)
 admin_router.include_router(tenant_runtime_router)
 admin_router.include_router(voice_admin_router)
+admin_router.include_router(call_admin_router)
 admin_router.include_router(conversation_admin_router)
 admin_router.include_router(integrations_router)
 
