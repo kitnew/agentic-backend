@@ -169,6 +169,10 @@ class CallSession(Base):
     )
     handoff_tool_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     handoff_destination: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    handoff_participant_identity: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    handoff_sip_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     room_name: Mapped[str] = mapped_column(String(255))
     status: Mapped[CallSessionStatus] = mapped_column(
         Enum(

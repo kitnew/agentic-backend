@@ -13,11 +13,13 @@ class LiveKitAdapter:
         api_key: str,
         api_secret: str,
         participant_token_ttl_seconds: int,
+        sip_outbound_trunk_id: str | None = None,
     ) -> None:
         self._url = url
         self._api_key = api_key
         self._api_secret = api_secret
         self._participant_token_ttl_seconds = participant_token_ttl_seconds
+        self._sip_outbound_trunk_id = sip_outbound_trunk_id
         self._client: api.LiveKitAPI | None = None
 
     @property
@@ -61,17 +63,22 @@ class LiveKitAdapter:
         )
         return any(room.name == room_name for room in response.rooms)
 
-    async def transfer_sip_participant(
+    async def create_sip_participant(
         self, *, room_name: str, participant_identity: str, phone_number: str
-    ) -> None:
-        await self.client.sip.transfer_sip_participant(
-            api.TransferSIPParticipantRequest(
+    ) -> tuple[str, str]:
+        if self._sip_outbound_trunk_id is None:
+            raise RuntimeError("LiveKit SIP outbound trunk is not configured")
+        participant = await self.client.sip.create_sip_participant(
+            api.CreateSIPParticipantRequest(
                 room_name=room_name,
                 participant_identity=participant_identity,
-                transfer_to=f"tel:{phone_number}",
-                play_dialtone=True,
+                sip_call_to=phone_number,
+                sip_trunk_id=self._sip_outbound_trunk_id,
+                wait_until_answered=True,
+                hide_phone_number=True,
             )
         )
+        return participant.participant_identity, participant.sip_call_id
 
     def issue_participant_token(self, *, room_name: str, identity: str) -> str:
         grants = api.VideoGrants(

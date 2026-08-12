@@ -31,6 +31,8 @@ class CallSessionResponse:
         ended_at (datetime.datetime | None):
         failure_reason (None | str):
         handoff_destination (None | str):
+        handoff_participant_identity (None | str):
+        handoff_sip_call_id (None | str):
         handoff_tool_call_id (None | str):
         id (UUID):
         livekit_participant_identity (None | str):
@@ -61,6 +63,8 @@ class CallSessionResponse:
     ended_at: datetime.datetime | None
     failure_reason: None | str
     handoff_destination: None | str
+    handoff_participant_identity: None | str
+    handoff_sip_call_id: None | str
     handoff_tool_call_id: None | str
     id: UUID
     livekit_participant_identity: None | str
@@ -116,6 +120,12 @@ class CallSessionResponse:
 
         handoff_destination: None | str
         handoff_destination = self.handoff_destination
+
+        handoff_participant_identity: None | str
+        handoff_participant_identity = self.handoff_participant_identity
+
+        handoff_sip_call_id: None | str
+        handoff_sip_call_id = self.handoff_sip_call_id
 
         handoff_tool_call_id: None | str
         handoff_tool_call_id = self.handoff_tool_call_id
@@ -181,6 +191,8 @@ class CallSessionResponse:
                 "ended_at": ended_at,
                 "failure_reason": failure_reason,
                 "handoff_destination": handoff_destination,
+                "handoff_participant_identity": handoff_participant_identity,
+                "handoff_sip_call_id": handoff_sip_call_id,
                 "handoff_tool_call_id": handoff_tool_call_id,
                 "id": id,
                 "livekit_participant_identity": livekit_participant_identity,
@@ -284,6 +296,22 @@ class CallSessionResponse:
             return cast(None | str, data)
 
         handoff_destination = _parse_handoff_destination(d.pop("handoff_destination"))
+
+        def _parse_handoff_participant_identity(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        handoff_participant_identity = _parse_handoff_participant_identity(
+            d.pop("handoff_participant_identity")
+        )
+
+        def _parse_handoff_sip_call_id(data: object) -> None | str:
+            if data is None:
+                return data
+            return cast(None | str, data)
+
+        handoff_sip_call_id = _parse_handoff_sip_call_id(d.pop("handoff_sip_call_id"))
 
         def _parse_handoff_tool_call_id(data: object) -> None | str:
             if data is None:
@@ -402,6 +430,8 @@ class CallSessionResponse:
             ended_at=ended_at,
             failure_reason=failure_reason,
             handoff_destination=handoff_destination,
+            handoff_participant_identity=handoff_participant_identity,
+            handoff_sip_call_id=handoff_sip_call_id,
             handoff_tool_call_id=handoff_tool_call_id,
             id=id,
             livekit_participant_identity=livekit_participant_identity,

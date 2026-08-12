@@ -161,6 +161,7 @@ infrastructure/compose/secrets/
 !debug-chat/package-lock.json
 !packages/contracts/tests/fixtures/*.json
 !packages/admin-client/openapi/admin.openapi.json
+!infrastructure/livekit/sip/*.example.json
 debug-chat/node_modules/
 env/
 venv/

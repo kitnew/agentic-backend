@@ -126,6 +126,10 @@ async def observe_call(
             call = await service.mark_started(call_id)
         elif data.observation_type == "participant_connected":
             call = await service.mark_connected(call_id)
+        elif data.observation_type == "agent_relinquished":
+            call = await service.relinquish_agent(
+                call_id, ConversationPersistenceStatus(data.conversation_status)
+            )
         elif data.observation_type == "session_finished":
             call = await service.end(
                 call_id, ConversationPersistenceStatus(data.conversation_status)

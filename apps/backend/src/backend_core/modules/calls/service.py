@@ -39,7 +39,10 @@ from backend_core.modules.calls.models import (
 )
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.schemas import CreateCallSessionRequest
-from backend_core.modules.conversations.errors import ConversationConflictError
+from backend_core.modules.conversations.errors import (
+    ConversationConflictError,
+    ConversationNotFoundError,
+)
 from backend_core.modules.conversations.service import ConversationService
 from backend_core.modules.tenants.errors import TenantNotFoundError
 from backend_core.modules.tenants.knowledge import render_knowledge_context
@@ -482,14 +485,14 @@ class CallSessionService:
         if destination is None:
             raise HumanHandoffError("unknown_destination")
         try:
-            await livekit.transfer_sip_participant(
+            participant_identity, sip_call_id = await livekit.create_sip_participant(
                 room_name=call.room_name,
-                participant_identity=call.livekit_participant_identity,
+                participant_identity=f"handoff-{call.id}",
                 phone_number=destination.phone_number,
             )
         except Exception as error:
             logger.exception(
-                "LiveKit SIP transfer failed",
+                "LiveKit SIP handoff dial failed",
                 extra={
                     "call_session_id": str(call.id),
                     "tenant_id": str(call.tenant_id),
@@ -499,9 +502,11 @@ class CallSessionService:
             raise HumanHandoffError("transfer_failed") from error
         call.handoff_tool_call_id = data.tool_call_id
         call.handoff_destination = data.destination
+        call.handoff_participant_identity = participant_identity
+        call.handoff_sip_call_id = sip_call_id
         await self._calls.flush()
         logger.info(
-            "Human handoff transferred",
+            "Human handoff participant connected",
             extra={
                 "call_session_id": str(call.id),
                 "tenant_id": str(call.tenant_id),
@@ -510,6 +515,23 @@ class CallSessionService:
             },
         )
         return HumanHandoffResponse(destination=data.destination)
+
+    async def relinquish_agent(
+        self,
+        call_id: UUID,
+        conversation_status: ConversationPersistenceStatus,
+    ) -> CallSession:
+        call = await self._get_for_update(call_id)
+        if (
+            call.status is not CallSessionStatus.CONNECTED
+            or call.handoff_tool_call_id is None
+        ):
+            raise CallSessionConflictError
+        try:
+            await self._conversations.close_for_call(call_id, conversation_status)
+        except (ConversationConflictError, ConversationNotFoundError) as error:
+            raise CallSessionConflictError from error
+        return call
 
     async def _voice_config(
         self,
@@ -612,7 +634,12 @@ class CallSessionService:
         if call.status in (CallSessionStatus.ENDED, CallSessionStatus.FAILED):
             return None
         if call.status is CallSessionStatus.CONNECTED:
-            return await self.end(call_id, ConversationPersistenceStatus.INCOMPLETE)
+            conversation_status = ConversationPersistenceStatus.INCOMPLETE
+            if call.handoff_tool_call_id is not None:
+                status = await self._conversations.status_for_call(call_id)
+                if status is not ConversationPersistenceStatus.OPEN:
+                    conversation_status = status
+            return await self.end(call_id, conversation_status)
         if call.status is CallSessionStatus.STARTED:
             return await self.fail(
                 call_id,

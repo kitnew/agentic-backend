@@ -1,4 +1,8 @@
 services:
+  backend:
+    environment:
+      LIVEKIT_SIP_OUTBOUND_TRUNK_ID: ${LIVEKIT_SIP_OUTBOUND_TRUNK_ID:?set LIVEKIT_SIP_OUTBOUND_TRUNK_ID}
+
   livekit-sip:
     image: livekit/sip:v1.2.0
     environment:

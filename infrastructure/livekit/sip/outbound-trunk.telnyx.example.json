@@ -1,0 +1,7 @@
+{
+  "trunk": {
+    "name": "Telnyx outbound handoff",
+    "address": "sip.telnyx.com",
+    "numbers": ["+15550123456"]
+  }
+}

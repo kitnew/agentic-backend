@@ -479,15 +479,16 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
 ) -> None:
     class LiveKit:
         def __init__(self) -> None:
-            self.transfers: list[tuple[str, str, str]] = []
+            self.calls: list[tuple[str, str, str]] = []
             self.fail = False
 
-        async def transfer_sip_participant(
+        async def create_sip_participant(
             self, *, room_name: str, participant_identity: str, phone_number: str
-        ) -> None:
+        ) -> tuple[str, str]:
             if self.fail:
                 raise RuntimeError("provider detail")
-            self.transfers.append((room_name, participant_identity, phone_number))
+            self.calls.append((room_name, participant_identity, phone_number))
+            return participant_identity, "SCL_handoff_1"
 
     database = Database(migrated_database_url)
     livekit = LiveKit()
@@ -658,9 +659,26 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
                 headers=voice_headers,
             )
             assert duplicate.json() == transfer.json()
-            assert livekit.transfers == [
-                ("sip-call-example", "sip-caller-example", "+421900000001")
+            assert livekit.calls == [
+                ("sip-call-example", f"handoff-{call_id}", "+421900000001")
             ]
+            relinquished = await client.post(
+                f"/internal/v1/calls/{call_id}/observations",
+                json={
+                    "observation_type": "agent_relinquished",
+                    "conversation_status": "complete",
+                },
+                headers=voice_headers,
+            )
+            assert relinquished.status_code == 200
+            assert relinquished.json()["status"] == "connected"
+            handed_off_call = (await client.get(f"/admin/v1/calls/{call_id}")).json()
+            assert handed_off_call["status"] == "connected"
+            assert handed_off_call["handoff_destination"] == "reception"
+            assert handed_off_call["handoff_participant_identity"] == (
+                f"handoff-{call_id}"
+            )
+            assert handed_off_call["handoff_sip_call_id"] == "SCL_handoff_1"
 
             conflict = await client.post(
                 claim_url,

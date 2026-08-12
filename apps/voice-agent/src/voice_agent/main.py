@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Callable
 from typing import Any, cast
 from uuid import UUID
 
@@ -162,11 +163,12 @@ def build_agent_tools(
     context: VoiceAgentRuntimeContext,
     backend: BackendClient,
     call_id: UUID,
+    on_handoff: Callable[[], None] | None = None,
 ) -> list[llm.Tool | llm.Toolset]:
     return [
         calculator_tool(),
         *(
-            [handoff_tool(context, backend, call_id)]
+            [handoff_tool(context, backend, call_id, on_handoff)]
             if context.handoff_destinations
             else []
         ),
@@ -178,6 +180,7 @@ def handoff_tool(
     runtime: VoiceAgentRuntimeContext,
     backend: BackendClient,
     call_id: UUID,
+    on_handoff: Callable[[], None] | None = None,
 ) -> llm.RawFunctionTool:
     destinations = runtime.handoff_destinations
     description = "; ".join(
@@ -209,6 +212,8 @@ def handoff_tool(
             return {"status": "failed", "error_code": code}
         except httpx.HTTPError:
             return {"status": "failed", "error_code": "transfer_failed"}
+        if on_handoff is not None:
+            on_handoff()
         context.session.shutdown(drain=True)
         return result.model_dump(mode="json")
 
@@ -388,6 +393,7 @@ async def run_job(
     persistence: ConversationPersistence | None = None
     terminalizer: SessionTerminalizer | None = None
     failure_reason: str | None = None
+    handed_off = False
     cancelled = False
     try:
         call_id = await resolve_call_session_id(
@@ -405,14 +411,21 @@ async def run_job(
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()
 
+        def mark_handed_off() -> None:
+            nonlocal handed_off
+            handed_off = True
+
         async def on_shutdown(_: str) -> None:
-            await terminalizer.terminalize("job_shutdown")
+            if not handed_off:
+                await terminalizer.terminalize("job_shutdown")
 
         ctx.add_shutdown_callback(on_shutdown)
 
         def on_close(event: agents.CloseEvent) -> None:
             if not closed.done():
                 closed.set_result(event)
+            if handed_off:
+                return
             task = terminalizer.start(close_failure_reason(event.reason))
             task.add_done_callback(log_terminalization_failure)
 
@@ -424,7 +437,7 @@ async def run_job(
             room=ctx.room,
             agent=agents.Agent(
                 instructions=assemble_instructions(context),
-                tools=build_agent_tools(context, backend, call_id),
+                tools=build_agent_tools(context, backend, call_id, mark_handed_off),
             ),
         )
         observe = getattr(backend, "observe", None)
@@ -476,7 +489,20 @@ async def run_job(
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
         try:
-            if terminalizer is not None:
+            if handed_off and persistence is not None and call_id is not None:
+                conversation_complete = False
+                try:
+                    conversation_complete = await persistence.finish()
+                except Exception:
+                    logger.exception("conversation persistence drain failed")
+                await backend.observe(
+                    call_id,
+                    "agent_relinquished",
+                    conversation_status=(
+                        "complete" if conversation_complete else "incomplete"
+                    ),
+                )
+            elif terminalizer is not None:
                 await terminalizer.terminalize(failure_reason)
             elif finalizer is not None and failure_reason is None:
                 await finalizer.complete("incomplete")

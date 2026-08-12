@@ -26,6 +26,7 @@ class VoiceCallObservation(_VoiceModel):
     observation_type: Literal[
         "session_started",
         "participant_connected",
+        "agent_relinquished",
         "session_finished",
         "session_failed",
     ]

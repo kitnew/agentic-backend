@@ -1,0 +1,17 @@
+{
+  "dispatch_rule": {
+    "rule": {
+      "dispatchRuleIndividual": {
+        "roomPrefix": "sip-call-"
+      }
+    },
+    "name": "Telnyx inbound to voice agent",
+    "roomConfig": {
+      "agents": [
+        {
+          "agentName": "hospitality-voice-agent"
+        }
+      ]
+    }
+  }
+}

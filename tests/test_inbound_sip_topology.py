@@ -21,3 +21,5 @@ def test_staging_and_production_add_only_internal_sip_topology() -> None:
         assert "ports:" not in compose
         assert "caddy" not in compose.lower()
         assert "LIVEKIT_SIP_WS_URL=" in env
+        assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID=" in env
+        assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID:" in compose

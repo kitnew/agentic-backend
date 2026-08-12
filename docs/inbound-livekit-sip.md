@@ -56,6 +56,30 @@ lk sip dispatch list
 
 The trunk and dispatch rule are long-lived reusable objects. The `--trunks` value is the environment-specific ID returned when the inbound trunk is created.
 
+## Provision the outbound handoff trunk once
+
+Human handoff keeps the caller in the original room and dials the configured
+human through one reusable Telnyx outbound trunk:
+
+```bash
+lk sip outbound create infrastructure/livekit/sip/outbound-trunk.telnyx.example.json \
+  --auth-user "$SIP_AUTH_USERNAME" \
+  --auth-pass "$SIP_AUTH_PASSWORD"
+```
+
+Replace the example caller number, store the returned trunk ID as
+`LIVEKIT_SIP_OUTBOUND_TRUNK_ID`, and keep the credentials out of source control.
+Backend resolves the destination number from the call's pinned TenantConfig and
+uses `CreateSIPParticipant(wait_until_answered=true)` to join the human to the
+existing room. It does not use SIP REFER, expose the number to the model, or
+create a trunk per handoff.
+
+After the human answers, Voice Agent drains its persisted AI conversation and
+leaves without ending the CallSession. The existing room reconciler ends the
+CallSession only after LiveKit removes the room when the caller and human have
+left. This preserves one room and one CallSession for a later room-scoped Egress
+slice; Egress itself is not configured here.
+
 ## Configure Telnyx manually
 
 1. Purchase or select the Telnyx number.
@@ -63,6 +87,7 @@ The trunk and dispatch rule are long-lived reusable objects. The `--trunks` valu
 3. Set both Telnyx Destination Number Format and Origination Number Format to `+E.164`; TCP is recommended by Telnyx/LiveKit guidance.
 4. Associate the number with that connection.
 5. Ensure the same `+E.164` DID appears in the LiveKit inbound trunk and Backend InboundRoute.
+6. For handoff, enable outbound calling with a conversational outbound voice profile and credential authentication for the reusable LiveKit outbound trunk.
 
 No Telnyx credential, API client, or automatic provisioning belongs in this repository slice.
 
@@ -75,6 +100,7 @@ No Telnyx credential, API client, or automatic provisioning belongs in this repo
 5. Verify the path is Telnyx -> LiveKit SIP -> isolated room -> SIP participant -> Voice Agent -> Backend claim -> runtime-context -> greeting/conversation -> existing terminal lifecycle.
 6. Inspect `GET /admin/v1/calls/<call-session-id>` and verify channel/provider, caller/called numbers, both available SIP IDs, trunk/rule IDs, room/participant identity, status, and all three pinned revisions.
 7. Repeat/reconnect the agent job and verify the same SIP call returns the same CallSession.
+8. Request a configured handoff and verify a second SIP participant joins the same room, the AI leaves after answer, and the CallSession remains connected until the room ends.
 
 ## Deferred before real staging/production deployment
 

@@ -26,6 +26,9 @@ class Settings(BaseSettings):
         int,
         Field(gt=0, le=600),
     ] = 600
+    livekit_sip_outbound_trunk_id: Annotated[
+        str, Field(min_length=1, max_length=255)
+    ] | None = None
     redis_url: RedisDsn = RedisDsn("redis://redis:6379/0")
     capability_job_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
         "capability:jobs"

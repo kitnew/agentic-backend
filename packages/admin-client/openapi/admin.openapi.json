@@ -326,6 +326,28 @@
             ],
             "title": "Handoff Destination"
           },
+          "handoff_participant_identity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Participant Identity"
+          },
+          "handoff_sip_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Sip Call Id"
+          },
           "handoff_tool_call_id": {
             "anyOf": [
               {
@@ -484,6 +506,8 @@
           "livekit_participant_identity",
           "handoff_tool_call_id",
           "handoff_destination",
+          "handoff_participant_identity",
+          "handoff_sip_call_id",
           "provider_dispatch_id",
           "room_name",
           "status",

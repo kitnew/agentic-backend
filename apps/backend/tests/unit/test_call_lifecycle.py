@@ -25,8 +25,13 @@ class Calls:
 
 
 class Conversations:
+    status = ConversationPersistenceStatus.COMPLETE
+
     async def close_for_call(self, call_id, status) -> None:
         return None
+
+    async def status_for_call(self, call_id):
+        return self.status
 
 
 class Events:

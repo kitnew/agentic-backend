@@ -382,6 +382,7 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
 
     call_id = uuid4()
     backend = Backend()
+    handed_off: list[bool] = []
     runtime = VoiceAgentRuntimeContext.model_validate(
         {
             **runtime_context().model_dump(),
@@ -395,7 +396,9 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
         "calculator",
         "transfer_to_human",
     ]
-    tool = handoff_tool(runtime, backend, call_id)  # type: ignore[arg-type]
+    tool = handoff_tool(  # type: ignore[arg-type]
+        runtime, backend, call_id, lambda: handed_off.append(True)
+    )
     schema = tool._info.raw_schema  # type: ignore[attr-defined]
     assert schema["parameters"]["properties"]["destination"]["enum"] == ["reception"]
     assert "phone" not in str(schema).lower()
@@ -408,6 +411,7 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
         {"destination": "reception", "reason": "Guest asked for reception"},
     )
     assert result == {"status": "transferred", "destination": "reception"}
+    assert handed_off == [True]
     assert session.shutdowns == [True]
     assert backend.requests[0].destination == "reception"  # type: ignore[union-attr]
 
@@ -720,6 +724,107 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
     assert order[:3] == ["claim", "runtime-context", "session-start"]
     assert order[-1] == "complete"
     assert len(sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_successful_handoff_relinquishes_without_completing_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = runtime_context().model_copy(
+        update={
+            "handoff_destinations": {
+                "reception": {"description": "Reception requests"}
+            }
+        }
+    )
+
+    class Backend:
+        def __init__(self) -> None:
+            self.observations: list[tuple[str, str]] = []
+
+        async def runtime_context(self, call_id):
+            return context
+
+        async def observe(
+            self,
+            call_id,
+            observation_type: str,
+            *,
+            conversation_status: str = "complete",
+        ) -> None:
+            self.observations.append((observation_type, conversation_status))
+
+        async def activate(self, call_id) -> None:
+            return None
+
+        async def complete(self, call_id, conversation_status: str) -> None:
+            raise AssertionError("handoff must not complete the call")
+
+        async def fail(self, call_id, reason: str, conversation_status: str) -> None:
+            raise AssertionError("successful handoff must not fail the call")
+
+        async def aclose(self) -> None:
+            return None
+
+    class Persistence:
+        def __init__(self, backend, call_id) -> None:
+            pass
+
+        async def finish(self) -> bool:
+            return True
+
+        async def on_conversation_item_added(self, event) -> None:
+            return None
+
+    class Session:
+        def __init__(self) -> None:
+            self.callbacks: dict[str, object] = {}
+
+        def on(self, event, callback):
+            self.callbacks[event] = callback
+
+        def off(self, event, callback):
+            return None
+
+        async def start(self, agent, *, room) -> None:
+            return None
+
+        async def say(self, text) -> None:
+            callback = self.callbacks["close"]
+            callback(SimpleNamespace(reason=agents.CloseReason.USER_INITIATED))
+
+        async def aclose(self) -> None:
+            return None
+
+    class Context:
+        job = SimpleNamespace(
+            metadata=f'{{"call_session_id":"{context.call_session_id}"}}'
+        )
+        room = object()
+
+        def add_shutdown_callback(self, callback) -> None:
+            return None
+
+        async def wait_for_participant(self, **kwargs):
+            return object()
+
+    backend = Backend()
+    monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: backend)
+    monkeypatch.setattr("voice_agent.main.ConversationPersistence", Persistence)
+    monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: Session())
+
+    def tools(runtime, client, call_id, on_handoff):
+        on_handoff()
+        return []
+
+    monkeypatch.setattr("voice_agent.main.build_agent_tools", tools)
+
+    await run_job(Context(), settings())  # type: ignore[arg-type]
+
+    assert backend.observations == [
+        ("session_started", "complete"),
+        ("agent_relinquished", "complete"),
+    ]
 
 
 @pytest.mark.asyncio

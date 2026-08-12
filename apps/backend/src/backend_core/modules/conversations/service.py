@@ -112,6 +112,12 @@ class ConversationService:
             raise ConversationConflictError
         return conversation
 
+    async def status_for_call(self, call_id: UUID) -> ConversationPersistenceStatus:
+        conversation = await self._conversations.get_for_call(call_id, for_update=True)
+        if conversation is None:
+            raise ConversationNotFoundError
+        return conversation.status
+
     async def get_for_call(
         self,
         call_id: UUID,
