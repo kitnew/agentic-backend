@@ -40,7 +40,7 @@ Docker uses the `local` logging driver, defaulting to five 10 MiB files per serv
 
 Production runs only built application images: deployment files have no application source bind mounts. Mounted configuration is read-only where applicable. Do not put MinIO behind Caddy.
 
-Back up PostgreSQL, MinIO recordings according to retention policy, and optionally Caddy data; Git already contains Compose/config definitions. Backup/restore automation is deliberately not included.
+Back up PostgreSQL, MinIO recordings according to retention policy, and optionally Caddy data; Git already contains Compose/config definitions. `scripts/ops.sh` now performs PostgreSQL dumps only. A persistent MinIO volume is not an off-host backup; recording retention and off-host copies remain a separate operations slice.
 
 ## Canonical commands
 
@@ -64,3 +64,23 @@ docker compose --env-file infrastructure/compose/.env.production \
 Future deployment tooling must run migrations deliberately, not from Backend startup: bring up PostgreSQL, then run `docker compose ... run --rm --no-deps backend alembic -c apps/backend/alembic.ini upgrade head`, then start the remaining services.
 
 Validate each environment with the same file list and `config`, `config --services`; validate Caddy with `docker compose ... run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile`.
+
+## Operations CLI
+
+Use `./scripts/ops.sh <staging|production> <command>`. It is the only wrapper around the two deployment Compose files and reads the matching ignored env file.
+
+```bash
+./scripts/ops.sh staging validate
+./scripts/ops.sh staging deploy
+./scripts/ops.sh production update
+./scripts/ops.sh production status
+./scripts/ops.sh production logs backend --follow
+./scripts/ops.sh production backup
+./scripts/ops.sh production restore /var/backups/agentic-backend/production/postgres/<timestamp>.dump
+```
+
+`deploy` validates, builds repository images, starts only PostgreSQL with Compose health waiting, runs `alembic ... upgrade head`, then starts the full stack with `--wait --remove-orphans`. `update` adds Compose image pulling before the same build/migrate/start sequence. Migration is never part of Backend startup.
+
+`BACKUP_DIR` is required and must be an absolute path outside this repository. Backup files are private custom-format PostgreSQL archives at `<BACKUP_DIR>/<environment>/postgres/<UTC timestamp>.dump`; temporary files are validated then atomically published. Restore validates the archive, stops Backend before the Worker and Voice Agent, keeps PostgreSQL running, then uses `pg_restore --clean --if-exists`. No normal application writer runs during the destructive restore. On success, the CLI runs `alembic upgrade head` and starts the full stack with Compose health waiting. If archive validation, restore, or migration fails, writers remain stopped and the operator must resolve the failure before starting traffic. Production requires typing `production` or passing `--yes`. Restore never downgrades Alembic or rolls back application images—database restore and application rollback are separate operations.
+
+`stop` is `docker compose stop`, never `down -v`: persistent volumes remain intact. The CLI does not implement MinIO off-host backup, rollback, CI/CD, SSH deployment, Docker Secrets, DNS, firewall, or certificate management.
