@@ -42,15 +42,6 @@ logger = logging.getLogger(__name__)
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 
 
-def _secret(secret_name: str, env_name: str) -> str:
-    path = Path("/run/secrets") / secret_name
-    if path.is_file():
-        value = path.read_text(encoding="utf-8").strip()
-        if value:
-            return value
-    return os.environ.get(env_name, "")
-
-
 class ExecutionError(RuntimeError):
     def __init__(self, code: str, message: str, *, transient: bool) -> None:
         super().__init__(message)
@@ -109,7 +100,7 @@ class Settings:
             ),
             backend_url=os.environ["BACKEND_CORE_URL"].rstrip("/"),
             backend_audience=os.getenv("INTERNAL_API_AUDIENCE", "backend-core"),
-            service_secret=_secret("job_worker_service_secret", "JOB_WORKER_SERVICE_SECRET"),
+            service_secret=os.environ["JOB_WORKER_SERVICE_SECRET"],
             credential_file_map_json=os.getenv(
                 "GOOGLE_SHEETS_CREDENTIAL_FILE_MAP", "{}"
             ),
@@ -135,13 +126,13 @@ class Settings:
             command_dead_letter_stream=os.getenv(
                 "COMMAND_DEAD_LETTER_STREAM", "application:commands:dead-letter"
             ),
-            azure_openai_api_key=_secret("azure_openai_api_key", "AZURE_OPENAI_API_KEY"),
+            azure_openai_api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
             azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
             azure_openai_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", ""),
             azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", ""),
             minio_endpoint=os.getenv("MINIO_ENDPOINT", ""),
             minio_access_key=os.getenv("MINIO_WORKER_ACCESS_KEY", ""),
-            minio_secret_key=_secret("minio_worker_secret_key", "MINIO_WORKER_SECRET_KEY"),
+            minio_secret_key=os.getenv("MINIO_WORKER_SECRET_KEY", ""),
             minio_bucket=os.getenv("MINIO_BUCKET", "call-recordings"),
             minio_secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
         )

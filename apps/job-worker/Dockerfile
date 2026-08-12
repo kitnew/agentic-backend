@@ -19,12 +19,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY apps/job-worker apps/job-worker
 COPY packages/contracts packages/contracts
-COPY apps/runtime-entrypoint.py /usr/local/bin/runtime-entrypoint.py
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package job-worker
 
 RUN useradd --create-home --uid 10001 app
+USER app
 
-ENTRYPOINT ["python", "/usr/local/bin/runtime-entrypoint.py"]
 CMD ["up"]

@@ -7,10 +7,9 @@ Secret = Annotated[SecretStr, Field(min_length=32)]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(extra="ignore", secrets_dir="/run/secrets")
+    model_config = SettingsConfigDict(extra="ignore")
 
     database_url: PostgresDsn
-    postgres_password: SecretStr | None = None
     admin_api_token: Secret
     internal_api_audience: Annotated[str, Field(min_length=1)] = "backend-core"
     voice_agent_service_secret: Secret
@@ -68,23 +67,6 @@ class Settings(BaseSettings):
     ] = 120.0
     call_runtime_reconciliation_batch_size: Annotated[int, Field(gt=0, le=1000)] = 100
     call_recording_enabled: bool = False
-
-    def database_connection_url(self) -> str:
-        if self.database_url.hosts()[0]["password"] is not None:
-            return str(self.database_url)
-        if self.postgres_password is None:
-            return str(self.database_url)
-        host = self.database_url.hosts()[0]
-        return str(
-            PostgresDsn.build(
-                scheme=self.database_url.scheme,
-                username=host["username"],
-                password=self.postgres_password.get_secret_value(),
-                host=host["host"],
-                port=host["port"],
-                path=(self.database_url.path or "").lstrip("/"),
-            )
-        )
 
     @model_validator(mode="after")
     def credentials_must_be_distinct(self) -> Self:

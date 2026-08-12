@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class VoiceAgentSettings(BaseSettings):
-    model_config = SettingsConfigDict(extra="ignore", secrets_dir="/run/secrets")
+    model_config = SettingsConfigDict(extra="ignore")
 
     livekit_url: Annotated[str, Field(min_length=1)]
     livekit_api_key: Annotated[SecretStr, Field(min_length=1)]

@@ -19,16 +19,6 @@ case " $* " in
     ;;
   *" config --environment "*)
     printf 'BACKUP_DIR=%s\\n' "$FAKE_BACKUP_DIR"
-    printf 'SECRETS_DIR=%s\\n' "$FAKE_SECRET_DIR"
-    ;;
-  *" config --format json "*)
-    printf '{"secrets": {'
-    first=true
-    for name in postgres_password admin_api_token voice_agent_service_secret job_worker_service_secret livekit_api_secret elevenlabs_api_key azure_openai_api_key minio_root_password minio_egress_secret_key minio_worker_secret_key debug_chat_basic_auth_hash; do
-      if [[ "$first" == true ]]; then first=false; else printf ','; fi
-      printf '"%s":{"file":"%s/%s"}' "$name" "$FAKE_SECRET_DIR" "$name"
-    done
-    printf '}}\\n'
     ;;
   *" exec "*" pg_dump "*)
     printf 'fake-postgres-custom-archive'
@@ -43,9 +33,7 @@ esac
         "PATH": f"{tmp_path}:{os.environ['PATH']}",
         "DOCKER_LOG": str(log),
         "FAKE_BACKUP_DIR": str(tmp_path / "backups"),
-        "FAKE_SECRET_DIR": str(tmp_path / "secrets"),
         "BACKUP_DIR": str(tmp_path / "backups"),
-        "SECRETS_DIR": str(tmp_path / "secrets"),
     }
 
 
@@ -53,26 +41,7 @@ def run_ops(
     tmp_path: Path,
     *arguments: str,
     input_text: str | None = None,
-    prepare_secrets: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    if prepare_secrets:
-        secret_dir = tmp_path / "secrets"
-        secret_dir.mkdir(exist_ok=True)
-        for name in (
-            "postgres_password",
-            "admin_api_token",
-            "voice_agent_service_secret",
-            "job_worker_service_secret",
-            "livekit_api_secret",
-            "elevenlabs_api_key",
-            "azure_openai_api_key",
-            "minio_root_password",
-            "minio_egress_secret_key",
-            "minio_worker_secret_key",
-            "debug_chat_basic_auth_hash",
-        ):
-            if not (secret_dir / name).exists():
-                (secret_dir / name).write_text("test-secret")
     return subprocess.run(
         [str(OPS), *arguments],
         cwd=tmp_path,
@@ -144,30 +113,9 @@ def test_production_restore_requires_confirmation_unless_yes(tmp_path: Path) -> 
     writers_stop = commands.index("stop job-worker voice-agent")
     restore = commands.index("pg_restore --clean --if-exists --exit-on-error")
     assert "run --rm --no-deps --user root --entrypoint /bin/sh backend -ec" in commands
-    assert "cat /run/secrets/postgres_password" in commands
     migrate = commands.index("alembic -c apps/backend/alembic.ini upgrade head")
     restart = commands.index("up -d --wait --wait-timeout 180 --remove-orphans")
     assert backend_stop < writers_stop < restore < migrate < restart
-
-
-def test_validate_rejects_empty_secret_without_printing_contents(tmp_path: Path) -> None:
-    run_ops(tmp_path, "staging", "status")
-    (tmp_path / "secrets" / "azure_openai_api_key").write_text("")
-    result = run_ops(tmp_path, "staging", "validate", prepare_secrets=False)
-
-    assert result.returncode != 0
-    assert "empty" in result.stderr
-    assert "test-secret" not in result.stderr
-
-
-def test_validate_rejects_missing_secret_without_printing_contents(tmp_path: Path) -> None:
-    run_ops(tmp_path, "staging", "status")
-    (tmp_path / "secrets" / "livekit_api_secret").unlink()
-    result = run_ops(tmp_path, "staging", "validate", prepare_secrets=False)
-
-    assert result.returncode != 0
-    assert "missing" in result.stderr
-    assert "test-secret" not in result.stderr
 
 
 def test_script_never_uses_derived_container_names_or_volume_deletion() -> None:

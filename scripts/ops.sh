@@ -47,44 +47,9 @@ check_compose() {
   fi
 }
 
-secret_files() {
-  compose config --format json |
-    python3 -c 'import json, sys; data=json.load(sys.stdin); print("\n".join(item["file"] for item in data.get("secrets", {}).values()))'
-}
-
-validate_secrets() {
-  local secrets_dir path
-  secrets_dir="${SECRETS_DIR-}"
-  [[ -n "$secrets_dir" ]] || secrets_dir="$(awk -F= '$1 == "SECRETS_DIR" {sub(/^[^=]*=/, ""); value = $0} END {print value}' "$ENV_FILE")"
-  [[ -n "$secrets_dir" ]] || secrets_dir="$(environment_value SECRETS_DIR 2>/dev/null || true)"
-  [[ "$secrets_dir" = /* ]] || die "SECRETS_DIR must be an absolute path in $ENV_FILE"
-  [[ -d "$secrets_dir" ]] || die "SECRETS_DIR does not exist: $secrets_dir"
-  case "$secrets_dir" in
-    "$ROOT" | "$ROOT"/*) die "SECRETS_DIR must be outside the repository" ;;
-  esac
-
-  while IFS= read -r path; do
-    [[ -n "$path" ]] || continue
-    case "$path" in
-      "$ROOT" | "$ROOT"/*) die "secret file must be outside the repository: $(basename "$path")" ;;
-    esac
-    [[ -f "$path" ]] || die "required secret file is missing: $(basename "$path")"
-    [[ -r "$path" ]] || die "required secret file is not readable: $(basename "$path")"
-    [[ -s "$path" ]] || die "required secret file is empty: $(basename "$path")"
-  done < <(secret_files)
-}
-
-validate_caddy() {
-  compose run --rm --no-deps --entrypoint /bin/sh caddy -ec \
-    'auth_hash=$(cat /run/secrets/debug_chat_basic_auth_hash) &&
-     awk -v hash="$auth_hash" '\''{ sub(/\{\$[^}]+_HASH\}/, hash); print }'\'' /etc/caddy/Caddyfile >/tmp/Caddyfile &&
-     exec caddy validate --config /tmp/Caddyfile --adapter caddyfile'
-}
-
 validate() {
-  validate_secrets
   check_compose
-  validate_caddy
+  compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 }
 
 ensure_postgres() {
@@ -93,7 +58,6 @@ ensure_postgres() {
 
 run_migration() {
   compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
-    export DATABASE_URL="postgresql+asyncpg://postgres:$(cat /run/secrets/postgres_password)@postgres:5432/backend"
     exec alembic -c apps/backend/alembic.ini upgrade head
   '
 }
