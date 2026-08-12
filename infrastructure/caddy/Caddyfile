@@ -30,7 +30,7 @@
 		{$DEBUG_CHAT_BASIC_AUTH_USER} {$DEBUG_CHAT_BASIC_AUTH_HASH}
 	}
 
-	reverse_proxy debug-chat:8080
+	reverse_proxy debug-chat:80
 }
 
 {$LIVEKIT_DOMAIN} {

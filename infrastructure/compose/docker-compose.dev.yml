@@ -70,4 +70,4 @@ services:
 
   debug-chat:
     ports:
-      - "${DEBUG_CHAT_PORT:-3000}:8080"
+      - "${DEBUG_CHAT_PORT:-3000}:80"

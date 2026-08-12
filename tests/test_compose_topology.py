@@ -6,6 +6,7 @@ BASE = (COMPOSE / "docker-compose.yml").read_text()
 DEV = (COMPOSE / "docker-compose.dev.yml").read_text()
 DEPLOY = (COMPOSE / "docker-compose.deploy.yml").read_text()
 CADDY = (ROOT / "infrastructure" / "caddy" / "Caddyfile").read_text()
+DEBUG_CHAT_NGINX = (ROOT / "apps" / "debug-chat" / "nginx.conf").read_text()
 STAGING_ENV = (COMPOSE / ".env.staging.example").read_text()
 PRODUCTION_ENV = (COMPOSE / ".env.production.example").read_text()
 
@@ -36,7 +37,8 @@ def test_deployment_keeps_caddy_edge_and_persistent_state() -> None:
     assert "admin off" in CADDY
     assert "basic_auth" in CADDY
     assert "reverse_proxy backend:8000" in CADDY
-    assert "reverse_proxy debug-chat:8080" in CADDY
+    assert "reverse_proxy debug-chat:80" in CADDY
+    assert "listen 80;" in DEBUG_CHAT_NGINX
     assert "reverse_proxy livekit:7880" in CADDY
     assert "stream_close_delay 5m" in CADDY
     assert "request>headers delete" in CADDY
