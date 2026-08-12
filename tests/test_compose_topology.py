@@ -38,6 +38,8 @@ def test_deployment_keeps_caddy_edge_and_persistent_state() -> None:
     assert "basic_auth" in CADDY
     assert "reverse_proxy backend:8000" in CADDY
     assert "reverse_proxy debug-chat:80" in CADDY
+    assert "@debug_chat_api path /api/*" in CADDY
+    assert "handle @debug_chat_api" in CADDY
     assert "listen 80;" in DEBUG_CHAT_NGINX
     assert "reverse_proxy livekit:7880" in CADDY
     assert "stream_close_delay 5m" in CADDY
