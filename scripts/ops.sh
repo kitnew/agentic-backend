@@ -92,7 +92,10 @@ ensure_postgres() {
 }
 
 run_migration() {
-  compose run --rm --no-deps --user root backend alembic -c apps/backend/alembic.ini upgrade head
+  compose run --rm --no-deps --user root backend sh -ec '
+    export DATABASE_URL="postgresql+asyncpg://postgres:$(cat /run/secrets/postgres_password)@postgres:5432/backend"
+    exec alembic -c apps/backend/alembic.ini upgrade head
+  '
 }
 
 migrate() {

@@ -85,7 +85,7 @@ docker compose --env-file infrastructure/compose/.env.production \
   -f infrastructure/compose/docker-compose.deploy.yml up -d
 ```
 
-Future deployment tooling must run migrations deliberately, not from Backend startup: bring up PostgreSQL, then run `docker compose ... run --rm --no-deps --user root backend alembic -c apps/backend/alembic.ini upgrade head`, then start the remaining services.
+Future deployment tooling must run migrations deliberately, not from Backend startup: bring up PostgreSQL, then run the migration container as root with `DATABASE_URL` assembled from `/run/secrets/postgres_password`, then start the remaining services. `scripts/ops.sh` is the canonical implementation.
 
 Validate each environment with the same file list and `config`, `config --services`; `./scripts/ops.sh <env> validate` also checks the absolute secret directory, required non-empty files, and validates a temporary Caddyfile after substituting the Basic Auth hash from `/run/secrets`. Secret contents are never printed.
 
