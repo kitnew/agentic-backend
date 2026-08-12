@@ -92,7 +92,7 @@ ensure_postgres() {
 }
 
 run_migration() {
-  compose run --rm --no-deps backend alembic -c apps/backend/alembic.ini upgrade head
+  compose run --rm --no-deps --user root backend alembic -c apps/backend/alembic.ini upgrade head
 }
 
 migrate() {
@@ -116,10 +116,12 @@ require_service() {
 
 environment_value() {
   local key="$1" value
-  value="$(awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); value = $0} END {print value}' "$ENV_FILE")"
   if [[ -n "${!key-}" ]]; then
     value="${!key}"
-  elif [[ -z "$value" ]]; then
+  else
+    value="$(awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); value = $0} END {print value}' "$ENV_FILE")"
+  fi
+  if [[ -z "$value" ]]; then
     value="$(compose config --environment | awk -F= -v key="$key" '$1 == key {sub(/^[^=]*=/, ""); value = $0} END {print value}')"
   fi
   printf '%s\n' "$value"

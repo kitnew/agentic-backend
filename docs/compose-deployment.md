@@ -42,6 +42,8 @@ Production runs only built application images: deployment files have no applicat
 
 ## Staging/production secrets
 
+For the step-by-step setup of every environment variable and every secret file, see [Compose secrets and environment setup](compose-secrets-and-environments.md).
+
 `.env.staging` and `.env.production` contain deployment configuration only. `SECRETS_DIR` points to a host directory outside Git; Compose maps the required files there to `/run/secrets/<name>` only for the services that consume them. Compose file-backed secrets are host-file mounts, not Swarm/Vault-managed secrets. Keep the directory owned by the deployment user, mode `0700`, files mode `0600`, and create files with `umask 077`.
 
 The current required files are:
@@ -83,7 +85,7 @@ docker compose --env-file infrastructure/compose/.env.production \
   -f infrastructure/compose/docker-compose.deploy.yml up -d
 ```
 
-Future deployment tooling must run migrations deliberately, not from Backend startup: bring up PostgreSQL, then run `docker compose ... run --rm --no-deps backend alembic -c apps/backend/alembic.ini upgrade head`, then start the remaining services.
+Future deployment tooling must run migrations deliberately, not from Backend startup: bring up PostgreSQL, then run `docker compose ... run --rm --no-deps --user root backend alembic -c apps/backend/alembic.ini upgrade head`, then start the remaining services.
 
 Validate each environment with the same file list and `config`, `config --services`; `./scripts/ops.sh <env> validate` also checks the absolute secret directory, required non-empty files, and validates a temporary Caddyfile after substituting the Basic Auth hash from `/run/secrets`. Secret contents are never printed.
 
