@@ -17,6 +17,21 @@ services:
       - "7880:7880"
       - "7881:7881"
       - "7882:7882/udp"
+    environment:
+      LIVEKIT_CONFIG: |
+        redis:
+          address: redis:6379
+        webhook:
+          api_key: ${LIVEKIT_API_KEY}
+          urls:
+            - http://backend:8000/webhooks/livekit
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  backend:
+    environment:
+      CALL_RECORDING_ENABLED: ${CALL_RECORDING_ENABLED:-true}
 
   voice-agent:
     depends_on:

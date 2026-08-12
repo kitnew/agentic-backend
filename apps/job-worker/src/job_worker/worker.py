@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import time
+from base64 import b64encode
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -31,6 +32,8 @@ from contracts import (
 )
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import service_account
+from minio import Minio
+from minio.error import MinioException
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -73,6 +76,11 @@ class Settings:
     azure_openai_endpoint: str = ""
     azure_openai_deployment: str = ""
     azure_openai_api_version: str = ""
+    minio_endpoint: str = ""
+    minio_access_key: str = ""
+    minio_secret_key: str = ""
+    minio_bucket: str = "call-recordings"
+    minio_secure: bool = False
 
     def __post_init__(self) -> None:
         if not 0 <= self.max_retries <= 9:
@@ -122,7 +130,59 @@ class Settings:
             azure_openai_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
             azure_openai_deployment=os.getenv("AZURE_OPENAI_DEPLOYMENT", ""),
             azure_openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", ""),
+            minio_endpoint=os.getenv("MINIO_ENDPOINT", ""),
+            minio_access_key=os.getenv("MINIO_WORKER_ACCESS_KEY", ""),
+            minio_secret_key=os.getenv("MINIO_WORKER_SECRET_KEY", ""),
+            minio_bucket=os.getenv("MINIO_BUCKET", "call-recordings"),
+            minio_secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
         )
+
+
+class RecordingStorage:
+    def __init__(self, settings: Settings) -> None:
+        self._bucket = settings.minio_bucket
+        self._client = (
+            Minio(
+                settings.minio_endpoint,
+                access_key=settings.minio_access_key,
+                secret_key=settings.minio_secret_key,
+                secure=settings.minio_secure,
+            )
+            if settings.minio_endpoint
+            and settings.minio_access_key
+            and settings.minio_secret_key
+            else None
+        )
+
+    async def base64(self, storage_key: str) -> AsyncIterator[bytes]:
+        if self._client is None:
+            raise ExecutionError(
+                "recording_storage_unconfigured",
+                "Recording storage is not configured",
+                transient=False,
+            )
+        response = None
+        try:
+            response = self._client.get_object(self._bucket, storage_key)
+            remainder = b""
+            while chunk := response.read(64 * 1024):
+                data = remainder + chunk
+                usable = len(data) - len(data) % 3
+                if usable:
+                    yield b64encode(data[:usable])
+                remainder = data[usable:]
+            if remainder:
+                yield b64encode(remainder)
+        except MinioException as error:
+            raise ExecutionError(
+                "recording_storage_unavailable",
+                "Recording storage is unavailable",
+                transient=True,
+            ) from error
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
 
 
 class MountedSecretFileCredentialResolver:
@@ -724,9 +784,15 @@ class GoogleSheetsAppendValuesHandler:
 
 
 class BackendClient:
-    def __init__(self, settings: Settings, client: httpx.AsyncClient) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.AsyncClient,
+        recording_storage: RecordingStorage | None = None,
+    ) -> None:
         self._settings = settings
         self._client = client
+        self._recording_storage = recording_storage or RecordingStorage(settings)
 
     def _token(self) -> str:
         now = datetime.now(UTC)
@@ -799,6 +865,26 @@ class BackendClient:
     async def representation_content(
         self, representation_id: UUID, command_id: UUID
     ) -> AsyncIterator[bytes]:
+        source = await self._client.get(
+            f"{self._settings.backend_url}/internal/v1/calls/"
+            f"artifact-representations/{representation_id}/recording-source",
+            params={"command_id": str(command_id)},
+            headers={"Authorization": f"Bearer {self._token()}"},
+        )
+        if source.status_code == 200:
+            value = source.json()
+            storage_key = value.get("storage_key") if isinstance(value, dict) else None
+            if not isinstance(storage_key, str) or not storage_key:
+                raise ExecutionError(
+                    "recording_source_invalid",
+                    "Recording source is invalid",
+                    transient=False,
+                )
+            async for chunk in self._recording_storage.base64(storage_key):
+                yield chunk
+            return
+        if source.status_code != 404:
+            source.raise_for_status()
         request = self._client.build_request(
             "GET",
             f"{self._settings.backend_url}/internal/v1/calls/"
@@ -1112,7 +1198,7 @@ async def run_worker(settings: Settings) -> None:
             provider_client,
             allow_insecure=settings.allow_insecure_webhooks,
         )
-        backend = BackendClient(settings, backend_client)
+        backend = BackendClient(settings, backend_client, RecordingStorage(settings))
         worker = CapabilityWorker(
             settings,
             redis,

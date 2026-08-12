@@ -66,6 +66,7 @@ class Settings(BaseSettings):
         float, Field(gt=0, le=86400)
     ] = 120.0
     call_runtime_reconciliation_batch_size: Annotated[int, Field(gt=0, le=1000)] = 100
+    call_recording_enabled: bool = False
 
     @model_validator(mode="after")
     def credentials_must_be_distinct(self) -> Self:

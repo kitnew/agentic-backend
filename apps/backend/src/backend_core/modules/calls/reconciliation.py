@@ -6,6 +6,7 @@ from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.router import build_call_session_service
 from backend_core.platform.database import Database
 from backend_core.platform.livekit import LiveKitAdapter
+from backend_core.runtime.finalization.recording import RecordingCoordinator
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ class CallRuntimeReconciler:
         batch_size: int,
         event_stream: str,
         command_stream: str,
+        recording_enabled: bool = False,
     ) -> None:
         self._database = database
         self._livekit = livekit
@@ -27,6 +29,7 @@ class CallRuntimeReconciler:
         self._batch_size = batch_size
         self._event_stream = event_stream
         self._command_stream = command_stream
+        self._recording_enabled = recording_enabled
 
     async def run_once(self) -> None:
         cutoff = datetime.now(UTC) - self._grace
@@ -53,6 +56,13 @@ class CallRuntimeReconciler:
                         "Reconciled call with missing LiveKit runtime",
                         extra={"call_session_id": str(call.id), "status": call.status},
                     )
+        if self._recording_enabled:
+            await RecordingCoordinator(
+                self._database,
+                self._livekit,
+                event_stream=self._event_stream,
+                command_stream=self._command_stream,
+            ).reconcile_stale(cutoff, self._batch_size)
 
     async def run(self, interval_seconds: float) -> None:
         while True:

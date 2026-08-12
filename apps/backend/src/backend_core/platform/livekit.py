@@ -1,8 +1,23 @@
+from dataclasses import dataclass
 from datetime import timedelta
 
 from livekit import api
 from livekit.protocol import agent_dispatch
 from livekit.protocol import room as room_proto
+
+
+@dataclass(frozen=True)
+class EgressResult:
+    egress_id: str
+    room_name: str
+    status: str
+    filename: str | None = None
+    size: int | None = None
+    duration_ns: int | None = None
+    started_at_ns: int | None = None
+    ended_at_ns: int | None = None
+    error: str | None = None
+    requested_filepath: str | None = None
 
 
 class LiveKitAdapter:
@@ -62,6 +77,70 @@ class LiveKitAdapter:
             room_proto.ListRoomsRequest(names=[room_name])
         )
         return any(room.name == room_name for room in response.rooms)
+
+    async def start_call_recording(
+        self, *, room_name: str, storage_key: str
+    ) -> EgressResult:
+        info = await self.client.egress.start_room_composite_egress(
+            api.RoomCompositeEgressRequest(
+                room_name=room_name,
+                audio_only=True,
+                file_outputs=[
+                    api.EncodedFileOutput(
+                        file_type=api.EncodedFileType.MP3,
+                        filepath=storage_key,
+                        disable_manifest=True,
+                    )
+                ],
+            )
+        )
+        return self.egress_result(info)
+
+    async def get_egress(self, egress_id: str) -> EgressResult | None:
+        response = await self.client.egress.list_egress(
+            api.ListEgressRequest(egress_id=egress_id)
+        )
+        return self.egress_result(response.items[0]) if response.items else None
+
+    async def find_egress(
+        self, *, room_name: str, storage_key: str
+    ) -> EgressResult | None:
+        response = await self.client.egress.list_egress(
+            api.ListEgressRequest(room_name=room_name)
+        )
+        return next(
+            (
+                result
+                for item in response.items
+                if (result := self.egress_result(item)).requested_filepath
+                == storage_key
+            ),
+            None,
+        )
+
+    @staticmethod
+    def egress_result(info: api.EgressInfo) -> EgressResult:
+        file = info.file_results[0] if info.file_results else None
+        requested = (
+            info.room_composite.file_outputs[0].filepath
+            if info.HasField("room_composite")
+            and info.room_composite.file_outputs
+            else None
+        )
+        return EgressResult(
+            egress_id=info.egress_id,
+            room_name=info.room_name,
+            status=api.EgressStatus.Name(info.status)
+            .removeprefix("EGRESS_")
+            .lower(),
+            filename=file.filename if file else None,
+            size=file.size if file else None,
+            duration_ns=file.duration if file else None,
+            started_at_ns=file.started_at if file else None,
+            ended_at_ns=file.ended_at if file else None,
+            error=(info.error or None),
+            requested_filepath=requested,
+        )
 
     async def create_sip_participant(
         self, *, room_name: str, participant_identity: str, phone_number: str

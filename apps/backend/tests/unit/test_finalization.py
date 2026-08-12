@@ -23,6 +23,7 @@ from backend_core.runtime.finalization.models import (
     CallRecording,
     FinalizationStatus,
     PostCallActionExecution,
+    RecordingStatus,
     WorkStatus,
 )
 from backend_core.runtime.finalization.service import FinalizationService
@@ -227,6 +228,35 @@ def ended_event(call: CallSession) -> MessageEnvelope:
     )
 
 
+def ready_recording(call: CallSession) -> CallRecording:
+    recording_id = uuid4()
+    return CallRecording(
+        id=recording_id,
+        tenant_id=call.tenant_id,
+        call_id=call.id,
+        provider="livekit_egress",
+        egress_id=f"EG_{recording_id}",
+        status=RecordingStatus.READY,
+        storage_key=f"recordings/{call.tenant_id}/{call.id}/{recording_id}.mp3",
+        content_type="audio/mpeg",
+        byte_size=5,
+        duration_ms=1000,
+        start_requested_at=datetime.now(UTC),
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+    )
+
+
+def recording_event(call: CallSession, status: str = "ready") -> MessageEnvelope:
+    return MessageEnvelope(
+        message_kind="event",
+        message_type=f"recording.{status}",
+        correlation_id=call.id,
+        tenant_id=call.tenant_id,
+        payload={"recording_id": str(uuid4()), "call_id": str(call.id), "status": status},
+    )
+
+
 def connection(call: CallSession, configured: PostCallAction) -> IntegrationConnection:
     return IntegrationConnection(
         id=configured.execution.connection_id,
@@ -292,7 +322,7 @@ async def test_no_input_and_transcript_actions_run_independently_at_start() -> N
 
 
 @pytest.mark.asyncio
-async def test_action_waits_for_recording_and_missing_representation_is_materialized() -> (
+async def test_action_waits_for_recording_and_lazy_representation_becomes_ready() -> (
     None
 ):
     call = ended_call()
@@ -317,26 +347,20 @@ async def test_action_waits_for_recording_and_missing_representation_is_material
     await service.start(ended_event(call))
     assert [item.message_type for item in commands.sent] == ["call.generate_summary.v1"]
 
-    await service.persist_recording(call.id, b"audio", "audio/ogg")
+    session.recording = ready_recording(call)
+    await service.recording_changed(recording_event(call))
 
-    assert commands.sent[-1].message_type == "artifact.materialize_representation.v1"
+    assert commands.sent[-1].message_type == "call.execute_post_call_action.v1"
     assert len(session.representations) == 1
     assert session.representations[0].content is None
+    assert session.representations[0].status is WorkStatus.COMPLETED
 
 
 @pytest.mark.asyncio
 async def test_existing_and_successful_representation_make_action_runnable() -> None:
     call = ended_call()
     session = Session(call)
-    session.recording = CallRecording(
-        id=uuid4(),
-        tenant_id=call.tenant_id,
-        call_id=call.id,
-        content=b"audio",
-        content_type="audio/ogg",
-        byte_size=5,
-        sha256="digest",
-    )
+    session.recording = ready_recording(call)
     commands = Commands()
     service = Service(
         session,
@@ -355,40 +379,17 @@ async def test_existing_and_successful_representation_make_action_runnable() -> 
     )
 
     await service.start(ended_event(call))
-    materialize = commands.sent[-1]
     representation = session.representations[0]
-    await service.store_representation(
-        representation.id, materialize.message_id, b"YXVkaW8=", "text/plain"
-    )
-    result = command_result(
-        materialize,
-        {
-            "representation_id": str(representation.id),
-            "byte_size": representation.byte_size,
-            "sha256": representation.sha256,
-        },
-    )
-
-    await service.handle_result(result_envelope(result), result)
-
     assert representation.status is WorkStatus.COMPLETED
+    assert representation.content is None
     assert commands.sent[-1].message_type == "call.execute_post_call_action.v1"
-    assert "content" not in materialize.payload
 
 
 @pytest.mark.asyncio
 async def test_existing_representation_is_reused_without_materialization() -> None:
     call = ended_call()
     session = Session(call)
-    session.recording = CallRecording(
-        id=uuid4(),
-        tenant_id=call.tenant_id,
-        call_id=call.id,
-        content=b"audio",
-        content_type="audio/ogg",
-        byte_size=5,
-        sha256="digest",
-    )
+    session.recording = ready_recording(call)
     session.representations.append(
         ArtifactRepresentation(
             id=uuid4(),
@@ -830,15 +831,12 @@ async def test_terminal_action_failure_fails_finalization_not_call() -> None:
 async def test_terminal_preparation_failure_fails_finalization_not_call() -> None:
     call = ended_call()
     session = Session(call)
-    session.recording = CallRecording(
-        id=uuid4(),
-        tenant_id=call.tenant_id,
-        call_id=call.id,
-        content=b"audio",
-        content_type="audio/ogg",
-        byte_size=5,
-        sha256="digest",
-    )
+    session.recording = ready_recording(call)
+    session.recording.status = RecordingStatus.PENDING
+    session.recording.egress_id = None
+    session.recording.byte_size = None
+    session.recording.duration_ms = None
+    session.recording.completed_at = None
     commands = Commands()
     service = Service(
         session,
@@ -856,33 +854,25 @@ async def test_terminal_preparation_failure_fails_finalization_not_call() -> Non
         ],
     )
     finalization = await service.start(ended_event(call))
-    materialize = commands.sent[-1]
-    failed = CommandResult(
-        command_id=materialize.message_id,
-        command_type="artifact.materialize_representation.v1",
-        status="failed",
-        error=CommandError(code="storage_failed", message="failed", transient=False),
-        attempt=1,
-    )
-
-    await service.handle_result(result_envelope(failed), failed)
+    session.recording.status = RecordingStatus.FAILED
+    session.recording.error_code = "egress_failed"
+    await service.recording_changed(recording_event(call, "failed"))
 
     assert finalization.status is FinalizationStatus.FAILED
-    assert session.representations[0].status is WorkStatus.FAILED
     assert call.status is CallSessionStatus.ENDED
 
 
 @pytest.mark.asyncio
-async def test_recording_is_persisted_without_tenant_action_configuration() -> None:
+async def test_ready_recording_without_tenant_action_configuration_is_a_noop() -> None:
     call = ended_call()
     session = Session(call)
     service = Service(session, Commands(), [])
 
-    first = await service.persist_recording(call.id, b"audio", "audio/ogg")
-    second = await service.persist_recording(call.id, b"audio", "audio/ogg")
+    session.recording = ready_recording(call)
 
-    assert first is second
-    assert first.content == b"audio"
+    await service.recording_changed(recording_event(call))
+
+    assert session.recording.status is RecordingStatus.READY
 
 
 @pytest.mark.asyncio

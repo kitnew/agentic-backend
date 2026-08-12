@@ -38,6 +38,7 @@ from backend_core.runtime.finalization.models import (
     CallRecording,
     FinalizationStatus,
     PostCallActionExecution,
+    RecordingStatus,
     WorkStatus,
 )
 
@@ -97,6 +98,21 @@ class FinalizationService:
         await self._commands.send(command)
         await self._schedule(finalization, event.message_id)
         return finalization
+
+    async def recording_changed(self, event: MessageEnvelope) -> None:
+        if event.message_type not in {"recording.ready", "recording.failed"}:
+            raise FinalizationError("unsupported recording event")
+        try:
+            call_id = UUID(str(event.payload["call_id"]))
+        except (KeyError, ValueError) as error:
+            raise FinalizationError("recording event is invalid") from error
+        finalization = await self._session.scalar(
+            select(CallFinalization)
+            .where(CallFinalization.call_id == call_id)
+            .with_for_update()
+        )
+        if finalization is not None and finalization.status is FinalizationStatus.PROCESSING:
+            await self._schedule(finalization, event.message_id)
 
     async def handle_result(
         self, envelope: MessageEnvelope, result: CommandResult
@@ -280,46 +296,6 @@ class FinalizationService:
             timeout_seconds=action.execution.timeout_seconds,
         )
 
-    async def persist_recording(
-        self, call_id: UUID, content: bytes, content_type: str
-    ) -> CallRecording:
-        call = await self._session.get(CallSession, call_id)
-        if call is None:
-            raise FinalizationError("call not found")
-        digest = sha256(content).hexdigest()
-        existing = await self._session.scalar(
-            select(CallRecording)
-            .where(CallRecording.call_id == call_id)
-            .with_for_update()
-        )
-        if existing is not None:
-            if existing.sha256 != digest:
-                raise FinalizationError(
-                    "recording already persisted with different content"
-                )
-            return existing
-        recording = CallRecording(
-            tenant_id=call.tenant_id,
-            call_id=call.id,
-            content=content,
-            content_type=content_type,
-            byte_size=len(content),
-            sha256=digest,
-        )
-        self._session.add(recording)
-        await self._session.flush()
-        finalization = await self._session.scalar(
-            select(CallFinalization)
-            .where(CallFinalization.call_id == call_id)
-            .with_for_update()
-        )
-        if (
-            finalization is not None
-            and finalization.status is FinalizationStatus.PROCESSING
-        ):
-            await self._schedule(finalization, recording.id)
-        return recording
-
     async def materialization_source(
         self, representation_id: UUID, command_id: UUID
     ) -> tuple[ArtifactRepresentation, bytes, str]:
@@ -333,14 +309,7 @@ class FinalizationService:
         ):
             raise FinalizationError("representation command is not current")
         if representation.artifact_type == "call_recording":
-            recording = await self._session.scalar(
-                select(CallRecording).where(
-                    CallRecording.call_id == representation.call_id
-                )
-            )
-            if recording is None:
-                raise FinalizationError("recording not found")
-            return representation, recording.content, recording.content_type
+            raise FinalizationError("recording is materialized lazily by the worker")
         transcript = await self._transcript(representation.call_id)
         return (
             representation,
@@ -385,6 +354,64 @@ class FinalizationService:
         ):
             raise FinalizationError("artifact representation is unavailable")
         return representation, representation.content
+
+    async def recording_source(
+        self, representation_id: UUID, command_id: UUID
+    ) -> tuple[ArtifactRepresentation, CallRecording]:
+        representation = await self._authorized_representation(
+            representation_id, command_id
+        )
+        if (
+            representation.artifact_type != "call_recording"
+            or representation.representation != "base64_text"
+        ):
+            raise FinalizationError("recording representation is unavailable")
+        recording = await self._session.scalar(
+            select(CallRecording).where(
+                CallRecording.call_id == representation.call_id,
+                CallRecording.status == RecordingStatus.READY,
+            )
+        )
+        if recording is None:
+            raise FinalizationError("recording representation is unavailable")
+        return representation, recording
+
+    async def _authorized_representation(
+        self, representation_id: UUID, command_id: UUID
+    ) -> ArtifactRepresentation:
+        execution = await self._session.scalar(
+            select(PostCallActionExecution).where(
+                PostCallActionExecution.command_id == command_id
+            )
+        )
+        representation = await self._session.get(
+            ArtifactRepresentation, representation_id
+        )
+        if (
+            execution is None
+            or execution.status is not WorkStatus.PROCESSING
+            or representation is None
+            or representation.status is not WorkStatus.COMPLETED
+        ):
+            raise FinalizationError("artifact representation is unavailable")
+        finalization = await self._session.get(
+            CallFinalization, execution.finalization_id
+        )
+        call = (
+            await self._session.get(CallSession, finalization.call_id)
+            if finalization
+            else None
+        )
+        if call is None or representation.call_id != call.id:
+            raise FinalizationError("artifact representation is unavailable")
+        action = self._action(await self._config(call), execution.action_id)
+        if not any(
+            requested.artifact == representation.artifact_type
+            and requested.representation == representation.representation
+            for requested in action.inputs.values()
+        ):
+            raise FinalizationError("artifact representation is unavailable")
+        return representation
 
     async def store_representation(
         self,
@@ -450,7 +477,16 @@ class FinalizationService:
                 stored = representations.get(key)
                 if self._input_ready(finalization, requested, recording, stored):
                     continue
-                ready = False
+                if (
+                    recording is not None
+                    and recording.status is RecordingStatus.FAILED
+                    and requested.artifact == "call_recording"
+                ):
+                    self._fail(
+                        finalization,
+                        recording.error_code or "recording failed",
+                    )
+                    return
                 if stored is not None and stored.status is WorkStatus.FAILED:
                     self._fail(
                         finalization, stored.last_error or "representation failed"
@@ -458,8 +494,11 @@ class FinalizationService:
                     return
                 if stored is None and self._source_ready(requested, recording):
                     representations[key] = await self._materialize(
-                        finalization, requested, causation_id
+                        finalization, requested, causation_id, recording
                     )
+                    if representations[key].status is WorkStatus.COMPLETED:
+                        continue
+                ready = False
             if ready:
                 command = command_envelope(
                     ExecutePostCallAction(
@@ -485,7 +524,25 @@ class FinalizationService:
         finalization: CallFinalization,
         requested: PostCallActionInput,
         causation_id: UUID,
+        recording: CallRecording | None,
     ) -> ArtifactRepresentation:
+        if requested.artifact == "call_recording":
+            assert recording is not None and recording.byte_size is not None
+            representation = ArtifactRepresentation(
+                id=uuid4(),
+                tenant_id=finalization.tenant_id,
+                call_id=finalization.call_id,
+                artifact_type="call_recording",
+                representation="base64_text",
+                status=WorkStatus.COMPLETED,
+                command_id=uuid4(),
+                content_type="text/plain; charset=utf-8",
+                byte_size=((recording.byte_size + 2) // 3) * 4,
+                completed_at=datetime.now(UTC),
+            )
+            self._session.add(representation)
+            await self._session.flush()
+            return representation
         representation_id = uuid4()
         command = command_envelope(
             MaterializeArtifactRepresentation(
@@ -529,7 +586,7 @@ class FinalizationService:
             requested.artifact == "call_recording"
             and requested.representation == "original"
         ):
-            return recording is not None
+            return recording is not None and recording.status is RecordingStatus.READY
         return stored is not None and stored.status is WorkStatus.COMPLETED
 
     @staticmethod
@@ -537,7 +594,9 @@ class FinalizationService:
         requested: PostCallActionInput, recording: CallRecording | None
     ) -> bool:
         return requested.artifact == "transcript" or (
-            requested.artifact == "call_recording" and recording is not None
+            requested.artifact == "call_recording"
+            and recording is not None
+            and recording.status is RecordingStatus.READY
         )
 
     async def _input_value(
@@ -561,13 +620,13 @@ class FinalizationService:
                     CallRecording.call_id == finalization.call_id
                 )
             )
-            if recording is None:
+            if recording is None or recording.status is not RecordingStatus.READY:
                 raise FinalizationError("recording representation is unavailable")
             return {
                 "recording_id": str(recording.id),
                 "content_type": recording.content_type,
                 "byte_size": recording.byte_size,
-                "sha256": recording.sha256,
+                "duration_ms": recording.duration_ms,
             }
         stored = await self._session.scalar(
             select(ArtifactRepresentation).where(

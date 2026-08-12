@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Callable
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from backend_core.bootstrap import create_app
@@ -9,6 +9,9 @@ from backend_core.modules.calls.models import CallSession
 from backend_core.modules.conversations.models import Conversation
 from backend_core.modules.tenants.models import ProfilePrompt, SystemPrompt, Tenant
 from backend_core.platform.database import Database
+from backend_core.platform.messaging import TransactionalOutboxBus
+from backend_core.runtime.finalization.models import CallRecording
+from backend_core.runtime.finalization.recording import RecordingService
 from httpx import ASGITransport, AsyncClient
 from runtime_fixtures import apply_voice_runtime
 from sqlalchemy import delete, func, select, update
@@ -243,6 +246,27 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert created["started_at"] is None
             assert created["ended_at"] is None
             assert created["failure_reason"] is None
+
+            async def claim_recording() -> tuple[str, bool]:
+                async with database.transaction() as session:
+                    recording, claimed = await RecordingService(
+                        session, TransactionalOutboxBus(session)
+                    ).claim(UUID(call_id))
+                    return str(recording.id), claimed
+
+            first_recording, second_recording = await asyncio.gather(
+                claim_recording(), claim_recording()
+            )
+            assert first_recording[0] == second_recording[0]
+            assert sorted((first_recording[1], second_recording[1])) == [False, True]
+            async with database.transaction() as session:
+                assert (
+                    await session.scalar(
+                        select(func.count()).select_from(CallRecording).where(
+                            CallRecording.call_id == UUID(call_id)
+                        )
+                    )
+                ) == 1
 
             replay = await client.post(
                 calls_url,

@@ -16,7 +16,7 @@ from job_worker.command_worker import (
     ExecutePostCallActionHandler,
     MaterializeArtifactRepresentationHandler,
 )
-from job_worker.worker import ExecutionError, Settings
+from job_worker.worker import ExecutionError, RecordingStorage, Settings
 
 
 class Redis:
@@ -52,6 +52,36 @@ def settings() -> Settings:
         credential_file_map_json="{}",
         max_retries=1,
     )
+
+
+@pytest.mark.asyncio
+async def test_recording_storage_streams_base64_without_buffering_whole_object() -> None:
+    class Response:
+        def __init__(self) -> None:
+            self.chunks = [b"ab", b"cdef", b""]
+
+        def read(self, size):
+            return self.chunks.pop(0)
+
+        def close(self):
+            return None
+
+        def release_conn(self):
+            return None
+
+    class Client:
+        def get_object(self, bucket, key):
+            assert (bucket, key) == ("call-recordings", "recordings/t/c/r.mp3")
+            return Response()
+
+    storage = RecordingStorage(settings())
+    storage._client = Client()  # type: ignore[assignment]
+
+    encoded = b"".join(
+        [chunk async for chunk in storage.base64("recordings/t/c/r.mp3")]
+    )
+
+    assert encoded == b"YWJjZGVm"
 
 
 def message():

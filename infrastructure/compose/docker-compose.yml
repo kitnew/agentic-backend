@@ -28,6 +28,80 @@ services:
       timeout: 3s
       retries: 10
 
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    expose:
+      - "9000"
+      - "9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_EGRESS_ACCESS_KEY: ${MINIO_EGRESS_ACCESS_KEY:?set MINIO_EGRESS_ACCESS_KEY}
+      MINIO_EGRESS_SECRET_KEY: ${MINIO_EGRESS_SECRET_KEY:?set MINIO_EGRESS_SECRET_KEY}
+      MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?set MINIO_WORKER_ACCESS_KEY}
+      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:?set MINIO_WORKER_SECRET_KEY}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing local/call-recordings
+        mc anonymous set none local/call-recordings
+        mc admin user add local "$${MINIO_EGRESS_ACCESS_KEY}" "$${MINIO_EGRESS_SECRET_KEY}" || true
+        mc admin policy attach local readwrite --user "$${MINIO_EGRESS_ACCESS_KEY}"
+        mc admin user add local "$${MINIO_WORKER_ACCESS_KEY}" "$${MINIO_WORKER_SECRET_KEY}" || true
+        mc admin policy attach local readonly --user "$${MINIO_WORKER_ACCESS_KEY}"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  livekit-egress:
+    image: livekit/egress:v1.13.0
+    security_opt:
+      - seccomp=../livekit/egress/chrome-sandboxing-seccomp-profile.json
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: "${LIVEKIT_API_KEY}"
+        api_secret: "${LIVEKIT_API_SECRET}"
+        ws_url: "${LIVEKIT_URL}"
+        redis:
+          address: "${LIVEKIT_EGRESS_REDIS_ADDRESS:-redis:6379}"
+        health_port: ${LIVEKIT_EGRESS_HEALTH_PORT:-8080}
+        enable_chrome_sandbox: true
+        storage:
+          s3:
+            access_key: "${MINIO_EGRESS_ACCESS_KEY}"
+            secret: "${MINIO_EGRESS_SECRET_KEY}"
+            region: "${MINIO_REGION:-us-east-1}"
+            endpoint: "${MINIO_ENDPOINT_INTERNAL:-http://minio:9000}"
+            bucket: "${MINIO_BUCKET:-call-recordings}"
+            force_path_style: true
+    expose:
+      - "${LIVEKIT_EGRESS_HEALTH_PORT:-8080}"
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: ../..
@@ -57,6 +131,7 @@ services:
       CALL_RUNTIME_RECONCILIATION_INTERVAL_SECONDS: ${CALL_RUNTIME_RECONCILIATION_INTERVAL_SECONDS:-60}
       CALL_RUNTIME_RECONCILIATION_GRACE_SECONDS: ${CALL_RUNTIME_RECONCILIATION_GRACE_SECONDS:-120}
       CALL_RUNTIME_RECONCILIATION_BATCH_SIZE: ${CALL_RUNTIME_RECONCILIATION_BATCH_SIZE:-100}
+      CALL_RECORDING_ENABLED: ${CALL_RECORDING_ENABLED:-false}
       CAPABILITY_INVOCATION_PII_RETENTION_SECONDS: ${CAPABILITY_INVOCATION_PII_RETENTION_SECONDS:-2592000}
       CAPABILITY_OUTBOX_RETENTION_SECONDS: ${CAPABILITY_OUTBOX_RETENTION_SECONDS:-604800}
       CAPABILITY_STREAM_MAXLEN: ${CAPABILITY_STREAM_MAXLEN:-10000}
@@ -136,6 +211,11 @@ services:
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:?set AZURE_OPENAI_ENDPOINT}
       AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:?set AZURE_OPENAI_DEPLOYMENT}
       AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:?set AZURE_OPENAI_API_VERSION}
+      MINIO_ENDPOINT: ${MINIO_WORKER_ENDPOINT:-minio:9000}
+      MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?set MINIO_WORKER_ACCESS_KEY}
+      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:?set MINIO_WORKER_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-call-recordings}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
     volumes:
       - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/run/secrets:ro
       - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/secrets:ro
@@ -144,7 +224,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
 volumes:
   postgres-data:
   redis-data:
+  minio-data:

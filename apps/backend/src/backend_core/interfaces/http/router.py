@@ -19,6 +19,7 @@ from backend_core.runtime.capabilities.router import (
     worker_router as capability_worker_router,
 )
 from backend_core.runtime.finalization.router import router as finalization_router
+from backend_core.runtime.finalization.webhook import router as livekit_webhook_router
 from backend_core.runtime.voice.router import (
     platform_router as platform_runtime_router,
 )
@@ -48,6 +49,7 @@ router.include_router(conversation_internal_router)
 router.include_router(capability_voice_router)
 router.include_router(capability_worker_router)
 router.include_router(finalization_router)
+router.include_router(livekit_webhook_router)
 
 
 @router.get("/")

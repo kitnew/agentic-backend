@@ -15,6 +15,7 @@ from backend_core.platform.messaging import (
 )
 from backend_core.platform.outbox import OutboxDispatcher
 from backend_core.platform.stream_consumer import RedisStreamConsumer
+from backend_core.runtime.finalization.recording import RecordingCoordinator
 from backend_core.runtime.finalization.service import FinalizationService
 
 logger = logging.getLogger(__name__)
@@ -49,17 +50,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         async def handle_event(fields: dict[str, str]) -> None:
             event = MessageEnvelope.model_validate_json(fields["message"])
-            if event.message_type != "call.ended":
+            if (
+                event.message_type == "call.started"
+                and app.state.settings.call_recording_enabled
+            ):
+                await RecordingCoordinator(
+                    app.state.database,
+                    app.state.livekit,
+                    event_stream=app.state.settings.domain_event_stream,
+                    command_stream=app.state.settings.command_stream,
+                ).ensure(event.correlation_id)
+                return
+            if event.message_type not in {
+                "call.ended",
+                "recording.ready",
+                "recording.failed",
+            }:
                 return
             async with app.state.database.transaction() as session:
-                await FinalizationService(
+                finalization = FinalizationService(
                     session,
                     TransactionalOutboxBus(
                         session,
                         app.state.settings.domain_event_stream,
                         app.state.settings.command_stream,
                     ),
-                ).start(event)
+                )
+                if event.message_type == "call.ended":
+                    await finalization.start(event)
+                else:
+                    await finalization.recording_changed(event)
 
         async def handle_result(fields: dict[str, str]) -> None:
             envelope = MessageEnvelope.model_validate_json(fields["message"])
@@ -106,6 +126,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 batch_size=app.state.settings.call_runtime_reconciliation_batch_size,
                 event_stream=app.state.settings.domain_event_stream,
                 command_stream=app.state.settings.command_stream,
+                recording_enabled=app.state.settings.call_recording_enabled,
             ).run(app.state.settings.call_runtime_reconciliation_interval_seconds)
         )
     logger.info("Backend Core started")

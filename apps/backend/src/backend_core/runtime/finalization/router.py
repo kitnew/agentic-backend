@@ -14,9 +14,7 @@ from backend_core.runtime.finalization.service import (
 )
 
 router = APIRouter(prefix="/internal/v1/calls", tags=["internal:finalization"])
-# ponytail: PostgreSQL-backed v1 ceiling; move recordings to object storage if 32 MiB is insufficient.
-MAX_RECORDING_BYTES = 32 * 1024 * 1024
-MAX_REPRESENTATION_BYTES = (MAX_RECORDING_BYTES + 2) // 3 * 4
+MAX_REPRESENTATION_BYTES = 32 * 1024 * 1024
 _TRANSFER_CHUNK_BYTES = 64 * 1024
 
 
@@ -88,33 +86,6 @@ async def post_call_action(
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
 
 
-@router.put(
-    "/{call_id}/recording",
-    dependencies=[Depends(require_internal_scope("call-recording:write"))],
-)
-async def persist_recording(
-    call_id: UUID, request: Request, finalization: Service
-) -> dict[str, object]:
-    try:
-        recording = await finalization.persist_recording(
-            call_id,
-            await body(request, MAX_RECORDING_BYTES),
-            request.headers.get("content-type", "application/octet-stream")[:255],
-        )
-        return {
-            "recording_id": str(recording.id),
-            "byte_size": recording.byte_size,
-            "sha256": recording.sha256,
-        }
-    except FinalizationError as error:
-        status_code = (
-            status.HTTP_409_CONFLICT
-            if "different content" in str(error)
-            else status.HTTP_404_NOT_FOUND
-        )
-        raise HTTPException(status_code, str(error)) from error
-
-
 @router.get(
     "/artifact-representations/{representation_id}/source",
     dependencies=[Depends(require_internal_scope("artifact-representation:read"))],
@@ -160,6 +131,29 @@ async def representation_content(
             media_type=representation.content_type,
             headers={"Content-Length": str(representation.byte_size)},
         )
+    except FinalizationError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.get(
+    "/artifact-representations/{representation_id}/recording-source",
+    dependencies=[Depends(require_internal_scope("artifact-representation:read"))],
+)
+async def recording_source(
+    representation_id: UUID,
+    command_id: UUID,
+    finalization: Service,
+) -> dict[str, object]:
+    try:
+        representation, recording = await finalization.recording_source(
+            representation_id, command_id
+        )
+        return {
+            "representation_id": str(representation.id),
+            "storage_key": recording.storage_key,
+            "content_type": recording.content_type,
+            "byte_size": recording.byte_size,
+        }
     except FinalizationError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
 

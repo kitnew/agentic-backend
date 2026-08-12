@@ -34,6 +34,13 @@ class WorkStatus(StrEnum):
     FAILED = "failed"
 
 
+class RecordingStatus(StrEnum):
+    PENDING = "pending"
+    RECORDING = "recording"
+    READY = "ready"
+    FAILED = "failed"
+
+
 class CallFinalization(Base):
     __tablename__ = "call_finalizations"
 
@@ -106,20 +113,59 @@ class CallRecording(Base):
             ("tenant_id", "call_id"),
             ("call_sessions.tenant_id", "call_sessions.id"),
             name="fk_call_recordings_call_same_tenant",
+            ondelete="CASCADE",
         ),
         UniqueConstraint("call_id", name="uq_call_recordings_call_id"),
-        CheckConstraint("byte_size > 0", name="ck_call_recordings_byte_size_positive"),
+        UniqueConstraint("egress_id", name="uq_call_recordings_egress_id"),
+        UniqueConstraint("storage_key", name="uq_call_recordings_storage_key"),
+        CheckConstraint(
+            "(status = 'ready' AND egress_id IS NOT NULL AND byte_size > 0 "
+            "AND duration_ms >= 0 AND completed_at IS NOT NULL AND error_code IS NULL) "
+            "OR (status = 'failed' AND error_code IS NOT NULL "
+            "AND completed_at IS NOT NULL) "
+            "OR (status = 'recording' AND egress_id IS NOT NULL "
+            "AND started_at IS NOT NULL AND completed_at IS NULL) "
+            "OR (status = 'pending' AND completed_at IS NULL)",
+            name="ck_call_recordings_lifecycle",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("tenants.id"))
     call_id: Mapped[UUID] = mapped_column(Uuid)
-    content: Mapped[bytes] = mapped_column(LargeBinary)
-    content_type: Mapped[str] = mapped_column(String(255))
-    byte_size: Mapped[int]
-    sha256: Mapped[str] = mapped_column(String(64))
+    provider: Mapped[str] = mapped_column(
+        String(64), default="livekit_egress", server_default="livekit_egress"
+    )
+    egress_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[RecordingStatus] = mapped_column(
+        Enum(
+            RecordingStatus,
+            name="call_recording_status",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+        default=RecordingStatus.PENDING,
+        server_default=RecordingStatus.PENDING.value,
+    )
+    storage_key: Mapped[str] = mapped_column(String(1024))
+    content_type: Mapped[str] = mapped_column(
+        String(255), default="audio/mpeg", server_default="audio/mpeg"
+    )
+    byte_size: Mapped[int | None] = mapped_column(nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(nullable=True)
+    start_requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
@@ -144,8 +190,10 @@ class ArtifactRepresentation(Base):
             name="ck_artifact_representations_materializable_kind",
         ),
         CheckConstraint(
-            "(status = 'completed' AND content IS NOT NULL AND byte_size IS NOT NULL "
-            "AND sha256 IS NOT NULL AND completed_at IS NOT NULL) "
+            "(status = 'completed' AND byte_size IS NOT NULL "
+            "AND completed_at IS NOT NULL AND "
+            "((artifact_type = 'call_recording' AND content IS NULL) OR "
+            "(content IS NOT NULL AND sha256 IS NOT NULL))) "
             "OR (status <> 'completed')",
             name="ck_artifact_representations_completed_content",
         ),
