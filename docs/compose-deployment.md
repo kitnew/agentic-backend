@@ -13,7 +13,7 @@ Compose is layered by environment:
 ```text
 Internet -- 80/443 --> Caddy --edge--> Backend / Debug Chat / LiveKit :7880
 Internet -----------> LiveKit :7881/tcp, :7882/udp
-Internet -----------> LiveKit SIP :5060/tcp+udp, :10000-20000/udp
+Internet -----------> host-networked LiveKit SIP :5060/tcp+udp, :10000-20000/udp
 application --------> PostgreSQL / Redis / MinIO / Egress / Voice Agent / Worker
 ```
 
@@ -28,7 +28,7 @@ application --------> PostgreSQL / Redis / MinIO / Egress / Voice Agent / Worker
 | 5060 | TCP, UDP | LiveKit SIP | Public | SIP signaling |
 | 10000-20000 | UDP | LiveKit SIP | Public | SIP RTP |
 
-`7880` is deliberately private behind Caddy. PostgreSQL, Redis, Backend, Debug Chat, MinIO, Egress, health ports, and the Caddy admin API have no deployment host ports. The repository does not contain the server firewall configuration, so its current rules could not be read here; they must match this table before staging/production rollout. TURN is unchanged and remains deferred.
+`7880` and Redis `6379` are bound only to `127.0.0.1`; Caddy still reaches LiveKit through `livekit:7880`, while host-networked SIP reaches both dependencies through loopback. The SIP service binds its configured `5060` and `10000-20000/udp` directly on the host, so Docker does not create a large RTP port mapping. The repository does not contain the server firewall configuration, so its current rules could not be read here; they must match this table before staging/production rollout. TURN is unchanged and remains deferred.
 
 ## Operations boundary
 

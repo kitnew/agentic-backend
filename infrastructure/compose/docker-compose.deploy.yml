@@ -6,6 +6,8 @@ x-service-logging: &service-logging
 
 services:
   redis:
+    ports:
+      - "127.0.0.1:6379:6379"
     restart: unless-stopped
     logging: *service-logging
 
@@ -86,6 +88,7 @@ services:
           urls:
             - http://backend:8000/webhooks/livekit
     ports:
+      - "127.0.0.1:7880:7880"
       - "${LIVEKIT_TCP_PORT:-7881}:7881"
       - "${LIVEKIT_UDP_PORT:-7882}:7882/udp"
     restart: unless-stopped
@@ -184,23 +187,19 @@ services:
 
   livekit-sip:
     image: livekit/sip:v1.2.0
+    network_mode: host
     environment:
       SIP_CONFIG_BODY: |
         api_key: "${LIVEKIT_API_KEY}"
         api_secret: "${LIVEKIT_API_SECRET}"
-        ws_url: "ws://livekit:7880"
+        ws_url: "ws://127.0.0.1:7880"
         redis:
-          address: "${LIVEKIT_SIP_REDIS_ADDRESS:-redis:6379}"
+          address: "127.0.0.1:6379"
         sip_port: ${LIVEKIT_SIP_PORT:-5060}
         rtp_port: "${LIVEKIT_SIP_RTP_PORT:-10000-20000}"
         health_port: ${LIVEKIT_SIP_HEALTH_PORT:-8080}
         logging:
           level: info
-    ports:
-      - "${LIVEKIT_SIP_PORT:-5060}:5060/tcp"
-      - "${LIVEKIT_SIP_PORT:-5060}:5060/udp"
-      - "${LIVEKIT_SIP_RTP_PORT:-10000-20000}:${LIVEKIT_SIP_RTP_PORT:-10000-20000}/udp"
-    expose: ["${LIVEKIT_SIP_HEALTH_PORT:-8080}"]
     restart: unless-stopped
     depends_on:
       livekit:
@@ -213,7 +212,6 @@ services:
       timeout: 3s
       retries: 10
     logging: *service-logging
-    networks: [application]
 
   caddy:
     image: caddy:2.10.2-alpine

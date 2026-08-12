@@ -31,7 +31,7 @@ docker compose --env-file infrastructure/compose/.env.production \
   -f infrastructure/compose/docker-compose.deploy.yml config
 ```
 
-`livekit-sip:v1.2.0` receives only the LiveKit API credentials/WS URL and Redis address. `LIVEKIT_SIP_REDIS_ADDRESS` must identify the same Redis used by the self-hosted LiveKit Server. Its native health endpoint listens on `LIVEKIT_SIP_HEALTH_PORT` inside the Compose network; Backend readiness does not depend on it.
+`livekit-sip:v1.2.0` runs with host networking so Docker does not publish the full RTP range. Its generated config uses `ws://127.0.0.1:7880` and Redis `127.0.0.1:6379`; LiveKit Server and Redis remain bridge-networked and expose those ports only on loopback. SIP binds `LIVEKIT_SIP_PORT` and `LIVEKIT_SIP_RTP_PORT` directly on the host. Its native health endpoint listens on `LIVEKIT_SIP_HEALTH_PORT` in the host network namespace; Backend readiness does not depend on it.
 
 ## Configure a tenant DID
 
