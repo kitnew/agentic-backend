@@ -1,0 +1,260 @@
+x-service-logging: &service-logging
+  driver: local
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+services:
+  redis:
+    restart: unless-stopped
+    logging: *service-logging
+
+  postgres:
+    restart: unless-stopped
+    logging: *service-logging
+
+  backend:
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    logging: *service-logging
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_SIP_OUTBOUND_TRUNK_ID: ${LIVEKIT_SIP_OUTBOUND_TRUNK_ID:?set LIVEKIT_SIP_OUTBOUND_TRUNK_ID}
+    networks: [application, edge]
+
+  voice-agent:
+    restart: unless-stopped
+    stop_grace_period: 60s
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    logging: *service-logging
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+    depends_on:
+      backend:
+        condition: service_healthy
+      livekit:
+        condition: service_healthy
+
+  job-worker:
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    logging: *service-logging
+    environment:
+      MINIO_ENDPOINT: ${MINIO_WORKER_ENDPOINT:-minio:9000}
+      MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?set MINIO_WORKER_ACCESS_KEY}
+      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:?set MINIO_WORKER_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-call-recordings}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
+    volumes:
+      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/run/secrets:ro
+      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/secrets:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  debug-chat:
+    restart: unless-stopped
+    logging: *service-logging
+    networks: [application, edge]
+
+  livekit:
+    image: livekit/livekit-server:v1.13.1
+    environment:
+      LIVEKIT_CONFIG: |
+        port: 7880
+        rtc:
+          tcp_port: ${LIVEKIT_TCP_PORT:-7881}
+          udp_port: ${LIVEKIT_UDP_PORT:-7882}
+          use_external_ip: true
+        redis:
+          address: redis:6379
+        keys:
+          ${LIVEKIT_API_KEY}: ${LIVEKIT_API_SECRET}
+        webhook:
+          api_key: ${LIVEKIT_API_KEY}
+          urls:
+            - http://backend:8000/webhooks/livekit
+    ports:
+      - "${LIVEKIT_TCP_PORT:-7881}:7881"
+      - "${LIVEKIT_UDP_PORT:-7882}:7882/udp"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:7880/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: *service-logging
+    networks: [application, edge]
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+    expose: ["9000", "9001"]
+    volumes:
+      - minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *service-logging
+    networks: [application]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
+      MINIO_EGRESS_ACCESS_KEY: ${MINIO_EGRESS_ACCESS_KEY:?set MINIO_EGRESS_ACCESS_KEY}
+      MINIO_EGRESS_SECRET_KEY: ${MINIO_EGRESS_SECRET_KEY:?set MINIO_EGRESS_SECRET_KEY}
+      MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?set MINIO_WORKER_ACCESS_KEY}
+      MINIO_WORKER_SECRET_KEY: ${MINIO_WORKER_SECRET_KEY:?set MINIO_WORKER_SECRET_KEY}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        mc mb --ignore-existing local/call-recordings
+        mc anonymous set none local/call-recordings
+        mc admin user add local "$${MINIO_EGRESS_ACCESS_KEY}" "$${MINIO_EGRESS_SECRET_KEY}" || true
+        mc admin policy attach local readwrite --user "$${MINIO_EGRESS_ACCESS_KEY}"
+        mc admin user add local "$${MINIO_WORKER_ACCESS_KEY}" "$${MINIO_WORKER_SECRET_KEY}" || true
+        mc admin policy attach local readonly --user "$${MINIO_WORKER_ACCESS_KEY}"
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    logging: *service-logging
+    networks: [application]
+
+  livekit-egress:
+    image: livekit/egress:v1.13.0
+    security_opt:
+      - seccomp=../livekit/egress/chrome-sandboxing-seccomp-profile.json
+    environment:
+      EGRESS_CONFIG_BODY: |
+        api_key: "${LIVEKIT_API_KEY}"
+        api_secret: "${LIVEKIT_API_SECRET}"
+        ws_url: "ws://livekit:7880"
+        redis:
+          address: "${LIVEKIT_EGRESS_REDIS_ADDRESS:-redis:6379}"
+        health_port: ${LIVEKIT_EGRESS_HEALTH_PORT:-8080}
+        enable_chrome_sandbox: true
+        storage:
+          s3:
+            access_key: "${MINIO_EGRESS_ACCESS_KEY}"
+            secret: "${MINIO_EGRESS_SECRET_KEY}"
+            region: "${MINIO_REGION:-us-east-1}"
+            endpoint: "${MINIO_ENDPOINT_INTERNAL:-http://minio:9000}"
+            bucket: "${MINIO_BUCKET:-call-recordings}"
+            force_path_style: true
+    expose: ["${LIVEKIT_EGRESS_HEALTH_PORT:-8080}"]
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *service-logging
+    networks: [application]
+
+  livekit-sip:
+    image: livekit/sip:v1.2.0
+    environment:
+      SIP_CONFIG_BODY: |
+        api_key: "${LIVEKIT_API_KEY}"
+        api_secret: "${LIVEKIT_API_SECRET}"
+        ws_url: "ws://livekit:7880"
+        redis:
+          address: "${LIVEKIT_SIP_REDIS_ADDRESS:-redis:6379}"
+        sip_port: ${LIVEKIT_SIP_PORT:-5060}
+        rtp_port: "${LIVEKIT_SIP_RTP_PORT:-10000-20000}"
+        health_port: ${LIVEKIT_SIP_HEALTH_PORT:-8080}
+        logging:
+          level: info
+    ports:
+      - "${LIVEKIT_SIP_PORT:-5060}:5060/tcp"
+      - "${LIVEKIT_SIP_PORT:-5060}:5060/udp"
+      - "${LIVEKIT_SIP_RTP_PORT:-10000-20000}:${LIVEKIT_SIP_RTP_PORT:-10000-20000}/udp"
+    expose: ["${LIVEKIT_SIP_HEALTH_PORT:-8080}"]
+    restart: unless-stopped
+    depends_on:
+      livekit:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *service-logging
+    networks: [application]
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    environment:
+      CADDY_EMAIL: ${CADDY_EMAIL:?set CADDY_EMAIL}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+      DEBUG_CHAT_DOMAIN: ${DEBUG_CHAT_DOMAIN:?set DEBUG_CHAT_DOMAIN}
+      LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN:?set LIVEKIT_DOMAIN}
+      DEBUG_CHAT_BASIC_AUTH_USER: ${DEBUG_CHAT_BASIC_AUTH_USER:?set DEBUG_CHAT_BASIC_AUTH_USER}
+      DEBUG_CHAT_BASIC_AUTH_HASH: ${DEBUG_CHAT_BASIC_AUTH_HASH:?set DEBUG_CHAT_BASIC_AUTH_HASH}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      backend:
+        condition: service_healthy
+      debug-chat:
+        condition: service_started
+      livekit:
+        condition: service_healthy
+    logging: *service-logging
+    networks: [edge]
+
+networks:
+  edge:
+
+volumes:
+  minio-data:
+  caddy-data:
+  caddy-config:

@@ -24,11 +24,11 @@ Start base Compose with the environment overlay:
 ```bash
 docker compose --env-file infrastructure/compose/.env.staging \
   -f infrastructure/compose/docker-compose.yml \
-  -f infrastructure/compose/docker-compose.staging.yml config
+  -f infrastructure/compose/docker-compose.deploy.yml config
 
-docker compose --env-file infrastructure/compose/.env.prod \
+docker compose --env-file infrastructure/compose/.env.production \
   -f infrastructure/compose/docker-compose.yml \
-  -f infrastructure/compose/docker-compose.prod.yml config
+  -f infrastructure/compose/docker-compose.deploy.yml config
 ```
 
 `livekit-sip:v1.2.0` receives only the LiveKit API credentials/WS URL and Redis address. `LIVEKIT_SIP_REDIS_ADDRESS` must identify the same Redis used by the self-hosted LiveKit Server. Its native health endpoint listens on `LIVEKIT_SIP_HEALTH_PORT` inside the Compose network; Backend readiness does not depend on it.

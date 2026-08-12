@@ -26,4 +26,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN useradd --create-home --uid 10001 app
 USER app
 
-CMD ["sh", "-c", "alembic -c apps/backend/alembic.ini upgrade head && exec uvicorn backend_core.main:app --host 0.0.0.0 --port 8000"]
+CMD ["uvicorn", "backend_core.main:app", "--host", "0.0.0.0", "--port", "8000"]

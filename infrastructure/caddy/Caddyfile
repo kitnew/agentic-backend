@@ -1,0 +1,42 @@
+{
+	email {$CADDY_EMAIL}
+	admin off
+}
+
+(access_log) {
+	log {
+		output stdout
+		format filter {
+			request>headers delete
+			request>uri delete
+			wrap json
+		}
+	}
+}
+
+{$API_DOMAIN} {
+	import access_log
+
+	reverse_proxy backend:8000 {
+		health_uri /health
+		health_timeout 3s
+	}
+}
+
+{$DEBUG_CHAT_DOMAIN} {
+	import access_log
+
+	basic_auth {
+		{$DEBUG_CHAT_BASIC_AUTH_USER} {$DEBUG_CHAT_BASIC_AUTH_HASH}
+	}
+
+	reverse_proxy debug-chat:8080
+}
+
+{$LIVEKIT_DOMAIN} {
+	import access_log
+
+	reverse_proxy livekit:7880 {
+		stream_close_delay 5m
+	}
+}

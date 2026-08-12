@@ -1,0 +1,54 @@
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+COMPOSE = ROOT / "infrastructure" / "compose"
+BASE = (COMPOSE / "docker-compose.yml").read_text()
+DEV = (COMPOSE / "docker-compose.dev.yml").read_text()
+DEPLOY = (COMPOSE / "docker-compose.deploy.yml").read_text()
+CADDY = (ROOT / "infrastructure" / "caddy" / "Caddyfile").read_text()
+STAGING_ENV = (COMPOSE / ".env.staging.example").read_text()
+PRODUCTION_ENV = (COMPOSE / ".env.production.example").read_text()
+
+
+def test_compose_service_tiers_are_separate() -> None:
+    for service in ("backend", "voice-agent", "job-worker", "debug-chat", "redis", "postgres"):
+        assert f"  {service}:" in BASE
+    assert "  livekit:" in DEV
+    for service in ("caddy", "livekit", "livekit-sip", "livekit-egress", "minio", "minio-init"):
+        assert f"  {service}:" in DEPLOY
+    for service in ("caddy", "livekit-sip", "livekit-egress", "minio", "minio-init"):
+        assert f"  {service}:" not in DEV
+    assert "CALL_RECORDING_ENABLED: \"false\"" in DEV
+
+
+def test_deployment_public_ports_and_private_services() -> None:
+    for port in ('"80:80"', '"443:443"', '"${LIVEKIT_TCP_PORT:-7881}:7881"', '"${LIVEKIT_UDP_PORT:-7882}:7882/udp"', '"${LIVEKIT_SIP_PORT:-5060}:5060/tcp"', '"${LIVEKIT_SIP_PORT:-5060}:5060/udp"'):
+        assert port in DEPLOY
+    for port in ("8000:8000", "5432:5432", "6379:6379", "9000:9000", "9001:9001", "8080:8080"):
+        assert port not in DEPLOY
+
+
+def test_deployment_keeps_caddy_edge_and_persistent_state() -> None:
+    assert "admin off" in CADDY
+    assert "basic_auth" in CADDY
+    assert "reverse_proxy backend:8000" in CADDY
+    assert "reverse_proxy debug-chat:8080" in CADDY
+    assert "reverse_proxy livekit:7880" in CADDY
+    assert "stream_close_delay 5m" in CADDY
+    assert "request>headers delete" in CADDY
+    assert "request>uri delete" in CADDY
+    for volume in ("postgres-data", "redis-data", "minio-data", "caddy-data", "caddy-config"):
+        assert f"{volume}:" in BASE or f"{volume}:" in DEPLOY
+    assert "restart: \"no\"" in DEPLOY
+    assert "restart: unless-stopped" in DEPLOY
+    assert "seccomp=../livekit/egress/chrome-sandboxing-seccomp-profile.json" in DEPLOY
+    assert "enable_chrome_sandbox: true" in DEPLOY
+    assert "./apps/" not in DEPLOY
+    assert ":latest" not in BASE + DEV + DEPLOY
+
+
+def test_deployment_environments_are_selected_only_by_env_file() -> None:
+    assert not (COMPOSE / "docker-compose.staging.yml").exists()
+    assert not (COMPOSE / "docker-compose.prod.yml").exists()
+    assert "COMPOSE_PROJECT_NAME=agentic-backend-staging" in STAGING_ENV
+    assert "COMPOSE_PROJECT_NAME=agentic-backend-production" in PRODUCTION_ENV
