@@ -2,8 +2,10 @@ import asyncio
 import hashlib
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import httpx
 from contracts import (
@@ -17,6 +19,7 @@ from contracts import (
 )
 from livekit import agents, rtc
 from livekit.agents import llm
+from livekit.agents.beta.tools import EndCallTool
 from pydantic import ValidationError
 
 from voice_agent.backend import BackendClient, CallFinalizer
@@ -143,6 +146,7 @@ async def resolve_call_session_id(
 
 
 def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
+    local_now = datetime.now(ZoneInfo(context.timezone))
     return "\n\n".join(
         part
         for part in (
@@ -151,6 +155,8 @@ def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
             context.prompt.tenant_prompt,
             f"Locale: {context.locale}",
             f"Timezone: {context.timezone}",
+            f"Current local date: {local_now.date().isoformat()}",
+            f"Current local time: {local_now.strftime('%H:%M:%S')}",
             f"Conversation scope: {context.conversation_scope}",
             "Use a capability tool when its inputs are known. Do not promise success before its result. Capability results are authoritative for the requested operation.",
             "Use the calculator whenever exact arithmetic is required. It performs one operation per call; decompose multi-step calculations into sequential calls and pass each result forward. It does not interpret business meaning. percentage(A, B) means B percent of A.",
@@ -168,6 +174,7 @@ def build_agent_tools(
 ) -> list[llm.Tool | llm.Toolset]:
     return [
         calculator_tool(),
+        EndCallTool(delete_room=True, ignore_on_enter=True),
         *(
             [handoff_tool(context, backend, call_id, on_handoff)]
             if context.handoff_destinations
@@ -408,9 +415,7 @@ async def run_job(
         )
         log_runtime_binding(settings, context)
         prompt_cache_key = "voice-agent-prompt:" + hashlib.sha256(
-            "\0".join(
-                (context.prompt.system_prompt, context.prompt.profile_prompt)
-            ).encode()
+            f"{context.prompt.system_prompt}\0{context.prompt.profile_prompt}".encode()
         ).hexdigest()
         session = create_agent_session(
             settings, context.voice_runtime, prompt_cache_key

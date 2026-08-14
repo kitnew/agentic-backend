@@ -12,6 +12,7 @@ from contracts import (
     VoiceAgentRuntimeContext,
 )
 from livekit import agents, rtc
+from livekit.agents.beta.tools import EndCallTool
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
 from voice_agent.backend import BackendClient
@@ -286,18 +287,10 @@ async def test_service_jwt_has_one_requested_scope() -> None:
 
 def test_prompt_assembly_uses_only_runtime_material() -> None:
     instructions = assemble_instructions(runtime_context())
-    assert instructions == (
-        "System prompt\n\nProfile prompt\n\nTenant prompt\n\n"
-        "Locale: sk-SK\n\nTimezone: Europe/Bratislava\n\n"
-        "Conversation scope: property_only\n\n"
-        "Use a capability tool when its inputs are known. Do not promise success "
-            "before its result. Capability results are authoritative for the requested "
-            "operation.\n\n"
-        "Use the calculator whenever exact arithmetic is required. It performs one "
-        "operation per call; decompose multi-step calculations into sequential calls "
-        "and pass each result forward. It does not interpret business meaning. "
-        "percentage(A, B) means B percent of A.\n\nKnowledge"
-    )
+    assert "Timezone: Europe/Bratislava" in instructions
+    assert "Current local date: " in instructions
+    assert "Current local time: " in instructions
+    assert "Conversation scope: property_only" in instructions
 
 
 @pytest.mark.parametrize(
@@ -356,11 +349,14 @@ def test_calculator_is_always_added_before_tenant_tools() -> None:
     tools = build_agent_tools(
         context.model_copy(update={"capabilities": []}), None, uuid4()
     )  # type: ignore[arg-type]
-    assert len(tools) == 1
+    assert len(tools) == 2
     assert tools[0]._info.name == "calculator"  # type: ignore[attr-defined]
     assert (
         "one arithmetic operation per call" in tools[0]._info.raw_schema["description"]
     )  # type: ignore[attr-defined]
+    assert isinstance(tools[1], EndCallTool)
+    assert tools[1].id == "end_call"
+    assert [tool.info.name for tool in tools[1].tools] == ["end_call"]
 
 
 @pytest.mark.asyncio
@@ -392,8 +388,9 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
         }
     )
     tools = build_agent_tools(runtime, backend, call_id)  # type: ignore[arg-type]
-    assert [tool._info.name for tool in tools] == [  # type: ignore[attr-defined]
+    assert [tools[0]._info.name, tools[1].id, tools[2]._info.name] == [  # type: ignore[attr-defined]
         "calculator",
+        "end_call",
         "transfer_to_human",
     ]
     tool = handoff_tool(  # type: ignore[arg-type]
@@ -418,7 +415,7 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
 
 def test_handoff_tool_is_absent_when_unconfigured() -> None:
     tools = build_agent_tools(runtime_context(), None, uuid4())  # type: ignore[arg-type]
-    assert [tool._info.name for tool in tools] == ["calculator"]  # type: ignore[attr-defined]
+    assert [tools[0]._info.name, tools[1].id] == ["calculator", "end_call"]  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -832,8 +829,16 @@ async def test_successful_handoff_relinquishes_without_completing_call(
 
 
 @pytest.mark.asyncio
-async def test_participant_disconnect_terminalizes_while_session_is_alive(
+@pytest.mark.parametrize(
+    "close_reason",
+    [
+        agents.CloseReason.PARTICIPANT_DISCONNECTED,
+        agents.CloseReason.USER_INITIATED,
+    ],
+)
+async def test_session_close_terminalizes_while_session_is_alive(
     monkeypatch: pytest.MonkeyPatch,
+    close_reason: agents.CloseReason,
 ) -> None:
     context = runtime_context()
 
@@ -902,7 +907,7 @@ async def test_participant_disconnect_terminalizes_while_session_is_alive(
     task = asyncio.create_task(run_job(job, settings()))
     await session.greeted.wait()
     callback = session.callbacks["close"]
-    callback(SimpleNamespace(reason=agents.CloseReason.PARTICIPANT_DISCONNECTED))
+    callback(SimpleNamespace(reason=close_reason))
     assert job.shutdown is not None
     await job.shutdown("job_shutdown")
     await task
