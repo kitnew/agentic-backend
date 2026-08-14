@@ -7,19 +7,25 @@ import json
 import logging
 import os
 import re
+import signal
 import time
 from base64 import b64encode
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from urllib.parse import quote, urlparse
 from uuid import UUID
 
 import httpx
 import jsonata  # type: ignore[import-untyped]
 import jwt
+from agentic_observability.bootstrap import TelemetryProviders, bootstrap
+from agentic_observability.config import TelemetryConfig
+from agentic_observability.domain import CoreMetrics, domain_span
+from agentic_observability.logging import install_trace_context_filter
+from agentic_observability.propagation import process_message_span, trace_context_fields
 from contracts import (
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsAppendValuesResult,
@@ -42,6 +48,9 @@ from jsonschema.exceptions import (  # type: ignore[import-untyped]
 )
 from minio import Minio
 from minio.error import MinioException
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.redis import RedisInstrumentor
+from opentelemetry.trace import Tracer
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -1069,12 +1078,16 @@ class CapabilityWorker:
         backend: BackendClient,
         sheets: GoogleSheetsAppendValuesHandler,
         webhooks: ManagedWebhookPostJsonHandler | None = None,
+        tracer: Tracer | None = None,
+        metrics: CoreMetrics | None = None,
     ) -> None:
         self._settings = settings
         self._redis = redis
         self._backend = backend
         self._sheets = sheets
         self._webhooks = webhooks
+        self._tracer = tracer
+        self._metrics = metrics
 
     async def run(self) -> None:
         try:
@@ -1119,14 +1132,29 @@ class CapabilityWorker:
             await self.handle(message_id, fields)
 
     async def handle(self, message_id: str, fields: dict[str, str]) -> None:
+        with process_message_span(
+            self._tracer,
+            fields,
+            stream=self._settings.stream,
+            group=self._settings.group,
+            message_id=message_id,
+        ):
+            await self._handle(message_id, fields)
+
+    async def _handle(self, message_id: str, fields: dict[str, str]) -> None:
         try:
             job = IntegrationJob.model_validate_json(fields["job"])
         except KeyError, ValidationError:
-            await self._dead_letter(message_id, None, "invalid_execution_plan")
+            await self._dead_letter(message_id, None, "invalid_execution_plan", fields)
             return
         if job.expires_at <= datetime.now(UTC):
             await self._report_failure(
-                message_id, job, "job_expired", "Capability job expired", False
+                message_id,
+                job,
+                "job_expired",
+                "Capability job expired",
+                False,
+                fields=fields,
             )
             return
         started = datetime.now(UTC)
@@ -1141,56 +1169,78 @@ class CapabilityWorker:
                 "latency_ms": round((started - job.created_at).total_seconds() * 1000),
             },
         )
+        provider_started = time.perf_counter()
+        capability_name, capability_version, operation_id = _capability_identity(job)
         try:
-            if job.execution_plan.plan_type not in {
-                "google_sheets.append_values.v1",
-                "managed_webhook.post_json.v1",
-            }:
-                raise ExecutionError(
-                    "unknown_plan_type",
-                    "Execution plan type is unsupported",
-                    transient=False,
-                )
-            provider_started = time.perf_counter()
-            logger.info(
-                "capability_provider_call_started",
-                extra={
-                    "invocation_id": str(job.capability_invocation_id),
-                    "job_id": str(job.job_id),
-                    "plan_type": job.execution_plan.plan_type,
-                    "attempt": job.attempt,
+            with domain_span(
+                self._tracer,
+                "capability.execute",
+                {
+                    "capability.name": capability_name,
+                    "capability.version": capability_version,
+                    "operation.id": operation_id,
                 },
-            )
-            result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult
-            if job.execution_plan.plan_type == "google_sheets.append_values.v1":
-                result = await self._sheets.execute(job.execution_plan)
-            elif self._webhooks is not None:
-                result = await self._webhooks.execute(job.execution_plan)
-            else:
-                raise ExecutionError(
-                    "unknown_plan_type",
-                    "Webhook handler is unavailable",
-                    transient=False,
+            ):
+                if job.execution_plan.plan_type not in {
+                    "google_sheets.append_values.v1",
+                    "managed_webhook.post_json.v1",
+                }:
+                    raise ExecutionError(
+                        "unknown_plan_type",
+                        "Execution plan type is unsupported",
+                        transient=False,
+                    )
+                logger.info(
+                    "capability_provider_call_started",
+                    extra={
+                        "invocation_id": str(job.capability_invocation_id),
+                        "job_id": str(job.job_id),
+                        "plan_type": job.execution_plan.plan_type,
+                        "attempt": job.attempt,
+                    },
                 )
-            logger.info(
-                "capability_provider_call_completed",
-                extra={
-                    "invocation_id": str(job.capability_invocation_id),
-                    "job_id": str(job.job_id),
-                    "plan_type": job.execution_plan.plan_type,
-                    "attempt": job.attempt,
-                    "latency_ms": round(
-                        (time.perf_counter() - provider_started) * 1000
-                    ),
-                    "status": "succeeded",
-                },
-            )
+                result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult
+                if job.execution_plan.plan_type == "google_sheets.append_values.v1":
+                    result = await self._sheets.execute(job.execution_plan)
+                elif self._webhooks is not None:
+                    result = await self._webhooks.execute(job.execution_plan)
+                else:
+                    raise ExecutionError(
+                        "unknown_plan_type",
+                        "Webhook handler is unavailable",
+                        transient=False,
+                    )
+                logger.info(
+                    "capability_provider_call_completed",
+                    extra={
+                        "invocation_id": str(job.capability_invocation_id),
+                        "job_id": str(job.job_id),
+                        "plan_type": job.execution_plan.plan_type,
+                        "attempt": job.attempt,
+                        "latency_ms": round(
+                            (time.perf_counter() - provider_started) * 1000
+                        ),
+                        "status": "succeeded",
+                    },
+                )
         except ExecutionError as error:
+            self._record_capability_attempt(
+                job,
+                (
+                    "retry"
+                    if error.transient and job.attempt <= self._settings.max_retries
+                    else "failed"
+                ),
+                provider_started,
+            )
             if error.transient and job.attempt <= self._settings.max_retries:
+                if self._metrics is not None:
+                    self._metrics.command_retry("capability_execution")
                 retried = job.model_copy(update={"attempt": job.attempt + 1})
+                retried_fields = {"job": retried.model_dump_json()}
+                retried_fields.update(trace_context_fields(fields))
                 await self._redis.xadd(
-                    self._settings.stream,
-                    {"job": retried.model_dump_json()},
+                    self._settings.stream, cast(dict[Any, Any], retried_fields)
                 )
                 logger.info(
                     "capability_job_requeued",
@@ -1213,8 +1263,10 @@ class CapabilityWorker:
                 error.safe_message,
                 error.transient,
                 started,
+                fields,
             )
             return
+        self._record_capability_attempt(job, "ok", provider_started)
         report = WorkerResultReport(
             job_id=job.job_id,
             capability_invocation_id=job.capability_invocation_id,
@@ -1244,6 +1296,17 @@ class CapabilityWorker:
             return
         await self._redis.xack(self._settings.stream, self._settings.group, message_id)
 
+    def _record_capability_attempt(
+        self, job: IntegrationJob, status: str, started: float
+    ) -> None:
+        if self._metrics is not None:
+            self._metrics.capability_attempt(
+                name=_capability_identity(job)[0],
+                version=_capability_identity(job)[1],
+                status=status,
+                duration_seconds=max(0.0, time.perf_counter() - started),
+            )
+
     async def _report_failure(
         self,
         message_id: str,
@@ -1252,6 +1315,7 @@ class CapabilityWorker:
         message: str,
         transient: bool,
         started_at: datetime | None = None,
+        fields: dict[str, str] | None = None,
     ) -> None:
         report = WorkerResultReport(
             job_id=job.job_id,
@@ -1267,23 +1331,39 @@ class CapabilityWorker:
             await self._backend.report(report)
         except httpx.HTTPError, OSError:
             return
-        await self._dead_letter(message_id, job, code)
+        await self._dead_letter(message_id, job, code, fields or {})
 
     async def _dead_letter(
-        self, message_id: str, job: IntegrationJob | None, error_code: str
+        self,
+        message_id: str,
+        job: IntegrationJob | None,
+        error_code: str,
+        fields: dict[str, str],
     ) -> None:
+        dead_letter = {
+            "source_message_id": message_id,
+            "job_id": str(job.job_id) if job else "unknown",
+            "invocation_id": str(job.capability_invocation_id) if job else "unknown",
+            "error_code": error_code,
+        }
+        dead_letter.update(trace_context_fields(fields))
         await self._redis.xadd(
-            self._settings.dead_letter_stream,
-            {
-                "source_message_id": message_id,
-                "job_id": str(job.job_id) if job else "unknown",
-                "invocation_id": str(job.capability_invocation_id)
-                if job
-                else "unknown",
-                "error_code": error_code,
-            },
+            self._settings.dead_letter_stream, cast(dict[Any, Any], dead_letter)
         )
+        if self._metrics is not None:
+            self._metrics.command_dlq("capability_execution", error_code)
         await self._redis.xack(self._settings.stream, self._settings.group, message_id)
+
+
+def _capability_identity(job: IntegrationJob) -> tuple[str, str, str]:
+    plan = job.execution_plan
+    if isinstance(plan, ManagedWebhookPostJsonPlan):
+        return (
+            plan.capability.semantic_key,
+            str(plan.capability.semantic_version),
+            str(plan.operation_id),
+        )
+    return "google_sheets.append_values", "v1", str(plan.idempotency.operation_id)
 
 
 async def run_worker(settings: Settings) -> None:
@@ -1294,51 +1374,107 @@ async def run_worker(settings: Settings) -> None:
         MaterializeArtifactRepresentationHandler,
     )
 
-    redis = Redis.from_url(
-        settings.redis_url,
-        decode_responses=True,
-        socket_timeout=None,
-    )
-    async with (
-        httpx.AsyncClient(timeout=settings.provider_timeout_seconds) as provider_client,
-        httpx.AsyncClient(timeout=10.0) as backend_client,
-    ):
-        credentials = MountedSecretFileCredentialResolver(
-            settings.credential_file_map_json, settings.credential_secrets_dir
+    telemetry: TelemetryProviders | None = None
+    redis: Redis | None = None
+    sigterm_installed = False
+    try:
+        if os.getenv("OTEL_ENABLED", "").lower() == "true":
+            telemetry = bootstrap(
+                TelemetryConfig.from_env(default_service_name="job-worker")
+            )
+            install_trace_context_filter(logging.getLogger().handlers)
+        tracer = telemetry.tracer(__name__) if telemetry is not None else None
+        meter = telemetry.meter(__name__) if telemetry is not None else None
+        metrics = CoreMetrics(meter) if meter is not None else None
+        redis = Redis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_timeout=None,
         )
-        webhooks = ManagedWebhookPostJsonHandler(
-            ManagedWebhookConnectionResolver(
-                settings.managed_webhook_map_json,
-                settings.credential_secrets_dir,
-                settings.managed_webhook_map_file,
-            ),
-            provider_client,
-            allow_insecure=settings.allow_insecure_webhooks,
-        )
-        backend = BackendClient(settings, backend_client, RecordingStorage(settings))
-        worker = CapabilityWorker(
-            settings,
-            redis,
-            backend,
-            GoogleSheetsAppendValuesHandler(credentials, provider_client),
-            webhooks,
-        )
-        command_worker = CommandWorker(
-            settings,
-            redis,
-            {
-                "call.generate_summary.v1": GenerateCallSummaryHandler(
-                    settings, backend, provider_client
+        if telemetry is not None and telemetry.tracer_provider is not None:
+            RedisInstrumentor.instrument_client(
+                redis,
+                tracer_provider=telemetry.tracer_provider,  # type: ignore[arg-type]
+            )
+        async with (
+            httpx.AsyncClient(
+                timeout=settings.provider_timeout_seconds
+            ) as provider_client,
+            httpx.AsyncClient(timeout=10.0) as backend_client,
+        ):
+            if (
+                telemetry is not None
+                and telemetry.tracer_provider is not None
+                and telemetry.meter_provider is not None
+            ):
+                HTTPXClientInstrumentor.instrument_client(
+                    provider_client,
+                    tracer_provider=telemetry.tracer_provider,  # type: ignore[arg-type]
+                    meter_provider=telemetry.meter_provider,  # type: ignore[arg-type]
+                )
+                HTTPXClientInstrumentor.instrument_client(
+                    backend_client,
+                    tracer_provider=telemetry.tracer_provider,  # type: ignore[arg-type]
+                    meter_provider=telemetry.meter_provider,  # type: ignore[arg-type]
+                )
+            credentials = MountedSecretFileCredentialResolver(
+                settings.credential_file_map_json, settings.credential_secrets_dir
+            )
+            webhooks = ManagedWebhookPostJsonHandler(
+                ManagedWebhookConnectionResolver(
+                    settings.managed_webhook_map_json,
+                    settings.credential_secrets_dir,
+                    settings.managed_webhook_map_file,
                 ),
-                "call.execute_post_call_action.v1": ExecutePostCallActionHandler(
-                    backend, webhooks
-                ),
-                "artifact.materialize_representation.v1": (
-                    MaterializeArtifactRepresentationHandler(backend)
-                ),
-            },
-        )
-        try:
+                provider_client,
+                allow_insecure=settings.allow_insecure_webhooks,
+            )
+            backend = BackendClient(
+                settings, backend_client, RecordingStorage(settings)
+            )
+            worker = CapabilityWorker(
+                settings,
+                redis,
+                backend,
+                GoogleSheetsAppendValuesHandler(credentials, provider_client),
+                webhooks,
+                tracer,
+                metrics,
+            )
+            command_worker = CommandWorker(
+                settings,
+                redis,
+                {
+                    "call.generate_summary.v1": GenerateCallSummaryHandler(
+                        settings, backend, provider_client
+                    ),
+                    "call.execute_post_call_action.v1": ExecutePostCallActionHandler(
+                        backend, webhooks
+                    ),
+                    "artifact.materialize_representation.v1": (
+                        MaterializeArtifactRepresentationHandler(backend)
+                    ),
+                },
+                tracer,
+                metrics,
+            )
+            sigterm_installed = _cancel_on_sigterm()
             await asyncio.gather(worker.run(), command_worker.run())
-        finally:
+    finally:
+        if sigterm_installed:
+            asyncio.get_running_loop().remove_signal_handler(signal.SIGTERM)
+        if redis is not None:
             await redis.aclose()
+        if telemetry is not None:
+            telemetry.shutdown()
+
+
+def _cancel_on_sigterm() -> bool:
+    task = asyncio.current_task()
+    if task is None:
+        return False
+    try:
+        asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, task.cancel)
+    except NotImplementedError, RuntimeError:
+        return False
+    return True

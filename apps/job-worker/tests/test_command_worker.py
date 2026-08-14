@@ -139,6 +139,41 @@ async def test_transient_failure_retries_then_reports_and_dead_letters() -> None
 
 
 @pytest.mark.asyncio
+async def test_command_retry_result_and_dead_letter_keep_w3c_metadata_outside_payload() -> (
+    None
+):
+    redis = Redis()
+
+    async def fail(command, envelope):
+        raise ExecutionError("provider_timeout", "timed out", transient=True)
+
+    worker = CommandWorker(settings(), redis, {"call.generate_summary.v1": fail})
+    envelope = message()
+    encoded = envelope.model_dump_json()
+    fields = {
+        "message": encoded,
+        "traceparent": "00-" + "1" * 32 + "-" + "2" * 16 + "-01",
+        "tracestate": "vendor=value",
+    }
+
+    await worker.handle("1-0", fields)
+    retried = redis.streams["application:commands"][0]
+    await worker.handle("2-0", retried)
+
+    assert envelope.model_dump_json() == encoded
+    assert retried["traceparent"] == fields["traceparent"]
+    assert retried["tracestate"] == fields["tracestate"]
+    assert (
+        redis.streams["application:command-results"][0]["traceparent"]
+        == fields["traceparent"]
+    )
+    assert (
+        redis.streams["application:commands:dead-letter"][0]["tracestate"]
+        == fields["tracestate"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_post_call_action_stays_logical_and_uses_generic_webhook_handler() -> (
     None
 ):

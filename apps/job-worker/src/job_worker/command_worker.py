@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import time
 from base64 import b64encode
 from collections.abc import Awaitable, Callable
-from typing import cast
+from typing import Any, cast
 
 import httpx
+from agentic_observability.domain import CoreMetrics, domain_span
+from agentic_observability.propagation import process_message_span, trace_context_fields
 from contracts import (
     CommandError,
     CommandResult,
@@ -15,6 +18,7 @@ from contracts import (
     MessageEnvelope,
     parse_command,
 )
+from opentelemetry.trace import Tracer
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -211,12 +215,16 @@ class CommandWorker:
         settings: Settings,
         redis: Redis,
         handlers: dict[str, CommandHandler],
+        tracer: Tracer | None = None,
+        metrics: CoreMetrics | None = None,
     ) -> None:
         if len(handlers) != len(set(handlers)):
             raise ValueError("each command type must have exactly one handler")
         self._settings = settings
         self._redis = redis
         self._handlers = handlers
+        self._tracer = tracer
+        self._metrics = metrics
 
     async def run(self) -> None:
         try:
@@ -261,6 +269,16 @@ class CommandWorker:
             await self.handle(message_id, fields)
 
     async def handle(self, message_id: str, fields: dict[str, str]) -> None:
+        with process_message_span(
+            self._tracer,
+            fields,
+            stream=self._settings.command_stream,
+            group=self._settings.command_group,
+            message_id=message_id,
+        ):
+            await self._handle(message_id, fields)
+
+    async def _handle(self, message_id: str, fields: dict[str, str]) -> None:
         try:
             envelope = MessageEnvelope.model_validate_json(fields["message"])
             command = parse_command(envelope)
@@ -268,13 +286,16 @@ class CommandWorker:
             if attempt < 1 or attempt > self._settings.max_retries + 1:
                 raise ValueError("invalid command attempt")
         except KeyError, ValueError, ValidationError:
-            await self._dead_letter(message_id, "unknown", "invalid_command")
+            await self._dead_letter(message_id, "unknown", "invalid_command", fields)
             return
         completed_key = f"application:commands:completed:{envelope.message_id}"
         completed = await self._redis.get(completed_key)
         if completed is not None:
+            result_fields = {"message": completed}
+            result_fields.update(trace_context_fields(fields))
             await self._redis.xadd(
-                self._settings.command_result_stream, {"message": completed}
+                self._settings.command_result_stream,
+                cast(dict[Any, Any], result_fields),
             )
             await self._ack(message_id)
             return
@@ -287,40 +308,73 @@ class CommandWorker:
                 ExecutionError(
                     "unknown_command_type", "Command is unsupported", transient=False
                 ),
+                fields,
             )
             return
+        operation, span_name = _command_operation(envelope.message_type)
+        started = time.perf_counter()
         try:
-            output = await handler(command, envelope)
+            with domain_span(
+                self._tracer,
+                span_name,
+                {
+                    "tenant.id": str(envelope.tenant_id),
+                    "call.id": str(envelope.correlation_id),
+                    "operation.type": operation,
+                },
+            ):
+                output = await handler(command, envelope)
         except httpx.HTTPError, OSError:
             execution_error = ExecutionError(
                 "command_transport_error", "Command transport failed", transient=True
             )
+            self._record_command(
+                operation,
+                "retry" if attempt <= self._settings.max_retries else "failed",
+                started,
+            )
             if attempt <= self._settings.max_retries:
+                self._record_retry(operation)
+                retried_fields = {
+                    "message": envelope.model_dump_json(),
+                    "attempt": str(attempt + 1),
+                }
+                retried_fields.update(trace_context_fields(fields))
                 await self._redis.xadd(
                     self._settings.command_stream,
-                    {
-                        "message": envelope.model_dump_json(),
-                        "attempt": str(attempt + 1),
-                    },
+                    cast(dict[Any, Any], retried_fields),
                 )
                 await self._ack(message_id)
                 return
-            await self._terminal_failure(message_id, envelope, attempt, execution_error)
+            await self._terminal_failure(
+                message_id, envelope, attempt, execution_error, fields
+            )
             return
         except ExecutionError as error:
+            self._record_command(
+                operation,
+                "retry"
+                if error.transient and attempt <= self._settings.max_retries
+                else "failed",
+                started,
+            )
             if error.transient and attempt <= self._settings.max_retries:
+                self._record_retry(operation)
+                retried_fields = {
+                    "message": envelope.model_dump_json(),
+                    "attempt": str(attempt + 1),
+                }
+                retried_fields.update(trace_context_fields(fields))
                 await self._redis.xadd(
                     self._settings.command_stream,
-                    {
-                        "message": envelope.model_dump_json(),
-                        "attempt": str(attempt + 1),
-                    },
+                    cast(dict[Any, Any], retried_fields),
                 )
                 await self._ack(message_id)
                 return
-            await self._terminal_failure(message_id, envelope, attempt, error)
+            await self._terminal_failure(message_id, envelope, attempt, error, fields)
             return
         except Exception:  # noqa: BLE001 - command boundary returns a safe error
+            self._record_command(operation, "failed", started)
             await self._terminal_failure(
                 message_id,
                 envelope,
@@ -330,8 +384,10 @@ class CommandWorker:
                     "Command execution failed",
                     transient=False,
                 ),
+                fields,
             )
             return
+        self._record_command(operation, "ok", started)
         result = CommandResult(
             command_id=envelope.message_id,
             command_type=command.command_type,
@@ -339,7 +395,7 @@ class CommandWorker:
             output=output,
             attempt=attempt,
         )
-        await self._publish_result(envelope, result, completed_key)
+        await self._publish_result(envelope, result, completed_key, fields)
         await self._ack(message_id)
 
     async def _terminal_failure(
@@ -348,6 +404,7 @@ class CommandWorker:
         envelope: MessageEnvelope,
         attempt: int,
         error: ExecutionError,
+        fields: dict[str, str],
     ) -> None:
         result = CommandResult(
             command_id=envelope.message_id,
@@ -364,11 +421,22 @@ class CommandWorker:
             envelope,
             result,
             f"application:commands:completed:{envelope.message_id}",
+            fields,
         )
-        await self._dead_letter(message_id, str(envelope.message_id), error.code)
+        await self._dead_letter(
+            message_id,
+            str(envelope.message_id),
+            error.code,
+            fields,
+            operation=_command_operation(envelope.message_type)[0],
+        )
 
     async def _publish_result(
-        self, envelope: MessageEnvelope, result: CommandResult, completed_key: str
+        self,
+        envelope: MessageEnvelope,
+        result: CommandResult,
+        completed_key: str,
+        fields: dict[str, str],
     ) -> None:
         message = MessageEnvelope(
             message_kind="command_result",
@@ -378,25 +446,69 @@ class CommandWorker:
             tenant_id=envelope.tenant_id,
             payload=result.model_dump(mode="json"),
         ).model_dump_json()
+        result_fields = {"message": message}
+        result_fields.update(trace_context_fields(fields))
         await self._redis.xadd(
-            self._settings.command_result_stream, {"message": message}
+            self._settings.command_result_stream,
+            cast(dict[Any, Any], result_fields),
         )
         await self._redis.set(completed_key, message, ex=7 * 24 * 60 * 60)
 
     async def _dead_letter(
-        self, message_id: str, command_id: str, error_code: str
+        self,
+        message_id: str,
+        command_id: str,
+        error_code: str,
+        fields: dict[str, str],
+        *,
+        operation: str = "unknown",
     ) -> None:
+        dead_letter = {
+            "source_message_id": message_id,
+            "command_id": command_id,
+            "error_code": error_code,
+        }
+        dead_letter.update(trace_context_fields(fields))
         await self._redis.xadd(
             self._settings.command_dead_letter_stream,
-            {
-                "source_message_id": message_id,
-                "command_id": command_id,
-                "error_code": error_code,
-            },
+            cast(dict[Any, Any], dead_letter),
         )
+        if self._metrics is not None:
+            self._metrics.command_dlq(operation, error_code)
         await self._ack(message_id)
+
+    def _record_command(self, operation: str, status: str, started: float) -> None:
+        if self._metrics is None:
+            return
+        duration = max(0.0, time.perf_counter() - started)
+        self._metrics.command_attempt(
+            operation=operation, status=status, duration_seconds=duration
+        )
+        self._metrics.post_call(
+            operation=operation, status=status, duration_seconds=duration
+        )
+        if operation == "post_call_action":
+            self._metrics.integration(status=status, duration_seconds=duration)
+
+    def _record_retry(self, operation: str) -> None:
+        if self._metrics is not None:
+            self._metrics.command_retry(operation)
 
     async def _ack(self, message_id: str) -> None:
         await self._redis.xack(
             self._settings.command_stream, self._settings.command_group, message_id
         )
+
+
+def _command_operation(command_type: str) -> tuple[str, str]:
+    return {
+        "call.generate_summary.v1": (
+            "summary_generation",
+            "post_call.summary.generate",
+        ),
+        "call.execute_post_call_action.v1": ("post_call_action", "integration.execute"),
+        "artifact.materialize_representation.v1": (
+            "artifact_materialization",
+            "artifact.materialize",
+        ),
+    }.get(command_type, ("unknown", "post_call.process"))
