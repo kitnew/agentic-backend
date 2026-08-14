@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from contracts import MessageEnvelope
+from opentelemetry.trace import Tracer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -163,17 +164,19 @@ class RecordingCoordinator:
         *,
         event_stream: str,
         command_stream: str,
+        tracer: Tracer | None = None,
     ) -> None:
         self._database = database
         self._livekit = livekit
         self._event_stream = event_stream
         self._command_stream = command_stream
+        self._tracer = tracer
 
     def _service(self, session: AsyncSession) -> RecordingService:
         return RecordingService(
             session,
             TransactionalOutboxBus(
-                session, self._event_stream, self._command_stream
+                session, self._event_stream, self._command_stream, self._tracer
             ),
         )
 

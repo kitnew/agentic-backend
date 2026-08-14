@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -117,6 +117,18 @@ class CallSessionRepository:
             .limit(limit)
         )
         return [StaleRuntimeCall(*row) for row in rows.tuples()]
+
+    async def count_active(self) -> int:
+        value = await self._session.scalar(
+            select(func.count())
+            .select_from(CallSession)
+            .where(
+                CallSession.status.in_(
+                    [CallSessionStatus.STARTED, CallSessionStatus.CONNECTED]
+                )
+            )
+        )
+        return int(value or 0)
 
     async def flush(self) -> None:
         await self._session.flush()

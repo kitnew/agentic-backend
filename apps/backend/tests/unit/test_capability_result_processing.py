@@ -302,8 +302,17 @@ async def test_failed_result_persists_typed_error_and_terminal_replay_is_harmles
     None
 ):
     current = invocation("google_sheets.append_values.v1")
+
+    class Metrics:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def capability_completed(self, **_kwargs) -> None:
+            self.calls += 1
+
+    metrics = Metrics()
     service = CapabilityInvocationService(
-        InvocationRepository(current), None, None, None, None, None
+        InvocationRepository(current), None, None, None, None, None, metrics=metrics
     )
     failed = report(
         current,
@@ -316,6 +325,7 @@ async def test_failed_result_persists_typed_error_and_terminal_replay_is_harmles
 
     assert completed is replayed
     assert completed.status is CapabilityInvocationStatus.FAILED
+    assert metrics.calls == 1
     assert completed.technical_result == {
         "error": {
             "code": "provider_timeout",

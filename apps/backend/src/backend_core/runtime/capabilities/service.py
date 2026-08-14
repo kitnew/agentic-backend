@@ -1,10 +1,13 @@
 import json
 import logging
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from typing import Any
 from uuid import UUID, uuid4
 
+from agentic_observability.domain import CoreMetrics, domain_span
+from agentic_observability.propagation import inject_trace_context
 from contracts import (
     TENANT_CONFIG_SCHEMAS,
     CapabilityConfirmationResponse,
@@ -19,6 +22,7 @@ from contracts import (
     TenantConfigV3,
     WorkerResultReport,
 )
+from opentelemetry.trace import Tracer
 from pydantic import ValidationError
 
 from backend_core.modules.calls.models import CallSessionStatus
@@ -67,6 +71,8 @@ class CapabilityInvocationService:
         tenants: TenantRepository,
         configs: ConfigRevisionRepository,
         connections: IntegrationConnectionRepository,
+        tracer: Tracer | None = None,
+        metrics: CoreMetrics | None = None,
     ) -> None:
         self._invocations = invocations
         self._calls = calls
@@ -74,6 +80,8 @@ class CapabilityInvocationService:
         self._tenants = tenants
         self._configs = configs
         self._connections = connections
+        self._tracer = tracer
+        self._metrics = metrics
 
     @staticmethod
     def _requested_capability(
@@ -110,9 +118,7 @@ class CapabilityInvocationService:
                 "configuration_invalid", "Pinned configuration is unavailable"
             )
         config = self._capability_config(revision.schema_version, revision.config)
-        _, profile, semantic = self._requested_capability(
-            config, request.capability
-        )
+        _, profile, semantic = self._requested_capability(config, request.capability)
         if not profile.enabled:
             raise CapabilityValidationError(
                 "capability_disabled", "Capability is disabled"
@@ -251,6 +257,26 @@ class CapabilityInvocationService:
         *,
         skip_confirmation: bool = False,
     ) -> tuple[CapabilityInvocation, bool]:
+        with domain_span(
+            self._tracer, "capability.prepare", {"call.id": str(call_id)}
+        ) as span:
+            invocation, created = await self._invoke(
+                call_id, request, skip_confirmation=skip_confirmation
+            )
+            if span is not None:
+                span.set_attribute("tenant.id", str(invocation.tenant_id))
+                span.set_attribute("conversation.id", str(invocation.conversation_id))
+                span.set_attribute("capability.name", invocation.semantic_key)
+                span.set_attribute("capability.version", invocation.semantic_version)
+            return invocation, created
+
+    async def _invoke(
+        self,
+        call_id: UUID,
+        request: CapabilityInvocationRequest,
+        *,
+        skip_confirmation: bool = False,
+    ) -> tuple[CapabilityInvocation, bool]:
         call = await self._calls.get(call_id)
         if call is None:
             raise CapabilityValidationError("call_not_found", "Call does not exist")
@@ -381,14 +407,29 @@ class CapabilityInvocationService:
             operation_id=invocation_id,
             job_id=job_id,
         )
-        outbox = OutboxMessage(
-            job_id=job_id,
-            capability_invocation_id=invocation_id,
-            payload=job.model_dump(mode="json"),
+        metadata: dict[str, str] = {}
+        scope = (
+            self._tracer.start_as_current_span(
+                "messaging.outbox.create",
+                attributes={
+                    "messaging.system": "redis",
+                },
+            )
+            if self._tracer is not None
+            else nullcontext()
         )
-        created_invocation, created = await self._invocations.add_with_outbox(
-            invocation, outbox
-        )
+        with scope:
+            if self._tracer is not None:
+                inject_trace_context(metadata)
+            outbox = OutboxMessage(
+                job_id=job_id,
+                capability_invocation_id=invocation_id,
+                payload=job.model_dump(mode="json"),
+                transport_metadata=metadata,
+            )
+            created_invocation, created = await self._invocations.add_with_outbox(
+                invocation, outbox
+            )
         if created:
             logger.info(
                 "capability_plan_compiled",
@@ -485,6 +526,17 @@ class CapabilityInvocationService:
             invocation.error_code = "execution_failed"
             invocation.error_message = "The reservation request could not be submitted"
         await self._invocations.flush()
+        if self._metrics is not None:
+            self._metrics.capability_completed(
+                name=invocation.semantic_key,
+                version=str(invocation.semantic_version),
+                status="succeeded" if report.status == "succeeded" else "failed",
+                duration_seconds=max(
+                    0.0,
+                    (report.completed_at - invocation.created_at).total_seconds(),
+                ),
+                error_type=report.error.code if report.error is not None else None,
+            )
         logger.info(
             "capability_result_reported",
             extra={

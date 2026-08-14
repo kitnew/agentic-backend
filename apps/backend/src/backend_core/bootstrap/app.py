@@ -33,6 +33,8 @@ def create_app(
     app.state.database = database
     app.state.settings = settings
     app.state.livekit = livekit
+    app.state.outbox_tracer = None
+    app.state.core_metrics = None
 
     app.include_router(router)
 

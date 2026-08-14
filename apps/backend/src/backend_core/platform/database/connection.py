@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from sqlalchemy import text
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -28,6 +29,10 @@ class Database:
     async def ping(self) -> None:
         async with self._engine.connect() as connection:
             await connection.execute(text("SELECT 1"))
+
+    @property
+    def instrumentable_engine(self) -> Engine:
+        return self._engine.sync_engine
 
     async def close(self) -> None:
         await self._engine.dispose()

@@ -3,11 +3,19 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 
+from agentic_observability.bootstrap import TelemetryProviders, bootstrap
+from agentic_observability.config import TelemetryConfig
+from agentic_observability.domain import CoreMetrics
 from contracts import CommandResult, MessageEnvelope
 from fastapi import FastAPI
 from redis.asyncio import Redis
 
+from backend_core.bootstrap.instrumentation import (
+    instrument_app,
+    instrument_redis_client,
+)
 from backend_core.modules.calls.reconciliation import CallRuntimeReconciler
+from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.platform.messaging import (
     FINALIZATION_EVENT_GROUP,
     FINALIZATION_RESULT_GROUP,
@@ -23,6 +31,31 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    telemetry: TelemetryProviders | None = None
+    tracer = None
+    metrics = None
+    if app.state.settings.otel_enabled:
+        telemetry = bootstrap(
+            TelemetryConfig.from_env(default_service_name="backend-core")
+        )
+        tracer = telemetry.tracer(__name__)
+        meter = telemetry.meter(__name__)
+        metrics = CoreMetrics(meter) if meter is not None else None
+        if (
+            telemetry.tracer_provider is not None
+            and telemetry.meter_provider is not None
+        ):
+            instrument_app(app, telemetry)
+            app.state.livekit.instrument_http(
+                telemetry.tracer_provider, telemetry.meter_provider
+            )
+    app.state.outbox_tracer = tracer
+    app.state.core_metrics = metrics
+    if metrics is not None:
+        async with app.state.database.transaction() as session:
+            metrics.set_active_calls(
+                await CallSessionRepository(session).count_active()
+            )
     await app.state.livekit.start()
     redis: Redis | None = None
     dispatcher: OutboxDispatcher | None = None
@@ -34,6 +67,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             decode_responses=True,
             socket_timeout=None,
         )
+        if (
+            telemetry is not None
+            and telemetry.tracer_provider is not None
+            and telemetry.meter_provider is not None
+        ):
+            instrument_redis_client(redis, telemetry)
         dispatcher = OutboxDispatcher(
             app.state.database,
             redis,
@@ -45,6 +84,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.settings.capability_outbox_retention_seconds,
             app.state.settings.capability_stream_maxlen,
             app.state.settings.capability_retention_maintenance_interval_seconds,
+            tracer,
         )
         dispatcher.start()
 
@@ -59,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     app.state.livekit,
                     event_stream=app.state.settings.domain_event_stream,
                     command_stream=app.state.settings.command_stream,
+                    tracer=tracer,
                 ).ensure(event.correlation_id)
                 return
             if event.message_type not in {
@@ -74,7 +115,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         session,
                         app.state.settings.domain_event_stream,
                         app.state.settings.command_stream,
+                        tracer,
                     ),
+                    tracer,
                 )
                 if event.message_type == "call.ended":
                     await finalization.start(event)
@@ -96,7 +139,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         session,
                         app.state.settings.domain_event_stream,
                         app.state.settings.command_stream,
+                        tracer,
                     ),
+                    tracer,
                 ).handle_result(envelope, result)
 
         consumers = [
@@ -106,6 +151,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 FINALIZATION_EVENT_GROUP,
                 "backend-finalization",
                 handle_event,
+                tracer=tracer,
             ),
             RedisStreamConsumer(
                 redis,
@@ -113,6 +159,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 FINALIZATION_RESULT_GROUP,
                 "backend-finalization-results",
                 handle_result,
+                tracer=tracer,
             ),
         ]
         for consumer in consumers:
@@ -127,6 +174,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 event_stream=app.state.settings.domain_event_stream,
                 command_stream=app.state.settings.command_stream,
                 recording_enabled=app.state.settings.call_recording_enabled,
+                tracer=tracer,
+                metrics=metrics,
             ).run(app.state.settings.call_runtime_reconciliation_interval_seconds)
         )
     logger.info("Backend Core started")
@@ -144,6 +193,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await dispatcher.close()
         if redis is not None:
             await redis.aclose()
+        if telemetry is not None:
+            telemetry.shutdown()
         await app.state.livekit.aclose()
         await app.state.database.close()
         logger.info("Backend Core stopped")

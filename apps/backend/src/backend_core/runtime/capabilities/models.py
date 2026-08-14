@@ -164,6 +164,9 @@ class OutboxMessage(Base):
         String(32), default="job", server_default="job"
     )
     payload: Mapped[dict[str, object]] = mapped_column(JSONB)
+    transport_metadata: Mapped[dict[str, str]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

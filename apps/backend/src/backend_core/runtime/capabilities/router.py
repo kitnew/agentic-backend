@@ -2,6 +2,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
+from agentic_observability.domain import CoreMetrics
 from contracts import (
     CapabilityConfirmationConfirmRequest,
     CapabilityConfirmationResponse,
@@ -9,7 +10,8 @@ from contracts import (
     CapabilityInvocationResponse,
     WorkerResultReport,
 )
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from opentelemetry.trace import Tracer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.calls.repository import CallSessionRepository
@@ -35,7 +37,11 @@ worker_router = APIRouter(
 )
 
 
-def build_service(session: AsyncSession) -> CapabilityInvocationService:
+def build_service(
+    session: AsyncSession,
+    tracer: Tracer | None = None,
+    metrics: CoreMetrics | None = None,
+) -> CapabilityInvocationService:
     return CapabilityInvocationService(
         CapabilityInvocationRepository(session),
         CallSessionRepository(session),
@@ -43,11 +49,15 @@ def build_service(session: AsyncSession) -> CapabilityInvocationService:
         TenantRepository(session),
         ConfigRevisionRepository(session),
         IntegrationConnectionRepository(session),
+        tracer,
+        metrics,
     )
 
 
-def service(session: DatabaseSession) -> CapabilityInvocationService:
-    return build_service(session)
+def service(session: DatabaseSession, request: Request) -> CapabilityInvocationService:
+    return build_service(
+        session, request.app.state.outbox_tracer, request.app.state.core_metrics
+    )
 
 
 Service = Annotated[CapabilityInvocationService, Depends(service)]

@@ -2,8 +2,10 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
-from typing import cast
+from typing import Any, cast
 
+from agentic_observability.propagation import process_message_span, trace_context_fields
+from opentelemetry.trace import Tracer
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
@@ -22,6 +24,7 @@ class RedisStreamConsumer:
         *,
         max_retries: int = 3,
         stale_idle_ms: int = 30_000,
+        tracer: Tracer | None = None,
     ) -> None:
         self._redis = redis
         self._stream = stream
@@ -30,6 +33,7 @@ class RedisStreamConsumer:
         self._handler = handler
         self._max_retries = max_retries
         self._stale_idle_ms = stale_idle_ms
+        self._tracer = tracer
         self._task: asyncio.Task[None] | None = None
 
     def start(self) -> None:
@@ -96,21 +100,38 @@ class RedisStreamConsumer:
 
     async def handle(self, message_id: str, fields: dict[str, str]) -> None:
         try:
-            await self._handler(fields)
+            await self._handle_with_trace(message_id, fields)
         except Exception as error:  # noqa: BLE001 - handler failure is retried/DLQ'd
             attempts = await self._redis.incr(
                 f"messaging:attempt:{self._stream}:{self._group}:{message_id}"
             )
             if attempts <= self._max_retries:
                 return
+            dead_letter = {
+                "source_message_id": message_id,
+                "error_type": type(error).__name__,
+            }
+            dead_letter.update(trace_context_fields(fields))
             await self._redis.xadd(
                 f"{self._stream}:{self._group}:dead-letter",
-                {
-                    "source_message_id": message_id,
-                    "error_type": type(error).__name__,
-                },
+                cast(dict[Any, Any], dead_letter),
             )
         await self._redis.xack(self._stream, self._group, message_id)
         await self._redis.delete(
             f"messaging:attempt:{self._stream}:{self._group}:{message_id}"
         )
+
+    async def _handle_with_trace(
+        self, message_id: str, fields: dict[str, str]
+    ) -> None:
+        if self._tracer is None:
+            await self._handler(fields)
+            return
+        with process_message_span(
+            self._tracer,
+            fields,
+            stream=self._stream,
+            group=self._group,
+            message_id=message_id,
+        ):
+            await self._handler(fields)

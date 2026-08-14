@@ -43,6 +43,7 @@ def service(session: DatabaseSession, request: Request) -> FinalizationService:
             session,
             request.app.state.settings.domain_event_stream,
             request.app.state.settings.command_stream,
+            request.app.state.outbox_tracer,
         ),
     )
 

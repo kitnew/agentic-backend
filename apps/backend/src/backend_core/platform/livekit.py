@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import timedelta
 
+import aiohttp
 from livekit import api
 from livekit.protocol import agent_dispatch
 from livekit.protocol import room as room_proto
@@ -36,14 +37,33 @@ class LiveKitAdapter:
         self._participant_token_ttl_seconds = participant_token_ttl_seconds
         self._sip_outbound_trunk_id = sip_outbound_trunk_id
         self._client: api.LiveKitAPI | None = None
+        self._session: aiohttp.ClientSession | None = None
+        self._trace_config: aiohttp.TraceConfig | None = None
+
+    def instrument_http(
+        self,
+        tracer_provider: object,
+        meter_provider: object,
+    ) -> None:
+        if self._client is not None:
+            raise RuntimeError("LiveKit telemetry must be configured before start")
+        from opentelemetry.instrumentation.aiohttp_client import create_trace_config
+
+        self._trace_config = create_trace_config(
+            tracer_provider=tracer_provider,  # type: ignore[arg-type]
+            meter_provider=meter_provider,  # type: ignore[arg-type]
+        )
 
     @property
     def client(self) -> api.LiveKitAPI:
         if self._client is None:
+            if self._trace_config is not None:
+                self._session = aiohttp.ClientSession(trace_configs=[self._trace_config])
             self._client = api.LiveKitAPI(
                 self._url,
                 self._api_key,
                 self._api_secret,
+                session=self._session,
             )
         return self._client
 
@@ -179,3 +199,5 @@ class LiveKitAdapter:
     async def aclose(self) -> None:
         if self._client is not None:
             await self._client.aclose()
+        if self._session is not None:
+            await self._session.close()

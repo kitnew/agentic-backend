@@ -42,6 +42,18 @@ class Events:
         self.messages.append(event)
 
 
+class Metrics:
+    def __init__(self) -> None:
+        self.started = 0
+        self.terminal: list[tuple[str, bool]] = []
+
+    def call_started(self) -> None:
+        self.started += 1
+
+    def call_terminal(self, status, duration, *, was_active) -> None:
+        self.terminal.append((status, was_active))
+
+
 def call() -> CallSession:
     return CallSession(
         id=uuid4(),
@@ -58,7 +70,9 @@ def call() -> CallSession:
     )
 
 
-def service(current: CallSession) -> tuple[CallSessionService, Events]:
+def service(
+    current: CallSession, metrics: Metrics | None = None
+) -> tuple[CallSessionService, Events]:
     events = Events()
     return (
         CallSessionService(
@@ -70,6 +84,7 @@ def service(current: CallSession) -> tuple[CallSessionService, Events]:
             None,  # type: ignore[arg-type]
             Conversations(),  # type: ignore[arg-type]
             events,
+            metrics=metrics,  # type: ignore[arg-type]
         ),
         events,
     )
@@ -78,7 +93,8 @@ def service(current: CallSession) -> tuple[CallSessionService, Events]:
 @pytest.mark.asyncio
 async def test_allowed_lifecycle_transitions_emit_authoritative_events() -> None:
     current = call()
-    lifecycle, events = service(current)
+    metrics = Metrics()
+    lifecycle, events = service(current, metrics)
 
     await lifecycle.mark_started(current.id)
     await lifecycle.mark_connected(current.id)
@@ -90,6 +106,8 @@ async def test_allowed_lifecycle_transitions_emit_authoritative_events() -> None
         "call.connected",
         "call.ended",
     ]
+    assert metrics.started == 1
+    assert metrics.terminal == [("completed", True)]
 
     await lifecycle.end(current.id, ConversationPersistenceStatus.COMPLETE)
     assert [message.message_type for message in events.messages] == [

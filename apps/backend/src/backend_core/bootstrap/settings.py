@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     command_result_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
         "application:command-results"
     )
+    otel_enabled: bool = False
     outbox_dispatch_enabled: bool = False
     outbox_dispatch_interval_seconds: Annotated[float, Field(gt=0, le=60)] = 1.0
     capability_invocation_pii_retention_seconds: Annotated[int, Field(gt=0)] = (

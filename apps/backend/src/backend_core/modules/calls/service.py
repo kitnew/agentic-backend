@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
 
+from agentic_observability.domain import CoreMetrics, domain_span
 from contracts import (
     TENANT_CONFIG_SCHEMAS,
     ConversationPersistenceStatus,
@@ -18,6 +19,7 @@ from contracts import (
     VoiceAgentPrompt,
     VoiceAgentRuntimeContext,
 )
+from opentelemetry.trace import Tracer
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -87,6 +89,8 @@ class CallSessionService:
         runtimes: VoiceRuntimeRepository,
         conversations: ConversationService,
         events: EventBus,
+        tracer: Tracer | None = None,
+        metrics: CoreMetrics | None = None,
     ) -> None:
         self._calls = calls
         self._routes = routes
@@ -96,8 +100,21 @@ class CallSessionService:
         self._runtimes = runtimes
         self._conversations = conversations
         self._events = events
+        self._tracer = tracer
+        self._metrics = metrics
 
     async def create(
+        self,
+        data: CreateCallSessionRequest,
+    ) -> tuple[CallSession, bool]:
+        with domain_span(self._tracer, "call.prepare") as span:
+            call, created = await self._create(data)
+            if span is not None:
+                span.set_attribute("tenant.id", str(call.tenant_id))
+                span.set_attribute("call.id", str(call.id))
+            return call, created
+
+    async def _create(
         self,
         data: CreateCallSessionRequest,
     ) -> tuple[CallSession, bool]:
@@ -144,6 +161,17 @@ class CallSessionService:
         self,
         data: InboundSipClaimRequest,
     ) -> tuple[CallSession, bool]:
+        with domain_span(self._tracer, "call.prepare") as span:
+            call, created = await self._claim_inbound_sip(data)
+            if span is not None:
+                span.set_attribute("tenant.id", str(call.tenant_id))
+                span.set_attribute("call.id", str(call.id))
+            return call, created
+
+    async def _claim_inbound_sip(
+        self,
+        data: InboundSipClaimRequest,
+    ) -> tuple[CallSession, bool]:
         called_number = normalize_e164(data.called_number)
         if called_number is None:
             raise CallSessionRouteUnavailableError
@@ -152,7 +180,9 @@ class CallSessionService:
             "livekit", data.sip_call_id, data.sip_call_id_full
         )
         if existing is not None:
-            await self._validate_sip_replay(existing, data, caller_number, called_number)
+            await self._validate_sip_replay(
+                existing, data, caller_number, called_number
+            )
             logger.info(
                 "Existing inbound SIP CallSession reused",
                 extra={
@@ -172,9 +202,7 @@ class CallSessionService:
             "Inbound SIP DID resolved",
             extra={"called_number": called_number, "tenant_id": str(tenant.id)},
         )
-        _, prompt_set, voice_runtime = await self._voice_config(
-            tenant, config_revision
-        )
+        _, prompt_set, voice_runtime = await self._voice_config(tenant, config_revision)
         call = CallSession(
             tenant_id=tenant.id,
             tenant_config_revision_id=config_revision.id,
@@ -243,10 +271,7 @@ class CallSessionService:
                 and call.sip_call_id_full != data.sip_call_id_full
             )
             or call.caller_phone_e164 != caller_number
-            or (
-                caller_number is None
-                and call.caller_phone_raw != data.caller_number
-            )
+            or (caller_number is None and call.caller_phone_raw != data.caller_number)
             or call.called_phone_e164 != called_number
             or call.sip_trunk_id != data.trunk_id
             or call.sip_dispatch_rule_id != data.dispatch_rule_id
@@ -259,6 +284,25 @@ class CallSessionService:
             await self._calls.flush()
 
     async def create_manual(
+        self,
+        tenant_id: UUID,
+        *,
+        idempotency_key: str | None = None,
+        request_fingerprint: str | None = None,
+    ) -> tuple[CallSession, bool]:
+        with domain_span(
+            self._tracer, "call.prepare", {"tenant.id": str(tenant_id)}
+        ) as span:
+            call, created = await self._create_manual(
+                tenant_id,
+                idempotency_key=idempotency_key,
+                request_fingerprint=request_fingerprint,
+            )
+            if span is not None:
+                span.set_attribute("call.id", str(call.id))
+            return call, created
+
+    async def _create_manual(
         self,
         tenant_id: UUID,
         *,
@@ -581,6 +625,8 @@ class CallSessionService:
         call.started_at = datetime.now(UTC)
         await self._events.publish(call_event(call.id, call.tenant_id, "started"))
         await self._calls.flush()
+        if self._metrics is not None:
+            self._metrics.call_started()
         return call
 
     async def mark_connected(self, call_id: UUID) -> CallSession:
@@ -620,6 +666,14 @@ class CallSessionService:
         call.ended_at = datetime.now(UTC)
         await self._events.publish(call_event(call.id, call.tenant_id, "ended"))
         await self._calls.flush()
+        if self._metrics is not None:
+            self._metrics.call_terminal(
+                "completed",
+                (call.ended_at - call.started_at).total_seconds()
+                if call.started_at is not None
+                else None,
+                was_active=True,
+            )
         return call
 
     async def complete(
@@ -669,6 +723,10 @@ class CallSessionService:
             CallSessionStatus.CONNECTED,
         ):
             raise CallSessionConflictError
+        was_active = call.status in {
+            CallSessionStatus.STARTED,
+            CallSessionStatus.CONNECTED,
+        }
         call.status = CallSessionStatus.FAILED
         call.ended_at = datetime.now(UTC)
         call.failure_reason = reason
@@ -680,6 +738,14 @@ class CallSessionService:
         except ConversationConflictError as error:
             raise CallSessionConflictError from error
         await self._calls.flush()
+        if self._metrics is not None:
+            self._metrics.call_terminal(
+                "failed",
+                (call.ended_at - call.started_at).total_seconds()
+                if call.started_at is not None
+                else None,
+                was_active=was_active,
+            )
         return call
 
     async def _get_for_update(self, call_id: UUID) -> CallSession:

@@ -4,6 +4,7 @@ from hashlib import sha256
 from typing import Annotated
 from uuid import UUID, uuid4
 
+from agentic_observability.domain import CoreMetrics
 from contracts import (
     CallLifecycleResponse,
     CallLifecycleStatus,
@@ -17,6 +18,7 @@ from contracts import (
     VoiceCallObservation,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from opentelemetry.trace import Tracer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.calls.errors import (
@@ -71,6 +73,8 @@ def build_call_session_service(
     session: AsyncSession,
     event_stream: str = "domain:events",
     command_stream: str = "application:commands",
+    tracer: Tracer | None = None,
+    metrics: CoreMetrics | None = None,
 ) -> CallSessionService:
     return CallSessionService(
         CallSessionRepository(session),
@@ -80,7 +84,9 @@ def build_call_session_service(
         ConfigRevisionRepository(session),
         VoiceRuntimeRepository(session),
         build_conversation_service(session),
-        TransactionalOutboxBus(session, event_stream, command_stream),
+        TransactionalOutboxBus(session, event_stream, command_stream, tracer),
+        tracer,
+        metrics,
     )
 
 
@@ -91,6 +97,8 @@ def get_call_session_service(
         session,
         request.app.state.settings.domain_event_stream,
         request.app.state.settings.command_stream,
+        request.app.state.outbox_tracer,
+        request.app.state.core_metrics,
     )
 
 
@@ -316,7 +324,11 @@ async def create_test_voice_session(
     )
     try:
         async with database.transaction() as session:
-            call, created = await build_call_session_service(session).create_manual(
+            call, created = await build_call_session_service(
+                session,
+                tracer=request.app.state.outbox_tracer,
+                metrics=request.app.state.core_metrics,
+            ).create_manual(
                 data.tenant_id,
                 idempotency_key=idempotency_key,
                 request_fingerprint=request_fingerprint,
@@ -340,7 +352,11 @@ async def create_test_voice_session(
             )
             try:
                 async with database.transaction() as session:
-                    call = await build_call_session_service(session).set_dispatch(
+                    call = await build_call_session_service(
+                        session,
+                        tracer=request.app.state.outbox_tracer,
+                        metrics=request.app.state.core_metrics,
+                    ).set_dispatch(
                         call.id,
                         dispatch_id,
                     )
@@ -348,7 +364,11 @@ async def create_test_voice_session(
                 with suppress(Exception):
                     await livekit.delete_dispatch(dispatch_id, call.room_name)
                 async with database.transaction() as session:
-                    call = await build_call_session_service(session).get(call.id)
+                    call = await build_call_session_service(
+                        session,
+                        tracer=request.app.state.outbox_tracer,
+                        metrics=request.app.state.core_metrics,
+                    ).get(call.id)
         participant_identity = f"manual-test-{uuid4()}"
         participant_token = livekit.issue_participant_token(
             room_name=call.room_name,

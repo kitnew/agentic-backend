@@ -2,10 +2,12 @@ import asyncio
 import json
 import logging
 import time
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from datetime import UTC, datetime, timedelta
 
+from agentic_observability.propagation import extract_trace_context
 from contracts import CapabilityInvocationStatus
+from opentelemetry.trace import Tracer
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import select
@@ -30,6 +32,7 @@ class OutboxDispatcher:
         outbox_retention_seconds: int = 7 * 24 * 60 * 60,
         stream_maxlen: int = 10_000,
         maintenance_interval_seconds: int = 3600,
+        tracer: Tracer | None = None,
     ) -> None:
         self._database = database
         self._redis = redis
@@ -41,6 +44,7 @@ class OutboxDispatcher:
         self._outbox_retention = timedelta(seconds=outbox_retention_seconds)
         self._stream_maxlen = stream_maxlen
         self._maintenance_interval = maintenance_interval_seconds
+        self._tracer = tracer
         self._last_maintenance = 0.0
         self._task: asyncio.Task[None] | None = None
 
@@ -82,14 +86,33 @@ class OutboxDispatcher:
             )
             for message in messages:
                 try:
-                    await self._redis.xadd(
-                        message.stream or self._stream,
-                        {
-                            message.payload_field: json.dumps(
-                                message.payload, separators=(",", ":")
-                            )
-                        },
+                    stream = message.stream or self._stream
+                    scope = (
+                        self._tracer.start_as_current_span(
+                            "messaging.outbox.send",
+                            context=extract_trace_context(message.transport_metadata),
+                            attributes={
+                                "messaging.system": "redis",
+                                "messaging.destination.name": stream,
+                            },
+                        )
+                        if self._tracer is not None
+                        else nullcontext()
                     )
+                    with scope:
+                        await self._redis.xadd(
+                            stream,
+                            {
+                                message.payload_field: json.dumps(
+                                    message.payload, separators=(",", ":")
+                                ),
+                                **{
+                                    key: value
+                                    for key, value in message.transport_metadata.items()
+                                    if key in {"traceparent", "tracestate"}
+                                },
+                            },
+                        )
                 except RedisError as error:
                     message.attempts += 1
                     message.last_error = type(error).__name__[:255]

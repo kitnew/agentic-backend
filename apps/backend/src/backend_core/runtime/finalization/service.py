@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
 
+from agentic_observability.domain import domain_span
 from contracts import (
     TENANT_CONFIG_SCHEMAS,
     CallEventPayload,
@@ -19,6 +20,7 @@ from contracts import (
     TenantConfigV3,
     command_envelope,
 )
+from opentelemetry.trace import Tracer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,11 +53,26 @@ _BODY_REFERENCE_KEY = "artifact_representation_id"
 
 
 class FinalizationService:
-    def __init__(self, session: AsyncSession, commands: CommandBus) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        commands: CommandBus,
+        tracer: Tracer | None = None,
+    ) -> None:
         self._session = session
         self._commands = commands
+        self._tracer = tracer
 
     async def start(self, event: MessageEnvelope) -> CallFinalization:
+        with domain_span(
+            self._tracer, "post_call.process", {"call.id": str(event.correlation_id)}
+        ) as span:
+            finalization = await self._start(event)
+            if span is not None:
+                span.set_attribute("tenant.id", str(finalization.tenant_id))
+            return finalization
+
+    async def _start(self, event: MessageEnvelope) -> CallFinalization:
         if event.message_kind != "event" or event.message_type != "call.ended":
             raise FinalizationError("finalization requires call.ended")
         payload = CallEventPayload.model_validate(event.payload)
@@ -111,7 +128,10 @@ class FinalizationService:
             .where(CallFinalization.call_id == call_id)
             .with_for_update()
         )
-        if finalization is not None and finalization.status is FinalizationStatus.PROCESSING:
+        if (
+            finalization is not None
+            and finalization.status is FinalizationStatus.PROCESSING
+        ):
             await self._schedule(finalization, event.message_id)
 
     async def handle_result(
