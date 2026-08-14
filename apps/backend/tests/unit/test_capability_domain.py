@@ -294,6 +294,11 @@ def test_two_tenant_profiles_compile_with_the_same_code() -> None:
         .get("x-canonical-field")
         is None
     )  # type: ignore[index,union-attr]
+    runtime_schema = runtime_definition(
+        "reservation.submit_request", tenant_a
+    ).input_schema
+    assert "YYYY-MM-DD" in runtime_schema["properties"]["check_in"]["description"]  # type: ignore[index]
+    assert "YYYY-MM-DD" in runtime_schema["properties"]["check_out"]["description"]  # type: ignore[index]
 
 
 def test_pension_grand_row_keeps_phone_types_and_operation_marker() -> None:

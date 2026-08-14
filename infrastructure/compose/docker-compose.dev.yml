@@ -36,6 +36,9 @@ services:
     environment:
       JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:?set AZURE_OPENAI_API_KEY}
+    volumes:
+      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/secrets:ro
+      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/run/secrets:ro
 
   livekit:
     image: livekit/livekit-server:v1.13.1

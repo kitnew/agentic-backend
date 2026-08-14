@@ -628,6 +628,20 @@ def runtime_definition(
     schema = json.loads(json.dumps(profile.agent_input_schema))
     for property_schema in schema.get("properties", {}).values():
         if isinstance(property_schema, dict):
+            canonical_field = property_schema.get("x-canonical-field")
+            if canonical_field == "stay.check_in":
+                property_schema["description"] = (
+                    "Arrival date in ISO 8601 format YYYY-MM-DD. "
+                    "Resolve relative dates using the current local date; "
+                    "never send today, tomorrow, or natural-language dates."
+                )
+            elif canonical_field == "stay.check_out":
+                property_schema["description"] = (
+                    "Departure date in ISO 8601 format YYYY-MM-DD. "
+                    "It must be later than check_in. Resolve relative dates "
+                    "using the current local date; never send today, tomorrow, "
+                    "or natural-language dates."
+                )
             property_schema.pop("x-canonical-field", None)
             property_schema.pop("x-custom-field", None)
     return RuntimeCapabilityDefinition(
