@@ -20,6 +20,7 @@ members = [
     "apps/voice-agent",
     "packages/admin-client",
     "packages/contracts",
+    "packages/observability",
 ]
 
 [dependency-groups]

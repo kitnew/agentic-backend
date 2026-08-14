@@ -1,0 +1,14 @@
+[project]
+name = "agentic-observability"
+version = "0.1.0"
+description = "Explicit OpenTelemetry foundation for Agent Platform runtimes"
+requires-python = ">=3.14.6"
+dependencies = [
+    "opentelemetry-api>=1.39.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.39.1",
+    "opentelemetry-sdk>=1.39.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"
