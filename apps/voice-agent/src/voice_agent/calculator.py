@@ -44,7 +44,9 @@ def _canonical(value: Decimal) -> str:
 
 def calculate(request: CalculatorRequest) -> str:
     operands = [_decimal(value) for value in request.operands]
-    precision = max(28, sum(max(len(value.as_tuple().digits), 1) for value in operands) + 50)
+    precision = max(
+        28, sum(max(len(value.as_tuple().digits), 1) for value in operands) + 50
+    )
     with localcontext() as context:
         context.prec = precision
         if request.operation == "add":
@@ -80,7 +82,11 @@ def calculator_tool() -> llm.RawFunctionTool:
             }
         except (ValidationError, ValueError) as exc:
             message = "Invalid calculator input"
-            if isinstance(exc, ValueError) and not isinstance(exc, ValidationError) and str(exc):
+            if (
+                isinstance(exc, ValueError)
+                and not isinstance(exc, ValidationError)
+                and str(exc)
+            ):
                 message = str(exc)
             return {
                 "status": "failed",

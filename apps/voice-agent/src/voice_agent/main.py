@@ -25,6 +25,11 @@ from pydantic import ValidationError
 from voice_agent.backend import BackendClient, CallFinalizer
 from voice_agent.calculator import calculator_tool
 from voice_agent.event_delivery import ConversationPersistence
+from voice_agent.observability import (
+    current_voice_telemetry,
+    setup_voice_telemetry,
+    shutdown_voice_telemetry,
+)
 from voice_agent.providers import create_agent_session
 from voice_agent.settings import VoiceAgentSettings
 
@@ -38,20 +43,6 @@ def log_user_transcript(event: object) -> None:
             "is_final": getattr(event, "is_final", None),
             "language": str(getattr(event, "language", "")),
             "transcript_length": len(getattr(event, "transcript", "") or ""),
-        },
-    )
-
-
-def log_session_metrics(event: object) -> None:
-    metrics = getattr(event, "metrics", None)
-    if metrics is None or getattr(metrics, "type", None) != "eou_metrics":
-        return
-    logger.info(
-        "Voice EOU metrics",
-        extra={
-            "end_of_utterance_delay": metrics.end_of_utterance_delay,
-            "transcription_delay": metrics.transcription_delay,
-            "on_user_turn_completed_delay": metrics.on_user_turn_completed_delay,
         },
     )
 
@@ -414,11 +405,18 @@ async def run_job(
             extra={"call_session_id": str(call_id), "room": context.room_name},
         )
         log_runtime_binding(settings, context)
-        prompt_cache_key = "voice-agent-prompt:" + hashlib.sha256(
-            f"{context.prompt.system_prompt}\0{context.prompt.profile_prompt}".encode()
-        ).hexdigest()
+        prompt_cache_key = (
+            "voice-agent-prompt:"
+            + hashlib.sha256(
+                f"{context.prompt.system_prompt}\0{context.prompt.profile_prompt}".encode()
+            ).hexdigest()
+        )
+        telemetry = current_voice_telemetry()
         session = create_agent_session(
-            settings, context.voice_runtime, prompt_cache_key
+            settings,
+            context.voice_runtime,
+            prompt_cache_key,
+            telemetry.metrics if telemetry is not None else None,
         )
         persistence = ConversationPersistence(backend, call_id)
         terminalizer = SessionTerminalizer(finalizer, persistence)
@@ -444,15 +442,31 @@ async def run_job(
 
         session.on("close", on_close)
         session.on("conversation_item_added", persistence.on_conversation_item_added)
+        if telemetry is not None:
+            session.on(
+                "conversation_item_added",
+                lambda event: telemetry.metrics.record_turn(
+                    getattr(event, "item", None)
+                ),
+            )
         session.on("user_input_transcribed", log_user_transcript)
-        session.on("metrics_collected", log_session_metrics)
         await session.start(
             room=ctx.room,
+            # Keep native spans local to the explicit OTLP pipeline. LiveKit Cloud
+            # recording can create a second provider and retain conversation data.
+            record={
+                "audio": False,
+                "traces": False,
+                "logs": False,
+                "transcript": False,
+            },
             agent=agents.Agent(
                 instructions=assemble_instructions(context),
                 tools=build_agent_tools(context, backend, call_id, mark_handed_off),
             ),
         )
+        if telemetry is not None:
+            telemetry.set_session_correlation(call_id)
         observe = getattr(backend, "observe", None)
         if observe is not None:
             await observe(call_id, "session_started")
@@ -524,6 +538,7 @@ async def run_job(
                 await finalizer.fail(failure_reason, "incomplete")
         finally:
             await backend.aclose()
+            shutdown_voice_telemetry()
     if cancelled:
         raise asyncio.CancelledError
 
@@ -544,6 +559,7 @@ def build_server(settings: VoiceAgentSettings) -> agents.AgentServer:
         ws_url=settings.livekit_url,
         api_key=settings.livekit_api_key.get_secret_value(),
         api_secret=settings.livekit_api_secret.get_secret_value(),
+        setup_fnc=setup_voice_telemetry,
     )
 
     server.rtc_session(

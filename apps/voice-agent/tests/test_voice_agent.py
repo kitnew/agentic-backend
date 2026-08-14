@@ -599,7 +599,7 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
         def on(self, event, callback):
             return callback
 
-        async def start(self, agent, *, room) -> None:
+        async def start(self, agent, *, room, record) -> None:
             return None
 
         async def say(self, text) -> None:
@@ -672,6 +672,7 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
     class FakeSession:
         def __init__(self) -> None:
             self.callbacks: dict[str, object] = {}
+            self.record: object | None = None
 
         def on(self, event, callback):
             self.callbacks[event] = callback
@@ -679,7 +680,8 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         def off(self, event, callback):
             return None
 
-        async def start(self, agent, *, room) -> None:
+        async def start(self, agent, *, room, record) -> None:
+            self.record = record
             order.append("session-start")
 
         async def say(self, text) -> None:
@@ -725,6 +727,12 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
     assert order[:3] == ["claim", "runtime-context", "session-start"]
     assert order[-1] == "complete"
     assert len(sessions) == 1
+    assert sessions[0].record == {
+        "audio": False,
+        "traces": False,
+        "logs": False,
+        "transcript": False,
+    }
 
 
 @pytest.mark.asyncio
@@ -787,7 +795,7 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         def off(self, event, callback):
             return None
 
-        async def start(self, agent, *, room) -> None:
+        async def start(self, agent, *, room, record) -> None:
             return None
 
         async def say(self, text) -> None:
@@ -876,7 +884,7 @@ async def test_session_close_terminalizes_while_session_is_alive(
         def off(self, event, callback):
             return None
 
-        async def start(self, agent, *, room) -> None:
+        async def start(self, agent, *, room, record) -> None:
             return None
 
         async def say(self, text) -> None:

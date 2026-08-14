@@ -5,6 +5,7 @@ from livekit.agents import inference
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import elevenlabs, openai
 
+from voice_agent.observability import VoiceMetrics
 from voice_agent.settings import VoiceAgentSettings
 
 
@@ -24,6 +25,7 @@ def create_agent_session(
     settings: VoiceAgentSettings,
     runtime: EffectiveVoiceRuntime,
     prompt_cache_key: str,
+    metrics: VoiceMetrics | None = None,
 ) -> agents.AgentSession:
     if runtime.llm.provider != "azure_openai":
         raise ValueError(f"unsupported LLM provider: {runtime.llm.provider}")
@@ -40,25 +42,50 @@ def create_agent_session(
         timeout=settings.provider_timeout_seconds,
         max_retry=settings.provider_retry_limit,
     )
-    return agents.AgentSession(
-        stt=elevenlabs.STT(
-            api_key=settings.elevenlabs_api_key.get_secret_value(),
-            model=runtime.stt.model,
-            language_code=stt_language,
-            server_vad={
-                "vad_silence_threshold_secs": (
-                    runtime.stt.server_vad.silence_threshold_seconds
+    stt = elevenlabs.STT(
+        api_key=settings.elevenlabs_api_key.get_secret_value(),
+        model=runtime.stt.model,
+        language_code=stt_language,
+        server_vad={
+            "vad_silence_threshold_secs": runtime.stt.server_vad.silence_threshold_seconds,
+            "vad_threshold": runtime.stt.server_vad.activity_threshold,
+            "min_speech_duration_ms": runtime.stt.server_vad.min_speech_ms,
+            "min_silence_duration_ms": runtime.stt.server_vad.min_silence_ms,
+        },
+    )
+    vad = inference.VAD(
+        min_speech_duration=runtime.local_vad.min_speech_seconds,
+        min_silence_duration=runtime.local_vad.min_silence_seconds,
+        activation_threshold=runtime.local_vad.activation_threshold,
+    )
+    llm_provider = openai.LLM.with_azure(
+        model=runtime.llm.model,
+        azure_deployment=settings.azure_openai_deployment,
+        azure_endpoint=azure_endpoint(settings.azure_openai_endpoint),
+        api_version=settings.azure_openai_api_version,
+        api_key=settings.azure_openai_api_key.get_secret_value(),
+        prompt_cache_key=prompt_cache_key,
+        timeout=httpx.Timeout(settings.provider_timeout_seconds),
+        temperature=runtime.llm.temperature,
+    )
+    tts = elevenlabs.TTS(
+        api_key=settings.elevenlabs_api_key.get_secret_value(),
+        model=runtime.tts.model,
+        voice_id=runtime.tts.voice_id,
+        language=tts_language,
+    )
+    if metrics is not None:
+        for component, name in ((stt, "stt"), (llm_provider, "llm"), (tts, "tts")):
+            component.on("metrics_collected", metrics.record_component_metric)
+            component.on(
+                "error",
+                lambda error, component_name=name: metrics.record_component_error(
+                    component_name, error
                 ),
-                "vad_threshold": runtime.stt.server_vad.activity_threshold,
-                "min_speech_duration_ms": runtime.stt.server_vad.min_speech_ms,
-                "min_silence_duration_ms": runtime.stt.server_vad.min_silence_ms,
-            },
-        ),
-        vad=inference.VAD(
-            min_speech_duration=runtime.local_vad.min_speech_seconds,
-            min_silence_duration=runtime.local_vad.min_silence_seconds,
-            activation_threshold=runtime.local_vad.activation_threshold,
-        ),
+            )
+    return agents.AgentSession(
+        stt=stt,
+        vad=vad,
         turn_handling={
             "turn_detection": runtime.turn.detection,
             "endpointing": {
@@ -67,22 +94,8 @@ def create_agent_session(
                 "max_delay": runtime.turn.max_endpointing_delay_seconds,
             },
         },
-        llm=openai.LLM.with_azure(
-            model=runtime.llm.model,
-            azure_deployment=settings.azure_openai_deployment,
-            azure_endpoint=azure_endpoint(settings.azure_openai_endpoint),
-            api_version=settings.azure_openai_api_version,
-            api_key=settings.azure_openai_api_key.get_secret_value(),
-            prompt_cache_key=prompt_cache_key,
-            timeout=httpx.Timeout(settings.provider_timeout_seconds),
-            temperature=runtime.llm.temperature,
-        ),
-        tts=elevenlabs.TTS(
-            api_key=settings.elevenlabs_api_key.get_secret_value(),
-            model=runtime.tts.model,
-            voice_id=runtime.tts.voice_id,
-            language=tts_language,
-        ),
+        llm=llm_provider,
+        tts=tts,
         tools=[],
         conn_options=SessionConnectOptions(
             stt_conn_options=connect_options,

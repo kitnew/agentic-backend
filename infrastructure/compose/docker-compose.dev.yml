@@ -1,6 +1,16 @@
 name: agentic-backend-dev
 
 services:
+  otel-collector:
+    image: otel/opentelemetry-collector:0.158.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    ports:
+      - "127.0.0.1:${OTEL_COLLECTOR_OTLP_HTTP_PORT:-4318}:4318"
+      - "127.0.0.1:${OTEL_COLLECTOR_HEALTH_PORT:-13133}:13133"
+    volumes:
+      - ./otel-collector.yml:/etc/otelcol/config.yaml:ro
+    networks: [application]
+
   redis:
     ports:
       - "${REDIS_PORT:-6379}:6379"

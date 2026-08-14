@@ -1,0 +1,227 @@
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+from agentic_observability.bootstrap import TelemetryProviders
+from agentic_observability.config import TelemetryConfig
+from livekit.agents.telemetry import tracer as livekit_tracer
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import Status, StatusCode
+from voice_agent.observability import (
+    LiveKitPrivacySpanProcessor,
+    VoiceMetrics,
+    configure_voice_telemetry,
+    current_voice_telemetry,
+    setup_voice_telemetry,
+    shutdown_voice_telemetry,
+)
+
+
+@pytest.fixture(autouse=True)
+def reset_voice_telemetry() -> None:
+    shutdown_voice_telemetry()
+    yield
+    shutdown_voice_telemetry()
+
+
+def _providers(
+    *,
+    spans: InMemorySpanExporter | None = None,
+    metrics: InMemoryMetricReader | None = None,
+) -> TelemetryProviders:
+    resource = Resource.create({"service.name": "voice-agent"})
+    tracer_provider = TracerProvider(resource=resource)
+    tracer_provider.add_span_processor(LiveKitPrivacySpanProcessor())
+    if spans is not None:
+        tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
+    meter_provider = MeterProvider(
+        resource=resource,
+        metric_readers=[metrics] if metrics is not None else [],
+    )
+    return TelemetryProviders(resource, tracer_provider, meter_provider)
+
+
+def _metric_points(reader: InMemoryMetricReader) -> dict[str, list[object]]:
+    result: dict[str, list[object]] = {}
+    for resource_metric in reader.get_metrics_data().resource_metrics:
+        for scope_metric in resource_metric.scope_metrics:
+            for metric in scope_metric.metrics:
+                result[metric.name] = list(metric.data.data_points)
+    return result
+
+
+def test_disabled_setup_keeps_runtime_unmodified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OTEL_ENABLED", raising=False)
+    monkeypatch.setattr(
+        "voice_agent.observability.bootstrap",
+        lambda *_args, **_kwargs: pytest.fail("disabled telemetry must not bootstrap"),
+    )
+
+    setup_voice_telemetry(None)  # type: ignore[arg-type]
+
+    assert current_voice_telemetry() is None
+
+
+def test_enabled_setup_uses_fixed_voice_service_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OTEL_ENABLED", "true")
+    monkeypatch.setenv(
+        "OTEL_RESOURCE_ATTRIBUTES",
+        "service.version=test,deployment.environment.name=test,vcs.ref.head.revision=test",
+    )
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "not-voice-agent")
+    providers = _providers()
+    configs: list[TelemetryConfig] = []
+
+    def fake_bootstrap(
+        config: TelemetryConfig, **_kwargs: object
+    ) -> TelemetryProviders:
+        configs.append(config)
+        return providers
+
+    monkeypatch.setattr("voice_agent.observability.bootstrap", fake_bootstrap)
+
+    setup_voice_telemetry(None)  # type: ignore[arg-type]
+
+    runtime = current_voice_telemetry()
+    assert runtime is not None
+    assert configs[0].service_name == "voice-agent"
+    assert runtime.providers.resource.attributes["service.name"] == "voice-agent"
+
+
+def test_native_livekit_span_is_exported_once_correlated_and_content_free() -> None:
+    exporter = InMemorySpanExporter()
+    runtime = configure_voice_telemetry(_providers(spans=exporter))
+    assert runtime is not None
+    call_id = uuid4()
+
+    with livekit_tracer.start_as_current_span("agent_session") as span:
+        span.set_attribute("lk.chat_ctx", "system prompt and chat history")
+        span.set_attribute("lk.response.text", "assistant response")
+        span.set_attribute("lk.function_tool.arguments", '{"customer":"secret"}')
+        span.add_event("chat.item", {"content": "user transcript"})
+        span.set_status(Status(StatusCode.ERROR, "tool result contains customer data"))
+        runtime.set_session_correlation(call_id)
+
+    shutdown_voice_telemetry()
+    finished = exporter.get_finished_spans()
+    assert len(finished) == 1
+    native_span = finished[0]
+    assert native_span.instrumentation_scope.name == "livekit-agents"
+    assert native_span.attributes["call.id"] == str(call_id)
+    assert native_span.events == ()
+    assert "system prompt" not in str(native_span.attributes)
+    assert "assistant response" not in str(native_span.attributes)
+    assert "customer" not in str(native_span.attributes)
+    assert native_span.status.description is None
+    assert current_voice_telemetry() is None
+    shutdown_voice_telemetry()
+
+
+def test_repeated_setup_does_not_duplicate_runtime_registration() -> None:
+    exporter = InMemorySpanExporter()
+    providers = _providers(spans=exporter)
+
+    first = configure_voice_telemetry(providers)
+    second = configure_voice_telemetry(providers)
+    assert first is second
+    assert first is not None
+
+    with livekit_tracer.start_as_current_span("turn"):
+        pass
+    first.providers.force_flush()
+    assert len(exporter.get_finished_spans()) == 1
+
+
+def test_shutdown_allows_a_fresh_sequential_job_provider() -> None:
+    first = configure_voice_telemetry(_providers())
+    assert first is not None
+    shutdown_voice_telemetry()
+
+    second = configure_voice_telemetry(_providers())
+    assert second is not None
+    assert second is not first
+
+
+def test_livekit_metrics_use_component_values_once_without_session_identifiers() -> (
+    None
+):
+    reader = InMemoryMetricReader()
+    providers = _providers(metrics=reader)
+    meter = providers.meter("voice-agent")
+    assert meter is not None
+    metrics = VoiceMetrics(meter)
+
+    metrics.record_turn(
+        SimpleNamespace(
+            metrics={
+                "transcription_delay": 0.2,
+                "end_of_turn_delay": 0.3,
+                "on_user_turn_completed_delay": 0.4,
+                "llm_node_ttft": 0.5,
+                "tts_node_ttfb": 0.6,
+                "e2e_latency": 0.7,
+                "llm_metadata": {"model_provider": "azure", "model_name": "gpt"},
+                "tts_metadata": {"model_provider": "elevenlabs", "model_name": "flash"},
+            }
+        )
+    )
+    metadata = SimpleNamespace(model_provider="azure", model_name="gpt")
+    metrics.record_component_metric(
+        SimpleNamespace(
+            type="llm_metrics",
+            metadata=metadata,
+            cancelled=False,
+            duration=1.0,
+            ttft=0.2,
+            prompt_tokens=10,
+            prompt_cached_tokens=4,
+            completion_tokens=3,
+        )
+    )
+    metrics.record_component_metric(
+        SimpleNamespace(
+            type="stt_metrics",
+            metadata=SimpleNamespace(model_provider="elevenlabs", model_name="scribe"),
+            streamed=True,
+            duration=9.0,
+            audio_duration=2.0,
+        )
+    )
+    metrics.record_component_metric(
+        SimpleNamespace(
+            type="tts_metrics",
+            metadata=SimpleNamespace(model_provider="elevenlabs", model_name="flash"),
+            cancelled=False,
+            duration=1.1,
+            ttfb=0.3,
+            audio_duration=1.5,
+            characters_count=12,
+        )
+    )
+    metrics.record_component_error("tts", RuntimeError("provider failed"))
+    providers.force_flush()
+
+    points = _metric_points(reader)
+    assert len(points["voice.llm.requests"]) == 1
+    assert points["voice.llm.input_tokens"][0].value == 10
+    assert points["voice.llm.input_cached_tokens"][0].value == 4
+    assert points["voice.llm.output_tokens"][0].value == 3
+    assert "voice.stt.duration" not in points
+    assert points["voice.stt.audio_duration"][0].value == 2
+    assert points["voice.tts.characters"][0].value == 12
+    assert points["voice.component.errors"][0].value == 1
+    assert all(
+        not {"call.id", "conversation.id", "room.id", "participant.id"}
+        & set(point.attributes)
+        for metric_points in points.values()
+        for point in metric_points
+    )
