@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import (
+    TYPE_CHECKING,
     Any,
     Literal,
     TypeVar,
@@ -11,6 +12,12 @@ from uuid import UUID
 
 from attrs import define as _attrs_define
 from typing_extensions import Self
+
+from ..types import UNSET, Unset
+
+if TYPE_CHECKING:
+    from ..models.managed_webhook_response_config import ManagedWebhookResponseConfig
+
 
 T = TypeVar("T", bound="ManagedWebhookExecution")
 
@@ -27,6 +34,7 @@ class ManagedWebhookExecution:
         plan_type (Literal['managed_webhook.post_json.v1']):
         request_mapping (str):
         timeout_seconds (int):
+        response (ManagedWebhookResponseConfig | None | Unset):
     """
 
     connection_id: UUID
@@ -37,8 +45,13 @@ class ManagedWebhookExecution:
     plan_type: Literal["managed_webhook.post_json.v1"]
     request_mapping: str
     timeout_seconds: int
+    response: ManagedWebhookResponseConfig | None | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.managed_webhook_response_config import (
+            ManagedWebhookResponseConfig,
+        )
+
         connection_id = str(self.connection_id)
 
         mapping_contract_version = self.mapping_contract_version
@@ -55,6 +68,14 @@ class ManagedWebhookExecution:
 
         timeout_seconds = self.timeout_seconds
 
+        response: dict[str, Any] | None | Unset
+        if isinstance(self.response, Unset):
+            response = UNSET
+        elif isinstance(self.response, ManagedWebhookResponseConfig):
+            response = self.response.to_dict()
+        else:
+            response = self.response
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -69,11 +90,17 @@ class ManagedWebhookExecution:
                 "timeout_seconds": timeout_seconds,
             }
         )
+        if response is not UNSET:
+            field_dict["response"] = response
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.managed_webhook_response_config import (
+            ManagedWebhookResponseConfig,
+        )
+
         d = dict(src_dict)
         connection_id = UUID(d.pop("connection_id"))
 
@@ -111,6 +138,25 @@ class ManagedWebhookExecution:
 
         timeout_seconds = d.pop("timeout_seconds")
 
+        def _parse_response(
+            data: object,
+        ) -> ManagedWebhookResponseConfig | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                response_type_0 = ManagedWebhookResponseConfig.from_dict(data)
+
+                return response_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ManagedWebhookResponseConfig | None | Unset, data)
+
+        response = _parse_response(d.pop("response", UNSET))
+
         managed_webhook_execution = cls(
             connection_id=connection_id,
             mapping_contract_version=mapping_contract_version,
@@ -120,6 +166,7 @@ class ManagedWebhookExecution:
             plan_type=plan_type,
             request_mapping=request_mapping,
             timeout_seconds=timeout_seconds,
+            response=response,
         )
 
         return managed_webhook_execution

@@ -1,0 +1,69 @@
+{
+  "enabled": true,
+  "semantic_version": 1,
+  "description": "Create a reservation request.",
+  "announcement": "I will submit your reservation request now.",
+  "agent_input_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["guest_name", "check_in", "check_out"],
+    "properties": {
+      "guest_name": {
+        "type": "string",
+        "minLength": 1,
+        "x-canonical-field": "guest.name"
+      },
+      "check_in": {
+        "type": "string",
+        "format": "date",
+        "x-canonical-field": "stay.check_in"
+      },
+      "check_out": {
+        "type": "string",
+        "format": "date",
+        "x-canonical-field": "stay.check_out"
+      }
+    }
+  },
+  "execution": {
+    "plan_type": "managed_webhook.post_json.v1",
+    "connection_id": "00000000-0000-0000-0000-000000000001",
+    "mapping_language": "jsonata",
+    "mapping_contract_version": 1,
+    "mapping_engine": "jsonata-python",
+    "mapping_engine_version": "0.7.0",
+    "request_mapping": "{\"type\": \"reservation_create_request\", \"data\": {\"guest_name\": business.guest.name, \"check_in\": business.stay.check_in, \"check_out\": business.stay.check_out, \"phone\": metadata.caller_phone}}",
+    "response": {
+      "mode": "json",
+      "mapping": "{\"status\": response.body.success ? \"created\" : \"failed\", \"request_id\": response.body.reservation_request_id}",
+      "output_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["created", "failed"]
+          },
+          "request_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "timeout_seconds": 10
+  },
+  "validation_fixtures": [
+    {
+      "guest_name": "Alice Example",
+      "check_in": "2030-08-12",
+      "check_out": "2030-08-15"
+    },
+    {
+      "guest_name": "Bob Example",
+      "check_in": "2030-09-01",
+      "check_out": "2030-09-03"
+    }
+  ]
+}

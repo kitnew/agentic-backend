@@ -7,6 +7,9 @@ from contracts import (
     TENANT_CONFIG_SCHEMAS,
     ActiveTenantConfig,
     ConversationScope,
+    ManagedWebhookExecution,
+    ManagedWebhookResponseConfig,
+    TenantCapabilityProfile,
     TenantConfigV1,
     TenantConfigV2,
     TenantConfigV3,
@@ -16,6 +19,9 @@ from pydantic import ValidationError
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tenant_config_v1.json"
 V2_FIXTURE = Path(__file__).parent / "fixtures" / "tenant_config_v2.json"
+WEBHOOK_PROFILE_FIXTURE = (
+    Path(__file__).parent / "fixtures" / "reservation_submit_webhook_profile.json"
+)
 
 
 def fixture_json() -> str:
@@ -87,6 +93,27 @@ def test_v4_handoff_requires_semantic_keys_and_canonical_e164() -> None:
     }
     with pytest.raises(ValidationError):
         TenantConfigV4.model_validate(invalid)
+
+
+def test_reservation_webhook_profile_fixture_has_bounded_semantic_response() -> None:
+    profile = TenantCapabilityProfile.model_validate_json(
+        WEBHOOK_PROFILE_FIXTURE.read_text()
+    )
+
+    assert isinstance(profile.execution, ManagedWebhookExecution)
+    assert profile.execution.response is not None
+    assert profile.execution.response.mode == "json"
+    assert profile.execution.response.output_schema["additionalProperties"] is False
+
+
+def test_webhook_response_mode_has_one_output_source() -> None:
+    with pytest.raises(ValidationError, match="status_only requires only"):
+        ManagedWebhookResponseConfig(
+            mode="status_only",
+            mapping='{"status": "wrong"}',
+            success_output={"status": "submitted"},
+            output_schema={"type": "object"},
+        )
 
 
 def test_v1_json_round_trip() -> None:

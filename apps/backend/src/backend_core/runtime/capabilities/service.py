@@ -12,7 +12,8 @@ from contracts import (
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
     IntegrationJob,
-    ReservationRequestSubmitted,
+    ManagedWebhookPostJsonPlan,
+    ManagedWebhookPostJsonResult,
     TenantCapabilityProfile,
     TenantConfigV2,
     TenantConfigV3,
@@ -34,7 +35,6 @@ from backend_core.modules.tenants.repository import (
     TenantRepository,
 )
 from backend_core.runtime.capabilities.domain import (
-    SEMANTIC_KEY,
     CapabilityValidationError,
     compile_plan,
     definition,
@@ -75,6 +75,20 @@ class CapabilityInvocationService:
         self._configs = configs
         self._connections = connections
 
+    @staticmethod
+    def _requested_capability(
+        config: TenantConfigV2 | TenantConfigV3, requested: str
+    ) -> tuple[str, TenantCapabilityProfile, Any]:
+        for semantic_key, raw_profile in config.capabilities.items():
+            if not isinstance(raw_profile, TenantCapabilityProfile):
+                continue
+            semantic = definition(semantic_key, raw_profile.semantic_version)
+            if requested in {semantic.semantic_key, semantic.tool_name}:
+                return semantic_key, raw_profile, semantic
+        raise CapabilityValidationError(
+            "capability_not_found", "Capability is not available"
+        )
+
     async def _validate_request(
         self, call_id: UUID, request: CapabilityInvocationRequest
     ) -> tuple[Any, Any, TenantCapabilityProfile, Any, dict[str, object]]:
@@ -96,20 +110,18 @@ class CapabilityInvocationService:
                 "configuration_invalid", "Pinned configuration is unavailable"
             )
         config = self._capability_config(revision.schema_version, revision.config)
-        profile = config.capabilities.get(SEMANTIC_KEY)
-        if not isinstance(profile, TenantCapabilityProfile) or not profile.enabled:
+        _, profile, semantic = self._requested_capability(
+            config, request.capability
+        )
+        if not profile.enabled:
             raise CapabilityValidationError(
                 "capability_disabled", "Capability is disabled"
-            )
-        semantic = definition(SEMANTIC_KEY, profile.semantic_version)
-        if request.capability not in {semantic.semantic_key, semantic.tool_name}:
-            raise CapabilityValidationError(
-                "capability_not_found", "Capability is not available"
             )
         validate_agent_input(profile.agent_input_schema, request.agent_input)
         canonical = validate_business_input(
             normalize_input(profile.agent_input_schema, request.agent_input),
             config.localization.timezone,
+            required_fields=semantic.required_fields,
         )
         if (
             profile.business_policy.requires_caller_phone
@@ -274,20 +286,18 @@ class CapabilityInvocationService:
                 "configuration_invalid", "Pinned configuration is unavailable"
             )
         config = self._capability_config(revision.schema_version, revision.config)
-        profile = config.capabilities.get(SEMANTIC_KEY)
-        if not isinstance(profile, TenantCapabilityProfile) or not profile.enabled:
+        semantic_key, profile, semantic = self._requested_capability(
+            config, request.capability
+        )
+        if not profile.enabled:
             raise CapabilityValidationError(
                 "capability_disabled", "Capability is disabled"
-            )
-        semantic = definition(SEMANTIC_KEY, profile.semantic_version)
-        if request.capability not in {semantic.semantic_key, semantic.tool_name}:
-            raise CapabilityValidationError(
-                "capability_not_found", "Capability is not available"
             )
         validate_agent_input(profile.agent_input_schema, request.agent_input)
         canonical = validate_business_input(
             normalize_input(profile.agent_input_schema, request.agent_input),
             config.localization.timezone,
+            required_fields=semantic.required_fields,
         )
         if (
             profile.business_policy.requires_caller_phone
@@ -348,6 +358,7 @@ class CapabilityInvocationService:
             tool_call_id=request.tool_call_id,
             credential_ref=connection.credential_ref,
             caller_phone=call.caller_phone_e164 or "",
+            semantic_key=semantic_key,
         )
         job = IntegrationJob(
             job_id=job_id,
@@ -444,7 +455,7 @@ class CapabilityInvocationService:
                 raise CapabilityValidationError(
                     "result_missing", "Successful worker report has no result"
                 )
-            validate_result_for_plan(invocation.execution_plan, report.result)
+            plan = validate_result_for_plan(invocation.execution_plan, report.result)
             try:
                 outcome = project_execution_outcome(report.result)
             except TechnicalResultProjectionError as error:
@@ -453,9 +464,15 @@ class CapabilityInvocationService:
                 ) from error
             invocation.status = CapabilityInvocationStatus.SUCCEEDED
             invocation.technical_result = report.result.model_dump(mode="json")
-            invocation.semantic_result = semantic_result(
-                invocation.semantic_key, invocation.semantic_version, outcome
-            ).model_dump(mode="json")
+            invocation.semantic_result = (
+                report.result.data
+                if isinstance(plan, ManagedWebhookPostJsonPlan)
+                and plan.response is not None
+                and isinstance(report.result, ManagedWebhookPostJsonResult)
+                else semantic_result(
+                    invocation.semantic_key, invocation.semantic_version, outcome
+                ).model_dump(mode="json")
+            )
         else:
             if report.error is None:
                 raise CapabilityValidationError(
@@ -510,11 +527,7 @@ def invocation_response(
         semantic_key=invocation.semantic_key,
         semantic_version=invocation.semantic_version,
         status=invocation.status,
-        semantic_result=(
-            ReservationRequestSubmitted.model_validate(invocation.semantic_result)
-            if invocation.semantic_result is not None
-            else None
-        ),
+        semantic_result=invocation.semantic_result,
         error_code=invocation.error_code,
         error_message=invocation.error_message,
         created_at=invocation.created_at,

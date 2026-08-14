@@ -74,7 +74,7 @@ class CapabilityInvocation(Base):
     technical_result: Mapped[dict[str, object] | None] = mapped_column(
         JSONB, nullable=True
     )
-    semantic_result: Mapped[dict[str, object] | None] = mapped_column(
+    semantic_result: Mapped[dict[str, object] | str | None] = mapped_column(
         JSONB, nullable=True
     )
     error_code: Mapped[str | None] = mapped_column(String(128), nullable=True)

@@ -15,6 +15,8 @@ from contracts import (
     ManagedWebhookCapability,
     ManagedWebhookExecution,
     ManagedWebhookPostJsonPlan,
+    ManagedWebhookPostJsonResult,
+    ManagedWebhookResponseConfig,
     ReservationRequestSubmitted,
     RuntimeCapabilityDefinition,
     TechnicalResult,
@@ -46,6 +48,8 @@ SEMANTIC_REQUIRED_FIELDS = frozenset({"guest.name", "stay.check_in", "stay.check
 SEMANTIC_KEY = "reservation.submit_request"
 SEMANTIC_VERSION = 1
 TOOL_NAME = "reservation_submit_request"
+AVAILABILITY_SEMANTIC_KEY = "reservation.check_availability"
+AVAILABILITY_TOOL_NAME = "reservation_check_availability"
 MAX_MAPPING_INPUT_BYTES = 64_000
 MAX_MAPPING_OUTPUT_BYTES = 64_000
 MAPPING_LANGUAGE = "jsonata"
@@ -72,6 +76,21 @@ REGISTRY = {
         canonical_fields=CANONICAL_FIELDS,
         required_fields=SEMANTIC_REQUIRED_FIELDS,
         tool_name=TOOL_NAME,
+    ),
+    (AVAILABILITY_SEMANTIC_KEY, SEMANTIC_VERSION): CapabilityDefinition(
+        semantic_key=AVAILABILITY_SEMANTIC_KEY,
+        semantic_version=SEMANTIC_VERSION,
+        kind="query",
+        canonical_fields=CANONICAL_FIELDS,
+        required_fields=frozenset(
+            {
+                "stay.check_in",
+                "stay.check_out",
+                "allocation.room_type",
+                "allocation.room_count",
+            }
+        ),
+        tool_name=AVAILABILITY_TOOL_NAME,
     )
 }
 
@@ -282,6 +301,62 @@ def validate_agent_input(schema: dict[str, Any], value: dict[str, Any]) -> None:
         ) from error
 
 
+def validate_response_config(response: ManagedWebhookResponseConfig) -> None:
+    schema = response.output_schema
+    try:
+        encoded = response.model_dump_json()
+        if len(encoded.encode()) > MAX_MAPPING_INPUT_BYTES:
+            raise CapabilityValidationError(
+                "response_config_too_large", "Response configuration is too large"
+            )
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as error:
+        raise CapabilityValidationError(
+            "invalid_output_schema", error.message, "execution.response.output_schema"
+        ) from error
+    if not isinstance(schema.get("type"), str) or (
+        schema.get("type") == "object"
+        and schema.get("additionalProperties") is not False
+    ):
+        raise CapabilityValidationError(
+            "invalid_output_schema",
+            "Output schema must be a closed object",
+            "execution.response.output_schema",
+        )
+    if _contains_ref(schema):
+        raise CapabilityValidationError(
+            "invalid_output_schema",
+            "Output schema references are not supported",
+            "execution.response.output_schema",
+        )
+    if response.mapping is not None:
+        try:
+            jsonata.Jsonata(response.mapping)
+        except Exception as error:
+            raise CapabilityValidationError(
+                "invalid_response_mapping",
+                "Response mapping is invalid",
+                "execution.response.mapping",
+            ) from error
+    if response.success_output is not None:
+        try:
+            Draft202012Validator(schema).validate(response.success_output)
+        except ValidationError as error:
+            raise CapabilityValidationError(
+                "invalid_response_output",
+                error.message,
+                "execution.response.success_output",
+            ) from error
+
+
+def _contains_ref(value: Any) -> bool:
+    if isinstance(value, dict):
+        return "$ref" in value or any(_contains_ref(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_ref(item) for item in value)
+    return False
+
+
 def _set_nested(target: dict[str, Any], dotted: str, value: Any) -> None:
     current = target
     parts = dotted.split(".")
@@ -313,15 +388,19 @@ def validate_business_input(
     value: dict[str, Any],
     timezone: str,
     *,
+    required_fields: frozenset[str] = SEMANTIC_REQUIRED_FIELDS,
     today: date | None = None,
     enforce_not_past: bool = True,
 ) -> dict[str, Any]:
     name = value["guest"]["name"]
-    if not isinstance(name, str) or not name.strip():
+    if "guest.name" in required_fields and (
+        not isinstance(name, str) or not name.strip()
+    ):
         raise CapabilityValidationError(
             "business_policy_rejected", "Guest name is required", "guest.name"
         )
-    value["guest"]["name"] = name.strip()
+    if isinstance(name, str):
+        value["guest"]["name"] = name.strip()
     try:
         check_in = date.fromisoformat(value["stay"]["check_in"])
         check_out = date.fromisoformat(value["stay"]["check_out"])
@@ -370,10 +449,10 @@ def validate_business_input(
     if isinstance(email, str):
         value["guest"]["email"] = email.strip()
     room_type = value["allocation"].get("room_type")
-    if room_type is not None and room_type not in {2, 3, 4}:
+    if room_type is not None and (type(room_type) is not int or room_type < 1):
         raise CapabilityValidationError(
             "business_policy_rejected",
-            "Room type must be 2, 3 or 4",
+            "Room type must be an integer >= 1",
             "allocation.room_type",
         )
     room_count = value["allocation"].get("room_count")
@@ -417,6 +496,7 @@ def compile_plan(
     tool_call_id: str,
     credential_ref: str,
     caller_phone: str = "",
+    semantic_key: str = SEMANTIC_KEY,
     mapping_engine: MappingEngine | None = None,
 ) -> GoogleSheetsAppendValuesPlan | ManagedWebhookPostJsonPlan:
     execution = profile.execution
@@ -436,16 +516,29 @@ def compile_plan(
         source,
     )
     if isinstance(execution, ManagedWebhookExecution):
+        if execution.response is not None:
+            validate_response_config(execution.response)
+        if semantic_key == AVAILABILITY_SEMANTIC_KEY and execution.response is None:
+            raise CapabilityValidationError(
+                "response_config_required",
+                "Availability capability requires a response configuration",
+                "execution.response",
+            )
         return ManagedWebhookPostJsonPlan(
             plan_type=execution.plan_type,
             connection_ref=credential_ref,
             operation_id=operation_id,
             capability=ManagedWebhookCapability(
-                semantic_key=SEMANTIC_KEY,
+                semantic_key=semantic_key,
                 semantic_version=profile.semantic_version,
             ),
             payload=mapped,
-            response_contract="managed_webhook_envelope.v1",
+            response_contract=(
+                "http_2xx"
+                if execution.response is not None
+                else "managed_webhook_envelope.v1"
+            ),
+            response=execution.response,
             timeout_seconds=execution.timeout_seconds,
         )
     rows = mapped_rows(mapped)
@@ -490,7 +583,7 @@ SEMANTIC_RESULT_MAPPERS: dict[tuple[str, int], SemanticResultMapper] = {
 
 def validate_result_for_plan(
     execution_plan: dict[str, object], result: TechnicalResult
-) -> None:
+) -> ExecutionPlan:
     try:
         plan: ExecutionPlan = TypeAdapter(ExecutionPlan).validate_python(execution_plan)
     except Exception as error:
@@ -501,6 +594,18 @@ def validate_result_for_plan(
         raise CapabilityValidationError(
             "result_plan_mismatch", "Worker result does not match execution plan"
         )
+    if isinstance(plan, ManagedWebhookPostJsonPlan) and plan.response is not None:
+        if not isinstance(result, ManagedWebhookPostJsonResult):
+            raise CapabilityValidationError(
+                "result_plan_mismatch", "Worker result does not match execution plan"
+            )
+        try:
+            Draft202012Validator(plan.response.output_schema).validate(result.data)
+        except ValidationError as error:
+            raise CapabilityValidationError(
+                "invalid_semantic_result", "Worker result violates output schema"
+            ) from error
+    return plan
 
 
 def semantic_result(

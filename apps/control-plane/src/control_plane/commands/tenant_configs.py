@@ -66,6 +66,7 @@ from control_plane.settings import Settings
 
 CURRENT_SCHEMA_VERSION = 4
 MAX_DIFFS = 20
+_JSON_SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 _POST_CALL_EXECUTION = {
     "plan_type": "managed_webhook.post_json.v1",
     "mapping_language": "jsonata",
@@ -82,6 +83,27 @@ _POST_CALL_ACTION_FIELDS = {
     "timeout_seconds",
 }
 _POST_CALL_PRESET_FIELDS = {"id", "connection", "preset"}
+_CAPABILITY_EXECUTION = _POST_CALL_EXECUTION
+_CAPABILITY_AUTHORING_FIELDS = {
+    "enabled",
+    "description",
+    "announcement",
+    "agent_input_schema",
+    "business_policy",
+    "type",
+    "connection",
+    "request_mapping",
+    "response",
+    "timeout_seconds",
+    "validation_fixtures",
+}
+_CAPABILITY_RUNTIME_CONFLICT_FIELDS = {
+    "type",
+    "connection",
+    "request_mapping",
+    "response",
+    "timeout_seconds",
+}
 _POST_CALL_PRESETS: dict[str, tuple[dict[str, Any], str]] = {
     "transcript.raw_json": (
         {
@@ -175,6 +197,21 @@ def _sorted_free_mapping(value: object) -> object:
     return value
 
 
+def _compile_agent_input_schema(value: object) -> object:
+    """Keep the JSON Schema dialect platform-owned in runtime config."""
+    if not isinstance(value, dict):
+        return value
+    return {**value, "$schema": _JSON_SCHEMA_DRAFT}
+
+
+def _authoring_agent_input_schema(value: object) -> object:
+    if not isinstance(value, dict):
+        return value
+    schema = dict(value)
+    schema.pop("$schema", None)
+    return schema
+
+
 def canonical_config(config: Mapping[str, Any]) -> dict[str, Any]:
     result = dict(config)
     capabilities = result.get("capabilities")
@@ -212,24 +249,187 @@ def _connections_by_key(
     return result
 
 
+def _managed_webhook_connection(
+    connections: Mapping[str, IntegrationConnectionResponse],
+    connection: object,
+    *,
+    label: str,
+) -> IntegrationConnectionResponse:
+    if not isinstance(connection, str) or not connection:
+        raise PromptCommandError(f"{label}.connection must be a non-empty string", 2)
+    resolved = connections.get(connection)
+    if resolved is None:
+        raise PromptCommandError(
+            f"{label}.connection references unknown integration connection {connection!r}",
+            2,
+        )
+    if (
+        resolved.provider is not IntegrationProvider.MANAGED_WEBHOOK
+        or resolved.status is not IntegrationConnectionStatus.ACTIVE
+    ):
+        raise PromptCommandError(
+            f"{label}.connection must reference an active managed_webhook connection",
+            2,
+        )
+    return resolved
+
+
+def _default_capability_fixtures(
+    semantic_key: str, schema: object
+) -> list[dict[str, object]]:
+    if semantic_key != "reservation.submit_request" or not isinstance(schema, dict):
+        raise PromptCommandError(
+            f"capabilities.{semantic_key}.validation_fixtures is required", 2
+        )
+    properties = schema.get("properties")
+    required = schema.get("required")
+    if not isinstance(properties, dict) or not isinstance(required, list):
+        raise PromptCommandError(
+            f"capabilities.{semantic_key}.validation_fixtures is required", 2
+        )
+    canonical_values = {
+        "guest.name": "Fixture Guest",
+        "stay.check_in": "2030-08-12",
+        "stay.check_out": "2030-08-15",
+    }
+    fixture: dict[str, object] = {}
+    for name in required:
+        property_schema = properties.get(name) if isinstance(name, str) else None
+        canonical = (
+            property_schema.get("x-canonical-field")
+            if isinstance(property_schema, dict)
+            else None
+        )
+        if canonical not in canonical_values:
+            raise PromptCommandError(
+                f"capabilities.{semantic_key}.validation_fixtures is required",
+                2,
+            )
+        fixture[name] = canonical_values[canonical]
+    if set(canonical_values) - {
+        item.get("x-canonical-field")
+        for item in properties.values()
+        if isinstance(item, dict)
+    }:
+        raise PromptCommandError(
+            f"capabilities.{semantic_key}.validation_fixtures is required", 2
+        )
+    second = dict(fixture)
+    for name, property_schema in properties.items():
+        if isinstance(property_schema, dict) and property_schema.get(
+            "x-canonical-field"
+        ) == "stay.check_in":
+            second[name] = "2030-09-01"
+        if isinstance(property_schema, dict) and property_schema.get(
+            "x-canonical-field"
+        ) == "stay.check_out":
+            second[name] = "2030-09-03"
+    return [fixture, second]
+
+
+def _compile_capabilities(
+    connections: Mapping[str, IntegrationConnectionResponse], config: dict[str, Any]
+) -> dict[str, Any]:
+    capabilities = config.get("capabilities")
+    if not isinstance(capabilities, dict):
+        return config
+    compiled: dict[str, Any] = {}
+    for semantic_key, profile in capabilities.items():
+        label = f"capabilities.{semantic_key}"
+        if not isinstance(profile, dict):
+            compiled[semantic_key] = profile
+            continue
+        if "execution" in profile:
+            mixed = set(profile) & _CAPABILITY_RUNTIME_CONFLICT_FIELDS
+            if mixed:
+                raise PromptCommandError(
+                    f"{label} cannot mix authoring fields with execution: "
+                    f"{', '.join(sorted(mixed))}",
+                    2,
+                )
+            compiled[semantic_key] = profile
+            continue
+        unknown = set(profile) - _CAPABILITY_AUTHORING_FIELDS
+        if unknown:
+            raise PromptCommandError(
+                f"{label} has unknown fields: {', '.join(sorted(unknown))}", 2
+            )
+        if profile.get("type") != "http.post_json":
+            raise PromptCommandError(f"{label}.type must be http.post_json", 2)
+        resolved = _managed_webhook_connection(
+            connections, profile.get("connection"), label=label
+        )
+        request_mapping = profile.get("request_mapping")
+        if not isinstance(request_mapping, str) or not request_mapping:
+            raise PromptCommandError(
+                f"{label}.request_mapping must be a non-empty string", 2
+            )
+        timeout_seconds = profile.get("timeout_seconds", 10)
+        if type(timeout_seconds) is not int:
+            raise PromptCommandError(f"{label}.timeout_seconds must be an integer", 2)
+        fixtures = profile.get("validation_fixtures")
+        if fixtures is None:
+            fixtures = _default_capability_fixtures(
+                semantic_key, profile.get("agent_input_schema")
+            )
+        execution: dict[str, Any] = {
+            **_CAPABILITY_EXECUTION,
+            "connection_id": str(resolved.id),
+            "request_mapping": request_mapping,
+            "timeout_seconds": timeout_seconds,
+        }
+        if "response" in profile:
+            execution["response"] = profile["response"]
+        compiled[semantic_key] = {
+            "enabled": profile.get("enabled"),
+            "semantic_version": 1,
+            "description": profile.get("description"),
+            "announcement": profile.get("announcement"),
+            "agent_input_schema": _compile_agent_input_schema(
+                profile.get("agent_input_schema")
+            ),
+            "business_policy": profile.get("business_policy", {}),
+            "execution": execution,
+            "validation_fixtures": fixtures,
+        }
+    return {**config, "capabilities": compiled}
+
+
 def compile_authoring_config(
     client: AuthenticatedClient, tenant_id: UUID, config: Mapping[str, Any]
 ) -> dict[str, Any]:
     """Compile the small authoring surface into the pinned runtime contract."""
     result = canonical_config(config)
     actions = result.get("post_call_actions")
-    if actions is None:
-        return result
-    if not isinstance(actions, list):
+    capabilities = result.get("capabilities")
+    has_capability_authoring = isinstance(capabilities, dict) and any(
+        isinstance(profile, dict)
+        and (
+            "execution" not in profile
+            or bool(set(profile) & _CAPABILITY_RUNTIME_CONFLICT_FIELDS)
+        )
+        for profile in capabilities.values()
+    )
+    if actions is not None and not isinstance(actions, list):
         raise PromptCommandError("post_call_actions must be a list", 2)
-    if all(isinstance(action, dict) and "action_id" in action for action in actions):
-        return result
-    if any(isinstance(action, dict) and "action_id" in action for action in actions):
+    has_action_authoring = isinstance(actions, list) and any(
+        not (isinstance(action, dict) and "action_id" in action) for action in actions
+    )
+    if isinstance(actions, list) and any(
+        isinstance(action, dict) and "action_id" in action for action in actions
+    ) and has_action_authoring:
         raise PromptCommandError(
             "post_call_actions cannot mix authoring actions with runtime actions", 2
         )
 
+    if not has_capability_authoring and not has_action_authoring:
+        return result
     connections = _connections_by_key(client, tenant_id)
+    result = _compile_capabilities(connections, result)
+    if not has_action_authoring:
+        return canonical_config(result)
+
+    assert isinstance(actions, list)
     compiled: list[dict[str, Any]] = []
     action_ids: set[str] = set()
     for index, action in enumerate(actions):
@@ -253,25 +453,9 @@ def compile_authoring_config(
         if action_id in action_ids:
             raise PromptCommandError("post_call_actions IDs must be unique", 2)
         action_ids.add(action_id)
-        connection = action.get("connection")
-        if not isinstance(connection, str) or not connection:
-            raise PromptCommandError(
-                f"{label}.connection must be a non-empty string", 2
-            )
-        resolved = connections.get(connection)
-        if resolved is None:
-            raise PromptCommandError(
-                f"{label}.connection references unknown integration connection {connection!r}",
-                2,
-            )
-        if (
-            resolved.provider is not IntegrationProvider.MANAGED_WEBHOOK
-            or resolved.status is not IntegrationConnectionStatus.ACTIVE
-        ):
-            raise PromptCommandError(
-                f"{label}.connection must reference an active managed_webhook connection",
-                2,
-            )
+        resolved = _managed_webhook_connection(
+            connections, action.get("connection"), label=label
+        )
         if preset_name is not None:
             if (
                 not isinstance(preset_name, str)
@@ -319,9 +503,69 @@ def authoring_config(
     """Render a pinned runtime config back to its small authoring surface."""
     result = canonical_config(config)
     actions = result.get("post_call_actions")
-    if not isinstance(actions, list) or not actions:
+    capabilities = result.get("capabilities")
+    has_capability_execution = isinstance(capabilities, dict) and any(
+        isinstance(profile, dict) and isinstance(profile.get("execution"), dict)
+        for profile in capabilities.values()
+    )
+    if (not isinstance(actions, list) or not actions) and not has_capability_execution:
         return result
     connections = {str(item.id): item.key for item in _connections(client, tenant_id)}
+    if isinstance(capabilities, dict):
+        authored_capabilities: dict[str, Any] = {}
+        for semantic_key, profile in capabilities.items():
+            if not isinstance(profile, dict) or not isinstance(
+                profile.get("execution"), dict
+            ):
+                authored_capabilities[semantic_key] = profile
+                continue
+            execution = profile["execution"]
+            if not (
+                execution.get("plan_type") == "managed_webhook.post_json.v1"
+                and all(
+                    execution.get(key) == value
+                    for key, value in _CAPABILITY_EXECUTION.items()
+                )
+            ):
+                authored_capabilities[semantic_key] = profile
+                continue
+            connection = connections.get(str(execution.get("connection_id")))
+            if connection is None:
+                raise PromptCommandError(
+                    f"Active TenantConfig capability {semantic_key} references an unavailable integration connection",
+                    1,
+                )
+            authored_profile: dict[str, Any] = {
+                "enabled": profile.get("enabled"),
+                "description": profile.get("description"),
+                "announcement": profile.get("announcement"),
+                "type": "http.post_json",
+                "connection": connection,
+                "agent_input_schema": _authoring_agent_input_schema(
+                    profile.get("agent_input_schema")
+                ),
+                "request_mapping": execution.get("request_mapping"),
+            }
+            if profile.get("business_policy"):
+                authored_profile["business_policy"] = profile["business_policy"]
+            if execution.get("response") is not None:
+                authored_profile["response"] = execution["response"]
+            if execution.get("timeout_seconds") != 10:
+                authored_profile["timeout_seconds"] = execution.get("timeout_seconds")
+            try:
+                defaults = _default_capability_fixtures(
+                    semantic_key, profile.get("agent_input_schema")
+                )
+            except PromptCommandError:
+                defaults = None
+            if profile.get("validation_fixtures") != defaults:
+                authored_profile["validation_fixtures"] = profile.get(
+                    "validation_fixtures"
+                )
+            authored_capabilities[semantic_key] = authored_profile
+        result = {**result, "capabilities": authored_capabilities}
+    if not isinstance(actions, list) or not actions:
+        return canonical_config(result)
     authored: list[dict[str, Any]] = []
     for index, action in enumerate(actions):
         label = f"post_call_actions[{index}]"

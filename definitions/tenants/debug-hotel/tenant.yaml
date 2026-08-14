@@ -11,7 +11,62 @@ localization:
   default_locale: sk-SK
   timezone: Europe/Bratislava
 schema_version: 4
-capabilities: {}
+capabilities:
+  reservation.check_availability:
+    enabled: true
+    description: Check availability of selected bed type and date
+    announcement: Teraz overim dostupnost.
+    type: http.post_json
+    connection: check_availability_webhook
+    agent_input_schema:
+      type: object
+      additionalProperties: false
+      required:
+        - check_in
+        - check_out
+        - room_type
+        - room_count
+      properties:
+        check_in:
+          type: string
+          format: date
+          x-canonical-field: stay.check_in
+        check_out:
+          type: string
+          format: date
+          x-canonical-field: stay.check_out
+        room_type:
+          type: integer
+          x-canonical-field: allocation.room_type
+        room_count:
+          type: integer
+          minimum: 1
+          x-canonical-field: allocation.room_count
+    request_mapping: |
+      {
+        "start_date": business.stay.check_in,
+        "end_date": business.stay.check_out,
+        "room_count": business.allocation.room_count,
+        "room_type": business.allocation.room_type
+      }
+    timeout_seconds: 10
+    validation_fixtures:
+      - check_in: "2030-08-10"
+        check_out: "2030-08-11"
+        room_type: 2
+        room_count: 1
+      - check_in: "2030-09-09"
+        check_out: "2030-09-10"
+        room_type: 3
+        room_count: 2
+    response:
+      mode: text
+      mapping: |
+        response.body
+      output_schema:
+        type: string
+
+
 contact:
   address: null
   emails:
@@ -20,35 +75,27 @@ contact:
   phones:
   - '+421900000000'
   website: null
+handoff:
+  destinations:
+    reception:
+      description: Reservations, check-in, payments and general reception requests
+      phone_number: "+421900000001"
 post_call_actions:
-  - id: send_transcript
-    type: http.post_json
-    connection: transcript_webhook
-    inputs:
-      summary:
-        artifact: call_summary
-        representation: plain_text
-      transcript:
-        artifact: transcript
-        representation: raw_json
-    request_mapping: |
-      {
-        "type": "post_call_transcription",
-        "data": {
-          "analysis": {
-            "transcript_summary": inputs.summary.value
-          },
-          "transcript": inputs.transcript.value.{
-            "role": role = "assistant" ? "agent" : role,
-            "message": content
-          },
-          "conversation_initiation_client_data": {
-            "dynamic_variables": {
-              "system__time": call.ended_at
-            }
-          },
-          "user_id": call.caller_number,
-          "conversation_id": call.conversation_id
-        }
-      }
-    timeout_seconds: 10
+- id: send_transcript
+  type: http.post_json
+  connection: transcript-webhook
+  request_mapping: "{\n  \"type\": \"post_call_transcription\",\n  \"data\": {\n \
+    \   \"analysis\": {\n      \"transcript_summary\": inputs.summary.value\n    },\n\
+    \    \"transcript\": inputs.transcript.value.{\n      \"role\": role = \"assistant\"\
+    \ ? \"agent\" : role,\n      \"message\": content\n    },\n    \"conversation_initiation_client_data\"\
+    : {\n      \"dynamic_variables\": {\n        \"system__time\": call.ended_at\n\
+    \      }\n    },\n    \"user_id\": call.caller_number,\n    \"conversation_id\"\
+    : call.conversation_id\n  }\n}"
+  timeout_seconds: 10
+  inputs:
+    summary:
+      artifact: call_summary
+      representation: plain_text
+    transcript:
+      artifact: transcript
+      representation: raw_json

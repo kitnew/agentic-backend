@@ -23,6 +23,7 @@ def azure_endpoint(value: str) -> str:
 def create_agent_session(
     settings: VoiceAgentSettings,
     runtime: EffectiveVoiceRuntime,
+    prompt_cache_key: str,
 ) -> agents.AgentSession:
     if runtime.llm.provider != "azure_openai":
         raise ValueError(f"unsupported LLM provider: {runtime.llm.provider}")
@@ -72,6 +73,7 @@ def create_agent_session(
             azure_endpoint=azure_endpoint(settings.azure_openai_endpoint),
             api_version=settings.azure_openai_api_version,
             api_key=settings.azure_openai_api_key.get_secret_value(),
+            prompt_cache_key=prompt_cache_key,
             timeout=httpx.Timeout(settings.provider_timeout_seconds),
             temperature=runtime.llm.temperature,
         ),

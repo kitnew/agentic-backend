@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 from collections.abc import Callable
 from typing import Any, cast
@@ -151,7 +152,7 @@ def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
             f"Locale: {context.locale}",
             f"Timezone: {context.timezone}",
             f"Conversation scope: {context.conversation_scope}",
-            "Use a capability tool when its inputs are known. Do not promise success before its result. reservation_submit_request submits a request; it never confirms a reservation.",
+            "Use a capability tool when its inputs are known. Do not promise success before its result. Capability results are authoritative for the requested operation.",
             "Use the calculator whenever exact arithmetic is required. It performs one operation per call; decompose multi-step calculations into sequential calls and pass each result forward. It does not interpret business meaning. percentage(A, B) means B percent of A.",
             context.prompt.knowledge_context,
         )
@@ -190,7 +191,7 @@ def handoff_tool(
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
-    ) -> dict[str, object]:
+    ) -> Any:
         request = HumanHandoffRequest.model_validate(
             {"tool_call_id": context.function_call.call_id, **raw_arguments}
         )
@@ -258,7 +259,7 @@ def capability_tool(
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
-    ) -> dict[str, object]:
+    ) -> Any:
         announcement = context.session.say(
             definition.announcement,
             allow_interruptions=False,
@@ -308,7 +309,7 @@ def capability_tool(
             }
         if invocation.status is CapabilityInvocationStatus.SUCCEEDED:
             assert invocation.semantic_result is not None
-            return invocation.semantic_result.model_dump(mode="json")
+            return invocation.semantic_result
         return {
             "status": "request_submission_failed",
             "error_code": invocation.error_code or "execution_failed",
@@ -406,7 +407,14 @@ async def run_job(
             extra={"call_session_id": str(call_id), "room": context.room_name},
         )
         log_runtime_binding(settings, context)
-        session = create_agent_session(settings, context.voice_runtime)
+        prompt_cache_key = "voice-agent-prompt:" + hashlib.sha256(
+            "\0".join(
+                (context.prompt.system_prompt, context.prompt.profile_prompt)
+            ).encode()
+        ).hexdigest()
+        session = create_agent_session(
+            settings, context.voice_runtime, prompt_cache_key
+        )
         persistence = ConversationPersistence(backend, call_id)
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()

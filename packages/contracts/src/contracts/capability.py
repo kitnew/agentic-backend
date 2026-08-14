@@ -95,6 +95,22 @@ class ManagedWebhookBodyBinding(_Contract):
     payload_path: str = Field(min_length=1, max_length=2048)
 
 
+class ManagedWebhookResponseConfig(_Contract):
+    mode: Literal["status_only", "text", "json"]
+    mapping: str | None = Field(default=None, min_length=1, max_length=20_000)
+    success_output: dict[str, object] | None = None
+    output_schema: dict[str, object]
+
+    @model_validator(mode="after")
+    def mode_has_one_output_source(self) -> ManagedWebhookResponseConfig:
+        if self.mode == "status_only":
+            if self.success_output is None or self.mapping is not None:
+                raise ValueError("status_only requires only success_output")
+        elif self.mapping is None or self.success_output is not None:
+            raise ValueError("text/json response requires only mapping")
+        return self
+
+
 class ManagedWebhookPostJsonPlan(_Contract):
     plan_type: Literal["managed_webhook.post_json.v1"]
     connection_ref: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
@@ -102,6 +118,7 @@ class ManagedWebhookPostJsonPlan(_Contract):
     capability: ManagedWebhookCapability
     payload: dict[str, object]
     response_contract: Literal["http_2xx", "managed_webhook_envelope.v1"] = "http_2xx"
+    response: ManagedWebhookResponseConfig | None = None
     body_bindings: list[ManagedWebhookBodyBinding] = Field(
         default_factory=list, max_length=10
     )
@@ -151,7 +168,7 @@ class ManagedWebhookPostJsonResult(_Contract):
     operation_id: UUID
     reference: str | None = Field(default=None, max_length=1024)
     deduplicated: bool
-    data: dict[str, object] = Field(default_factory=dict)
+    data: dict[str, object] | str = Field(default_factory=dict)
 
 
 TechnicalResult = Annotated[
@@ -246,7 +263,7 @@ class CapabilityInvocationResponse(_Contract):
     semantic_key: str
     semantic_version: int
     status: CapabilityInvocationStatus
-    semantic_result: ReservationRequestSubmitted | None = None
+    semantic_result: dict[str, object] | str | None = None
     error_code: str | None = None
     error_message: str | None = None
     created_at: datetime

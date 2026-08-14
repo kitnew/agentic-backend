@@ -1,6 +1,5 @@
 import json
 from dataclasses import dataclass, field
-from typing import cast
 
 from contracts import (
     GoogleSheetsAppendValuesResult,
@@ -17,23 +16,21 @@ type JsonValue = (
 class ExecutionOutcome:
     reference: str | None = None
     deduplicated: bool = False
-    data: dict[str, JsonValue] = field(default_factory=dict)
+    data: object = field(default_factory=dict)
 
 
 class TechnicalResultProjectionError(ValueError):
     pass
 
 
-def _json_data(value: dict[str, object]) -> dict[str, JsonValue]:
+def _json_data(value: object) -> object:
     try:
         decoded = json.loads(json.dumps(value, allow_nan=False))
     except (TypeError, ValueError) as error:
         raise TechnicalResultProjectionError(
             "Technical result data is not JSON-compatible"
         ) from error
-    if not isinstance(decoded, dict):
-        raise TechnicalResultProjectionError("Technical result data must be an object")
-    return cast(dict[str, JsonValue], decoded)
+    return decoded
 
 
 def project_execution_outcome(result: TechnicalResult) -> ExecutionOutcome:

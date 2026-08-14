@@ -13,7 +13,11 @@ from backend_core.runtime.capabilities.domain import (
     validate_agent_schema,
     validate_business_input,
 )
-from contracts import ManagedWebhookExecution, TenantCapabilityProfile
+from contracts import (
+    ManagedWebhookExecution,
+    ManagedWebhookPostJsonPlan,
+    TenantCapabilityProfile,
+)
 
 
 def schema(*, phone: bool = False) -> dict[str, object]:
@@ -112,9 +116,60 @@ def compile_row(
 
 
 def test_registry_is_code_owned_and_has_one_capability() -> None:
-    assert set(REGISTRY) == {("reservation.submit_request", 1)}
+    assert set(REGISTRY) == {
+        ("reservation.submit_request", 1),
+        ("reservation.check_availability", 1),
+    }
     with pytest.raises(CapabilityValidationError):
         definition("reservation.create", 1)
+
+
+def test_check_availability_definition_is_registered() -> None:
+    capability = definition("reservation.check_availability", 1)
+    assert capability.tool_name == "reservation_check_availability"
+    assert capability.required_fields == frozenset(
+        {
+            "stay.check_in",
+            "stay.check_out",
+            "allocation.room_type",
+            "allocation.room_count",
+        }
+    )
+
+
+def test_check_availability_business_validation_does_not_require_guest_name() -> None:
+    canonical = validate_business_input(
+        normalize_input(
+            {
+                "properties": {
+                    "check_in": {
+                        "x-canonical-field": "stay.check_in"
+                    },
+                    "check_out": {
+                        "x-canonical-field": "stay.check_out"
+                    },
+                    "room_type": {
+                        "x-canonical-field": "allocation.room_type"
+                    },
+                    "room_count": {
+                        "x-canonical-field": "allocation.room_count"
+                    },
+                }
+            },
+            {
+                "check_in": "2030-08-12",
+                "check_out": "2030-08-15",
+                "room_type": 1,
+                "room_count": 1,
+            },
+        ),
+        "Europe/Bratislava",
+        required_fields=definition(
+            "reservation.check_availability", 1
+        ).required_fields,
+        today=date(2030, 8, 1),
+    )
+    assert canonical["guest"]["name"] is None
 
 
 def test_managed_webhook_plan_contains_payload_not_provider_details() -> None:
@@ -152,6 +207,56 @@ def test_managed_webhook_plan_contains_payload_not_provider_details() -> None:
     assert plan.payload == {"check_in": "2026-08-12", "guest_name": "Alice"}
     assert plan.response_contract == "managed_webhook_envelope.v1"
     assert not hasattr(plan, "url")
+
+
+def test_managed_webhook_response_contract_compiles_into_pinned_plan() -> None:
+    capability = profile('{}').model_copy(
+        update={
+            "execution": ManagedWebhookExecution.model_validate(
+                {
+                    "plan_type": "managed_webhook.post_json.v1",
+                    "connection_id": str(uuid4()),
+                    "mapping_language": "jsonata",
+                    "mapping_contract_version": 1,
+                    "mapping_engine": "jsonata-python",
+                    "mapping_engine_version": "0.7.0",
+                    "request_mapping": '{"guest_name": business.guest.name}',
+                    "response": {
+                        "mode": "json",
+                        "mapping": '{"status": "created", "request_id": response.body.id}',
+                        "output_schema": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["status"],
+                            "properties": {
+                                "status": {"type": "string"},
+                                "request_id": {"type": "string"},
+                            },
+                        },
+                    },
+                    "timeout_seconds": 10,
+                }
+            )
+        }
+    )
+    plan = compile_plan(
+        capability,
+        {
+            "guest": {"name": "Alice", "phone": None, "email": None},
+            "stay": {"check_in": "2026-08-12", "check_out": "2026-08-15"},
+            "allocation": {"room_type": None, "room_count": None},
+            "notes": None,
+            "custom": {},
+        },
+        operation_id=uuid4(),
+        call_id=uuid4(),
+        tool_call_id="tool-call",
+        credential_ref="reservation-webhook",
+    )
+
+    assert isinstance(plan, ManagedWebhookPostJsonPlan)
+    assert plan.response_contract == "http_2xx"
+    assert plan.response is not None and plan.response.mode == "json"
 
 
 def test_two_tenant_profiles_compile_with_the_same_code() -> None:

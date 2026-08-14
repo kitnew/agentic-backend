@@ -162,6 +162,43 @@ def authoring_post_call_config() -> dict[str, Any]:
     }
 
 
+def authoring_capability_config() -> dict[str, Any]:
+    return {
+        **CONFIG,
+        "capabilities": {
+            "reservation.submit_request": {
+                "enabled": True,
+                "description": "Create a reservation request.",
+                "announcement": "I will send the reservation request now.",
+                "type": "http.post_json",
+                "connection": "recording_webhook",
+                "agent_input_schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["guest_name", "check_in", "check_out"],
+                    "properties": {
+                        "guest_name": {
+                            "type": "string",
+                            "x-canonical-field": "guest.name",
+                        },
+                        "check_in": {
+                            "type": "string",
+                            "format": "date",
+                            "x-canonical-field": "stay.check_in",
+                        },
+                        "check_out": {
+                            "type": "string",
+                            "format": "date",
+                            "x-canonical-field": "stay.check_out",
+                        },
+                    },
+                },
+                "request_mapping": '{"guest_name": business.guest.name}',
+            }
+        },
+    }
+
+
 def preset_post_call_config() -> dict[str, Any]:
     return {
         **CONFIG,
@@ -334,6 +371,121 @@ def test_post_call_authoring_actions_compile_and_render_without_runtime_details(
         )
         == authored
     )
+
+
+def test_capability_authoring_compiles_and_renders_without_runtime_details(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_connections(monkeypatch)
+    authored = authoring_capability_config()
+
+    compiled = tenant_configs.compile_authoring_config(
+        object(), TENANT_ID, authored  # type: ignore[arg-type]
+    )
+
+    profile = compiled["capabilities"]["reservation.submit_request"]
+    assert profile["semantic_version"] == 1
+    assert profile["execution"] == {
+        "plan_type": "managed_webhook.post_json.v1",
+        "connection_id": "00000000-0000-0000-0000-000000000099",
+        "mapping_language": "jsonata",
+        "mapping_contract_version": 1,
+        "mapping_engine": "jsonata-python",
+        "mapping_engine_version": "0.7.0",
+        "request_mapping": '{"guest_name": business.guest.name}',
+        "timeout_seconds": 10,
+    }
+    assert profile["validation_fixtures"] == [
+        {
+            "guest_name": "Fixture Guest",
+            "check_in": "2030-08-12",
+            "check_out": "2030-08-15",
+        },
+        {
+            "guest_name": "Fixture Guest",
+            "check_in": "2030-09-01",
+            "check_out": "2030-09-03",
+        },
+    ]
+    TenantConfigV4.model_validate(compiled)
+    assert (
+        tenant_configs.authoring_config(
+            object(), TENANT_ID, compiled  # type: ignore[arg-type]
+        )
+        == authored
+    )
+
+
+def test_capability_authoring_rejects_invalid_webhook_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tenant_configs.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response(
+            [integration_connection(provider="google_sheets")]
+        ),
+    )
+    with pytest.raises(
+        tenant_configs.PromptCommandError, match="active managed_webhook"
+    ):
+        tenant_configs.compile_authoring_config(
+            object(), TENANT_ID, authoring_capability_config()  # type: ignore[arg-type]
+        )
+
+
+def test_capability_authoring_requires_manual_fixtures_when_not_derivable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_connections(monkeypatch)
+    authored = authoring_capability_config()
+    profile = authored["capabilities"]["reservation.submit_request"]
+    profile["agent_input_schema"]["required"].append("custom")
+    profile["agent_input_schema"]["properties"]["custom"] = {
+        "type": "string",
+        "x-custom-field": "source",
+    }
+    with pytest.raises(
+        tenant_configs.PromptCommandError, match="validation_fixtures is required"
+    ):
+        tenant_configs.compile_authoring_config(
+            object(), TENANT_ID, authored  # type: ignore[arg-type]
+        )
+
+
+def test_capability_authoring_compiles_and_hides_schema_dialect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_connections(monkeypatch)
+    authored = authoring_capability_config()
+
+    compiled = tenant_configs.compile_authoring_config(
+        object(), TENANT_ID, authored  # type: ignore[arg-type]
+    )
+    schema = compiled["capabilities"]["reservation.submit_request"][
+        "agent_input_schema"
+    ]
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert "$schema" not in tenant_configs.authoring_config(
+        object(), TENANT_ID, compiled  # type: ignore[arg-type]
+    )["capabilities"]["reservation.submit_request"]["agent_input_schema"]
+
+
+def test_capability_authoring_rejects_mixed_runtime_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_connections(monkeypatch)
+    runtime = tenant_configs.compile_authoring_config(
+        object(), TENANT_ID, authoring_capability_config()  # type: ignore[arg-type]
+    )
+    profile = runtime["capabilities"]["reservation.submit_request"]
+    profile["connection"] = "recording_webhook"
+    with pytest.raises(
+        tenant_configs.PromptCommandError, match="cannot mix authoring fields"
+    ):
+        tenant_configs.compile_authoring_config(
+            object(), TENANT_ID, runtime  # type: ignore[arg-type]
+        )
 
 
 def test_post_call_presets_compile_to_strict_runtime_and_round_trip(

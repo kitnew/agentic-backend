@@ -18,6 +18,7 @@ from urllib.parse import quote, urlparse
 from uuid import UUID
 
 import httpx
+import jsonata  # type: ignore[import-untyped]
 import jwt
 from contracts import (
     GoogleSheetsAppendValuesPlan,
@@ -32,6 +33,13 @@ from contracts import (
 )
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import service_account
+from jsonschema import (  # type: ignore[import-untyped]
+    Draft202012Validator,
+    FormatChecker,
+)
+from jsonschema.exceptions import (  # type: ignore[import-untyped]
+    ValidationError as JsonSchemaValidationError,
+)
 from minio import Minio
 from minio.error import MinioException
 from pydantic import ValidationError
@@ -40,6 +48,7 @@ from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+MAX_WEBHOOK_RESPONSE_BYTES = 64_000
 
 
 class ExecutionError(RuntimeError):
@@ -481,13 +490,16 @@ class ManagedWebhookPostJsonHandler:
         if connection.api_key:
             headers[connection.api_key_header] = connection.api_key
         try:
-            response = await self._client.post(
+            async with self._client.stream(
+                "POST",
                 connection.url,
                 headers=headers,
                 content=content,
                 timeout=plan.timeout_seconds,
                 follow_redirects=False,
-            )
+            ) as response:
+                self._validate_status(response.status_code)
+                return await self._result(plan, response)
         except httpx.TimeoutException as error:
             raise ExecutionError(
                 "provider_timeout", "Managed webhook timed out", transient=True
@@ -498,33 +510,51 @@ class ManagedWebhookPostJsonHandler:
                 "Managed webhook transport failed",
                 transient=True,
             ) from error
-        if len(response.content) > 64_000:
-            raise ExecutionError(
-                "response_too_large",
-                "Managed webhook response is too large",
-                transient=False,
-            )
-        if (
-            response.status_code == 429
-            or response.status_code in {408}
-            or response.status_code >= 500
-        ):
+
+    @staticmethod
+    def _validate_status(status_code: int) -> None:
+        if status_code == 429 or status_code == 408 or status_code >= 500:
             raise ExecutionError(
                 "provider_transient_error",
                 "Managed webhook returned a retryable error",
                 transient=True,
             )
-        if response.status_code in {400, 401, 403, 404, 410}:
+        if status_code in {400, 401, 403, 404, 410}:
             raise ExecutionError(
                 "provider_permanent_error",
                 "Managed webhook rejected the request",
                 transient=False,
             )
-        if response.status_code < 200 or response.status_code >= 300:
+        if status_code < 200 or status_code >= 300:
             raise ExecutionError(
                 "provider_permanent_error",
                 "Managed webhook returned an unsupported status",
                 transient=False,
+            )
+
+    async def _result(
+        self, plan: ManagedWebhookPostJsonPlan, response: httpx.Response
+    ) -> ManagedWebhookPostJsonResult:
+        if plan.response is not None:
+            if plan.response.mode == "status_only":
+                assert plan.response.success_output is not None
+            data: dict[str, object] | str = (
+                cast(dict[str, object], plan.response.success_output)
+                if plan.response.mode == "status_only"
+                else self._map_response(
+                    plan,
+                    response,
+                    await self._bounded_response(response),
+                )
+            )
+            self._validate_output(plan.response.output_schema, data)
+            return ManagedWebhookPostJsonResult(
+                result_type="managed_webhook.post_json.v1",
+                status="succeeded",
+                operation_id=plan.operation_id,
+                reference=None,
+                deduplicated=False,
+                data=data,
             )
         if plan.response_contract == "http_2xx":
             return ManagedWebhookPostJsonResult(
@@ -534,6 +564,7 @@ class ManagedWebhookPostJsonHandler:
                 reference=None,
                 deduplicated=False,
             )
+        content = await self._bounded_response(response)
         content_type = response.headers.get("content-type", "")
         if "application/json" not in content_type.lower():
             raise ExecutionError(
@@ -542,7 +573,7 @@ class ManagedWebhookPostJsonHandler:
                 transient=False,
             )
         try:
-            raw = response.json()
+            raw = json.loads(content)
             if raw.get("status") == "failed":
                 failure = ManagedWebhookFailureResponse.model_validate(raw)
                 raise ExecutionError(
@@ -573,6 +604,92 @@ class ManagedWebhookPostJsonHandler:
             deduplicated=success.result.deduplicated,
             data=success.result.data,
         )
+
+    @staticmethod
+    async def _bounded_response(response: httpx.Response) -> bytes:
+        content = bytearray()
+        async for chunk in response.aiter_bytes():
+            content.extend(chunk)
+            if len(content) > MAX_WEBHOOK_RESPONSE_BYTES:
+                raise ExecutionError(
+                    "response_too_large",
+                    "Managed webhook response is too large",
+                    transient=False,
+                )
+        return bytes(content)
+
+    @staticmethod
+    def _map_response(
+        plan: ManagedWebhookPostJsonPlan,
+        response: httpx.Response,
+        content: bytes,
+    ) -> dict[str, object] | str:
+        configured = plan.response
+        if configured is None or configured.mapping is None:
+            raise ExecutionError(
+                "response_contract_invalid",
+                "Managed webhook response configuration is invalid",
+                transient=False,
+            )
+        content_type = response.headers.get("content-type", "")
+        media_type = content_type.partition(";")[0].strip().lower()
+        try:
+            if configured.mode == "json":
+                if media_type != "application/json" and not media_type.endswith(
+                    "+json"
+                ):
+                    raise ValueError
+                body: object = json.loads(content)
+            elif configured.mode == "text":
+                if media_type != "text/plain":
+                    raise ValueError
+                body = content.decode("utf-8")
+            else:
+                raise ValueError
+        except (UnicodeDecodeError, ValueError) as error:
+            raise ExecutionError(
+                "response_contract_invalid",
+                "Managed webhook response does not match the configured mode",
+                transient=False,
+            ) from error
+        context = {
+            "response": {
+                "status_code": response.status_code,
+                "content_type": media_type,
+                "body": body,
+            }
+        }
+        try:
+            encoded = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
+            if len(encoded.encode()) > MAX_WEBHOOK_RESPONSE_BYTES:
+                raise ValueError
+            mapped = jsonata.Jsonata(configured.mapping).evaluate(json.loads(encoded))
+            output = json.dumps(mapped, ensure_ascii=False, separators=(",", ":"))
+            if len(output.encode()) > MAX_WEBHOOK_RESPONSE_BYTES:
+                raise ValueError
+            decoded = json.loads(output)
+            if not isinstance(decoded, (dict, str)):
+                raise TypeError
+        except Exception as error:
+            raise ExecutionError(
+                "response_mapping_failed",
+                "Managed webhook response mapping failed",
+                transient=False,
+            ) from error
+        return cast(dict[str, object] | str, decoded)
+
+    @staticmethod
+    def _validate_output(schema: dict[str, object], output: object) -> None:
+        try:
+            Draft202012Validator(schema, format_checker=FormatChecker()).validate(
+                output
+            )
+        except JsonSchemaValidationError as error:
+            raise ExecutionError(
+                "response_output_invalid",
+                "Managed webhook semantic result is invalid",
+                transient=False,
+            ) from error
 
     @staticmethod
     def _bounded_payload(plan: ManagedWebhookPostJsonPlan) -> str:

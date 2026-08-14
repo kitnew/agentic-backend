@@ -291,8 +291,8 @@ def test_prompt_assembly_uses_only_runtime_material() -> None:
         "Locale: sk-SK\n\nTimezone: Europe/Bratislava\n\n"
         "Conversation scope: property_only\n\n"
         "Use a capability tool when its inputs are known. Do not promise success "
-        "before its result. reservation_submit_request submits a request; it never "
-        "confirms a reservation.\n\n"
+            "before its result. Capability results are authoritative for the requested "
+            "operation.\n\n"
         "Use the calculator whenever exact arithmetic is required. It performs one "
         "operation per call; decompose multi-step calculations into sequential calls "
         "and pass each result forward. It does not interpret business meaning. "
@@ -492,7 +492,9 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         return original(**kwargs)
 
     monkeypatch.setattr(openai.LLM, "with_azure", capture_azure)
-    session = create_agent_session(settings(), runtime_settings())
+    session = create_agent_session(
+        settings(), runtime_settings(), "voice-agent-prompt:test"
+    )
     try:
         assert isinstance(session.stt, elevenlabs.STT)
         assert isinstance(session.llm, openai.LLM)
@@ -513,6 +515,7 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert azure["azure_endpoint"] == "https://test.openai.azure.com"
         assert azure["api_version"] == "2025-01-01-preview"
         assert azure["api_key"] == "azure-key"
+        assert azure["prompt_cache_key"] == "voice-agent-prompt:test"
         assert session.tts._opts.model == "eleven_flash_v2_5"
         assert session.tts._opts.voice_id == "voice-id"
         assert str(session.tts._opts.language) == "sk"
@@ -545,6 +548,7 @@ def test_provider_factory_rejects_unbound_logical_azure_model() -> None:
                     "temperature": 0,
                 }
             ),
+            "voice-agent-prompt:test",
         )
 
 

@@ -602,6 +602,8 @@ async def test_small_post_call_payload_still_uses_jsonata() -> None:
 
     assert plan.payload == {"call": str(call.id)}
     assert plan.body_bindings == []
+    assert plan.response_contract == "http_2xx"
+    assert plan.response is None
 
 
 @pytest.mark.asyncio

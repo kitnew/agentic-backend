@@ -14,6 +14,8 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
+from contracts.capability import ManagedWebhookResponseConfig
+
 
 class _TenantConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -100,6 +102,7 @@ class ManagedWebhookExecution(_TenantConfigModel):
     mapping_engine: Literal["jsonata-python"]
     mapping_engine_version: Literal["0.7.0"]
     request_mapping: str = Field(min_length=1, max_length=20_000)
+    response: ManagedWebhookResponseConfig | None = None
     timeout_seconds: int = Field(gt=0, le=60)
 
 

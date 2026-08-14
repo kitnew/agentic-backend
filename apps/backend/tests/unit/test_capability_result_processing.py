@@ -12,7 +12,10 @@ from backend_core.runtime.capabilities.execution import (
     project_execution_outcome,
 )
 from backend_core.runtime.capabilities.models import CapabilityInvocation
-from backend_core.runtime.capabilities.service import CapabilityInvocationService
+from backend_core.runtime.capabilities.service import (
+    CapabilityInvocationService,
+    invocation_response,
+)
 from contracts import (
     CapabilityInvocationStatus,
     GoogleSheetsAppendValuesResult,
@@ -151,6 +154,66 @@ async def test_matching_typed_result_completes_invocation(
         "deduplicated": result.deduplicated,
     }
     assert repository.flushed
+
+
+@pytest.mark.asyncio
+async def test_configured_webhook_result_is_the_validated_agent_result() -> None:
+    current = invocation("managed_webhook.post_json.v1")
+    current.execution_plan["response"] = {
+        "mode": "json",
+        "mapping": '{"status": response.body.status}',
+        "output_schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["status"],
+            "properties": {"status": {"const": "created"}},
+        },
+    }
+    result = ManagedWebhookPostJsonResult(
+        result_type="managed_webhook.post_json.v1",
+        status="succeeded",
+        operation_id=uuid4(),
+        reference=None,
+        deduplicated=False,
+        data={"status": "created"},
+    )
+    service = CapabilityInvocationService(
+        InvocationRepository(current), None, None, None, None, None
+    )
+
+    completed = await service.record_result(report(current, result))
+
+    assert completed.semantic_result == {"status": "created"}
+    assert invocation_response(completed).semantic_result == {"status": "created"}
+
+
+@pytest.mark.asyncio
+async def test_backend_rejects_worker_result_that_violates_output_schema() -> None:
+    current = invocation("managed_webhook.post_json.v1")
+    current.execution_plan["response"] = {
+        "mode": "status_only",
+        "success_output": {"status": "submitted"},
+        "output_schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["status"],
+            "properties": {"status": {"const": "submitted"}},
+        },
+    }
+    result = ManagedWebhookPostJsonResult(
+        result_type="managed_webhook.post_json.v1",
+        status="succeeded",
+        operation_id=uuid4(),
+        reference=None,
+        deduplicated=False,
+        data={"status": "wrong"},
+    )
+    service = CapabilityInvocationService(
+        InvocationRepository(current), None, None, None, None, None
+    )
+
+    with pytest.raises(CapabilityValidationError, match="violates output schema"):
+        await service.record_result(report(current, result))
 
 
 def test_technical_results_project_to_provider_neutral_outcomes() -> None:

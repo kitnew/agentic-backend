@@ -10,6 +10,9 @@ export AGENTCTL_STATE_DIR=./definitions
 uv run agentctl --help
 uv run agentctl --version
 uv run agentctl tenant list
+uv run agentctl tenant create debug-hotel \
+  --display-name "Debug Hotel" \
+  --business-type hotel
 uv run agentctl integration list penzion-grand
 uv run agentctl system-prompt plan
 uv run agentctl profile list
@@ -24,6 +27,20 @@ Use `sync plan`, `sync push`, `sync publish`, and `sync pull [--force]` to
 orchestrate the same resource workflows across the locally represented desired
 state. Missing canonical resources are unmanaged; global sync never treats
 absence as remote deletion and never creates remote tenants.
+
+Create a tenant explicitly through the Admin API:
+
+```bash
+uv run agentctl tenant create debug-hotel \
+  --display-name "Debug Hotel" \
+  --business-type hotel
+```
+
+The command creates only the Backend tenant. It does not create or publish
+tenant runtime/config files; add those under `definitions/tenants/<slug>/` and
+use the corresponding `tenant config` or `tenant runtime` workflow afterward.
+Use `--status suspended` or `--status archived` when a newly created tenant
+must not be active immediately.
 
 ```bash
 uv run agentctl system-prompt pull
@@ -90,6 +107,46 @@ post_call_actions:
 
 Control Plane expands presets during plan/push. Use the documented advanced
 JSONata action form only when the outbound payload must differ from the preset.
+
+## Webhook capabilities
+
+Webhook capabilities use the same short connection form. The Control Plane
+resolves the integration key during `plan`/`push` and publishes only the strict
+runtime execution contract:
+
+```yaml
+capabilities:
+  reservation.submit_request:
+    enabled: true
+    description: Create a reservation request.
+    announcement: I will send the reservation request now.
+    type: http.post_json
+    connection: reservation_webhook
+    agent_input_schema:
+      type: object
+      additionalProperties: false
+      required: [guest_name, check_in, check_out]
+      properties:
+        guest_name:
+          type: string
+          x-canonical-field: guest.name
+        check_in:
+          type: string
+          format: date
+          x-canonical-field: stay.check_in
+        check_out:
+          type: string
+          format: date
+          x-canonical-field: stay.check_out
+    request_mapping: |
+      {"guest_name": business.guest.name}
+```
+
+Do not write `connection_id`, `plan_type`, or JSONata engine/version metadata
+in this form. `validation_fixtures` is optional for the standard reservation
+input shape; add it when the Control Plane cannot derive a deterministic
+fixture for your required fields. `business_policy.requires_final_confirmation`
+and `business_policy.requires_caller_phone` remain explicit operator choices.
 
 Knowledge authoring is a flat UTF-8 Markdown tree under
 `tenants/<tenant_slug>/knowledge/*.md`. Filenames are stable document keys.

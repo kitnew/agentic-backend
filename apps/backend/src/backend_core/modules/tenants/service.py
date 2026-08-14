@@ -1643,6 +1643,9 @@ class ConfigUseCases:
                     canonical = validate_business_input(
                         normalize_input(raw_profile.agent_input_schema, fixture),
                         config.localization.timezone,
+                        required_fields=definition(
+                            semantic_key, raw_profile.semantic_version
+                        ).required_fields,
                         enforce_not_past=False,
                     )
                     compile_plan(
@@ -1653,6 +1656,7 @@ class ConfigUseCases:
                         tool_call_id=f"publication-fixture-{index}",
                         credential_ref=connection.credential_ref,
                         caller_phone="+421900000000",
+                        semantic_key=semantic_key,
                     )
             except CapabilityValidationError as error:
                 errors.append(

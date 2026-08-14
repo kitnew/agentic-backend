@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import pytest
+from admin_client.generated.models.tenant_response import TenantResponse
 from control_plane import main as cli
 from control_plane.commands import tenants
 from control_plane.commands.prompts import PromptCommandError
@@ -142,6 +143,115 @@ def test_tenant_list_renders_human_output(
     assert capsys.readouterr().out == (
         "penzion-grand\t00000000-0000-0000-0000-000000000001\tactive\n"
     )
+
+
+def test_tenant_create_uses_existing_admin_api(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    seen: dict[str, object] = {}
+    tenant = TenantResponse.from_dict(
+        {
+            "active_config_revision_id": None,
+            "active_prompt_set_revision_id": None,
+            "business_type": "hotel",
+            "created_at": "2026-08-13T12:00:00+00:00",
+            "display_name": "Debug Hotel",
+            "id": "00000000-0000-0000-0000-000000000001",
+            "slug": "debug-hotel",
+            "status": "active",
+            "updated_at": "2026-08-13T12:00:00+00:00",
+        }
+    )
+
+    def generated_call(*, client: object, body: object) -> object:
+        seen["body"] = body
+        return SimpleNamespace(
+            status_code=HTTPStatus.CREATED,
+            parsed=tenant,
+            content=b"",
+        )
+
+    monkeypatch.setattr(
+        tenants.create_tenant_admin_v1_tenants_post,
+        "sync_detailed",
+        generated_call,
+    )
+    tenants.run_tenant_create(
+        Settings("https://backend.example", "secret", Path("definitions")),
+        "debug-hotel",
+        "Debug Hotel",
+        "hotel",
+        "active",
+    )
+
+    assert seen["body"].to_dict() == {
+        "business_type": "hotel",
+        "display_name": "Debug Hotel",
+        "slug": "debug-hotel",
+        "status": "active",
+    }
+    assert "Created tenant:" in capsys.readouterr().out
+
+
+def test_tenant_create_dispatches_from_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
+    monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
+    seen: dict[str, object] = {}
+
+    def run(
+        settings: Settings,
+        slug: str,
+        display_name: str,
+        business_type: str,
+        status: str,
+    ) -> None:
+        seen.update(
+            settings=settings,
+            slug=slug,
+            display_name=display_name,
+            business_type=business_type,
+            status=status,
+        )
+
+    monkeypatch.setattr(cli, "run_tenant_create", run)
+    assert cli.main(
+        [
+            "tenant",
+            "create",
+            "debug-hotel",
+            "--display-name",
+            "Debug Hotel",
+            "--business-type",
+            "hotel",
+        ]
+    ) == 0
+    assert seen["slug"] == "debug-hotel"
+    assert seen["status"] == "active"
+
+
+def test_tenant_create_reports_slug_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        tenants.create_tenant_admin_v1_tenants_post,
+        "sync_detailed",
+        lambda **_: SimpleNamespace(
+            status_code=HTTPStatus.CONFLICT,
+            parsed=None,
+            content=b'{"detail":"tenant slug already exists"}',
+        ),
+    )
+    with pytest.raises(PromptCommandError, match="tenant slug already exists"):
+        tenants.run_tenant_create(
+            Settings("https://backend.example", "secret", Path("definitions")),
+            "debug-hotel",
+            "Debug Hotel",
+            "hotel",
+            "active",
+        )
 
 
 def test_tenant_prompt_command_hierarchy_and_state_dir(

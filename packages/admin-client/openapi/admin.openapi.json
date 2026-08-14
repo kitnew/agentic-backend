@@ -1912,6 +1912,16 @@
             "title": "Request Mapping",
             "type": "string"
           },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedWebhookResponseConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "timeout_seconds": {
             "exclusiveMinimum": 0.0,
             "maximum": 60.0,
@@ -1930,6 +1940,56 @@
           "timeout_seconds"
         ],
         "title": "ManagedWebhookExecution",
+        "type": "object"
+      },
+      "ManagedWebhookResponseConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "mapping": {
+            "anyOf": [
+              {
+                "maxLength": 20000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping"
+          },
+          "mode": {
+            "enum": [
+              "status_only",
+              "text",
+              "json"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "output_schema": {
+            "additionalProperties": true,
+            "title": "Output Schema",
+            "type": "object"
+          },
+          "success_output": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success Output"
+          }
+        },
+        "required": [
+          "mode",
+          "output_schema"
+        ],
+        "title": "ManagedWebhookResponseConfig",
         "type": "object"
       },
       "PlatformPromptPublishResponse": {

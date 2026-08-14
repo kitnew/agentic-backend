@@ -19,7 +19,7 @@ from control_plane.commands.prompts import (
 from control_plane.commands.runtimes import run_platform_runtime, run_tenant_runtime
 from control_plane.commands.sync import run_sync
 from control_plane.commands.tenant_configs import run_tenant_config
-from control_plane.commands.tenants import fetch_tenants
+from control_plane.commands.tenants import fetch_tenants, run_tenant_create
 from control_plane.commands.voice_runtimes import run_tenant_voice_runtime
 from control_plane.settings import Settings, SettingsError
 
@@ -33,6 +33,15 @@ def parser() -> ArgumentParser:
     tenant = resources.add_parser("tenant", help="inspect tenants")
     tenant_actions = tenant.add_subparsers(dest="tenant_action", required=True)
     tenant_actions.add_parser("list", help="list tenants")
+    tenant_create = tenant_actions.add_parser("create", help="create a tenant")
+    tenant_create.add_argument("slug")
+    tenant_create.add_argument("--display-name", required=True)
+    tenant_create.add_argument("--business-type", required=True)
+    tenant_create.add_argument(
+        "--status",
+        choices=("active", "suspended", "archived"),
+        default="active",
+    )
     tenant_prompt = tenant_actions.add_parser(
         "prompt", help="manage the tenant-owned TenantPrompt"
     )
@@ -232,6 +241,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.tenant_prompt_action,
                 arguments.tenant_slug,
                 force=getattr(arguments, "force", False),
+            )
+            return 0
+        if arguments.resource == "tenant" and arguments.tenant_action == "create":
+            run_tenant_create(
+                settings,
+                arguments.slug,
+                arguments.display_name,
+                arguments.business_type,
+                arguments.status,
             )
             return 0
         if arguments.resource == "tenant" and arguments.tenant_action == "config":

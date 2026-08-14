@@ -9,6 +9,7 @@ from contracts import (
     ManagedWebhookBodyBinding,
     ManagedWebhookCapability,
     ManagedWebhookPostJsonPlan,
+    ManagedWebhookResponseConfig,
 )
 from job_worker.worker import (
     ExecutionError,
@@ -22,6 +23,7 @@ OPERATION_ID = UUID("00000000-0000-0000-0000-000000000001")
 def webhook_plan(
     *,
     response_contract: Literal["http_2xx", "managed_webhook_envelope.v1"] = "http_2xx",
+    response: ManagedWebhookResponseConfig | None = None,
 ) -> ManagedWebhookPostJsonPlan:
     return ManagedWebhookPostJsonPlan(
         plan_type="managed_webhook.post_json.v1",
@@ -32,8 +34,21 @@ def webhook_plan(
         ),
         payload={"guest_name": "Alice"},
         response_contract=response_contract,
+        response=response,
         timeout_seconds=10,
     )
+
+
+OUTPUT_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["status"],
+    "properties": {
+        "status": {"type": "string"},
+        "request_id": {"type": "string"},
+        "message": {"type": "string"},
+    },
+}
 
 
 def resolver(
@@ -80,6 +95,173 @@ async def test_managed_webhook_posts_mapping_as_root_body_without_internal_metad
     assert requests[0].headers["content-type"] == "application/json"
     assert requests[0].headers["x-operation-id"] == str(OPERATION_ID)
     assert json.loads(requests[0].content) == {"guest_name": "Alice"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code", [200, 204])
+async def test_status_only_response_returns_configured_semantic_result(
+    tmp_path: Path, status_code: int
+) -> None:
+    plan = webhook_plan(
+        response=ManagedWebhookResponseConfig(
+            mode="status_only",
+            success_output={"status": "submitted"},
+            output_schema=OUTPUT_SCHEMA,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(status_code, content=b"ignored")
+        )
+    ) as client:
+        result = await ManagedWebhookPostJsonHandler(
+            resolver(tmp_path), client
+        ).execute(plan)
+
+    assert result.data == {"status": "submitted"}
+
+
+@pytest.mark.asyncio
+async def test_plain_text_response_is_mapped_without_exposing_provider_data(
+    tmp_path: Path,
+) -> None:
+    plan = webhook_plan(
+        response=ManagedWebhookResponseConfig(
+            mode="text",
+            mapping='{"status": "created", "message": response.body}',
+            output_schema=OUTPUT_SCHEMA,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                text="Reservation request 1842 created",
+                headers={"content-type": "text/plain", "x-provider-secret": "hidden"},
+            )
+        )
+    ) as client:
+        result = await ManagedWebhookPostJsonHandler(
+            resolver(tmp_path), client
+        ).execute(plan)
+
+    assert result.data == {
+        "status": "created",
+        "message": "Reservation request 1842 created",
+    }
+    assert "hidden" not in result.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_json_response_is_mapped_and_validated(tmp_path: Path) -> None:
+    plan = webhook_plan(
+        response=ManagedWebhookResponseConfig(
+            mode="json",
+            mapping=(
+                '{"status": response.status_code = 200 and response.body.success '
+                '? "created" : "failed", '
+                '"request_id": response.body.reservation_request_id, '
+                '"message": response.content_type}'
+            ),
+            output_schema=OUTPUT_SCHEMA,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={"success": True, "reservation_request_id": "REQ-1842"},
+            )
+        )
+    ) as client:
+        result = await ManagedWebhookPostJsonHandler(
+            resolver(tmp_path), client
+        ).execute(plan)
+
+    assert result.data == {
+        "status": "created",
+        "request_id": "REQ-1842",
+        "message": "application/json",
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "content_type", "body"),
+    [
+        ("json", "application/json", b"not-json"),
+        ("json", "text/plain", b"{}"),
+        ("text", "application/json", b'"text"'),
+    ],
+)
+async def test_configured_response_rejects_malformed_or_unexpected_content(
+    tmp_path: Path, mode: Literal["text", "json"], content_type: str, body: bytes
+) -> None:
+    plan = webhook_plan(
+        response=ManagedWebhookResponseConfig(
+            mode=mode,
+            mapping='{"status": "created"}',
+            output_schema=OUTPUT_SCHEMA,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200, content=body, headers={"content-type": content_type}
+            )
+        )
+    ) as client:
+        with pytest.raises(ExecutionError) as raised:
+            await ManagedWebhookPostJsonHandler(resolver(tmp_path), client).execute(
+                plan
+            )
+    assert raised.value.code == "response_contract_invalid"
+
+
+@pytest.mark.asyncio
+async def test_mapped_response_must_match_output_schema(tmp_path: Path) -> None:
+    plan = webhook_plan(
+        response=ManagedWebhookResponseConfig(
+            mode="json",
+            mapping='{"unexpected": true}',
+            output_schema=OUTPUT_SCHEMA,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    ) as client:
+        with pytest.raises(ExecutionError) as raised:
+            await ManagedWebhookPostJsonHandler(resolver(tmp_path), client).execute(
+                plan
+            )
+    assert raised.value.code == "response_output_invalid"
+
+
+@pytest.mark.asyncio
+async def test_managed_webhook_rejects_oversized_response_while_streaming(
+    tmp_path: Path,
+) -> None:
+    plan = webhook_plan(
+        response=ManagedWebhookResponseConfig(
+            mode="text",
+            mapping='{"status": "created", "message": response.body}',
+            output_schema=OUTPUT_SCHEMA,
+        )
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                content=b"x" * 64_001,
+                headers={"content-type": "text/plain"},
+            )
+        )
+    ) as client:
+        with pytest.raises(ExecutionError) as raised:
+            await ManagedWebhookPostJsonHandler(resolver(tmp_path), client).execute(
+                plan
+            )
+    assert raised.value.code == "response_too_large"
 
 
 @pytest.mark.asyncio
