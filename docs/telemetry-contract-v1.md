@@ -197,3 +197,90 @@ OTEL_STORAGE_SMOKE=1 pytest tests/test_observability_collector_smoke.py
 
 OTEL_GRAFANA_SMOKE=1 pytest tests/test_observability_collector_smoke.py
 ```
+
+## Observability UX v1
+
+Grafana starts at `http://127.0.0.1:${GRAFANA_PORT:-3001}`. Its entry point is
+**Agentic Backend — Overview** (`agentic-backend-overview`), which links to the
+three specialist dashboards. All four are provisioned from Git and are restored
+when `grafana-data` is recreated; do not import or edit canonical copies in the
+UI.
+
+| Dashboard | UID | Operational question |
+| --- | --- | --- |
+| Agentic Backend — Overview | `agentic-backend-overview` | Which subsystem is degrading? |
+| Voice Agent | `voice-agent` | Is STT, endpointing, LLM, TTS, or E2E latency slow? |
+| Capabilities & Worker | `capabilities-worker` | Are logical capabilities healthy, separately from Worker attempts? |
+| Post-call & Integrations | `post-call-integrations` | Are downstream processing and integrations succeeding on time? |
+
+The bounded shared variables are `environment` and `service`; the Capabilities
+dashboard also has `capability`. There are intentionally no tenant, agent,
+`call.id`, conversation, command, request, room, participant, or phone-number
+variables. `call.id` remains a trace-only correlation key.
+
+The dashboards use the actual Prometheus exporter schema, not conceptual OTel
+names: for example `call.started` is `call_started_total`,
+`call.duration` is `call_duration_seconds_bucket`,
+`capability.executions` is `capability_executions_total`, and
+`voice.turn.e2e_latency` is `voice_turn_e2e_latency_seconds_bucket`. Dots become
+underscores, counters end in `_total`, and second-based histograms have
+`_seconds_bucket`, `_sum`, and `_count` series.
+
+Canonical queries use `rate()` for time-series counter throughput,
+`increase()` for selected-range stats, and `histogram_quantile()` over summed
+histogram buckets. For example:
+
+```promql
+sum(rate(call_started_total{service_name=~"$service", deployment_environment_name=~"$environment"}[$__rate_interval]))
+
+histogram_quantile(0.95, sum by (le) (
+  rate(call_duration_seconds_bucket{service_name=~"$service", deployment_environment_name=~"$environment"}[$__rate_interval])
+))
+
+(sum(increase(capability_executions_total{service_name=~"$service", deployment_environment_name=~"$environment", capability_name=~"$capability"}[$__range]))
+  - sum(increase(capability_failures_total{service_name=~"$service", deployment_environment_name=~"$environment", capability_name=~"$capability"}[$__range])))
+  / sum(increase(capability_executions_total{service_name=~"$service", deployment_environment_name=~"$environment", capability_name=~"$capability"}[$__range]))
+```
+
+### Operational workflows
+
+* **Calls are failing:** start in Overview, inspect failed calls and subsystem
+  failure rate, open the specialist dashboard, then investigate the trace in
+  Tempo Explore.
+* **The agent is slow:** open Voice Agent; follow the p50/p95 pipeline order
+  STT → end-of-turn → LLM TTFT → TTS TTFB → E2E.
+* **A capability is unhealthy:** use Capabilities & Worker. The first section is
+  a logical business outcome; the second is physical Worker attempts/retries/DLQ
+  and must not be read as additional logical executions.
+* **Post-call or webhook work failed:** open Post-call & Integrations, inspect
+  failure rate and latency by `operation_type`, then open the related trace.
+
+For a known call, select Tempo in Grafana Explore and use TraceQL:
+
+```traceql
+{ span.call.id = "<call.id>" }
+```
+
+The result can contain multiple traces: Backend and Voice Agent traces may be
+separate, and delayed Worker consumption starts a new trace with a SpanLink.
+`call.id` connects that investigation; it does not turn them into one trace tree.
+Use an optional service narrowing only after the broad lookup, for example:
+
+```traceql
+{ span.call.id = "<call.id>" && resource.service.name = "backend-core" }
+```
+
+Tempo trace-to-metrics is provisioned as **Backend call throughput** through
+datasource UID `prometheus`. It intentionally uses the Backend lifecycle metric
+`call_started_total{service_name="backend-core"}` without interpolating the
+investigated span's service: that metric has no Voice Agent or Job Worker series.
+It needs neither Tempo metrics-generator nor service graphs. Metrics-to-trace
+exemplars are currently unavailable: the OTLP SDK/Collector/Prometheus exporter
+path does not receive exemplar-bearing application measurements, so no
+instrumentation was added just for this UI feature.
+
+Current UX intentionally omits playback/VAD/interruption latency, dedicated
+summary-generation and artifact-materialization durations, and tenant/agent
+filters: they are not authoritative bounded Prometheus signals in this contract.
+Post-call work is shown by its existing `operation_type` instead. Add any of
+those signals only in a separate telemetry-contract change.

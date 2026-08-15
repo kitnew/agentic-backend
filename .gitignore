@@ -163,6 +163,7 @@ infrastructure/compose/secrets/
 !packages/admin-client/openapi/admin.openapi.json
 !infrastructure/livekit/sip/*.example.json
 !infrastructure/livekit/egress/chrome-sandboxing-seccomp-profile.json
+!infrastructure/compose/grafana/dashboards/*.json
 debug-chat/node_modules/
 env/
 venv/

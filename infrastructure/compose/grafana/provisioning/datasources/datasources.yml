@@ -15,5 +15,11 @@ datasources:
     type: tempo
     access: proxy
     url: http://tempo:3200
+    jsonData:
+      tracesToMetrics:
+        datasourceUid: prometheus
+        queries:
+          - name: Backend call throughput
+            query: sum(rate(call_started_total{service_name="backend-core"}[5m]))
     editable: false
-    version: 1
+    version: 3

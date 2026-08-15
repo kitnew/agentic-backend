@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: Agentic Backend
+    orgId: 1
+    folder: Agentic Backend
+    folderUid: agentic-backend
+    type: file
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards

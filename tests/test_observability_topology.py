@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,6 +10,12 @@ COLLECTOR = (COMPOSE / "otel-collector.yml").read_text()
 PROMETHEUS = (COMPOSE / "prometheus.yml").read_text()
 TEMPO = (COMPOSE / "tempo.yml").read_text()
 GRAFANA = (COMPOSE / "grafana" / "provisioning" / "datasources" / "datasources.yml").read_text()
+DASHBOARD_PROVIDER = (
+    COMPOSE / "grafana" / "provisioning" / "dashboards" / "dashboards.yml"
+).read_text()
+DASHBOARDS = [
+    json.loads(path.read_text()) for path in sorted((COMPOSE / "grafana" / "dashboards").glob("*.json"))
+]
 
 
 def test_collector_is_pinned_and_development_only() -> None:
@@ -40,6 +47,8 @@ def test_grafana_is_pinned_dev_only_and_provisioned_from_git() -> None:
     assert "grafana-data:/var/lib/grafana" in DEV
     assert "grafana-data:" in DEV
     assert "./grafana/provisioning/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro" in DEV
+    assert "./grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro" in DEV
+    assert "./grafana/dashboards:/var/lib/grafana/dashboards:ro" in DEV
     assert "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}" in DEV
     assert "healthcheck:" in DEV
     assert "depends_on:" not in DEV.split("  grafana:", 1)[1].split("  redis:", 1)[0]
@@ -84,3 +93,58 @@ def test_grafana_datasources_have_stable_internal_identities() -> None:
     assert "url: http://tempo:3200" in GRAFANA
     assert "access: proxy" in GRAFANA
     assert "editable: false" in GRAFANA
+    assert "tracesToMetrics:" in GRAFANA
+    assert "datasourceUid: prometheus" in GRAFANA
+    assert "name: Backend call throughput" in GRAFANA
+    assert 'call_started_total{service_name="backend-core"}' in GRAFANA
+    assert "key: service.name" not in GRAFANA
+
+
+def test_dashboards_are_provisioned_with_stable_uids_and_datasources() -> None:
+    assert "type: file" in DASHBOARD_PROVIDER
+    assert "path: /var/lib/grafana/dashboards" in DASHBOARD_PROVIDER
+    assert [dashboard["uid"] for dashboard in DASHBOARDS] == [
+        "capabilities-worker",
+        "agentic-backend-overview",
+        "post-call-integrations",
+        "voice-agent",
+    ]
+    assert {dashboard["title"] for dashboard in DASHBOARDS} == {
+        "Agentic Backend — Overview",
+        "Capabilities & Worker",
+        "Post-call & Integrations",
+        "Voice Agent",
+    }
+    assert len({dashboard["uid"] for dashboard in DASHBOARDS}) == len(DASHBOARDS)
+    for dashboard in DASHBOARDS:
+        assert dashboard["schemaVersion"] == 41
+        assert dashboard["version"] == 1
+        assert dashboard["panels"]
+        for panel in dashboard["panels"]:
+            datasource = panel.get("datasource")
+            if datasource:
+                assert datasource["uid"] in {"prometheus", "tempo"}
+
+
+def test_success_and_failure_rates_leave_empty_denominators_as_no_data() -> None:
+    dashboards = {dashboard["uid"]: dashboard for dashboard in DASHBOARDS}
+    panels = {
+        panel["title"]: panel
+        for dashboard in dashboards.values()
+        for panel in dashboard["panels"]
+        if "targets" in panel
+    }
+    for title in (
+        "Call success rate",
+        "Capability success rate",
+        "Post-call failure rate",
+        "Integration failure rate",
+    ):
+        matched = False
+        for panel_title, panel in panels.items():
+            if panel_title == title:
+                matched = True
+                assert "clamp_min" not in " ".join(
+                    target["expr"] for target in panel["targets"]
+                )
+        assert matched
