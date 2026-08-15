@@ -5,6 +5,7 @@ from uuid import uuid4
 import jwt
 import pytest
 from contracts import (
+    CapabilityInvocationStatus,
     EffectiveVoiceRuntime,
     HumanHandoffResponse,
     InboundSipClaimResponse,
@@ -323,7 +324,8 @@ def test_calculator_rejects_invalid_decimal_values(operand: str) -> None:
 
 @pytest.mark.asyncio
 async def test_calculator_tool_returns_result_and_structured_failures() -> None:
-    tool = calculator_tool()
+    recorded: list[dict[str, object]] = []
+    tool = calculator_tool(lambda **values: recorded.append(values))
     context = SimpleNamespace()
     assert await tool._func(  # type: ignore[attr-defined]
         context, {"operation": "multiply", "operands": ["55", "3"]}
@@ -342,6 +344,8 @@ async def test_calculator_tool_returns_result_and_structured_failures() -> None:
         "error_code": "invalid_input",
         "message": "Invalid calculator input",
     }
+    assert [item["status"] for item in recorded] == ["ok", "failed", "failed"]
+    assert all(item["name"] == "calculator.calculate" for item in recorded)
 
 
 def test_calculator_is_always_added_before_tenant_tools() -> None:
@@ -446,6 +450,71 @@ async def test_capability_timeout_returns_only_safe_semantics() -> None:
         "error_code": "execution_timeout",
         "message": "The request is still being processed; I could not confirm submission yet",
     }
+
+
+@pytest.mark.asyncio
+async def test_availability_capability_records_success_without_arguments() -> None:
+    recorded: list[dict[str, object]] = []
+
+    class Backend:
+        async def invoke_capability(self, call_id, request):
+            return object()
+
+        async def wait_for_capability(self, call_id, invocation):
+            return SimpleNamespace(
+                status=CapabilityInvocationStatus.SUCCEEDED,
+                semantic_result={"status": "available"},
+            )
+
+    class Session:
+        async def say(self, text, **kwargs):
+            return None
+
+    definition = RuntimeCapabilityDefinition(
+        semantic_key="reservation.check_availability",
+        semantic_version=1,
+        tool_name="reservation_check_availability",
+        description="Check availability.",
+        announcement="I will check availability.",
+        input_schema={"type": "object"},
+    )
+    tool = capability_tool(  # type: ignore[arg-type]
+        definition,
+        Backend(),
+        uuid4(),
+        lambda **values: recorded.append(values),
+    )
+    result = await tool._func(  # type: ignore[attr-defined]
+        SimpleNamespace(
+            session=Session(), function_call=SimpleNamespace(call_id="tool-call")
+        ),
+        {},
+    )
+    assert result == {"status": "available"}
+    assert len(recorded) == 1
+    assert recorded[0]["name"] == "reservation.check_availability"
+    assert recorded[0]["version"] == "1"
+    assert recorded[0]["status"] == "ok"
+    assert recorded[0]["error_type"] is None
+    assert recorded[0]["duration_seconds"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_end_call_callback_records_native_tool_execution() -> None:
+    recorded: list[dict[str, object]] = []
+    end_call = build_agent_tools(
+        runtime_context(),
+        None,
+        uuid4(),
+        capability_recorder=lambda **values: recorded.append(values),
+    )[1]
+    ctx = SimpleNamespace()
+    await end_call._on_tool_called(SimpleNamespace(ctx=ctx, arguments={}))  # type: ignore[attr-defined]
+    await end_call._on_tool_completed(SimpleNamespace(ctx=ctx, output="goodbye"))  # type: ignore[attr-defined]
+    assert recorded[0]["name"] == "call.end"
+    assert recorded[0]["version"] == "1"
+    assert recorded[0]["status"] == "ok"
+    assert "arguments" not in recorded[0]
 
 
 def test_committed_message_id_is_stable_and_preserves_interruption() -> None:
@@ -741,9 +810,7 @@ async def test_successful_handoff_relinquishes_without_completing_call(
 ) -> None:
     context = runtime_context().model_copy(
         update={
-            "handoff_destinations": {
-                "reception": {"description": "Reception requests"}
-            }
+            "handoff_destinations": {"reception": {"description": "Reception requests"}}
         }
     )
 
@@ -822,7 +889,7 @@ async def test_successful_handoff_relinquishes_without_completing_call(
     monkeypatch.setattr("voice_agent.main.ConversationPersistence", Persistence)
     monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: Session())
 
-    def tools(runtime, client, call_id, on_handoff):
+    def tools(runtime, client, call_id, on_handoff, capability_recorder=None):
         on_handoff()
         return []
 

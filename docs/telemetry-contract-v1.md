@@ -113,6 +113,16 @@ usage, TTS characters, and bounded component errors. Deprecated session-level
 VAD/interruption/playback measurements are intentionally absent because the
 configured LiveKit runtime has no unambiguous authoritative per-operation source.
 
+Voice-local tool executions use the same capability metric names at their
+execution boundary. Canonical identities are `reservation.check_availability@1`
+from the Backend semantic definition, `calculator.calculate@1` for the native
+deterministic calculator, and `call.end@1` for the native `end_call` tool.
+Arguments and results are never metric or span attributes.
+
+Voice histogram views use bounded explicit buckets: fast pipeline metrics use
+`0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3, 5` seconds; turn/component
+durations use `0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 7.5, 10, 15, 30` seconds.
+
 Outbox pending-count and oldest-age gauges are intentionally absent: obtaining a
 global current state would require an additional recurring database query. The
 dispatcher does not add such a hot-path poll solely for telemetry.

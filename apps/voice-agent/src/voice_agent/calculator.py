@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import time
+from collections.abc import Callable
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, cast
 
@@ -8,6 +10,8 @@ from contracts import CalculatorRequest
 from livekit import agents
 from livekit.agents import llm
 from pydantic import ValidationError
+
+from voice_agent.observability import record_capability_execution
 
 CALCULATOR_DESCRIPTION = (
     "Perform exactly one arithmetic operation per call. Use this whenever exact arithmetic is required. "
@@ -66,21 +70,32 @@ def calculate(request: CalculatorRequest) -> str:
     return _canonical(result)
 
 
-def calculator_tool() -> llm.RawFunctionTool:
+def calculator_tool(
+    capability_recorder: Callable[..., None] | None = None,
+) -> llm.RawFunctionTool:
+    recorder = capability_recorder or record_capability_execution
+
     async def invoke(
         _context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
     ) -> dict[str, object]:
+        started = time.perf_counter()
+        status = "failed"
+        error_type: str | None = None
         try:
             request = CalculatorRequest.model_validate(raw_arguments)
-            return {"result": calculate(request)}
+            result: dict[str, object] = {"result": calculate(request)}
+            status = "ok"
+            return result
         except ZeroDivisionError:
+            error_type = "division_by_zero"
             return {
                 "status": "failed",
                 "error_code": "division_by_zero",
                 "message": "The calculator cannot divide by zero",
             }
         except (ValidationError, ValueError) as exc:
+            error_type = "invalid_input"
             message = "Invalid calculator input"
             if (
                 isinstance(exc, ValueError)
@@ -93,6 +108,14 @@ def calculator_tool() -> llm.RawFunctionTool:
                 "error_code": "invalid_input",
                 "message": message,
             }
+        finally:
+            recorder(
+                name="calculator.calculate",
+                version="1",
+                status=status,
+                duration_seconds=time.perf_counter() - started,
+                error_type=error_type,
+            )
 
     return cast(
         llm.RawFunctionTool,

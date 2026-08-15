@@ -2,7 +2,12 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from agentic_observability.bootstrap import TelemetryProviders
+from agentic_observability.bootstrap import (
+    DEFAULT_HISTOGRAM_VIEWS,
+    VOICE_DURATION_BUCKETS,
+    VOICE_FAST_BUCKETS,
+    TelemetryProviders,
+)
 from agentic_observability.config import TelemetryConfig
 from livekit.agents.telemetry import tracer as livekit_tracer
 from opentelemetry.sdk.metrics import MeterProvider
@@ -41,6 +46,7 @@ def _providers(
         tracer_provider.add_span_processor(SimpleSpanProcessor(spans))
     meter_provider = MeterProvider(
         resource=resource,
+        views=list(DEFAULT_HISTOGRAM_VIEWS),
         metric_readers=[metrics] if metrics is not None else [],
     )
     return TelemetryProviders(resource, tracer_provider, meter_provider)
@@ -211,6 +217,11 @@ def test_livekit_metrics_use_component_values_once_without_session_identifiers()
     providers.force_flush()
 
     points = _metric_points(reader)
+    assert points["voice.turn.e2e_latency"][0].count == 1
+    assert points["voice.llm.duration"][0].count == 1
+    assert points["voice.llm.ttft"][0].count == 1
+    assert points["voice.tts.duration"][0].count == 1
+    assert points["voice.tts.ttfb"][0].count == 1
     assert len(points["voice.llm.requests"]) == 1
     assert points["voice.llm.input_tokens"][0].value == 10
     assert points["voice.llm.input_cached_tokens"][0].value == 4
@@ -225,3 +236,164 @@ def test_livekit_metrics_use_component_values_once_without_session_identifiers()
         for metric_points in points.values()
         for point in metric_points
     )
+
+
+def _prom_histogram_quantile(
+    quantile: float, bounds: tuple[float, ...], bucket_counts: tuple[int, ...]
+) -> float:
+    cumulative = 0
+    previous_count = 0
+    previous_bound = 0.0
+    rank = quantile * sum(bucket_counts)
+    for bound, count in zip(bounds, bucket_counts, strict=True):
+        cumulative += count
+        if cumulative >= rank:
+            return previous_bound + (rank - previous_count) / (
+                cumulative - previous_count
+            ) * (bound - previous_bound)
+        previous_count = cumulative
+        previous_bound = bound
+    raise AssertionError("quantile fell outside histogram")
+
+
+def test_default_buckets_explain_250_and_475_but_voice_views_do_not() -> None:
+    old_reader = InMemoryMetricReader()
+    old_provider = MeterProvider(metric_readers=[old_reader])
+    old_histogram = old_provider.get_meter("old").create_histogram("old", unit="s")
+    old_histogram.record(2.0)
+    old_histogram.record(4.0)
+    old_provider.force_flush()
+    old_point = (
+        old_reader.get_metrics_data()
+        .resource_metrics[0]
+        .scope_metrics[0]
+        .metrics[0]
+        .data.data_points[0]
+    )
+    assert old_point.explicit_bounds[:2] == (0.0, 5.0)
+    assert _prom_histogram_quantile(0.50, (0.0, 5.0), (0, 2)) == 2.5
+    assert _prom_histogram_quantile(0.95, (0.0, 5.0), (0, 2)) == 4.75
+    old_provider.shutdown()
+
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    histogram = provider.get_meter("voice-agent").create_histogram(
+        "voice.turn.e2e_latency", unit="s"
+    )
+    histogram.record(0.8)
+    histogram.record(1.4)
+    provider.force_flush()
+    point = (
+        reader.get_metrics_data()
+        .resource_metrics[0]
+        .scope_metrics[0]
+        .metrics[0]
+        .data.data_points[0]
+    )
+    assert point.explicit_bounds == VOICE_DURATION_BUCKETS
+    assert point.sum == 2.2
+    assert (
+        _prom_histogram_quantile(0.95, point.explicit_bounds, point.bucket_counts)
+        == 1.45
+    )
+    assert (
+        _prom_histogram_quantile(0.95, point.explicit_bounds, point.bucket_counts)
+        != 4.75
+    )
+    provider.shutdown()
+
+
+def test_voice_latency_instruments_keep_distinct_units_and_boundaries() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    meter = provider.get_meter("voice-agent")
+    metrics = VoiceMetrics(meter)
+    metrics.record_component_metric(
+        SimpleNamespace(
+            type="llm_metrics",
+            metadata=SimpleNamespace(model_provider="azure", model_name="gpt"),
+            cancelled=False,
+            duration=2.2,
+            ttft=0.4,
+            prompt_tokens=0,
+            prompt_cached_tokens=0,
+            completion_tokens=0,
+        )
+    )
+    metrics.record_component_metric(
+        SimpleNamespace(
+            type="tts_metrics",
+            metadata=SimpleNamespace(model_provider="elevenlabs", model_name="flash"),
+            cancelled=False,
+            duration=1.4,
+            ttfb=0.3,
+            audio_duration=0,
+            characters_count=0,
+        )
+    )
+    provider.force_flush()
+    points = _metric_points(reader)
+    assert points["voice.llm.duration"][0].sum == 2.2
+    assert points["voice.llm.ttft"][0].sum == 0.4
+    assert points["voice.tts.duration"][0].sum == 1.4
+    assert points["voice.tts.ttfb"][0].sum == 0.3
+    assert points["voice.llm.duration"][0].explicit_bounds == VOICE_DURATION_BUCKETS
+    assert points["voice.llm.ttft"][0].explicit_bounds == VOICE_FAST_BUCKETS
+    assert points["voice.tts.duration"][0].explicit_bounds == VOICE_DURATION_BUCKETS
+    assert points["voice.tts.ttfb"][0].explicit_bounds == VOICE_FAST_BUCKETS
+    provider.shutdown()
+
+
+def test_capability_metrics_use_canonical_low_cardinality_attributes() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    metrics = VoiceMetrics(provider.get_meter("voice-agent"))
+    metrics.record_capability_execution(
+        name="reservation.check_availability",
+        version="1",
+        status="ok",
+        duration_seconds=0.4,
+    )
+    metrics.record_capability_execution(
+        name="calculator.calculate",
+        version="1",
+        status="ok",
+        duration_seconds=0.01,
+    )
+    metrics.record_capability_execution(
+        name="call.end",
+        version="1",
+        status="ok",
+        duration_seconds=0.02,
+    )
+    metrics.record_capability_execution(
+        name="calculator.calculate",
+        version="1",
+        status="failed",
+        duration_seconds=0.01,
+        error_type="division_by_zero",
+    )
+    provider.force_flush()
+    points = _metric_points(reader)
+    assert sum(point.value for point in points["capability.executions"]) == 4
+    assert sum(point.value for point in points["capability.failures"]) == 1
+    assert len(points["capability.execution.duration"]) == 4
+    assert all(
+        set(point.attributes)
+        <= {
+            "capability.name",
+            "capability.version",
+            "status",
+            "error.type",
+        }
+        for point in points["capability.executions"]
+        + points["capability.failures"]
+        + points["capability.execution.duration"]
+    )
+    provider.shutdown()

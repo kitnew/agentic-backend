@@ -109,19 +109,32 @@ class VoiceMetrics:
         )
         self._tts_characters = self._meter.create_counter("voice.tts.characters")
         self._errors = self._meter.create_counter("voice.component.errors")
+        self._capability_executions = self._meter.create_counter(
+            "capability.executions"
+        )
+        self._capability_failures = self._meter.create_counter("capability.failures")
+        self._capability_duration = self._meter.create_histogram(
+            "capability.execution.duration", unit="s"
+        )
 
     def record_turn(self, item: object) -> None:
         values = getattr(item, "metrics", None)
         if not isinstance(values, Mapping):
             return
         self._record(
-            self._turn_transcription_delay, values.get("transcription_delay"), {}
+            self._turn_transcription_delay,
+            values.get("transcription_delay"),
+            _turn_attrs(values, "stt_metadata"),
         )
-        self._record(self._turn_end_of_turn_delay, values.get("end_of_turn_delay"), {})
+        self._record(
+            self._turn_end_of_turn_delay,
+            values.get("end_of_turn_delay"),
+            _turn_attrs(values, "stt_metadata"),
+        )
         self._record(
             self._turn_user_completed_delay,
             values.get("on_user_turn_completed_delay"),
-            {},
+            _turn_attrs(values, "stt_metadata"),
         )
         self._record(
             self._turn_llm_ttft,
@@ -208,6 +221,28 @@ class VoiceMetrics:
             },
         )
 
+    def record_capability_execution(
+        self,
+        *,
+        name: str,
+        version: str,
+        status: str,
+        duration_seconds: float,
+        error_type: str | None = None,
+    ) -> None:
+        attributes = {
+            "capability.name": name,
+            "capability.version": version,
+            "status": status,
+        }
+        if error_type is not None:
+            attributes["error.type"] = error_type
+        metric_attributes(attributes)
+        self._capability_executions.add(1, attributes)
+        self._capability_duration.record(duration_seconds, attributes)
+        if status == "failed":
+            self._capability_failures.add(1, attributes)
+
     def _record(
         self, instrument: Any, value: object, attributes: dict[str, str]
     ) -> None:
@@ -223,6 +258,25 @@ def _measurement(value: object) -> float | None:
     if isinstance(value, int | float) and math.isfinite(value) and value >= 0:
         return float(value)
     return None
+
+
+def record_capability_execution(
+    *,
+    name: str,
+    version: str,
+    status: str,
+    duration_seconds: float,
+    error_type: str | None = None,
+) -> None:
+    runtime = current_voice_telemetry()
+    if runtime is not None:
+        runtime.metrics.record_capability_execution(
+            name=name,
+            version=version,
+            status=status,
+            duration_seconds=duration_seconds,
+            error_type=error_type,
+        )
 
 
 def _component_attrs(component: str, metric: object) -> dict[str, str]:

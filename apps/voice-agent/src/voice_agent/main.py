@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, cast
@@ -27,6 +28,7 @@ from voice_agent.calculator import calculator_tool
 from voice_agent.event_delivery import ConversationPersistence
 from voice_agent.observability import (
     current_voice_telemetry,
+    record_capability_execution,
     setup_voice_telemetry,
     shutdown_voice_telemetry,
 )
@@ -162,16 +164,44 @@ def build_agent_tools(
     backend: BackendClient,
     call_id: UUID,
     on_handoff: Callable[[], None] | None = None,
+    capability_recorder: Callable[..., None] | None = None,
 ) -> list[llm.Tool | llm.Toolset]:
+    recorder = capability_recorder or record_capability_execution
+    end_call_started: dict[int, float] = {}
+
+    async def on_end_call_called(event: llm.Toolset.ToolCalledEvent) -> None:
+        end_call_started[id(event.ctx)] = time.perf_counter()
+
+    async def on_end_call_completed(event: llm.Toolset.ToolCompletedEvent) -> None:
+        started = end_call_started.pop(id(event.ctx), None)
+        if started is not None:
+            recorder(
+                name="call.end",
+                version="1",
+                status="failed" if isinstance(event.output, Exception) else "ok",
+                duration_seconds=time.perf_counter() - started,
+                error_type=(
+                    "execution_error" if isinstance(event.output, Exception) else None
+                ),
+            )
+
     return [
-        calculator_tool(),
-        EndCallTool(delete_room=True, ignore_on_enter=True),
+        calculator_tool(recorder),
+        EndCallTool(
+            delete_room=True,
+            ignore_on_enter=True,
+            on_tool_called=on_end_call_called,
+            on_tool_completed=on_end_call_completed,
+        ),
         *(
             [handoff_tool(context, backend, call_id, on_handoff)]
             if context.handoff_destinations
             else []
         ),
-        *[capability_tool(tool, backend, call_id) for tool in context.capabilities],
+        *[
+            capability_tool(tool, backend, call_id, recorder)
+            for tool in context.capabilities
+        ],
     ]
 
 
@@ -251,7 +281,9 @@ def capability_tool(
     definition: RuntimeCapabilityDefinition,
     backend: BackendClient,
     call_id: UUID,
+    capability_recorder: Callable[..., None] | None = None,
 ) -> llm.RawFunctionTool:
+    recorder = capability_recorder or record_capability_execution
     pending_confirmation: dict[str, object] = {}
 
     async def invoke(
@@ -264,6 +296,11 @@ def capability_tool(
             add_to_chat_ctx=False,
         )
         await announcement
+        started = time.perf_counter()
+        executed = False
+        status = "failed"
+        error_type: str | None = None
+        result: Any
         try:
             request = CapabilityInvocationRequest(
                 tool_call_id=context.function_call.call_id,
@@ -272,11 +309,13 @@ def capability_tool(
             )
             pending_id = pending_confirmation.get("id")
             if not definition.requires_confirmation:
+                executed = True
                 invocation = await backend.invoke_capability(call_id, request)
             elif (
                 pending_id is not None
                 and pending_confirmation.get("agent_input") == raw_arguments
             ):
+                executed = True
                 invocation = await backend.confirm_capability(
                     call_id, UUID(str(pending_id)), context.function_call.call_id
                 )
@@ -286,34 +325,52 @@ def capability_tool(
                 pending_confirmation.update(
                     {"id": confirmation.id, "agent_input": dict(raw_arguments)}
                 )
-                return {
+                result = {
                     "status": confirmation.status,
                     "confirmation_id": str(confirmation.id),
                     "summary": confirmation.summary,
                     "message": "Please confirm these reservation details before submission.",
                 }
-            invocation = await backend.wait_for_capability(call_id, invocation)
+            if executed:
+                invocation = await backend.wait_for_capability(call_id, invocation)
+                if invocation.status is CapabilityInvocationStatus.SUCCEEDED:
+                    assert invocation.semantic_result is not None
+                    status = "ok"
+                    result = invocation.semantic_result
+                else:
+                    result = {
+                        "status": "request_submission_failed",
+                        "error_code": invocation.error_code or "execution_failed",
+                        "message": invocation.error_message
+                        or "The reservation request could not be submitted",
+                    }
         except TimeoutError:
-            return {
+            error_type = "execution_timeout"
+            result = {
                 "status": "request_submission_pending",
                 "error_code": "execution_timeout",
                 "message": "The request is still being processed; I could not confirm submission yet",
             }
         except httpx.HTTPError:
-            return {
+            error_type = "http_error"
+            result = {
                 "status": "request_submission_failed",
                 "error_code": "execution_timeout",
                 "message": "The reservation request could not be submitted yet",
             }
-        if invocation.status is CapabilityInvocationStatus.SUCCEEDED:
-            assert invocation.semantic_result is not None
-            return invocation.semantic_result
-        return {
-            "status": "request_submission_failed",
-            "error_code": invocation.error_code or "execution_failed",
-            "message": invocation.error_message
-            or "The reservation request could not be submitted",
-        }
+        except Exception:
+            error_type = "execution_error"
+            raise
+        finally:
+            if executed:
+                recorder(
+                    name=definition.semantic_key,
+                    version=str(definition.semantic_version),
+                    status=status,
+                    duration_seconds=time.perf_counter() - started,
+                    error_type=error_type,
+                )
+        return result
 
     return cast(
         llm.RawFunctionTool,
@@ -462,7 +519,15 @@ async def run_job(
             },
             agent=agents.Agent(
                 instructions=assemble_instructions(context),
-                tools=build_agent_tools(context, backend, call_id, mark_handed_off),
+                tools=build_agent_tools(
+                    context,
+                    backend,
+                    call_id,
+                    mark_handed_off,
+                    telemetry.metrics.record_capability_execution
+                    if telemetry is not None
+                    else None,
+                ),
             ),
         )
         if telemetry is not None:

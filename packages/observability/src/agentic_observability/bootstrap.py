@@ -14,6 +14,10 @@ from opentelemetry.sdk.metrics.export import (
     MetricExporter,
     PeriodicExportingMetricReader,
 )
+from opentelemetry.sdk.metrics.view import (
+    ExplicitBucketHistogramAggregation,
+    View,
+)
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import (
@@ -26,6 +30,62 @@ from opentelemetry.trace import Tracer
 from .config import TelemetryConfig
 
 MAX_FLUSH_TIMEOUT_MILLIS = 10_000
+
+VOICE_FAST_BUCKETS = (0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3, 5)
+VOICE_DURATION_BUCKETS = (
+    0.1,
+    0.25,
+    0.5,
+    0.75,
+    1,
+    1.5,
+    2,
+    3,
+    4,
+    5,
+    7.5,
+    10,
+    15,
+    30,
+)
+
+
+def _histogram_views() -> tuple[View, ...]:
+    fast = {
+        "voice.turn.transcription_delay",
+        "voice.turn.end_of_turn_delay",
+        "voice.turn.on_user_turn_completed_delay",
+        "voice.turn.llm_ttft",
+        "voice.turn.tts_ttfb",
+        "voice.stt.duration",
+        "voice.llm.ttft",
+        "voice.tts.ttfb",
+    }
+    duration = {
+        "call.duration",
+        "capability.execution.duration",
+        "worker.capability.execution_attempt.duration",
+        "worker.command.duration",
+        "post_call.duration",
+        "integration.duration",
+        "voice.turn.e2e_latency",
+        "voice.llm.duration",
+        "voice.tts.duration",
+    }
+    return tuple(
+        View(
+            instrument_name=name,
+            aggregation=ExplicitBucketHistogramAggregation(boundaries=boundaries),
+        )
+        for names, boundaries in (
+            (fast, VOICE_FAST_BUCKETS),
+            (duration, VOICE_DURATION_BUCKETS),
+        )
+        for name in sorted(names)
+    )
+
+
+DEFAULT_HISTOGRAM_VIEWS = _histogram_views()
 
 
 class Provider(Protocol):
@@ -81,6 +141,7 @@ def bootstrap(
     trace_exporter: SpanExporter | None = None,
     metric_exporter: MetricExporter | None = None,
     span_processors: Sequence[SpanProcessor] = (),
+    views: Sequence[View] = DEFAULT_HISTOGRAM_VIEWS,
 ) -> TelemetryProviders:
     resource = Resource.create(dict(config.resource_attributes))
     if not config.enabled or config.sdk_disabled:
@@ -97,6 +158,7 @@ def bootstrap(
     )
     meter_provider = MeterProvider(
         resource=resource,
+        views=list(views),
         metric_readers=[
             PeriodicExportingMetricReader(
                 metric_exporter

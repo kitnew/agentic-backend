@@ -13,12 +13,14 @@ COPY apps/backend/pyproject.toml apps/backend/pyproject.toml
 COPY apps/job-worker/pyproject.toml apps/job-worker/pyproject.toml
 COPY apps/voice-agent/pyproject.toml apps/voice-agent/pyproject.toml
 COPY packages/contracts/pyproject.toml packages/contracts/pyproject.toml
+COPY packages/observability/pyproject.toml packages/observability/pyproject.toml
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package voice-agent --no-install-workspace
 
 COPY apps/voice-agent apps/voice-agent
 COPY packages/contracts packages/contracts
+COPY packages/observability packages/observability
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package voice-agent
