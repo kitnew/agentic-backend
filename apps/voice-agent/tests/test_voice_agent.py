@@ -92,10 +92,10 @@ def runtime_settings(**overrides: object) -> EffectiveVoiceRuntime:
             "provider": "elevenlabs",
             "model": "scribe_v2_realtime",
             "server_vad": {
-                "silence_threshold_seconds": 0.5,
+                "silence_threshold_seconds": 0.35,
                 "activity_threshold": 0.35,
                 "min_speech_ms": 100,
-                "min_silence_ms": 500,
+                "min_silence_ms": 350,
             },
         },
         "tts": {
@@ -567,6 +567,8 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert isinstance(session.tts, elevenlabs.TTS)
         assert session.stt._opts.model_id == "scribe_v2_realtime"
         assert str(session.stt._opts.language_code) == "sk"
+        assert session.stt._opts.server_vad["vad_silence_threshold_secs"] == 0.35
+        assert session.stt._opts.server_vad["min_silence_duration_ms"] == 350
         assert session.vad is not None
         assert session.vad.model == "silero"
         assert session.vad._opts.min_speech_duration == 0.05
@@ -575,13 +577,17 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert session.turn_detection == "stt"
         assert session._opts.turn_handling["endpointing"]["min_delay"] == 0.1
         assert session._opts.turn_handling["endpointing"]["max_delay"] == 0.7
+        assert session._opts.turn_handling["preemptive_generation"]["enabled"] is True
+        assert session._opts.turn_handling["preemptive_generation"]["preemptive_tts"] is True
         assert session.llm._opts.temperature == 0
+        assert session.llm._opts.max_completion_tokens == 256
         assert azure["model"] == "model-a"
         assert azure["azure_deployment"] == "deployment"
         assert azure["azure_endpoint"] == "https://test.openai.azure.com"
         assert azure["api_version"] == "2025-01-01-preview"
         assert azure["api_key"] == "azure-key"
         assert azure["prompt_cache_key"] == "voice-agent-prompt:test"
+        assert azure["max_completion_tokens"] == 256
         assert session.tts._opts.model == "eleven_flash_v2_5"
         assert session.tts._opts.voice_id == "voice-id"
         assert str(session.tts._opts.language) == "sk"

@@ -14,10 +14,10 @@ def platform_runtime_policy(*, voice_id: str = "voice-a") -> dict[str, Any]:
             "provider": "elevenlabs",
             "model": "scribe_v2_realtime",
             "server_vad": {
-                "silence_threshold_seconds": 0.5,
+                "silence_threshold_seconds": 0.35,
                 "activity_threshold": 0.35,
                 "min_speech_ms": 100,
-                "min_silence_ms": 500,
+                "min_silence_ms": 350,
             },
         },
         "tts": {

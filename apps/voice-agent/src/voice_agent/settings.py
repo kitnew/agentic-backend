@@ -28,4 +28,4 @@ class VoiceAgentSettings(BaseSettings):
     provider_retry_limit: Annotated[int, Field(ge=0)] = 3
     participant_wait_timeout_seconds: Annotated[float, Field(gt=0)] = 300.0
     capability_poll_timeout_seconds: Annotated[float, Field(gt=0, le=120)] = 15.0
-    capability_poll_interval_seconds: Annotated[float, Field(gt=0, le=5)] = 0.5
+    capability_poll_interval_seconds: Annotated[float, Field(gt=0, le=5)] = 0.15

@@ -67,6 +67,7 @@ def create_agent_session(
         prompt_cache_key=prompt_cache_key,
         timeout=httpx.Timeout(settings.provider_timeout_seconds),
         temperature=runtime.llm.temperature,
+        max_completion_tokens=256,
     )
     tts = elevenlabs.TTS(
         api_key=settings.elevenlabs_api_key.get_secret_value(),
@@ -92,6 +93,10 @@ def create_agent_session(
                 "mode": "fixed",
                 "min_delay": runtime.turn.min_endpointing_delay_seconds,
                 "max_delay": runtime.turn.max_endpointing_delay_seconds,
+            },
+            "preemptive_generation": {
+                "enabled": True,
+                "preemptive_tts": True,
             },
         },
         llm=llm_provider,
