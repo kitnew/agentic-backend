@@ -6,10 +6,29 @@ receivers:
 
 processors:
   batch:
+  transform/prometheus_labels:
+    error_mode: ignore
+    metric_statements:
+      - context: datapoint
+        statements:
+          - set(datapoint.attributes["service_name"], resource.attributes["service.name"])
+          - set(datapoint.attributes["deployment_environment_name"], resource.attributes["deployment.environment.name"])
+  transform/prometheus_resource_policy:
+    error_mode: ignore
+    metric_statements:
+      - context: resource
+        statements:
+          - keep_keys(resource.attributes, ["service.name", "deployment.environment.name"])
 
 exporters:
-  debug:
-    verbosity: detailed
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: false
+  otlp_grpc/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
 
 extensions:
   health_check:
@@ -21,8 +40,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [debug]
+      exporters: [otlp_grpc/tempo]
     metrics:
       receivers: [otlp]
-      processors: [batch]
-      exporters: [debug]
+      processors: [transform/prometheus_labels, transform/prometheus_resource_policy, batch]
+      exporters: [prometheus]

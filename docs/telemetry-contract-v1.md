@@ -128,9 +128,72 @@ This keeps prompts, chat content, transcripts, tool data, and recordings out of
 telemetry. Voice correlation adds `call.id` only where that identifier is
 available; it does not force a call-long shared trace.
 
-## Development Collector
+## Development telemetry storage
 
-`docker-compose.dev.yml` adds a development-only Collector with OTLP/HTTP on 4318,
-health on 13133, traces and metrics pipelines, and a detailed debug exporter. Its
-ports bind only to loopback and its config mount is read-only. It has no logs
-pipeline, storage, persistent volume, or production/vendor backend.
+`docker-compose.dev.yml` adds a development-only telemetry stack:
+
+```text
+Applications
+     |
+OpenTelemetry Collector
+   /              \\
+Prometheus       Tempo
+   \\              /
+       Grafana
+```
+
+Applications send OTLP/HTTP only to the Collector on 4318. The Collector exposes
+converted metrics internally on 8889 for Prometheus to scrape and exports traces
+over internal OTLP/gRPC to Tempo. Applications never connect to Prometheus or
+Tempo directly.
+
+Prometheus (`prom/prometheus:v3.5.0`) persists its TSDB in `prometheus-data` and
+uses the configurable `PROMETHEUS_RETENTION_TIME` (15d by default). Tempo
+(`grafana/tempo:3.0.0`) uses local WAL/block storage in `tempo-data` with
+configurable `TEMPO_RETENTION` (168h by default). These named volumes survive
+container restart; they are single-node local storage, not off-host backups.
+
+Only `service.name` and `deployment.environment.name` are copied into Prometheus
+metric labels (`service_name`, `deployment_environment_name`). The metrics
+pipeline drops other resource attributes before exposition, so build revisions and
+domain identifiers such as `call.id` are not Prometheus labels. Tempo retains the
+trace resource/span attributes and SpanLinks, including the trace-only `call.id`.
+
+Grafana OSS (`grafana/grafana:12.4.3`) is the development query and
+visualization UI. Its persistent state is in `grafana-data`; the provisioned
+connections remain Git-managed source of truth in
+`infrastructure/compose/grafana/provisioning/datasources/datasources.yml` and
+are recreated after a fresh Grafana volume. Do not edit these datasource
+connections in the UI. The fixed datasource identities are:
+
+| Name | UID | Internal URL |
+| --- | --- | --- |
+| Prometheus | `prometheus` (default) | `http://prometheus:9090` |
+| Tempo | `tempo` | `http://tempo:3200` |
+
+Grafana binds only to `http://127.0.0.1:${GRAFANA_PORT:-3001}`. Set
+`GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` in the uncommitted
+`infrastructure/compose/.env.dev`; `.env.dev.example` supplies development-only
+bootstrap placeholders. Grafana is a consumer only: its outage does not block
+applications, Collector, Prometheus, or Tempo.
+
+Prometheus HTTP (9090) and Tempo HTTP/query (3200) bind to loopback solely for
+local diagnostics and smoke verification. Collector OTLP (4318) and health
+(13133) also bind to loopback. Tempo OTLP and Collector's Prometheus exposition
+endpoint are internal-only. Prometheus and Tempo remain their respective metrics
+and trace stores; Grafana adds no storage layer. Dashboards, alerts, logs
+ingestion, and logs storage are not part of this stack. The existing deploy-only
+MinIO deployment remains the available S3-compatible option for a future storage
+migration; Tempo intentionally stays on local dev storage in this iteration.
+
+Start it with the normal development Compose command, then run the opt-in smoke:
+
+```bash
+docker compose --env-file infrastructure/compose/.env.dev \
+  -f infrastructure/compose/docker-compose.yml \
+  -f infrastructure/compose/docker-compose.dev.yml up -d
+
+OTEL_STORAGE_SMOKE=1 pytest tests/test_observability_collector_smoke.py
+
+OTEL_GRAFANA_SMOKE=1 pytest tests/test_observability_collector_smoke.py
+```

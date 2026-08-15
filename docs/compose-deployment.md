@@ -4,7 +4,7 @@ Compose is layered by environment:
 
 | Environment | Files | Services |
 | --- | --- | --- |
-| Development | `docker-compose.yml`, `docker-compose.dev.yml` | Backend, Voice Agent, Job Worker, Debug Chat, LiveKit, PostgreSQL, Redis |
+| Development | `docker-compose.yml`, `docker-compose.dev.yml` | Backend, Voice Agent, Job Worker, Debug Chat, LiveKit, PostgreSQL, Redis, OpenTelemetry Collector, Prometheus, Tempo, Grafana |
 | Staging | `docker-compose.yml`, `docker-compose.deploy.yml`, `.env.staging` | Development core plus Caddy, LiveKit SIP, LiveKit Egress, MinIO, MinIO init |
 | Production | `docker-compose.yml`, `docker-compose.deploy.yml`, `.env.production` | Same as staging, under a separate Compose project and named volumes |
 
@@ -15,6 +15,8 @@ Internet -- 80/443 --> Caddy --edge--> Backend / Debug Chat / LiveKit :7880
 Internet -----------> LiveKit :7881/tcp, :7882/udp
 Internet -----------> host-networked LiveKit SIP :5060/tcp+udp, :10000-20000/udp
 application --------> PostgreSQL / Redis / MinIO / Egress / Voice Agent / Worker
+Applications --------> OpenTelemetry Collector --------> Prometheus / Tempo
+Prometheus / Tempo -----------------------------------> Grafana
 ```
 
 ## Required host firewall ports
@@ -32,7 +34,7 @@ application --------> PostgreSQL / Redis / MinIO / Egress / Voice Agent / Worker
 
 ## Operations boundary
 
-All deployment services use `unless-stopped`; `minio-init` uses `restart: "no"` and idempotently creates the bucket/users. Redis uses AOF on `redis-data`, preserving Streams across container/daemon restarts. Persistent state is `postgres-data`, `redis-data`, `minio-data`, `caddy-data`, and `caddy-config` (each Compose project scopes its own volumes).
+All deployment services use `unless-stopped`; `minio-init` uses `restart: "no"` and idempotently creates the bucket/users. Redis uses AOF on `redis-data`, preserving Streams across container/daemon restarts. Persistent state is `postgres-data`, `redis-data`, `minio-data`, `caddy-data`, `caddy-config`, and the development-only `prometheus-data`/`tempo-data`/`grafana-data` (each Compose project scopes its own volumes). Prometheus keeps 15 days by default (`PROMETHEUS_RETENTION_TIME`) and Tempo keeps 168 hours by default (`TEMPO_RETENTION`); both are local single-node storage rather than backups. The Collector remains the applications' only telemetry ingestion boundary. Grafana is a development-only, loopback-bound UI (`GRAFANA_PORT`, default 3001) that uses Git-provisioned internal Prometheus and Tempo datasources; it is not an ingestion dependency. Prometheus and Tempo query APIs remain loopback-bound for diagnostics and smoke verification. Dashboards, alerts, and logs storage are not configured.
 
 Application images already run as UID 10001. Deployment adds `no-new-privileges`, read-only roots, and `/tmp` tmpfs to Backend, Voice Agent, and Job Worker; Caddy receives the same hardening. Debug Chat remains on upstream nginx defaults because its image needs nginx runtime writable paths. LiveKit, SIP, Egress, PostgreSQL, Redis, and MinIO keep upstream runtime permissions; Egress retains its pinned Chrome seccomp profile and Chrome sandbox. Backend/Worker receive 30s and Voice Agent 60s SIGTERM grace periods; backend closes its Redis consumers/outbox and Voice Agent drains sessions.
 
