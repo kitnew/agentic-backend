@@ -40,6 +40,25 @@
 	}
 }
 
+{$ADMIN_WEB_DOMAIN} {
+	import access_log
+
+	basic_auth {
+		{$ADMIN_WEB_BASIC_AUTH_USER} {$ADMIN_WEB_BASIC_AUTH_HASH}
+	}
+
+	@admin_api path /admin/*
+	handle @admin_api {
+		reverse_proxy backend:8000 {
+			header_up Authorization "Bearer {$ADMIN_API_TOKEN}"
+		}
+	}
+
+	handle {
+		reverse_proxy admin-web:8080
+	}
+}
+
 {$LIVEKIT_DOMAIN} {
 	import access_log
 

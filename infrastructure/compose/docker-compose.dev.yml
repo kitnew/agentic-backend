@@ -134,6 +134,10 @@ services:
     ports:
       - "${DEBUG_CHAT_PORT:-3000}:80"
 
+  admin-web:
+    ports:
+      - "127.0.0.1:${ADMIN_WEB_PORT:-3002}:8080"
+
 volumes:
   prometheus-data:
   tempo-data:

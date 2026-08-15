@@ -70,6 +70,14 @@ services:
     logging: *service-logging
     networks: [application, edge]
 
+  admin-web:
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    security_opt: [no-new-privileges:true]
+    logging: *service-logging
+    networks: [application, edge]
+
   livekit:
     image: livekit/livekit-server:v1.13.1
     environment:
@@ -219,9 +227,14 @@ services:
       CADDY_EMAIL: ${CADDY_EMAIL:?set CADDY_EMAIL}
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
       DEBUG_CHAT_DOMAIN: ${DEBUG_CHAT_DOMAIN:?set DEBUG_CHAT_DOMAIN}
+
+      ADMIN_WEB_DOMAIN: ${ADMIN_WEB_DOMAIN:?set ADMIN_WEB_DOMAIN}
       LIVEKIT_DOMAIN: ${LIVEKIT_DOMAIN:?set LIVEKIT_DOMAIN}
       DEBUG_CHAT_BASIC_AUTH_USER: ${DEBUG_CHAT_BASIC_AUTH_USER:?set DEBUG_CHAT_BASIC_AUTH_USER}
       DEBUG_CHAT_BASIC_AUTH_HASH: ${DEBUG_CHAT_BASIC_AUTH_HASH:?set DEBUG_CHAT_BASIC_AUTH_HASH}
+      ADMIN_WEB_BASIC_AUTH_USER: ${ADMIN_WEB_BASIC_AUTH_USER:?set ADMIN_WEB_BASIC_AUTH_USER}
+      ADMIN_WEB_BASIC_AUTH_HASH: ${ADMIN_WEB_BASIC_AUTH_HASH:?set ADMIN_WEB_BASIC_AUTH_HASH}
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
     ports:
       - "80:80"
       - "443:443"
@@ -242,6 +255,8 @@ services:
       backend:
         condition: service_healthy
       debug-chat:
+        condition: service_started
+      admin-web:
         condition: service_started
       livekit:
         condition: service_healthy
