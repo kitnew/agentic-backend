@@ -151,6 +151,7 @@ activemq-data/
 
 # Environments
 .env
+.env.production
 .envrc
 .venv
 secrets/*.json
@@ -165,6 +166,7 @@ infrastructure/compose/secrets/
 !infrastructure/livekit/egress/chrome-sandboxing-seccomp-profile.json
 !infrastructure/compose/grafana/dashboards/*.json
 debug-chat/node_modules/
+backups/
 env/
 venv/
 ENV/

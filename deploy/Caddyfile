@@ -1,0 +1,20 @@
+{
+	email {$CADDY_EMAIL}
+}
+
+{$API_DOMAIN} {
+	reverse_proxy api:8000 {
+		health_uri /health
+	}
+}
+
+{$DEBUG_CHAT_DOMAIN} {
+	basic_auth {
+		{$DEBUG_CHAT_BASIC_AUTH_USER} {$DEBUG_CHAT_BASIC_AUTH_HASH}
+	}
+	reverse_proxy debug-chat:8080
+}
+
+{$LIVEKIT_DOMAIN} {
+	reverse_proxy livekit:7880
+}
