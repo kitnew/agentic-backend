@@ -135,6 +135,8 @@ services:
       - "${DEBUG_CHAT_PORT:-3000}:80"
 
   admin-web:
+    environment:
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
     ports:
       - "127.0.0.1:${ADMIN_WEB_PORT:-3002}:8080"
 

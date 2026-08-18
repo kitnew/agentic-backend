@@ -1,4 +1,4 @@
-# Admin Web V0
+# Admin Web V1
 
 Static React control-plane foundation in `apps/admin-web`. Backend Core remains the Admin API authority; this application and `agentctl` consume the same exported OpenAPI schema.
 
@@ -13,7 +13,7 @@ pnpm api:check
 pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build && pnpm e2e
 ```
 
-`api:generate` reads `../../packages/admin-client/openapi/admin.openapi.json`; never edit `src/core/api/generated/` by hand. `api:check` regenerates it and fails on a diff.
+`api:generate` reads `../../packages/admin-client/openapi/admin.openapi.json`; never edit `src/core/api/generated/` by hand. `api:check` regenerates it and fails on a diff. `pnpm dev` runs Vite in `dev` mode: its server-side proxy reads `ADMIN_API_TOKEN` from `../../infrastructure/compose/.env.dev` and adds it only to proxied `/admin/*` requests. The browser never receives that value.
 
 ## Architecture
 
@@ -26,6 +26,12 @@ pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build && p
 The current backend only supports a shared bearer admin token. In deployment, Caddy authenticates the browser at the edge and injects that token only on its internal upstream request. The frontend receives neither a token nor a `VITE_*` secret. Replace this boundary with per-principal browser authentication when Backend Core provides it.
 
 Future forms use React Hook Form plus Zod inside their feature. A backend DTO is not necessarily a UI form model: keep any UX schema and mapping in the feature.
+
+## Agent configuration
+
+`/tenants/$tenantId/agent` is a tenant feature discovered from `src/features/agent`; Core, AppShell, and navigation have no Agent-specific code. It maps generated Admin API DTOs to a feature-local React Hook Form/Zod model for the editable agent name, greeting, profile, locale, tenant instructions, and the supported tenant TTS voice override.
+
+The Backend Admin API is canonical. Save creates or updates the existing versioned draft with its ETag, publishes it, and reloads canonical state; profile or tenant-prompt changes also apply the existing prompt set. Platform and profile prompt content is read-only. Capabilities are a read-only enabled summary. Infrastructure runtime settings, capabilities management, knowledge, integrations, revisions/history UI, RBAC, Debug Chat, and test calls remain out of scope.
 
 ## Add a feature
 

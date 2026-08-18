@@ -7,6 +7,6 @@ COPY apps/admin-web/ ./
 RUN pnpm build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine
-COPY apps/admin-web/nginx.conf /etc/nginx/conf.d/default.conf
+COPY apps/admin-web/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /workspace/apps/admin-web/dist /usr/share/nginx/html
 EXPOSE 8080

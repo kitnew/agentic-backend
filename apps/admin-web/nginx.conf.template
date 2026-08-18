@@ -3,6 +3,11 @@ server {
   server_name _;
   root /usr/share/nginx/html;
 
+  location /admin/ {
+    proxy_set_header Authorization "Bearer ${ADMIN_API_TOKEN}";
+    proxy_pass http://backend:8000;
+  }
+
   location / {
     try_files $uri $uri/ /index.html;
   }
