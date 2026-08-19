@@ -144,9 +144,16 @@ class ExecutePostCallActionHandler:
             command.action_id,
             envelope.message_id,
         )
+        material = await self._backend.post_call_action_material(
+            command.call_id,
+            command.finalization_id,
+            command.action_id,
+            envelope.message_id,
+        )
         if plan.body_bindings:
             result = await self._webhooks.execute(
                 plan,
+                material,
                 {
                     binding.payload_path: self._backend.representation_content(
                         binding.representation_id, envelope.message_id
@@ -155,7 +162,7 @@ class ExecutePostCallActionHandler:
                 },
             )
         else:
-            result = await self._webhooks.execute(plan)
+            result = await self._webhooks.execute(plan, material)
         return {
             "reference": result.reference,
             "deduplicated": result.deduplicated,

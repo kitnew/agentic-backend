@@ -13,8 +13,7 @@ from base64 import b64encode
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 from urllib.parse import quote, urlparse
 from uuid import UUID
 
@@ -34,6 +33,7 @@ from contracts import (
     ManagedWebhookPostJsonPlan,
     ManagedWebhookPostJsonResult,
     ManagedWebhookSuccessResponse,
+    RuntimeIntegrationMaterial,
     WorkerError,
     WorkerResultReport,
 )
@@ -78,11 +78,7 @@ class Settings:
     backend_url: str
     backend_audience: str
     service_secret: str
-    credential_file_map_json: str
-    managed_webhook_map_json: str = "{}"
-    managed_webhook_map_file: str = "/secrets/managed-webhooks.json"
     allow_insecure_webhooks: bool = False
-    credential_secrets_dir: str = "/run/secrets"
     provider_timeout_seconds: float = 10.0
     max_retries: int = 3
     stale_idle_ms: int = 30_000
@@ -119,20 +115,10 @@ class Settings:
             backend_url=os.environ["BACKEND_CORE_URL"].rstrip("/"),
             backend_audience=os.getenv("INTERNAL_API_AUDIENCE", "backend-core"),
             service_secret=os.environ["JOB_WORKER_SERVICE_SECRET"],
-            credential_file_map_json=os.getenv(
-                "GOOGLE_SHEETS_CREDENTIAL_FILE_MAP", "{}"
-            ),
-            managed_webhook_map_json=os.getenv("MANAGED_WEBHOOK_CONNECTION_MAP", "{}"),
-            managed_webhook_map_file=os.getenv(
-                "MANAGED_WEBHOOK_CONNECTION_MAP_FILE", "/secrets/managed-webhooks.json"
-            ),
             allow_insecure_webhooks=os.getenv(
                 "ALLOW_INSECURE_MANAGED_WEBHOOKS", "false"
             ).lower()
             == "true",
-            credential_secrets_dir=os.getenv(
-                "GOOGLE_SHEETS_CREDENTIAL_SECRETS_DIR", "/run/secrets"
-            ),
             provider_timeout_seconds=float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "10")),
             max_retries=int(os.getenv("CAPABILITY_JOB_MAX_RETRIES", "3")),
             stale_idle_ms=int(os.getenv("CAPABILITY_JOB_STALE_IDLE_MS", "30000")),
@@ -203,203 +189,6 @@ class RecordingStorage:
                 response.release_conn()
 
 
-class MountedSecretFileCredentialResolver:
-    def __init__(self, encoded_map: str, secrets_dir: str = "/run/secrets") -> None:
-        try:
-            value = json.loads(encoded_map)
-        except json.JSONDecodeError as error:
-            raise ValueError(
-                "GOOGLE_SHEETS_CREDENTIAL_FILE_MAP must be valid JSON"
-            ) from error
-        if not isinstance(value, dict):
-            raise TypeError("GOOGLE_SHEETS_CREDENTIAL_FILE_MAP must be an object")
-        if not Path(secrets_dir).is_absolute():
-            raise ValueError("credential secrets directory must be absolute")
-        root = Path(secrets_dir).resolve()
-        self._credential_files: dict[str, Path] = {}
-        for key, credential_path in value.items():
-            if not isinstance(key, str) or not re.fullmatch(
-                r"[a-z][a-z0-9_.-]{0,127}", key
-            ):
-                raise ValueError("credential map contains an invalid reference")
-            if not isinstance(credential_path, str):
-                raise TypeError("credential map values must be file paths")
-            path = Path(credential_path)
-            if not path.is_absolute():
-                raise ValueError("credential file paths must be absolute")
-            resolved = path.resolve(strict=False)
-            try:
-                resolved.relative_to(root)
-            except ValueError as error:
-                raise ValueError(
-                    "credential file must be under the secrets directory"
-                ) from error
-            self._credential_files[key] = resolved
-
-    async def access_token(self, reference: str) -> str:
-        credential_path = self._credential_files.get(reference)
-        if credential_path is None:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Credential reference could not be resolved",
-                transient=False,
-            )
-        try:
-            credentials = service_account.Credentials.from_service_account_file(
-                str(credential_path),
-                scopes=[SHEETS_SCOPE],
-            )
-            await asyncio.to_thread(credentials.refresh, GoogleAuthRequest())
-        except Exception as error:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Google credential could not be refreshed",
-                transient=False,
-            ) from error
-        if credentials.token is None:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Google credential returned no access token",
-                transient=False,
-            )
-        return credentials.token
-
-
-class ManagedWebhookConnectionResolver:
-    def __init__(
-        self,
-        encoded_map: str,
-        secrets_dir: str = "/run/secrets",
-        map_file: str | None = None,
-    ) -> None:
-        if map_file:
-            try:
-                encoded_map = Path(map_file).read_text(encoding="utf-8")
-            except FileNotFoundError:
-                pass
-            except OSError as error:
-                raise ValueError(
-                    "managed webhook connection map file could not be read"
-                ) from error
-        try:
-            value = json.loads(encoded_map)
-        except json.JSONDecodeError as error:
-            raise ValueError(
-                "MANAGED_WEBHOOK_CONNECTION_MAP must be valid JSON"
-            ) from error
-        if not isinstance(value, dict):
-            raise TypeError("MANAGED_WEBHOOK_CONNECTION_MAP must be an object")
-        if not Path(secrets_dir).is_absolute():
-            raise ValueError("managed webhook secrets directory must be absolute")
-        self._root = Path(secrets_dir).resolve()
-        self._connections: dict[str, ManagedWebhookConnectionConfig] = {}
-        for reference, raw in value.items():
-            if not isinstance(reference, str) or not re.fullmatch(
-                r"[a-z][a-z0-9_.-]{0,127}", reference
-            ):
-                raise ValueError("managed webhook map contains an invalid reference")
-            if not isinstance(raw, dict):
-                raise TypeError("managed webhook connection values must be objects")
-            url_file = self._safe_path(raw.get("url_file"), self._root)
-            raw_api_key_file = raw.get("api_key_file")
-            api_key_file = (
-                self._safe_path(raw_api_key_file, self._root)
-                if raw_api_key_file is not None
-                else None
-            )
-            header = raw.get("api_key_header", "x-api-key")
-            if not isinstance(header, str) or not re.fullmatch(
-                r"[A-Za-z0-9-]{1,64}", header
-            ):
-                raise ValueError("managed webhook API key header is invalid")
-            allowed_hosts = raw.get("allowed_hosts")
-            if not isinstance(allowed_hosts, list) or not allowed_hosts:
-                raise ValueError("managed webhook allowed_hosts must be a string list")
-            self._connections[reference] = ManagedWebhookConnectionConfig(
-                url_file=url_file,
-                api_key_file=api_key_file,
-                api_key_header=header,
-                allowed_hosts=frozenset(
-                    self._normalized_hostname(host) for host in allowed_hosts
-                ),
-            )
-
-    @staticmethod
-    def _safe_path(value: object, root: Path) -> Path:
-        if not isinstance(value, str) or not value:
-            raise TypeError("managed webhook secret file is required")
-        path = Path(value)
-        if not path.is_absolute():
-            raise ValueError("managed webhook secret file must be absolute")
-        resolved = path.resolve(strict=False)
-        try:
-            resolved.relative_to(root)
-        except ValueError as error:
-            raise ValueError(
-                "managed webhook secret file must be under secrets directory"
-            ) from error
-        return resolved
-
-    @staticmethod
-    def _normalized_hostname(value: object) -> str:
-        if not isinstance(value, str):
-            raise TypeError("managed webhook allowed_hosts must be a string list")
-        hostname = value.rstrip(".").lower()
-        if not hostname or not re.fullmatch(
-            r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
-            hostname,
-        ):
-            raise ValueError("managed webhook allowed host is invalid")
-        return hostname
-
-    def _read_secret(self, path: Path) -> str:
-        try:
-            resolved = path.resolve(strict=True)
-            resolved.relative_to(self._root)
-            return resolved.read_text(encoding="utf-8").strip()
-        except (OSError, ValueError) as error:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Managed webhook credentials could not be loaded",
-                transient=False,
-            ) from error
-
-    def resolve(self, reference: str) -> ResolvedManagedWebhookConnection:
-        connection = self._connections.get(reference)
-        if connection is None:
-            raise ExecutionError(
-                "connection_resolution_failed",
-                "Managed webhook connection could not be resolved",
-                transient=False,
-            )
-        url = self._read_secret(connection.url_file)
-        api_key = (
-            self._read_secret(connection.api_key_file)
-            if connection.api_key_file is not None
-            else ""
-        )
-        if not url or connection.api_key_file is not None and not api_key:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Managed webhook credentials are empty",
-                transient=False,
-            )
-        return ResolvedManagedWebhookConnection(
-            url=url,
-            api_key=api_key,
-            api_key_header=connection.api_key_header,
-            allowed_hosts=connection.allowed_hosts,
-        )
-
-
-@dataclass(frozen=True)
-class ManagedWebhookConnectionConfig:
-    url_file: Path
-    api_key_file: Path | None
-    api_key_header: str
-    allowed_hosts: frozenset[str]
-
-
 @dataclass(frozen=True)
 class ResolvedManagedWebhookConnection:
     url: str
@@ -408,28 +197,23 @@ class ResolvedManagedWebhookConnection:
     allowed_hosts: frozenset[str]
 
 
-class CredentialResolver(Protocol):
-    async def access_token(self, reference: str) -> str: ...
-
-
 class ManagedWebhookPostJsonHandler:
     def __init__(
         self,
-        connections: ManagedWebhookConnectionResolver,
         client: httpx.AsyncClient,
         *,
         allow_insecure: bool = False,
     ) -> None:
-        self._connections = connections
         self._client = client
         self._allow_insecure = allow_insecure
 
     async def execute(
         self,
         plan: ManagedWebhookPostJsonPlan,
+        material: RuntimeIntegrationMaterial,
         bodies: dict[str, AsyncIterator[bytes]] | None = None,
     ) -> ManagedWebhookPostJsonResult:
-        connection = self._connections.resolve(plan.connection_ref)
+        connection = self._connection(plan, material)
         parsed = urlparse(connection.url)
         if parsed.scheme not in (
             {"https", "http"} if self._allow_insecure else {"https"}
@@ -446,7 +230,7 @@ class ManagedWebhookPostJsonHandler:
                 transient=False,
             )
         try:
-            hostname = self._connections._normalized_hostname(parsed.hostname)
+            hostname = self._normalized_hostname(parsed.hostname)
             port = parsed.port
         except ValueError as error:
             raise ExecutionError(
@@ -519,6 +303,60 @@ class ManagedWebhookPostJsonHandler:
                 "Managed webhook transport failed",
                 transient=True,
             ) from error
+
+    @staticmethod
+    def _connection(
+        plan: ManagedWebhookPostJsonPlan, material: RuntimeIntegrationMaterial
+    ) -> ResolvedManagedWebhookConnection:
+        if (
+            material.integration_id != plan.integration_id
+            or material.provider != "managed_webhook"
+        ):
+            raise ExecutionError(
+                "integration_material_invalid",
+                "Managed webhook integration material is invalid",
+                transient=False,
+            )
+        url = material.secret.get("url")
+        api_key = material.secret.get("api_key", "")
+        allowed_hosts = material.config.get("allowed_hosts")
+        header = material.config.get("api_key_header", "x-api-key")
+        if (
+            not isinstance(url, str)
+            or not url
+            or not isinstance(api_key, str)
+            or not isinstance(header, str)
+            or not isinstance(allowed_hosts, list)
+        ):
+            raise ExecutionError(
+                "integration_material_invalid",
+                "Managed webhook integration material is invalid",
+                transient=False,
+            )
+        try:
+            hosts = frozenset(
+                ManagedWebhookPostJsonHandler._normalized_hostname(host)
+                for host in allowed_hosts
+            )
+        except (TypeError, ValueError) as error:
+            raise ExecutionError(
+                "integration_material_invalid",
+                "Managed webhook integration material is invalid",
+                transient=False,
+            ) from error
+        return ResolvedManagedWebhookConnection(url, api_key, header, hosts)
+
+    @staticmethod
+    def _normalized_hostname(value: object) -> str:
+        if not isinstance(value, str):
+            raise TypeError("managed webhook allowed_hosts must be a string list")
+        hostname = value.rstrip(".").lower()
+        if not hostname or not re.fullmatch(
+            r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+            hostname,
+        ):
+            raise ValueError("managed webhook allowed host is invalid")
+        return hostname
 
     @staticmethod
     def _validate_status(status_code: int) -> None:
@@ -765,18 +603,13 @@ class ManagedWebhookPostJsonHandler:
 
 
 class GoogleSheetsAppendValuesHandler:
-    def __init__(
-        self,
-        credentials: CredentialResolver,
-        client: httpx.AsyncClient,
-    ) -> None:
-        self._credentials = credentials
+    def __init__(self, client: httpx.AsyncClient) -> None:
         self._client = client
 
     async def execute(
-        self, plan: GoogleSheetsAppendValuesPlan
+        self, plan: GoogleSheetsAppendValuesPlan, material: RuntimeIntegrationMaterial
     ) -> GoogleSheetsAppendValuesResult:
-        token = await self._credentials.access_token(plan.credential_ref)
+        token = await self._access_token(plan, material)
         headers = {"Authorization": f"Bearer {token}"}
         lookup = self._range(plan.sheet_name, plan.idempotency.lookup_range)
         lookup_started = time.perf_counter()
@@ -870,6 +703,40 @@ class GoogleSheetsAppendValuesHandler:
             ) from error
 
     @staticmethod
+    async def _access_token(
+        plan: GoogleSheetsAppendValuesPlan, material: RuntimeIntegrationMaterial
+    ) -> str:
+        account = material.secret.get("service_account")
+        if (
+            material.integration_id != plan.integration_id
+            or material.provider != "google_sheets"
+            or not isinstance(account, dict)
+        ):
+            raise ExecutionError(
+                "integration_material_invalid",
+                "Google Sheets integration material is invalid",
+                transient=False,
+            )
+        try:
+            credentials = service_account.Credentials.from_service_account_info(
+                account, scopes=[SHEETS_SCOPE]
+            )
+            await asyncio.to_thread(credentials.refresh, GoogleAuthRequest())
+        except Exception as error:
+            raise ExecutionError(
+                "credential_resolution_failed",
+                "Google credential could not be refreshed",
+                transient=False,
+            ) from error
+        if credentials.token is None:
+            raise ExecutionError(
+                "credential_resolution_failed",
+                "Google credential returned no access token",
+                transient=False,
+            )
+        return credentials.token
+
+    @staticmethod
     def _range(sheet_name: str, cell_range: str) -> str:
         escaped = sheet_name.replace("'", "''")
         return f"'{escaped}'!{cell_range}"
@@ -931,6 +798,7 @@ class BackendClient:
                 "exp": now.timestamp() + 60,
                 "scopes": [
                     "capability-result:write",
+                    "integration-material:read",
                     "finalization-context:read",
                     "post-call-action:read",
                     "artifact-representation:read",
@@ -948,6 +816,24 @@ class BackendClient:
             json=report.model_dump(mode="json"),
         )
         response.raise_for_status()
+
+    async def integration_material(
+        self, invocation_id: UUID, job_id: UUID
+    ) -> RuntimeIntegrationMaterial:
+        try:
+            response = await self._client.get(
+                f"{self._settings.backend_url}/internal/v1/capability-invocations/"
+                f"{invocation_id}/integration-material",
+                params={"job_id": str(job_id)},
+                headers={"Authorization": f"Bearer {self._token()}"},
+            )
+        except httpx.HTTPError as error:
+            raise ExecutionError(
+                "integration_material_unavailable",
+                "Integration material is temporarily unavailable",
+                transient=True,
+            ) from error
+        return self._material_response(response)
 
     async def finalization_context(
         self, call_id: UUID, finalization_id: UUID, command_id: UUID
@@ -987,6 +873,48 @@ class BackendClient:
         )
         response.raise_for_status()
         return ManagedWebhookPostJsonPlan.model_validate(response.json())
+
+    async def post_call_action_material(
+        self,
+        call_id: UUID,
+        finalization_id: UUID,
+        action_id: str,
+        command_id: UUID,
+    ) -> RuntimeIntegrationMaterial:
+        try:
+            response = await self._client.get(
+                f"{self._settings.backend_url}/internal/v1/calls/{call_id}/"
+                f"post-call-actions/{action_id}/integration-material",
+                params={
+                    "finalization_id": str(finalization_id),
+                    "command_id": str(command_id),
+                },
+                headers={"Authorization": f"Bearer {self._token()}"},
+            )
+        except httpx.HTTPError as error:
+            raise ExecutionError(
+                "integration_material_unavailable",
+                "Integration material is temporarily unavailable",
+                transient=True,
+            ) from error
+        return self._material_response(response)
+
+    @staticmethod
+    def _material_response(response: httpx.Response) -> RuntimeIntegrationMaterial:
+        if response.is_error:
+            raise ExecutionError(
+                "integration_material_unavailable",
+                "Integration material is unavailable",
+                transient=response.status_code >= 500,
+            )
+        try:
+            return RuntimeIntegrationMaterial.model_validate(response.json())
+        except (ValidationError, ValueError) as error:
+            raise ExecutionError(
+                "integration_material_invalid",
+                "Integration material is invalid",
+                transient=False,
+            ) from error
 
     async def representation_content(
         self, representation_id: UUID, command_id: UUID
@@ -1199,11 +1127,14 @@ class CapabilityWorker:
                         "attempt": job.attempt,
                     },
                 )
+                material = await self._backend.integration_material(
+                    job.capability_invocation_id, job.job_id
+                )
                 result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult
                 if job.execution_plan.plan_type == "google_sheets.append_values.v1":
-                    result = await self._sheets.execute(job.execution_plan)
+                    result = await self._sheets.execute(job.execution_plan, material)
                 elif self._webhooks is not None:
-                    result = await self._webhooks.execute(job.execution_plan)
+                    result = await self._webhooks.execute(job.execution_plan, material)
                 else:
                     raise ExecutionError(
                         "unknown_plan_type",
@@ -1417,15 +1348,7 @@ async def run_worker(settings: Settings) -> None:
                     tracer_provider=telemetry.tracer_provider,  # type: ignore[arg-type]
                     meter_provider=telemetry.meter_provider,  # type: ignore[arg-type]
                 )
-            credentials = MountedSecretFileCredentialResolver(
-                settings.credential_file_map_json, settings.credential_secrets_dir
-            )
             webhooks = ManagedWebhookPostJsonHandler(
-                ManagedWebhookConnectionResolver(
-                    settings.managed_webhook_map_json,
-                    settings.credential_secrets_dir,
-                    settings.managed_webhook_map_file,
-                ),
                 provider_client,
                 allow_insecure=settings.allow_insecure_webhooks,
             )
@@ -1436,7 +1359,7 @@ async def run_worker(settings: Settings) -> None:
                 settings,
                 redis,
                 backend,
-                GoogleSheetsAppendValuesHandler(credentials, provider_client),
+                GoogleSheetsAppendValuesHandler(provider_client),
                 webhooks,
                 tracer,
                 metrics,
