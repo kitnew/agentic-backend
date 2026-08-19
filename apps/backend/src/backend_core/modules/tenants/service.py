@@ -1654,7 +1654,7 @@ class ConfigUseCases:
                         operation_id=UUID("00000000-0000-0000-0000-000000000001"),
                         call_id=UUID("00000000-0000-0000-0000-000000000002"),
                         tool_call_id=f"publication-fixture-{index}",
-                        credential_ref=connection.credential_ref,
+                        integration_id=connection.id,
                         caller_phone="+421900000000",
                         semantic_key=semantic_key,
                     )

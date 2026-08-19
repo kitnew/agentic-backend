@@ -31,6 +31,7 @@ SERVICE_SCOPES = {
     JOB_WORKER: frozenset(
         {
             "capability-result:write",
+            "integration-material:read",
             "finalization-context:read",
             "post-call-action:read",
             "artifact-representation:read",

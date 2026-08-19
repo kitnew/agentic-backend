@@ -1,10 +1,19 @@
 from typing import Annotated
 from uuid import UUID
 
-from contracts import ManagedWebhookPostJsonPlan
+from contracts import ManagedWebhookPostJsonPlan, RuntimeIntegrationMaterial
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
+from backend_core.modules.calls.models import CallSession
+from backend_core.modules.integrations.crypto import IntegrationSecretCipher
+from backend_core.modules.integrations.models import IntegrationProvider
+from backend_core.modules.integrations.repository import IntegrationConnectionRepository
+from backend_core.modules.integrations.service import (
+    IntegrationConnectionError,
+    IntegrationConnectionService,
+)
+from backend_core.modules.tenants.repository import TenantRepository
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
 from backend_core.platform.messaging import TransactionalOutboxBus
@@ -51,6 +60,23 @@ def service(session: DatabaseSession, request: Request) -> FinalizationService:
 Service = Annotated[FinalizationService, Depends(service)]
 
 
+def integration_service(
+    session: DatabaseSession, request: Request
+) -> IntegrationConnectionService:
+    return IntegrationConnectionService(
+        TenantRepository(session),
+        IntegrationConnectionRepository(session),
+        IntegrationSecretCipher(
+            request.app.state.settings.integration_encryption_key.get_secret_value()
+        ),
+    )
+
+
+IntegrationService = Annotated[
+    IntegrationConnectionService, Depends(integration_service)
+]
+
+
 @router.get(
     "/{call_id}/finalization-context",
     dependencies=[Depends(require_internal_scope("finalization-context:read"))],
@@ -85,6 +111,39 @@ async def post_call_action(
         )
     except FinalizationError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+
+
+@router.get(
+    "/{call_id}/post-call-actions/{action_id}/integration-material",
+    response_model=RuntimeIntegrationMaterial,
+    dependencies=[Depends(require_internal_scope("integration-material:read"))],
+)
+async def post_call_action_material(
+    call_id: UUID,
+    action_id: str,
+    finalization_id: UUID,
+    command_id: UUID,
+    finalization: Service,
+    integrations: IntegrationService,
+    session: DatabaseSession,
+) -> RuntimeIntegrationMaterial:
+    try:
+        plan = await finalization.action_plan(
+            call_id, finalization_id, action_id, command_id
+        )
+        call = await session.get(CallSession, call_id)
+        if call is None:
+            raise FinalizationError("call not found")
+        view = await integrations.get(call.tenant_id, plan.integration_id)
+        if view.connection.provider is not IntegrationProvider.MANAGED_WEBHOOK:
+            raise IntegrationConnectionError("connection_provider_mismatch")
+        if view.credential is None:
+            raise IntegrationConnectionError("credential_not_configured")
+        return integrations.material(view.connection, view.credential)
+    except FinalizationError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
+    except IntegrationConnectionError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
 
 @router.get(

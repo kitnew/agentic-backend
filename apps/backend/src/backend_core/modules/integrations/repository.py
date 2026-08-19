@@ -3,7 +3,11 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend_core.modules.integrations.models import IntegrationConnection
+from backend_core.modules.integrations.models import (
+    IntegrationConnection,
+    IntegrationCredential,
+    IntegrationCredentialStatus,
+)
 
 
 class IntegrationConnectionRepository:
@@ -54,4 +58,19 @@ class IntegrationConnectionRepository:
 
     async def delete(self, connection: IntegrationConnection) -> None:
         await self._session.delete(connection)
+        await self._session.flush()
+
+    async def active_credential(
+        self, integration_id: UUID, *, for_update: bool = False
+    ) -> IntegrationCredential | None:
+        statement = select(IntegrationCredential).where(
+            IntegrationCredential.integration_id == integration_id,
+            IntegrationCredential.status == IntegrationCredentialStatus.ACTIVE,
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return await self._session.scalar(statement)
+
+    async def add_credential(self, credential: IntegrationCredential) -> None:
+        self._session.add(credential)
         await self._session.flush()

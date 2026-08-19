@@ -8,6 +8,7 @@ from contracts import (
     CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
+    RuntimeIntegrationMaterial,
     WorkerResultReport,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -16,7 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.conversations.repository import ConversationRepository
+from backend_core.modules.integrations.crypto import IntegrationSecretCipher
 from backend_core.modules.integrations.repository import IntegrationConnectionRepository
+from backend_core.modules.integrations.service import (
+    CapabilityIntegrationResolver,
+    IntegrationConnectionError,
+    IntegrationConnectionService,
+)
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     TenantRepository,
@@ -34,6 +41,9 @@ logger = logging.getLogger(__name__)
 voice_router = APIRouter(prefix="/internal/v1/calls", tags=["internal:capabilities"])
 worker_router = APIRouter(
     prefix="/internal/v1/capability-results", tags=["internal:capabilities"]
+)
+runtime_router = APIRouter(
+    prefix="/internal/v1/capability-invocations", tags=["internal:integrations"]
 )
 
 
@@ -61,6 +71,27 @@ def service(session: DatabaseSession, request: Request) -> CapabilityInvocationS
 
 
 Service = Annotated[CapabilityInvocationService, Depends(service)]
+
+
+def integration_resolver(
+    session: DatabaseSession, request: Request
+) -> CapabilityIntegrationResolver:
+    connections = IntegrationConnectionRepository(session)
+    integrations = IntegrationConnectionService(
+        TenantRepository(session),
+        connections,
+        IntegrationSecretCipher(
+            request.app.state.settings.integration_encryption_key.get_secret_value()
+        ),
+    )
+    return CapabilityIntegrationResolver(
+        CapabilityInvocationRepository(session), connections, integrations
+    )
+
+
+IntegrationResolver = Annotated[
+    CapabilityIntegrationResolver, Depends(integration_resolver)
+]
 
 
 def http_error(error: CapabilityValidationError) -> HTTPException:
@@ -152,6 +183,22 @@ async def get_invocation(
         return invocation_response(await invocations.get(call_id, invocation_id))
     except CapabilityValidationError as error:
         raise http_error(error) from error
+
+
+@runtime_router.get(
+    "/{invocation_id}/integration-material",
+    response_model=RuntimeIntegrationMaterial,
+    dependencies=[Depends(require_internal_scope("integration-material:read"))],
+)
+async def integration_material(
+    invocation_id: UUID,
+    job_id: UUID,
+    integrations: IntegrationResolver,
+) -> RuntimeIntegrationMaterial:
+    try:
+        return await integrations.resolve(invocation_id, job_id)
+    except IntegrationConnectionError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
 
 @worker_router.post(

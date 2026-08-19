@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     internal_api_audience: Annotated[str, Field(min_length=1)] = "backend-core"
     voice_agent_service_secret: Secret
     job_worker_service_secret: Secret
+    integration_encryption_key: Annotated[SecretStr, Field(min_length=44)]
     livekit_url: Annotated[str, Field(min_length=1)]
     livekit_public_url: Annotated[str, Field(min_length=1)]
     livekit_api_key: Annotated[SecretStr, Field(min_length=1)]
@@ -26,9 +27,9 @@ class Settings(BaseSettings):
         int,
         Field(gt=0, le=600),
     ] = 600
-    livekit_sip_outbound_trunk_id: Annotated[
-        str, Field(min_length=1, max_length=255)
-    ] | None = None
+    livekit_sip_outbound_trunk_id: (
+        Annotated[str, Field(min_length=1, max_length=255)] | None
+    ) = None
     redis_url: RedisDsn = RedisDsn("redis://redis:6379/0")
     capability_job_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
         "capability:jobs"

@@ -13,6 +13,9 @@ from backend_core.modules.integrations.router import router as integrations_rout
 from backend_core.modules.tenants import router as tenants_router
 from backend_core.modules.tenants.router import internal_router, platform_router
 from backend_core.runtime.capabilities.router import (
+    runtime_router as capability_runtime_router,
+)
+from backend_core.runtime.capabilities.router import (
     voice_router as capability_voice_router,
 )
 from backend_core.runtime.capabilities.router import (
@@ -48,6 +51,7 @@ router.include_router(call_runtime_router)
 router.include_router(conversation_internal_router)
 router.include_router(capability_voice_router)
 router.include_router(capability_worker_router)
+router.include_router(capability_runtime_router)
 router.include_router(finalization_router)
 router.include_router(livekit_webhook_router)
 

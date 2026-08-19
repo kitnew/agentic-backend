@@ -382,7 +382,7 @@ class CapabilityInvocationService:
             operation_id=invocation_id,
             call_id=call.id,
             tool_call_id=request.tool_call_id,
-            credential_ref=connection.credential_ref,
+            integration_id=connection.id,
             caller_phone=call.caller_phone_e164 or "",
             semantic_key=semantic_key,
         )

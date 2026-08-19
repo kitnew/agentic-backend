@@ -305,7 +305,7 @@ class FinalizationService:
             raise FinalizationError("action references an unavailable artifact body")
         return ManagedWebhookPostJsonPlan(
             plan_type="managed_webhook.post_json.v1",
-            connection_ref=connection.credential_ref,
+            integration_id=connection.id,
             operation_id=command_id,
             capability=ManagedWebhookCapability(
                 semantic_key=action.semantic_key,

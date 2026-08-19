@@ -10,7 +10,6 @@ from backend_core.modules.integrations.models import (
 )
 
 ConnectionKey = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_-]{0,63}$")]
-CredentialRef = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")]
 
 
 class CreateIntegrationConnectionRequest(BaseModel):
@@ -18,13 +17,13 @@ class CreateIntegrationConnectionRequest(BaseModel):
 
     key: ConnectionKey
     provider: IntegrationProvider
-    credential_ref: CredentialRef
+    config: dict[str, object] = Field(default_factory=dict)
 
 
 class UpdateIntegrationConnectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    credential_ref: CredentialRef | None = None
+    config: dict[str, object] | None = None
     status: IntegrationConnectionStatus | None = None
 
     @model_validator(mode="after")
@@ -43,7 +42,22 @@ class IntegrationConnectionResponse(BaseModel):
     tenant_id: UUID
     key: str
     provider: IntegrationProvider
-    credential_ref: str
+    config: dict[str, object]
     status: IntegrationConnectionStatus
+    revision: int
+    credential_version: int | None = None
+    credential_fingerprint: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class SetIntegrationSecretRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    secret: dict[str, object]
+
+
+class IntegrationTestResponse(BaseModel):
+    integration_id: UUID
+    status: str
+    credential_version: int

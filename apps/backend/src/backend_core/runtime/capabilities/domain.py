@@ -91,7 +91,7 @@ REGISTRY = {
             }
         ),
         tool_name=AVAILABILITY_TOOL_NAME,
-    )
+    ),
 }
 
 
@@ -494,7 +494,7 @@ def compile_plan(
     operation_id: UUID,
     call_id: UUID,
     tool_call_id: str,
-    credential_ref: str,
+    integration_id: UUID,
     caller_phone: str = "",
     semantic_key: str = SEMANTIC_KEY,
     mapping_engine: MappingEngine | None = None,
@@ -526,7 +526,7 @@ def compile_plan(
             )
         return ManagedWebhookPostJsonPlan(
             plan_type=execution.plan_type,
-            connection_ref=credential_ref,
+            integration_id=integration_id,
             operation_id=operation_id,
             capability=ManagedWebhookCapability(
                 semantic_key=semantic_key,
@@ -555,7 +555,7 @@ def compile_plan(
         mapping_contract_version=execution.mapping_contract_version,
         mapping_engine=execution.mapping_engine,
         mapping_engine_version=execution.mapping_engine_version,
-        credential_ref=credential_ref,
+        integration_id=integration_id,
         spreadsheet_id=execution.spreadsheet_id,
         sheet_name=execution.sheet_name,
         append_range=execution.append_range,

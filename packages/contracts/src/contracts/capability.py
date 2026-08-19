@@ -76,7 +76,7 @@ class GoogleSheetsAppendValuesPlan(_Contract):
     mapping_contract_version: Literal[1] = 1
     mapping_engine: Literal["jsonata-python"] = "jsonata-python"
     mapping_engine_version: Literal["0.7.0"] = "0.7.0"
-    credential_ref: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    integration_id: UUID
     spreadsheet_id: str = Field(min_length=1, max_length=255)
     sheet_name: str = Field(min_length=1, max_length=255)
     append_range: str = Field(min_length=1, max_length=255)
@@ -113,7 +113,7 @@ class ManagedWebhookResponseConfig(_Contract):
 
 class ManagedWebhookPostJsonPlan(_Contract):
     plan_type: Literal["managed_webhook.post_json.v1"]
-    connection_ref: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
+    integration_id: UUID
     operation_id: UUID
     capability: ManagedWebhookCapability
     payload: dict[str, object]
@@ -137,7 +137,7 @@ class TraceContext(_Contract):
 
 
 class IntegrationJob(_Contract):
-    job_version: Literal[2] = 2
+    job_version: Literal[3] = 3
     job_id: UUID
     job_type: Literal["integration.execute"] = "integration.execute"
     capability_invocation_id: UUID
@@ -152,6 +152,16 @@ class IntegrationJob(_Contract):
         if self.expires_at <= self.created_at:
             raise ValueError("expires_at must be after created_at")
         return self
+
+
+class RuntimeIntegrationMaterial(_Contract):
+    """Short-lived plaintext returned only to the scoped Job Worker request."""
+
+    integration_id: UUID
+    provider: Literal["google_sheets", "managed_webhook"]
+    config: dict[str, object]
+    secret: dict[str, object]
+    credential_version: int = Field(gt=0)
 
 
 class GoogleSheetsAppendValuesResult(_Contract):
