@@ -929,10 +929,10 @@
       "CreateIntegrationConnectionRequest": {
         "additionalProperties": false,
         "properties": {
-          "credential_ref": {
-            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
-            "title": "Credential Ref",
-            "type": "string"
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
           },
           "key": {
             "pattern": "^[a-z][a-z0-9_-]{0,63}$",
@@ -945,8 +945,7 @@
         },
         "required": [
           "key",
-          "provider",
-          "credential_ref"
+          "provider"
         ],
         "title": "CreateIntegrationConnectionRequest",
         "type": "object"
@@ -1347,14 +1346,37 @@
       },
       "IntegrationConnectionResponse": {
         "properties": {
+          "config": {
+            "additionalProperties": true,
+            "title": "Config",
+            "type": "object"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
           },
-          "credential_ref": {
-            "title": "Credential Ref",
-            "type": "string"
+          "credential_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Fingerprint"
+          },
+          "credential_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Version"
           },
           "id": {
             "format": "uuid",
@@ -1367,6 +1389,10 @@
           },
           "provider": {
             "$ref": "#/components/schemas/IntegrationProvider"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
           },
           "status": {
             "$ref": "#/components/schemas/IntegrationConnectionStatus"
@@ -1387,8 +1413,9 @@
           "tenant_id",
           "key",
           "provider",
-          "credential_ref",
+          "config",
           "status",
+          "revision",
           "created_at",
           "updated_at"
         ],
@@ -1411,6 +1438,30 @@
         ],
         "title": "IntegrationProvider",
         "type": "string"
+      },
+      "IntegrationTestResponse": {
+        "properties": {
+          "credential_version": {
+            "title": "Credential Version",
+            "type": "integer"
+          },
+          "integration_id": {
+            "format": "uuid",
+            "title": "Integration Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "integration_id",
+          "status",
+          "credential_version"
+        ],
+        "title": "IntegrationTestResponse",
+        "type": "object"
       },
       "KnowledgeBasePlanResponse": {
         "properties": {
@@ -2768,6 +2819,21 @@
         "title": "ServerVADRuntimeSettings",
         "type": "object"
       },
+      "SetIntegrationSecretRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "secret": {
+            "additionalProperties": true,
+            "title": "Secret",
+            "type": "object"
+          }
+        },
+        "required": [
+          "secret"
+        ],
+        "title": "SetIntegrationSecretRequest",
+        "type": "object"
+      },
       "TTSRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
@@ -3073,6 +3139,22 @@
         "title": "TenantConfigV4",
         "type": "object"
       },
+      "TenantLLMRuntimeOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "TenantLLMRuntimeOverride",
+        "type": "object"
+      },
       "TenantPromptRevisionResponse": {
         "properties": {
           "created_at": {
@@ -3224,6 +3306,16 @@
       "TenantRuntimeOverride": {
         "additionalProperties": false,
         "properties": {
+          "llm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantLLMRuntimeOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "tts": {
             "anyOf": [
               {
@@ -3470,17 +3562,17 @@
       "UpdateIntegrationConnectionRequest": {
         "additionalProperties": false,
         "properties": {
-          "credential_ref": {
+          "config": {
             "anyOf": [
               {
-                "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
-                "type": "string"
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Credential Ref"
+            "title": "Config"
           },
           "status": {
             "anyOf": [
@@ -5823,6 +5915,372 @@
           }
         ],
         "summary": "Update Connection",
+        "tags": [
+          "admin:integrations"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/disable": {
+      "post": {
+        "operationId": "disable_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Disable Connection",
+        "tags": [
+          "admin:integrations"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/enable": {
+      "post": {
+        "operationId": "enable_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Enable Connection",
+        "tags": [
+          "admin:integrations"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/secrets": {
+      "delete": {
+        "operationId": "revoke_secret_admin_v1_tenants__tenant_id__integration_connections__connection_id__secrets_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Revoke Secret",
+        "tags": [
+          "admin:integrations"
+        ]
+      },
+      "post": {
+        "operationId": "set_secret_admin_v1_tenants__tenant_id__integration_connections__connection_id__secrets_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetIntegrationSecretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Set Secret",
+        "tags": [
+          "admin:integrations"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/secrets/rotate": {
+      "post": {
+        "operationId": "rotate_secret_admin_v1_tenants__tenant_id__integration_connections__connection_id__secrets_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetIntegrationSecretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Rotate Secret",
+        "tags": [
+          "admin:integrations"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/test": {
+      "post": {
+        "operationId": "test_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "connection_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Connection Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Test Connection",
         "tags": [
           "admin:integrations"
         ]

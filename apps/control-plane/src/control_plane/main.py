@@ -172,7 +172,15 @@ def parser() -> ArgumentParser:
         choices=("managed_webhook", "google_sheets"),
         required=True,
     )
-    integration_create.add_argument("--credential-ref", required=True)
+    integration_create.add_argument("--config-json", default="{}")
+    integration_configure = integration_actions.add_parser("configure")
+    integration_configure.add_argument("tenant_slug")
+    integration_configure.add_argument("key")
+    integration_configure.add_argument("--config-json", required=True)
+    for action in ("set-secret", "rotate-secret", "test", "enable", "disable"):
+        command = integration_actions.add_parser(action)
+        command.add_argument("tenant_slug")
+        command.add_argument("key")
     return root
 
 
@@ -232,7 +240,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 arguments.tenant_slug,
                 getattr(arguments, "key", None),
                 provider=getattr(arguments, "provider", None),
-                credential_ref=getattr(arguments, "credential_ref", None),
+                config_json=getattr(arguments, "config_json", None),
             )
             return 0
         if arguments.resource == "tenant" and arguments.tenant_action == "prompt":

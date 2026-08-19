@@ -54,9 +54,6 @@ services:
       MINIO_WORKER_ACCESS_KEY: ${MINIO_WORKER_ACCESS_KEY:?set MINIO_WORKER_ACCESS_KEY}
       MINIO_BUCKET: ${MINIO_BUCKET:-call-recordings}
       MINIO_SECURE: ${MINIO_SECURE:-false}
-      GOOGLE_SHEETS_CREDENTIAL_SECRETS_DIR: /secrets
-    volumes:
-      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/secrets:ro
     depends_on:
       backend:
         condition: service_healthy
@@ -64,11 +61,6 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
-
-  debug-chat:
-    restart: unless-stopped
-    logging: *service-logging
-    networks: [application, edge]
 
   admin-web:
     restart: unless-stopped

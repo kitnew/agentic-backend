@@ -9,6 +9,7 @@ from typing_extensions import Self
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.tenant_llm_runtime_override import TenantLLMRuntimeOverride
     from ..models.tenant_tts_runtime_override import TenantTTSRuntimeOverride
 
 
@@ -19,13 +20,24 @@ T = TypeVar("T", bound="TenantRuntimeOverride")
 class TenantRuntimeOverride:
     """
     Attributes:
+        llm (None | TenantLLMRuntimeOverride | Unset):
         tts (None | TenantTTSRuntimeOverride | Unset):
     """
 
+    llm: None | TenantLLMRuntimeOverride | Unset = UNSET
     tts: None | TenantTTSRuntimeOverride | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.tenant_llm_runtime_override import TenantLLMRuntimeOverride
         from ..models.tenant_tts_runtime_override import TenantTTSRuntimeOverride
+
+        llm: dict[str, Any] | None | Unset
+        if isinstance(self.llm, Unset):
+            llm = UNSET
+        elif isinstance(self.llm, TenantLLMRuntimeOverride):
+            llm = self.llm.to_dict()
+        else:
+            llm = self.llm
 
         tts: dict[str, Any] | None | Unset
         if isinstance(self.tts, Unset):
@@ -38,6 +50,8 @@ class TenantRuntimeOverride:
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
+        if llm is not UNSET:
+            field_dict["llm"] = llm
         if tts is not UNSET:
             field_dict["tts"] = tts
 
@@ -45,9 +59,27 @@ class TenantRuntimeOverride:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.tenant_llm_runtime_override import TenantLLMRuntimeOverride
         from ..models.tenant_tts_runtime_override import TenantTTSRuntimeOverride
 
         d = dict(src_dict)
+
+        def _parse_llm(data: object) -> None | TenantLLMRuntimeOverride | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                llm_type_0 = TenantLLMRuntimeOverride.from_dict(data)
+
+                return llm_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(None | TenantLLMRuntimeOverride | Unset, data)
+
+        llm = _parse_llm(d.pop("llm", UNSET))
 
         def _parse_tts(data: object) -> None | TenantTTSRuntimeOverride | Unset:
             if data is None:
@@ -67,6 +99,7 @@ class TenantRuntimeOverride:
         tts = _parse_tts(d.pop("tts", UNSET))
 
         tenant_runtime_override = cls(
+            llm=llm,
             tts=tts,
         )
 

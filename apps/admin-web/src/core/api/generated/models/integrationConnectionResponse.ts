@@ -4,15 +4,19 @@
  * Agent Platform Admin API
  * OpenAPI spec version: 0.1.0
  */
+import type { IntegrationConnectionResponseConfig } from './integrationConnectionResponseConfig';
 import type { IntegrationConnectionStatus } from './integrationConnectionStatus';
 import type { IntegrationProvider } from './integrationProvider';
 
 export interface IntegrationConnectionResponse {
+  config: IntegrationConnectionResponseConfig;
   created_at: string;
-  credential_ref: string;
+  credential_fingerprint?: string | null;
+  credential_version?: number | null;
   id: string;
   key: string;
   provider: IntegrationProvider;
+  revision: number;
   status: IntegrationConnectionStatus;
   tenant_id: string;
   updated_at: string;

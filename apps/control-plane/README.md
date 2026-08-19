@@ -81,17 +81,18 @@ Create and inspect tenant connection metadata by slug:
 ```bash
 uv run agentctl integration create penzion-grand transcript_webhook \
   --provider managed_webhook \
-  --credential-ref penzion-grand-transcript
+  --config-json '{"allowed_hosts":["hook.eu1.make.com"]}'
+printf '%s' '{"url":"https://hook.eu1.make.com/...","api_key":"..."}' \
+  | uv run agentctl integration set-secret penzion-grand transcript_webhook
+uv run agentctl integration enable penzion-grand transcript_webhook
 uv run agentctl integration list penzion-grand
 uv run agentctl integration show penzion-grand transcript_webhook
 uv run agentctl integration delete penzion-grand transcript_webhook
 ```
 
-These commands store only `key`, `provider`, and `credential_ref`. The referenced
-URL/API key and hostname allowlist must still be provisioned in the Job Worker
-deployment through mounted secrets and `/secrets/managed-webhooks.json`, selected
-with `MANAGED_WEBHOOK_CONNECTION_MAP_FILE`. Credentials remain in the mounted
-secret files.
+These commands store integration metadata and versioned AES-GCM encrypted
+credentials in Backend. Secret JSON is accepted only through stdin or a hidden
+interactive prompt; no individual tenant credential files or Worker maps exist.
 
 Normal post-call authoring in `definitions/tenants/<slug>/tenant.yaml` is short:
 

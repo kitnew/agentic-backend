@@ -4,8 +4,10 @@
  * Agent Platform Admin API
  * OpenAPI spec version: 0.1.0
  */
+import type { TenantLLMRuntimeOverride } from './tenantLLMRuntimeOverride';
 import type { TenantTTSRuntimeOverride } from './tenantTTSRuntimeOverride';
 
 export interface TenantRuntimeOverride {
+  llm?: TenantLLMRuntimeOverride | null;
   tts?: TenantTTSRuntimeOverride | null;
 }

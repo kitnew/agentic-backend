@@ -25,6 +25,9 @@ from .create_draft_request import CreateDraftRequest
 from .create_draft_request_config_type_0 import CreateDraftRequestConfigType0
 from .create_inbound_route_request import CreateInboundRouteRequest
 from .create_integration_connection_request import CreateIntegrationConnectionRequest
+from .create_integration_connection_request_config import (
+    CreateIntegrationConnectionRequestConfig,
+)
 from .create_platform_prompt_draft_request import CreatePlatformPromptDraftRequest
 from .create_prompt_set_draft_request import CreatePromptSetDraftRequest
 from .create_tenant_request import CreateTenantRequest
@@ -43,8 +46,10 @@ from .handoff_destination import HandoffDestination
 from .http_validation_error import HTTPValidationError
 from .inbound_route_response import InboundRouteResponse
 from .integration_connection_response import IntegrationConnectionResponse
+from .integration_connection_response_config import IntegrationConnectionResponseConfig
 from .integration_connection_status import IntegrationConnectionStatus
 from .integration_provider import IntegrationProvider
+from .integration_test_response import IntegrationTestResponse
 from .knowledge_base_plan_response import KnowledgeBasePlanResponse
 from .knowledge_base_plan_response_status import KnowledgeBasePlanResponseStatus
 from .knowledge_base_publish_response import KnowledgeBasePublishResponse
@@ -98,6 +103,8 @@ from .prompt_text_revision_response import PromptTextRevisionResponse
 from .runtime_revision_status import RuntimeRevisionStatus
 from .runtime_validation_response import RuntimeValidationResponse
 from .server_vad_runtime_settings import ServerVADRuntimeSettings
+from .set_integration_secret_request import SetIntegrationSecretRequest
+from .set_integration_secret_request_secret import SetIntegrationSecretRequestSecret
 from .stt_runtime_settings import STTRuntimeSettings
 from .tenant_capability_profile import TenantCapabilityProfile
 from .tenant_capability_profile_agent_input_schema import (
@@ -114,6 +121,7 @@ from .tenant_config_v3 import TenantConfigV3
 from .tenant_config_v3_capabilities import TenantConfigV3Capabilities
 from .tenant_config_v4 import TenantConfigV4
 from .tenant_config_v4_capabilities import TenantConfigV4Capabilities
+from .tenant_llm_runtime_override import TenantLLMRuntimeOverride
 from .tenant_prompt_revision_response import TenantPromptRevisionResponse
 from .tenant_response import TenantResponse
 from .tenant_runtime_override import TenantRuntimeOverride
@@ -128,6 +136,9 @@ from .update_draft_request import UpdateDraftRequest
 from .update_draft_request_config_type_0 import UpdateDraftRequestConfigType0
 from .update_inbound_route_request import UpdateInboundRouteRequest
 from .update_integration_connection_request import UpdateIntegrationConnectionRequest
+from .update_integration_connection_request_config_type_0 import (
+    UpdateIntegrationConnectionRequestConfigType0,
+)
 from .update_prompt_set_draft_request import UpdatePromptSetDraftRequest
 from .update_text_draft_request import UpdateTextDraftRequest
 from .validate_config_request import ValidateConfigRequest
@@ -172,6 +183,7 @@ __all__ = (
     "CreateDraftRequestConfigType0",
     "CreateInboundRouteRequest",
     "CreateIntegrationConnectionRequest",
+    "CreateIntegrationConnectionRequestConfig",
     "CreatePlatformPromptDraftRequest",
     "CreatePromptSetDraftRequest",
     "CreateTenantRequest",
@@ -188,8 +200,10 @@ __all__ = (
     "HandoffDestination",
     "InboundRouteResponse",
     "IntegrationConnectionResponse",
+    "IntegrationConnectionResponseConfig",
     "IntegrationConnectionStatus",
     "IntegrationProvider",
+    "IntegrationTestResponse",
     "KnowledgeBasePlanResponse",
     "KnowledgeBasePlanResponseStatus",
     "KnowledgeBasePublishResponse",
@@ -240,6 +254,8 @@ __all__ = (
     "RuntimeValidationResponse",
     "STTRuntimeSettings",
     "ServerVADRuntimeSettings",
+    "SetIntegrationSecretRequest",
+    "SetIntegrationSecretRequestSecret",
     "TTSRuntimeSettings",
     "TenantCapabilityProfile",
     "TenantCapabilityProfileAgentInputSchema",
@@ -252,6 +268,7 @@ __all__ = (
     "TenantConfigV3Capabilities",
     "TenantConfigV4",
     "TenantConfigV4Capabilities",
+    "TenantLLMRuntimeOverride",
     "TenantPromptRevisionResponse",
     "TenantResponse",
     "TenantRuntimeOverride",
@@ -265,6 +282,7 @@ __all__ = (
     "UpdateDraftRequestConfigType0",
     "UpdateInboundRouteRequest",
     "UpdateIntegrationConnectionRequest",
+    "UpdateIntegrationConnectionRequestConfigType0",
     "UpdatePromptSetDraftRequest",
     "UpdateTextDraftRequest",
     "ValidateConfigRequest",

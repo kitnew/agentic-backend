@@ -5,8 +5,9 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { IntegrationConnectionStatus } from './integrationConnectionStatus';
+import type { UpdateIntegrationConnectionRequestConfig } from './updateIntegrationConnectionRequestConfig';
 
 export interface UpdateIntegrationConnectionRequest {
-  credential_ref?: string | null;
+  config?: UpdateIntegrationConnectionRequestConfig;
   status?: IntegrationConnectionStatus | null;
 }

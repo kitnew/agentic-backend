@@ -2,7 +2,7 @@
 
 This capability records a reservation request for later confirmation. It never means that a reservation is confirmed.
 
-Backend Core owns the semantic definition, validation, canonical input, immutable plan compilation, invocation state, and outbox. Job Worker owns Google credentials, lookup-before-append, provider retries, and typed technical results. Voice Agent receives only the tool name, description, announcement, input schema, and semantic result.
+Backend Core owns the semantic definition, validation, canonical input, immutable plan compilation, invocation state, encrypted integration credentials, and outbox. Job Worker owns external execution, lookup-before-append, provider retries, and typed technical results. Voice Agent receives only the tool name, description, announcement, input schema, and semantic result.
 
 Tenants that set `business_policy.requires_final_confirmation` use the Backend-owned confirmation lifecycle: `POST /internal/v1/calls/{call_id}/capability-confirmations` creates an opaque snapshot, and `POST /internal/v1/calls/{call_id}/capability-confirmations/{confirmation_id}/confirm` atomically consumes it with the invocation and outbox transaction. `check_availability` remains deferred.
 
@@ -10,33 +10,31 @@ Tenants that set `business_policy.requires_final_confirmation` use the Backend-o
 
 ## Credential setup
 
-Create the Backend connection metadata with `agentctl`; the credential value stays only in Job Worker:
+Create, configure, set a credential from stdin, and enable the Backend-owned integration. The Worker retrieves the decrypted material only for the invocation pinned to that integration; it never receives credentials in Redis or configuration.
 
 ```bash
 agentctl integration create tenant-a reservations \
-  --provider google_sheets \
-  --credential-ref tenant-a-sheets
+  --provider google_sheets
+printf '%s' '{"service_account":{"client_email":"...","private_key":"...","token_uri":"https://oauth2.googleapis.com/token"}}' \
+  | agentctl integration set-secret tenant-a reservations
+agentctl integration enable tenant-a reservations
 ```
 
-Mount each Google service-account JSON file read-only into Job Worker and bind the opaque Backend `credential_ref` to its file path in deployment configuration. The path map contains no secret material and is never read from PostgreSQL:
-
-```text
-GOOGLE_SHEETS_CREDENTIAL_FILE_MAP={"tenant-a-sheets":"/run/secrets/tenant-a-google-service-account.json","tenant-b-sheets":"/run/secrets/tenant-b-google-service-account.json"}
-GOOGLE_SHEETS_CREDENTIAL_SECRETS_DIR=/run/secrets
-```
-
-In Compose, bind the host/deployment secret directory to `/run/secrets:ro`. Adding a tenant means adding its mounted file and one map entry; Backend still stores only `tenant-a-sheets` or `tenant-b-sheets`. The Worker reads the selected file when resolving a token, so rotation does not require embedding JSON in an environment variable.
+The root `INTEGRATION_ENCRYPTION_KEY` is the only deployment secret for integration storage. Credentials are AES-GCM encrypted and versioned in PostgreSQL; changing, rotating, revoking, or enabling an integration needs no container restart. `agentctl integration test` performs non-destructive readiness validation (config, active credential, and decryption); real provider requests remain capability-driven.
 
 Share the target test spreadsheet with the service-account `client_email`.
 
 ## Penzión Grand managed webhook configuration
 
-Create a Backend integration connection with `provider: managed_webhook`; PostgreSQL stores only its `credential_ref`:
+Create a Backend integration connection with provider-specific public configuration and set the URL/API key through stdin:
 
 ```bash
 agentctl integration create penzion-grand penzion-grand-reservation-submit \
   --provider managed_webhook \
-  --credential-ref penzion-grand-reservation-submit
+  --config-json '{"allowed_hosts":["hook.eu1.make.com"]}'
+printf '%s' '{"url":"https://hook.eu1.make.com/...","api_key":"..."}' \
+  | agentctl integration set-secret penzion-grand penzion-grand-reservation-submit
+agentctl integration enable penzion-grand penzion-grand-reservation-submit
 ```
 
 The published capability execution uses the generic managed webhook plan:
@@ -52,24 +50,6 @@ The published capability execution uses the generic managed webhook plan:
   "timeout_seconds": 10,
   "request_mapping": "{\"check_in\": business.stay.check_in, \"check_out\": business.stay.check_out, \"guest_name\": business.guest.name, \"caller_phone\": metadata.caller_phone, \"reservation_phone\": business.guest.phone, \"email\": business.guest.email ? business.guest.email : \"\", \"room_type\": business.allocation.room_type, \"room_count\": business.allocation.room_count}"
 }
-```
-
-Job Worker deployment configuration contains only the managed connection binding:
-
-```text
-MANAGED_WEBHOOK_CONNECTION_MAP_FILE=/secrets/managed-webhooks.json
-
-The mounted `/secrets/managed-webhooks.json` file contains the connection map;
-its entries reference the separately mounted URL and API-key files.
-
-```json
-{
-  "penzion-grand-reservation-submit": {
-    "url_file": "/run/secrets/penzion-grand-reservation-webhook-url",
-    "allowed_hosts": ["hook.eu1.make.com"]
-  }
-}
-```
 ```
 
 The Make scenario receives the generic envelope, uses `operation_id` for its hidden `reservations_new` column K, and returns the standard success/failure response envelope. Backend and Worker do not know the Sheet layout.

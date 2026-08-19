@@ -95,10 +95,6 @@ services:
     environment:
       JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:?set AZURE_OPENAI_API_KEY}
-    volumes:
-      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/secrets:ro
-      - ${GOOGLE_SHEETS_CREDENTIALS_DIR:-./secrets}:/run/secrets:ro
-
   livekit:
     image: livekit/livekit-server:v1.13.1
     command:
@@ -130,15 +126,11 @@ services:
         condition: service_healthy
     networks: [application]
 
-  debug-chat:
-    ports:
-      - "${DEBUG_CHAT_PORT:-3000}:80"
-
   admin-web:
     environment:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
     ports:
-      - "127.0.0.1:${ADMIN_WEB_PORT:-3002}:8080"
+      - "127.0.0.1:${ADMIN_WEB_PORT:-3000}:8080"
 
 volumes:
   prometheus-data:

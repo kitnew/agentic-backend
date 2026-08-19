@@ -4,11 +4,11 @@
  * Agent Platform Admin API
  * OpenAPI spec version: 0.1.0
  */
+import type { CreateIntegrationConnectionRequestConfig } from './createIntegrationConnectionRequestConfig';
 import type { IntegrationProvider } from './integrationProvider';
 
 export interface CreateIntegrationConnectionRequest {
-  /** @pattern ^[a-z][a-z0-9_.-]{0,127}$ */
-  credential_ref: string;
+  config?: CreateIntegrationConnectionRequestConfig;
   /** @pattern ^[a-z][a-z0-9_-]{0,63}$ */
   key: string;
   provider: IntegrationProvider;

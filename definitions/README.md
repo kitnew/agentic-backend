@@ -129,21 +129,21 @@ PromptSet state.
 
 ## Post-call actions
 
-Create connection metadata once. `agentctl` resolves the tenant slug; the
-credential reference is not a secret:
+Create and configure the integration once. `agentctl` resolves the tenant slug;
+secret JSON is supplied on stdin and is encrypted by Backend:
 
 ```bash
 agentctl integration create penzion-grand transcript_webhook \
   --provider managed_webhook \
-  --credential-ref penzion-grand-transcript
+  --config-json '{"allowed_hosts":["hook.eu1.make.com"]}'
 agentctl integration create penzion-grand recording_webhook \
   --provider managed_webhook \
-  --credential-ref penzion-grand-recording
+  --config-json '{"allowed_hosts":["hook.eu1.make.com"]}'
 ```
 
-Provision each referenced webhook URL/API key separately in the deployment's
-mounted secrets and `/secrets/managed-webhooks.json`. `agentctl integration`
-manages Backend metadata only; it never reads or writes deployment secrets.
+Pipe each credential into `agentctl integration set-secret`, then enable it.
+`agentctl integration` is only an Admin API client; Backend encrypts and persists
+credentials, while Job Worker resolves them only for an authorized invocation.
 
 Normal `tenant.yaml` authoring uses platform-owned presets:
 
