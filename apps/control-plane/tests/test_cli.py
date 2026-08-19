@@ -217,17 +217,20 @@ def test_tenant_create_dispatches_from_cli(
         )
 
     monkeypatch.setattr(cli, "run_tenant_create", run)
-    assert cli.main(
-        [
-            "tenant",
-            "create",
-            "debug-hotel",
-            "--display-name",
-            "Debug Hotel",
-            "--business-type",
-            "hotel",
-        ]
-    ) == 0
+    assert (
+        cli.main(
+            [
+                "tenant",
+                "create",
+                "debug-hotel",
+                "--display-name",
+                "Debug Hotel",
+                "--business-type",
+                "hotel",
+            ]
+        )
+        == 0
+    )
     assert seen["slug"] == "debug-hotel"
     assert seen["status"] == "active"
 
@@ -386,8 +389,8 @@ def test_integration_command_hierarchy(monkeypatch: pytest.MonkeyPatch) -> None:
                 "recording_webhook",
                 "--provider",
                 "managed_webhook",
-                "--credential-ref",
-                "penzion-grand-recording",
+                "--config-json",
+                '{"allowed_hosts":["example.test"]}',
             ]
         )
         == 0
@@ -397,7 +400,7 @@ def test_integration_command_hierarchy(monkeypatch: pytest.MonkeyPatch) -> None:
         "slug": "penzion-grand",
         "key": "recording_webhook",
         "provider": "managed_webhook",
-        "credential_ref": "penzion-grand-recording",
+        "config_json": '{"allowed_hosts":["example.test"]}',
     }
 
 

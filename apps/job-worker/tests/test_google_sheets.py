@@ -2,11 +2,12 @@ from uuid import UUID
 
 import httpx
 import pytest
-from contracts import GoogleSheetsAppendValuesPlan
+from contracts import GoogleSheetsAppendValuesPlan, RuntimeIntegrationMaterial
 from job_worker.worker import (
     ExecutionError,
-    GoogleSheetsAppendValuesHandler,
-    MountedSecretFileCredentialResolver,
+)
+from job_worker.worker import (
+    GoogleSheetsAppendValuesHandler as WorkerGoogleSheetsAppendValuesHandler,
 )
 
 
@@ -20,7 +21,7 @@ def plan() -> GoogleSheetsAppendValuesPlan:
     operation_id = UUID("00000000-0000-0000-0000-000000000001")
     return GoogleSheetsAppendValuesPlan(
         plan_type="google_sheets.append_values.v1",
-        credential_ref="tenant-sheets",
+        integration_id=UUID("00000000-0000-0000-0000-000000000002"),
         spreadsheet_id="sheet-id",
         sheet_name="Reservations",
         append_range="A:D",
@@ -34,14 +35,36 @@ def plan() -> GoogleSheetsAppendValuesPlan:
     )
 
 
-@pytest.mark.asyncio
-async def test_credential_refs_are_allowlisted() -> None:
-    resolver = MountedSecretFileCredentialResolver("{}")
-    with pytest.raises(ExecutionError) as captured:
-        await resolver.access_token("unknown")
-    assert captured.value.code == "credential_resolution_failed"
-    with pytest.raises(ValueError, match="invalid reference"):
-        MountedSecretFileCredentialResolver('{"ENV NAME": {}}')
+def material(
+    value: GoogleSheetsAppendValuesPlan | None = None,
+) -> RuntimeIntegrationMaterial:
+    return RuntimeIntegrationMaterial(
+        integration_id=(value or plan()).integration_id,
+        provider="google_sheets",
+        config={},
+        secret={"service_account": {"client_email": "test@example.test"}},
+        credential_version=1,
+    )
+
+
+class GoogleSheetsAppendValuesHandler(WorkerGoogleSheetsAppendValuesHandler):
+    def __init__(self, _credentials: Credentials, client: httpx.AsyncClient) -> None:
+        super().__init__(client)
+
+    @staticmethod
+    async def _access_token(
+        value: GoogleSheetsAppendValuesPlan, runtime: RuntimeIntegrationMaterial
+    ) -> str:
+        if value.integration_id != runtime.integration_id:
+            raise ExecutionError(
+                "integration_material_invalid",
+                "Google Sheets integration material is invalid",
+                transient=False,
+            )
+        return "token"
+
+    async def execute(self, value: GoogleSheetsAppendValuesPlan):
+        return await super().execute(value, material(value))
 
 
 @pytest.mark.asyncio

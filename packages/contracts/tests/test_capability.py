@@ -18,7 +18,7 @@ def plan() -> GoogleSheetsAppendValuesPlan:
     operation_id = uuid4()
     return GoogleSheetsAppendValuesPlan(
         plan_type="google_sheets.append_values.v1",
-        credential_ref="tenant-a-sheets",
+        integration_id=uuid4(),
         spreadsheet_id="sheet",
         sheet_name="Reservations",
         append_range="A:G",
@@ -128,7 +128,9 @@ def test_runtime_capability_forbids_execution_details() -> None:
 def test_calculator_request_accepts_supported_operations(
     operation: str, operands: list[str]
 ) -> None:
-    assert CalculatorRequest(operation=operation, operands=operands).operands == operands
+    assert (
+        CalculatorRequest(operation=operation, operands=operands).operands == operands
+    )
 
 
 @pytest.mark.parametrize(

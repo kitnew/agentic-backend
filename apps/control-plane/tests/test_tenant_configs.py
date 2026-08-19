@@ -129,11 +129,14 @@ def integration_connection(
 ) -> IntegrationConnectionResponse:
     return IntegrationConnectionResponse.from_dict(
         {
+            "config": {"allowed_hosts": ["example.test"]},
             "created_at": NOW.isoformat(),
-            "credential_ref": "managed-webhook-recording",
+            "credential_fingerprint": "a" * 64,
+            "credential_version": 1,
             "id": f"00000000-0000-0000-0000-{connection_id:012d}",
             "key": key,
             "provider": provider,
+            "revision": 1,
             "status": status,
             "tenant_id": str(TENANT_ID),
             "updated_at": NOW.isoformat(),
@@ -380,7 +383,9 @@ def test_capability_authoring_compiles_and_renders_without_runtime_details(
     authored = authoring_capability_config()
 
     compiled = tenant_configs.compile_authoring_config(
-        object(), TENANT_ID, authored  # type: ignore[arg-type]
+        object(),
+        TENANT_ID,
+        authored,  # type: ignore[arg-type]
     )
 
     profile = compiled["capabilities"]["reservation.submit_request"]
@@ -410,7 +415,9 @@ def test_capability_authoring_compiles_and_renders_without_runtime_details(
     TenantConfigV4.model_validate(compiled)
     assert (
         tenant_configs.authoring_config(
-            object(), TENANT_ID, compiled  # type: ignore[arg-type]
+            object(),
+            TENANT_ID,
+            compiled,  # type: ignore[arg-type]
         )
         == authored
     )
@@ -430,7 +437,9 @@ def test_capability_authoring_rejects_invalid_webhook_connection(
         tenant_configs.PromptCommandError, match="active managed_webhook"
     ):
         tenant_configs.compile_authoring_config(
-            object(), TENANT_ID, authoring_capability_config()  # type: ignore[arg-type]
+            object(),
+            TENANT_ID,
+            authoring_capability_config(),  # type: ignore[arg-type]
         )
 
 
@@ -449,7 +458,9 @@ def test_capability_authoring_requires_manual_fixtures_when_not_derivable(
         tenant_configs.PromptCommandError, match="validation_fixtures is required"
     ):
         tenant_configs.compile_authoring_config(
-            object(), TENANT_ID, authored  # type: ignore[arg-type]
+            object(),
+            TENANT_ID,
+            authored,  # type: ignore[arg-type]
         )
 
 
@@ -460,15 +471,22 @@ def test_capability_authoring_compiles_and_hides_schema_dialect(
     authored = authoring_capability_config()
 
     compiled = tenant_configs.compile_authoring_config(
-        object(), TENANT_ID, authored  # type: ignore[arg-type]
+        object(),
+        TENANT_ID,
+        authored,  # type: ignore[arg-type]
     )
     schema = compiled["capabilities"]["reservation.submit_request"][
         "agent_input_schema"
     ]
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
-    assert "$schema" not in tenant_configs.authoring_config(
-        object(), TENANT_ID, compiled  # type: ignore[arg-type]
-    )["capabilities"]["reservation.submit_request"]["agent_input_schema"]
+    assert (
+        "$schema"
+        not in tenant_configs.authoring_config(
+            object(),
+            TENANT_ID,
+            compiled,  # type: ignore[arg-type]
+        )["capabilities"]["reservation.submit_request"]["agent_input_schema"]
+    )
 
 
 def test_capability_authoring_rejects_mixed_runtime_fields(
@@ -476,7 +494,9 @@ def test_capability_authoring_rejects_mixed_runtime_fields(
 ) -> None:
     mock_connections(monkeypatch)
     runtime = tenant_configs.compile_authoring_config(
-        object(), TENANT_ID, authoring_capability_config()  # type: ignore[arg-type]
+        object(),
+        TENANT_ID,
+        authoring_capability_config(),  # type: ignore[arg-type]
     )
     profile = runtime["capabilities"]["reservation.submit_request"]
     profile["connection"] = "recording_webhook"
@@ -484,7 +504,9 @@ def test_capability_authoring_rejects_mixed_runtime_fields(
         tenant_configs.PromptCommandError, match="cannot mix authoring fields"
     ):
         tenant_configs.compile_authoring_config(
-            object(), TENANT_ID, runtime  # type: ignore[arg-type]
+            object(),
+            TENANT_ID,
+            runtime,  # type: ignore[arg-type]
         )
 
 
@@ -524,7 +546,7 @@ def test_post_call_presets_compile_to_strict_runtime_and_round_trip(
     )
     assert pulled == authored
     assert "execution" not in pulled["post_call_actions"][0]
-    assert "credential_ref" not in str(pulled)
+    assert "credential_fingerprint" not in str(pulled)
 
 
 def test_post_call_preset_validation_is_explicit(

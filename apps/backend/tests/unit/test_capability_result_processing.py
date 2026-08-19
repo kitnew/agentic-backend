@@ -57,7 +57,7 @@ def invocation(plan_type: str) -> CapabilityInvocation:
             "plan_type": plan_type,
             **(
                 {
-                    "credential_ref": "sheets",
+                    "integration_id": str(uuid4()),
                     "spreadsheet_id": "sheet",
                     "sheet_name": "Reservations",
                     "append_range": "A:D",
@@ -71,7 +71,7 @@ def invocation(plan_type: str) -> CapabilityInvocation:
                 }
                 if plan_type == "google_sheets.append_values.v1"
                 else {
-                    "connection_ref": "webhook",
+                    "integration_id": str(uuid4()),
                     "operation_id": str(uuid4()),
                     "capability": {
                         "semantic_key": "reservation.submit_request",

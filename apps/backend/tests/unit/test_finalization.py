@@ -253,7 +253,11 @@ def recording_event(call: CallSession, status: str = "ready") -> MessageEnvelope
         message_type=f"recording.{status}",
         correlation_id=call.id,
         tenant_id=call.tenant_id,
-        payload={"recording_id": str(uuid4()), "call_id": str(call.id), "status": status},
+        payload={
+            "recording_id": str(uuid4()),
+            "call_id": str(call.id),
+            "status": status,
+        },
     )
 
 
@@ -263,7 +267,7 @@ def connection(call: CallSession, configured: PostCallAction) -> IntegrationConn
         tenant_id=call.tenant_id,
         key="hook",
         provider=IntegrationProvider.MANAGED_WEBHOOK,
-        credential_ref="tenant-hook",
+        config={"allowed_hosts": ["example.test"]},
         status=IntegrationConnectionStatus.ACTIVE,
     )
 

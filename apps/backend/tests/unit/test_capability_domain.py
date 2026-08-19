@@ -109,7 +109,7 @@ def compile_row(
         operation_id=UUID("00000000-0000-0000-0000-000000000001"),
         call_id=uuid4(),
         tool_call_id="tool-call",
-        credential_ref="tenant-sheets",
+        integration_id=uuid4(),
         caller_phone=caller_phone,
     )
     return plan.rows[0]
@@ -142,18 +142,10 @@ def test_check_availability_business_validation_does_not_require_guest_name() ->
         normalize_input(
             {
                 "properties": {
-                    "check_in": {
-                        "x-canonical-field": "stay.check_in"
-                    },
-                    "check_out": {
-                        "x-canonical-field": "stay.check_out"
-                    },
-                    "room_type": {
-                        "x-canonical-field": "allocation.room_type"
-                    },
-                    "room_count": {
-                        "x-canonical-field": "allocation.room_count"
-                    },
+                    "check_in": {"x-canonical-field": "stay.check_in"},
+                    "check_out": {"x-canonical-field": "stay.check_out"},
+                    "room_type": {"x-canonical-field": "allocation.room_type"},
+                    "room_count": {"x-canonical-field": "allocation.room_count"},
                 }
             },
             {
@@ -164,9 +156,7 @@ def test_check_availability_business_validation_does_not_require_guest_name() ->
             },
         ),
         "Europe/Bratislava",
-        required_fields=definition(
-            "reservation.check_availability", 1
-        ).required_fields,
+        required_fields=definition("reservation.check_availability", 1).required_fields,
         today=date(2030, 8, 1),
     )
     assert canonical["guest"]["name"] is None
@@ -201,7 +191,7 @@ def test_managed_webhook_plan_contains_payload_not_provider_details() -> None:
         operation_id=UUID("00000000-0000-0000-0000-000000000001"),
         call_id=uuid4(),
         tool_call_id="tool-call",
-        credential_ref="penzion-grand-reservation-submit",
+        integration_id=uuid4(),
     )
     assert plan.plan_type == "managed_webhook.post_json.v1"
     assert plan.payload == {"check_in": "2026-08-12", "guest_name": "Alice"}
@@ -210,7 +200,7 @@ def test_managed_webhook_plan_contains_payload_not_provider_details() -> None:
 
 
 def test_managed_webhook_response_contract_compiles_into_pinned_plan() -> None:
-    capability = profile('{}').model_copy(
+    capability = profile("{}").model_copy(
         update={
             "execution": ManagedWebhookExecution.model_validate(
                 {
@@ -251,7 +241,7 @@ def test_managed_webhook_response_contract_compiles_into_pinned_plan() -> None:
         operation_id=uuid4(),
         call_id=uuid4(),
         tool_call_id="tool-call",
-        credential_ref="reservation-webhook",
+        integration_id=uuid4(),
     )
 
     assert isinstance(plan, ManagedWebhookPostJsonPlan)

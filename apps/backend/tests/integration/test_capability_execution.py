@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from backend_core.bootstrap import create_app
@@ -186,17 +186,54 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             json={
                 "key": "reservations",
                 "provider": "google_sheets",
-                "credential_ref": "capability-test-sheets",
             },
         )
         assert connection.status_code == 201
+        initial_secret = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/integration-connections/"
+            f"{connection.json()['id']}/secrets",
+            headers=admin_headers,
+            json={
+                "secret": {
+                    "service_account": {
+                        "client_email": "test@example.test",
+                        "private_key": "test-key",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                    }
+                }
+            },
+        )
+        assert initial_secret.status_code == 200
+        assert initial_secret.json()["credential_version"] == 1
+        rotated = await client.post(
+            f"/admin/v1/tenants/{tenant_id}/integration-connections/"
+            f"{connection.json()['id']}/secrets/rotate",
+            headers=admin_headers,
+            json={
+                "secret": {
+                    "service_account": {
+                        "client_email": "rotated@example.test",
+                        "private_key": "rotated-key",
+                        "token_uri": "https://oauth2.googleapis.com/token",
+                    }
+                }
+            },
+        )
+        assert rotated.status_code == 200
+        assert rotated.json()["credential_version"] == 2
+        assert (
+            await client.post(
+                f"/admin/v1/tenants/{tenant_id}/integration-connections/"
+                f"{connection.json()['id']}/enable",
+                headers=admin_headers,
+            )
+        ).status_code == 200
         temporary_connection = await client.post(
             f"/admin/v1/tenants/{tenant_id}/integration-connections",
             headers=admin_headers,
             json={
                 "key": "temporary",
                 "provider": "managed_webhook",
-                "credential_ref": "capability-test-temporary",
             },
         )
         assert temporary_connection.status_code == 201
@@ -213,6 +250,7 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
         )
         assert listed_connections.status_code == 200
         assert {item["key"] for item in listed_connections.json()} == {"reservations"}
+        assert "private_key" not in listed_connections.text
         other_tenant = await client.post(
             "/admin/v1/tenants",
             headers=admin_headers,
@@ -409,10 +447,27 @@ async def test_invocation_outbox_duplicate_and_result_are_idempotent(
             "Authorization": "Bearer "
             + service_token(
                 service="job-worker",
-                scopes=["capability-result:write"],
+                scopes=["capability-result:write", "integration-material:read"],
                 secret=app_settings.job_worker_service_secret.get_secret_value(),
             )
         }
+        material = await client.get(
+            f"/internal/v1/capability-invocations/{invocation_id}/integration-material",
+            params={"job_id": str(job_id)},
+            headers=worker_headers,
+        )
+        assert material.status_code == 200
+        assert material.json()["integration_id"] == connection.json()["id"]
+        assert material.json()["secret"]["service_account"]["client_email"] == (
+            "rotated@example.test"
+        )
+        assert (
+            await client.get(
+                f"/internal/v1/capability-invocations/{invocation_id}/integration-material",
+                params={"job_id": str(uuid4())},
+                headers=worker_headers,
+            )
+        ).status_code == 409
         now = datetime.now(UTC).isoformat()
         success = {
             "job_id": str(job_id),

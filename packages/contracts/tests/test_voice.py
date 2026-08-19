@@ -71,7 +71,7 @@ def test_voice_contracts_round_trip_and_forbid_authoring_fields() -> None:
             "prompt_set_revision_id",
             "spreadsheet_id",
             "request_mapping",
-            "credential_ref",
+            "integration_id",
         }
         & context.model_dump().keys()
     )

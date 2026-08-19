@@ -9,6 +9,7 @@ from contracts import (
     ManagedWebhookPostJsonPlan,
     ManagedWebhookPostJsonResult,
     MaterializeArtifactRepresentation,
+    RuntimeIntegrationMaterial,
     command_envelope,
 )
 from job_worker.command_worker import (
@@ -49,13 +50,14 @@ def settings() -> Settings:
         backend_url="http://backend",
         backend_audience="backend",
         service_secret="secret",
-        credential_file_map_json="{}",
         max_retries=1,
     )
 
 
 @pytest.mark.asyncio
-async def test_recording_storage_streams_base64_without_buffering_whole_object() -> None:
+async def test_recording_storage_streams_base64_without_buffering_whole_object() -> (
+    None
+):
     class Response:
         def __init__(self) -> None:
             self.chunks = [b"ab", b"cdef", b""]
@@ -178,13 +180,15 @@ async def test_post_call_action_stays_logical_and_uses_generic_webhook_handler()
     None
 ):
     class Backend:
+        integration_id = uuid4()
+
         async def post_call_action(
             self, call_id, finalization_id, action_id, command_id
         ):
             assert action_id == "notify"
             return ManagedWebhookPostJsonPlan(
                 plan_type="managed_webhook.post_json.v1",
-                connection_ref="customer-hook",
+                integration_id=self.integration_id,
                 operation_id=command_id,
                 capability=ManagedWebhookCapability(
                     semantic_key="post_call.notify", semantic_version=1
@@ -193,8 +197,18 @@ async def test_post_call_action_stays_logical_and_uses_generic_webhook_handler()
                 timeout_seconds=10,
             )
 
+        async def post_call_action_material(self, *args):
+            return RuntimeIntegrationMaterial(
+                integration_id=self.integration_id,
+                provider="managed_webhook",
+                config={"allowed_hosts": ["example.test"]},
+                secret={"url": "https://example.test"},
+                credential_version=1,
+            )
+
     class Webhooks:
-        async def execute(self, plan):
+        async def execute(self, plan, material):
+            assert material.integration_id == plan.integration_id
             return ManagedWebhookPostJsonResult(
                 result_type="managed_webhook.post_json.v1",
                 status="succeeded",
@@ -226,12 +240,14 @@ async def test_post_call_action_retry_reuses_representation_binding() -> None:
     delivered: list[bytes] = []
 
     class Backend:
+        integration_id = uuid4()
+
         async def post_call_action(
             self, call_id, finalization_id, action_id, command_id
         ):
             return ManagedWebhookPostJsonPlan(
                 plan_type="managed_webhook.post_json.v1",
-                connection_ref="customer-hook",
+                integration_id=self.integration_id,
                 operation_id=command_id,
                 capability=ManagedWebhookCapability(
                     semantic_key="post_call.notify", semantic_version=1
@@ -246,12 +262,22 @@ async def test_post_call_action_retry_reuses_representation_binding() -> None:
                 timeout_seconds=10,
             )
 
+        async def post_call_action_material(self, *args):
+            return RuntimeIntegrationMaterial(
+                integration_id=self.integration_id,
+                provider="managed_webhook",
+                config={"allowed_hosts": ["example.test"]},
+                secret={"url": "https://example.test"},
+                credential_version=1,
+            )
+
         async def representation_content(self, requested_id, command_id):
             reads.append(requested_id)
             yield b"YXVkaW8="
 
     class Webhooks:
-        async def execute(self, plan, bodies):
+        async def execute(self, plan, material, bodies):
+            assert material.integration_id == plan.integration_id
             delivered.append(b"".join([chunk async for chunk in bodies["/recording"]]))
             return ManagedWebhookPostJsonResult(
                 result_type="managed_webhook.post_json.v1",

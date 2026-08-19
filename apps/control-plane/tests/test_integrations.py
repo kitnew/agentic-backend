@@ -29,11 +29,14 @@ def response(parsed: object, status: HTTPStatus = HTTPStatus.OK) -> Response[obj
 def connection() -> IntegrationConnectionResponse:
     return IntegrationConnectionResponse.from_dict(
         {
+            "config": {"allowed_hosts": ["example.test"]},
             "created_at": NOW.isoformat(),
-            "credential_ref": "penzion-grand-recording",
+            "credential_fingerprint": "a" * 64,
+            "credential_version": 1,
             "id": str(CONNECTION_ID),
             "key": "recording_webhook",
             "provider": "managed_webhook",
+            "revision": 1,
             "status": "active",
             "tenant_id": str(TENANT_ID),
             "updated_at": NOW.isoformat(),
@@ -87,7 +90,7 @@ def test_integration_list_and_show_resolve_tenant_slug(
     integrations.run_integration(
         settings(), "show", "penzion-grand", "recording_webhook"
     )
-    assert "Credential reference: penzion-grand-recording" in capsys.readouterr().out
+    assert "Credential version: 1" in capsys.readouterr().out
     assert seen == ["penzion-grand", "penzion-grand"]
 
 
@@ -124,7 +127,7 @@ def test_integration_create_and_delete_use_existing_admin_api(
         "penzion-grand",
         "recording_webhook",
         provider="managed_webhook",
-        credential_ref="penzion-grand-recording",
+        config_json='{"allowed_hosts":["example.test"]}',
     )
     integrations.run_integration(
         settings(), "delete", "penzion-grand", "recording_webhook"
@@ -132,13 +135,13 @@ def test_integration_create_and_delete_use_existing_admin_api(
 
     assert created == [
         {
-            "credential_ref": "penzion-grand-recording",
+            "config": {"allowed_hosts": ["example.test"]},
             "key": "recording_webhook",
             "provider": "managed_webhook",
         }
     ]
     assert deleted == [(TENANT_ID, CONNECTION_ID)]
-    assert "Created integration recording_webhook" in capsys.readouterr().out
+    assert "Integration: recording_webhook" in capsys.readouterr().out
 
 
 def test_integration_show_rejects_missing_or_ambiguous_keys(

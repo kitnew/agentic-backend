@@ -290,7 +290,7 @@ async def test_admin_web_call_dispatch_token_and_pinned_runtime_context(
                     "prompt_bundle_revision_id",
                     "spreadsheet_id",
                     "request_mapping",
-                    "credential_ref",
+                    "integration_id",
                 }
                 & runtime.json().keys()
             )

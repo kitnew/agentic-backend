@@ -10,11 +10,13 @@ from contracts import (
     ManagedWebhookCapability,
     ManagedWebhookPostJsonPlan,
     ManagedWebhookResponseConfig,
+    RuntimeIntegrationMaterial,
 )
 from job_worker.worker import (
     ExecutionError,
-    ManagedWebhookConnectionResolver,
-    ManagedWebhookPostJsonHandler,
+)
+from job_worker.worker import (
+    ManagedWebhookPostJsonHandler as WorkerManagedWebhookPostJsonHandler,
 )
 
 OPERATION_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -27,7 +29,7 @@ def webhook_plan(
 ) -> ManagedWebhookPostJsonPlan:
     return ManagedWebhookPostJsonPlan(
         plan_type="managed_webhook.post_json.v1",
-        connection_ref="tenant-hook",
+        integration_id=UUID("00000000-0000-0000-0000-000000000003"),
         operation_id=OPERATION_ID,
         capability=ManagedWebhookCapability(
             semantic_key="reservation.submit_request", semantic_version=1
@@ -52,28 +54,40 @@ OUTPUT_SCHEMA = {
 
 
 def resolver(
-    tmp_path: Path,
+    _tmp_path: object,
     *,
     url: str = "https://example.test/hook",
     allowed_hosts: list[str] | None = None,
-) -> ManagedWebhookConnectionResolver:
-    (tmp_path / "url").write_text(url, encoding="utf-8")
-    (tmp_path / "key").write_text("secret", encoding="utf-8")
-    return ManagedWebhookConnectionResolver(
-        json.dumps(
-            {
-                "tenant-hook": {
-                    "url_file": str(tmp_path / "url"),
-                    "api_key_file": str(tmp_path / "key"),
-                    "api_key_header": "x-make-apikey",
-                    "allowed_hosts": (
-                        ["example.test"] if allowed_hosts is None else allowed_hosts
-                    ),
-                }
-            }
-        ),
-        str(tmp_path),
+) -> RuntimeIntegrationMaterial:
+    return RuntimeIntegrationMaterial(
+        integration_id=webhook_plan().integration_id,
+        provider="managed_webhook",
+        config={
+            "api_key_header": "x-make-apikey",
+            "allowed_hosts": ["example.test"]
+            if allowed_hosts is None
+            else allowed_hosts,
+        },
+        secret={"url": url, "api_key": "secret"},
+        credential_version=1,
     )
+
+
+class ManagedWebhookPostJsonHandler:
+    """Keeps provider-behaviour tests focused on already-scoped runtime material."""
+
+    def __init__(
+        self, material: RuntimeIntegrationMaterial, client: httpx.AsyncClient
+    ) -> None:
+        self._material = material
+        self._handler = WorkerManagedWebhookPostJsonHandler(client)
+
+    async def execute(
+        self,
+        plan: ManagedWebhookPostJsonPlan,
+        bodies: dict[str, object] | None = None,
+    ):
+        return await self._handler.execute(plan, self._material, bodies)
 
 
 @pytest.mark.asyncio
@@ -321,69 +335,19 @@ async def test_managed_webhook_rejects_operation_id_mismatch(tmp_path: Path) -> 
             )
 
 
-def test_managed_webhook_secret_paths_are_allowlisted(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="under secrets directory"):
-        ManagedWebhookConnectionResolver(
-            json.dumps(
-                {
-                    "tenant-hook": {
-                        "url_file": "/etc/passwd",
-                        "api_key_file": str(tmp_path / "key"),
-                        "allowed_hosts": ["example.test"],
-                    }
-                }
-            ),
-            str(tmp_path),
-        )
-
-
-def test_managed_webhook_map_can_be_loaded_from_file(tmp_path: Path) -> None:
-    (tmp_path / "url").write_text("https://example.test/hook", encoding="utf-8")
-    (tmp_path / "key").write_text("secret", encoding="utf-8")
-    map_file = tmp_path / "managed-webhooks.json"
-    map_file.write_text(
-        json.dumps(
-            {
-                "tenant-hook": {
-                    "url_file": str(tmp_path / "url"),
-                    "api_key_file": str(tmp_path / "key"),
-                    "allowed_hosts": ["example.test"],
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    connection = ManagedWebhookConnectionResolver(
-        "{}", str(tmp_path), str(map_file)
-    ).resolve("tenant-hook")
-
-    assert connection.url == "https://example.test/hook"
-    assert connection.api_key == "secret"
-
-
 @pytest.mark.asyncio
 async def test_managed_webhook_can_omit_api_key(tmp_path: Path) -> None:
-    (tmp_path / "url").write_text("https://example.test/hook", encoding="utf-8")
     requests: list[httpx.Request] = []
 
     def transport(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         return httpx.Response(200)
 
-    connection_map = {
-        "tenant-hook": {
-            "url_file": str(tmp_path / "url"),
-            "allowed_hosts": ["example.test"],
-        }
-    }
-    webhook_resolver = ManagedWebhookConnectionResolver(
-        json.dumps(connection_map), str(tmp_path)
+    material = resolver(tmp_path).model_copy(
+        update={"secret": {"url": "https://example.test/hook"}}
     )
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-        await ManagedWebhookPostJsonHandler(webhook_resolver, client).execute(
-            webhook_plan()
-        )
+        await ManagedWebhookPostJsonHandler(material, client).execute(webhook_plan())
 
     assert "x-api-key" not in requests[0].headers
 
@@ -502,17 +466,3 @@ async def test_webhook_rejects_unsafe_url_components(tmp_path: Path, url: str) -
             await ManagedWebhookPostJsonHandler(
                 resolver(tmp_path, url=url), client
             ).execute(webhook_plan())
-
-
-def test_webhook_resolver_rejects_empty_hosts_and_symlink_escape(
-    tmp_path: Path,
-) -> None:
-    with pytest.raises(ValueError, match="string list"):
-        resolver(tmp_path, allowed_hosts=[])
-    connection = resolver(tmp_path)
-    outside = tmp_path.parent / "outside-secret"
-    outside.write_text("https://example.test/hook", encoding="utf-8")
-    (tmp_path / "url").unlink()
-    (tmp_path / "url").symlink_to(outside)
-    with pytest.raises(ExecutionError, match="credentials could not be loaded"):
-        connection.resolve("tenant-hook")

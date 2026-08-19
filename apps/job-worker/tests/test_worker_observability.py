@@ -51,7 +51,6 @@ def settings() -> Settings:
         backend_url="http://backend",
         backend_audience="backend",
         service_secret="secret",
-        credential_file_map_json="{}",
     )
 
 
@@ -67,8 +66,8 @@ async def test_worker_disabled_does_not_bootstrap_telemetry(monkeypatch) -> None
     )
     monkeypatch.setattr(
         worker_module,
-        "MountedSecretFileCredentialResolver",
-        lambda *_: (_ for _ in ()).throw(RuntimeError("startup failed")),
+        "ManagedWebhookPostJsonHandler",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("startup failed")),
     )
 
     with pytest.raises(RuntimeError, match="startup failed"):
@@ -104,8 +103,8 @@ async def test_worker_enabled_instruments_created_clients_and_cleans_up_failure(
     )
     monkeypatch.setattr(
         worker_module,
-        "MountedSecretFileCredentialResolver",
-        lambda *_: (_ for _ in ()).throw(RuntimeError("startup failed")),
+        "ManagedWebhookPostJsonHandler",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("startup failed")),
     )
 
     with pytest.raises(RuntimeError, match="startup failed"):
