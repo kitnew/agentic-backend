@@ -1035,9 +1035,7 @@ def _publish_preflight(
     if desired.platform_runtime is not None:
         _preflight_platform_runtime(client, desired.platform_runtime, report, tasks)
     platform_prompt_changes = any(task.kind == "platform" for task in tasks)
-    platform_runtime_changes = any(
-        task.kind == "platform-runtime" for task in tasks
-    )
+    platform_runtime_changes = any(task.kind == "platform-runtime" for task in tasks)
     tenants.extend(_resolve_tenants(client, desired, report))
     for remote in tenants:
         before = len(tasks)

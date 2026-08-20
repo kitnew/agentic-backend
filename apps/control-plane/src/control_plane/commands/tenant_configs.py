@@ -316,13 +316,15 @@ def _default_capability_fixtures(
         )
     second = dict(fixture)
     for name, property_schema in properties.items():
-        if isinstance(property_schema, dict) and property_schema.get(
-            "x-canonical-field"
-        ) == "stay.check_in":
+        if (
+            isinstance(property_schema, dict)
+            and property_schema.get("x-canonical-field") == "stay.check_in"
+        ):
             second[name] = "2030-09-01"
-        if isinstance(property_schema, dict) and property_schema.get(
-            "x-canonical-field"
-        ) == "stay.check_out":
+        if (
+            isinstance(property_schema, dict)
+            and property_schema.get("x-canonical-field") == "stay.check_out"
+        ):
             second[name] = "2030-09-03"
     return [fixture, second]
 
@@ -415,9 +417,13 @@ def compile_authoring_config(
     has_action_authoring = isinstance(actions, list) and any(
         not (isinstance(action, dict) and "action_id" in action) for action in actions
     )
-    if isinstance(actions, list) and any(
-        isinstance(action, dict) and "action_id" in action for action in actions
-    ) and has_action_authoring:
+    if (
+        isinstance(actions, list)
+        and any(
+            isinstance(action, dict) and "action_id" in action for action in actions
+        )
+        and has_action_authoring
+    ):
         raise PromptCommandError(
             "post_call_actions cannot mix authoring actions with runtime actions", 2
         )

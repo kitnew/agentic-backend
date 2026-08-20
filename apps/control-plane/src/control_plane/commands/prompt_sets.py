@@ -108,8 +108,10 @@ def run_tenant_prompt_set(settings: Settings, action: str, slug: str) -> None:
     with _client(settings) as client:
         tenant = _tenant(client, slug)
         if action == "show":
-            show_response = show_prompt_set_admin_v1_tenants_tenant_id_prompt_set_get.sync_detailed(
-                tenant.id, client=client
+            show_response = (
+                show_prompt_set_admin_v1_tenants_tenant_id_prompt_set_get.sync_detailed(
+                    tenant.id, client=client
+                )
             )
             _show(slug, _expect(show_response, PromptSetDetailResponse))
         elif action == "revisions":

@@ -58,7 +58,9 @@ class LiveKitAdapter:
     def client(self) -> api.LiveKitAPI:
         if self._client is None:
             if self._trace_config is not None:
-                self._session = aiohttp.ClientSession(trace_configs=[self._trace_config])
+                self._session = aiohttp.ClientSession(
+                    trace_configs=[self._trace_config]
+                )
             self._client = api.LiveKitAPI(
                 self._url,
                 self._api_key,
@@ -143,16 +145,13 @@ class LiveKitAdapter:
         file = info.file_results[0] if info.file_results else None
         requested = (
             info.room_composite.file_outputs[0].filepath
-            if info.HasField("room_composite")
-            and info.room_composite.file_outputs
+            if info.HasField("room_composite") and info.room_composite.file_outputs
             else None
         )
         return EgressResult(
             egress_id=info.egress_id,
             room_name=info.room_name,
-            status=api.EgressStatus.Name(info.status)
-            .removeprefix("EGRESS_")
-            .lower(),
+            status=api.EgressStatus.Name(info.status).removeprefix("EGRESS_").lower(),
             filename=file.filename if file else None,
             size=file.size if file else None,
             duration_ns=file.duration if file else None,

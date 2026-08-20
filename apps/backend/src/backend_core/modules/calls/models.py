@@ -149,9 +149,7 @@ class CallSession(Base):
     sip_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sip_call_id_full: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sip_trunk_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    sip_dispatch_rule_id: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
+    sip_dispatch_rule_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     livekit_participant_identity: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )

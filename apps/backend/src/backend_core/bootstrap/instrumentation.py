@@ -30,7 +30,9 @@ def instrument_app(app: FastAPI, telemetry: TelemetryProviders) -> None:
         )
         app.state.otel_fastapi_instrumented = True
     if not getattr(app.state, "otel_sqlalchemy_instrumented", False):
-        _instrument_sqlalchemy_engine(app.state.database, tracer_provider, meter_provider)
+        _instrument_sqlalchemy_engine(
+            app.state.database, tracer_provider, meter_provider
+        )
         app.state.otel_sqlalchemy_instrumented = True
     install_trace_context_filter(logging.getLogger().handlers)
 

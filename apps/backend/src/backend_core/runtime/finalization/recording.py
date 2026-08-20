@@ -53,9 +53,7 @@ class RecordingService:
             call_id=call.id,
             provider="livekit_egress",
             status=RecordingStatus.PENDING,
-            storage_key=(
-                f"recordings/{call.tenant_id}/{call.id}/{recording_id}.mp3"
-            ),
+            storage_key=(f"recordings/{call.tenant_id}/{call.id}/{recording_id}.mp3"),
             content_type="audio/mpeg",
             start_requested_at=datetime.now(UTC),
         )
@@ -80,7 +78,9 @@ class RecordingService:
             raise ValueError("recording has a conflicting egress identity")
         recording.egress_id = result.egress_id
         recording.status = RecordingStatus.RECORDING
-        recording.started_at = self._timestamp(result.started_at_ns) or datetime.now(UTC)
+        recording.started_at = self._timestamp(result.started_at_ns) or datetime.now(
+            UTC
+        )
 
     async def apply(self, result: EgressResult) -> CallRecording | None:
         recording = await self._session.scalar(
@@ -92,7 +92,10 @@ class RecordingService:
             return None
         if recording.status in {RecordingStatus.READY, RecordingStatus.FAILED}:
             return recording
-        if result.room_name != (await self._session.get(CallSession, recording.call_id)).room_name:  # type: ignore[union-attr]
+        if (
+            result.room_name
+            != (await self._session.get(CallSession, recording.call_id)).room_name
+        ):  # type: ignore[union-attr]
             raise ValueError("egress room does not match recording call")
         if result.status in {"starting", "active", "ending"}:
             recording.status = RecordingStatus.RECORDING
@@ -115,9 +118,9 @@ class RecordingService:
                 recording.status = RecordingStatus.READY
                 recording.byte_size = result.size
                 recording.duration_ms = result.duration_ns // 1_000_000
-                recording.completed_at = (
-                    self._timestamp(result.ended_at_ns) or datetime.now(UTC)
-                )
+                recording.completed_at = self._timestamp(
+                    result.ended_at_ns
+                ) or datetime.now(UTC)
                 await self._events.publish(recording_event(recording, "ready"))
             return recording
         code = {

@@ -38,7 +38,7 @@ async def livekit_webhook(request: Request) -> Response:
             request.app.state.livekit,
             event_stream=settings.domain_event_stream,
             command_stream=settings.command_stream,
-        tracer=getattr(request.app.state, "outbox_tracer", None),
+            tracer=getattr(request.app.state, "outbox_tracer", None),
         ).apply(request.app.state.livekit.egress_result(event.egress_info))
     except ValueError as error:
         logger.warning("Rejected conflicting LiveKit egress event", exc_info=error)

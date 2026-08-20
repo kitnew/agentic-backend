@@ -121,9 +121,7 @@ class RedisStreamConsumer:
             f"messaging:attempt:{self._stream}:{self._group}:{message_id}"
         )
 
-    async def _handle_with_trace(
-        self, message_id: str, fields: dict[str, str]
-    ) -> None:
+    async def _handle_with_trace(self, message_id: str, fields: dict[str, str]) -> None:
         if self._tracer is None:
             await self._handler(fields)
             return
