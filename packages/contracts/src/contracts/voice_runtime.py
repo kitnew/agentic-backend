@@ -73,7 +73,12 @@ class TenantTTSRuntimeOverride(_RuntimeModel):
     voice_id: Identifier
 
 
+class TenantLLMRuntimeOverride(_RuntimeModel):
+    model: Identifier
+
+
 class TenantRuntimeOverride(_RuntimeModel):
+    llm: TenantLLMRuntimeOverride | None = None
     tts: TenantTTSRuntimeOverride | None = None
 
 

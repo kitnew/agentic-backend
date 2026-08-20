@@ -78,5 +78,9 @@ def test_tenant_runtime_override_is_strict_and_may_be_empty() -> None:
         ).tts.voice_id
         == "tenant-voice"
     )  # type: ignore[union-attr]
+    assert (
+        TenantRuntimeOverride.model_validate({"llm": {"model": "model-b"}}).llm.model
+        == "model-b"
+    )  # type: ignore[union-attr]
     with pytest.raises(ValidationError):
-        TenantRuntimeOverride.model_validate({"llm": {"model": "model-b"}})
+        TenantRuntimeOverride.model_validate({"llm": {"model": ""}})

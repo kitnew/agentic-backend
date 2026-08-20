@@ -370,6 +370,8 @@ class VoiceRuntimeUseCases:
                 "runtime_revision", "invalid_published_runtime"
             ) from error
         payload = policy.model_dump(mode="json")
+        if override.llm is not None:
+            payload["llm"]["model"] = override.llm.model
         if override.tts is not None:
             payload["tts"]["voice_id"] = override.tts.voice_id
         return (

@@ -142,6 +142,17 @@ async def test_platform_only_and_tenant_voice_resolution() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tenant_llm_model_override_uses_platform_as_default() -> None:
+    platform_service, _, tenant = service_fixture()
+    platform_plan = await platform_service.plan_voice_runtime(tenant.id)
+    assert platform_plan.desired_settings.llm.model == "model-a"
+
+    tenant_service, _, tenant = service_fixture(override={"llm": {"model": "model-b"}})
+    tenant_plan = await tenant_service.plan_voice_runtime(tenant.id)
+    assert tenant_plan.desired_settings.llm.model == "model-b"
+
+
+@pytest.mark.asyncio
 async def test_empty_override_uses_platform_and_plan_is_read_only() -> None:
     service, runtimes, tenant = service_fixture(override={})
     plan = await service.plan_voice_runtime(tenant.id)

@@ -1,5 +1,5 @@
 llm:
-  model: gpt-4o-mini
+  model: gpt-5.6-terra
   provider: azure_openai
   temperature: 0.0
 local_vad:

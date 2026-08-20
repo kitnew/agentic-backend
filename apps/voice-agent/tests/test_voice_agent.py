@@ -51,7 +51,6 @@ def settings(**overrides: object) -> VoiceAgentSettings:
         "elevenlabs_api_key": "eleven-key",
         "azure_openai_api_key": "azure-key",
         "azure_openai_endpoint": "https://test.openai.azure.com",
-        "azure_openai_model": "model-a",
         "azure_openai_deployment": "deployment",
         "azure_openai_api_version": "2025-01-01-preview",
     }
@@ -578,7 +577,10 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert session._opts.turn_handling["endpointing"]["min_delay"] == 0.1
         assert session._opts.turn_handling["endpointing"]["max_delay"] == 0.7
         assert session._opts.turn_handling["preemptive_generation"]["enabled"] is True
-        assert session._opts.turn_handling["preemptive_generation"]["preemptive_tts"] is True
+        assert (
+            session._opts.turn_handling["preemptive_generation"]["preemptive_tts"]
+            is True
+        )
         assert session.llm._opts.temperature == 0
         assert session.llm._opts.max_completion_tokens == 256
         assert azure["model"] == "model-a"
@@ -609,19 +611,25 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         await session.tts.aclose()
 
 
-def test_provider_factory_rejects_unbound_logical_azure_model() -> None:
-    with pytest.raises(ValueError, match="is not bound"):
-        create_agent_session(
-            settings(),
-            runtime_settings(
-                llm={
-                    "provider": "azure_openai",
-                    "model": "model-b",
-                    "temperature": 0,
-                }
-            ),
-            "voice-agent-prompt:test",
-        )
+@pytest.mark.asyncio
+async def test_provider_factory_uses_runtime_logical_azure_model() -> None:
+    session = create_agent_session(
+        settings(),
+        runtime_settings(
+            llm={
+                "provider": "azure_openai",
+                "model": "model-b",
+                "temperature": 0,
+            }
+        ),
+        "voice-agent-prompt:test",
+    )
+    try:
+        assert session.llm._opts.model == "model-b"
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
 
 
 @pytest.mark.parametrize(

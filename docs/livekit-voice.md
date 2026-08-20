@@ -37,15 +37,15 @@ it does not replace ElevenLabs end-of-speech ownership. These values, provider
 models, logical Azure model, and TTS voice come from the call-pinned
 `VoiceRuntimeRevision`.
 
-The Voice Agent binds the pinned logical Azure model through
-`AZURE_OPENAI_MODEL` to the environment's `AZURE_OPENAI_DEPLOYMENT` and fails a
-session if they differ. Azure endpoint, API version, deployment, provider
+The pinned logical Azure model comes from the effective VoiceRuntime: the
+published platform runtime is the default and a published tenant runtime may
+override its logical model. Azure endpoint, API version, deployment, provider
 credentials, provider timeout/retry, participant wait timeout, and capability
-polling remain deployment settings. ElevenLabs STT/TTS language codes are mapped
-at the adapter boundary from the pinned Slovak locale (`sk-SK` to `slk`/`sk`);
-other locales fail explicitly. Historical calls whose nullable migration-era
-runtime revision is absent are not resumable through the new runtime-context
-endpoint.
+polling remain deployment settings. The deployment is not selected by the
+browser or tenant runtime. ElevenLabs STT/TTS language codes are mapped at the
+adapter boundary from the pinned Slovak locale (`sk-SK` to `slk`/`sk`); other
+locales fail explicitly. Historical calls whose nullable migration-era runtime
+revision is absent are not resumable through the new runtime-context endpoint.
 
 The Voice Agent emits `Voice EOU metrics` with transcription and endpointing
 delays. Compare a real smoke test before tuning the values. Candidate variants:

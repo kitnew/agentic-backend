@@ -33,10 +33,6 @@ def create_agent_session(
         raise ValueError(f"unsupported STT provider: {runtime.stt.provider}")
     if runtime.tts.provider != "elevenlabs":
         raise ValueError(f"unsupported TTS provider: {runtime.tts.provider}")
-    if runtime.llm.model != settings.azure_openai_model:
-        raise ValueError(
-            f"logical Azure model {runtime.llm.model!r} is not bound in this environment"
-        )
     stt_language, tts_language = provider_languages(runtime.locale)
     connect_options = agents.APIConnectOptions(
         timeout=settings.provider_timeout_seconds,
