@@ -172,7 +172,7 @@ trace resource/span attributes and SpanLinks, including the trace-only `call.id`
 Grafana OSS (`grafana/grafana:12.4.3`) is the development query and
 visualization UI. Its persistent state is in `grafana-data`; the provisioned
 connections remain Git-managed source of truth in
-`infrastructure/compose/grafana/provisioning/datasources/datasources.yml` and
+`infrastructure/grafana/provisioning/datasources/datasources.yml` and
 are recreated after a fresh Grafana volume. Do not edit these datasource
 connections in the UI. The fixed datasource identities are:
 
