@@ -1,6 +1,8 @@
 FROM node:24-alpine AS build
 WORKDIR /workspace/apps/admin-web
 RUN npm install --global pnpm@10.19.0
+ARG VITE_GRAFANA_URL
+ENV VITE_GRAFANA_URL=${VITE_GRAFANA_URL}
 COPY apps/admin-web/package.json apps/admin-web/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY apps/admin-web/ ./

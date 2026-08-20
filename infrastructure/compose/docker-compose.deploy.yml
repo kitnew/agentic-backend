@@ -63,6 +63,9 @@ services:
         condition: service_completed_successfully
 
   admin-web:
+    build:
+      args:
+        VITE_GRAFANA_URL: ${ADMIN_WEB_GRAFANA_URL:?set ADMIN_WEB_GRAFANA_URL}
     restart: unless-stopped
     read_only: true
     tmpfs: [/tmp, /var/cache/nginx, /var/run]

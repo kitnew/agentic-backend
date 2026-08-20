@@ -9,8 +9,15 @@ const composeEnvDir = fileURLToPath(
 );
 
 export default defineConfig(({ mode }) => {
-  const { ADMIN_API_TOKEN: adminToken } = loadEnv(mode, composeEnvDir, "");
+  const composeMode = mode === "production" ? "production" : "dev";
+  const composeEnv = loadEnv(composeMode, composeEnvDir, "");
+  const adminToken = composeEnv.ADMIN_API_TOKEN;
+  const grafanaUrl =
+    composeEnv.ADMIN_WEB_GRAFANA_URL || process.env.VITE_GRAFANA_URL;
   return {
+    define: grafanaUrl
+      ? { "import.meta.env.VITE_GRAFANA_URL": JSON.stringify(grafanaUrl) }
+      : {},
     plugins: [react(), tailwindcss()],
     server: {
       proxy: {

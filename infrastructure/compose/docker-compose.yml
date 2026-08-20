@@ -155,6 +155,8 @@ services:
     build:
       context: ../..
       dockerfile: apps/admin-web/Dockerfile
+      args:
+        VITE_GRAFANA_URL: ${ADMIN_WEB_GRAFANA_URL:-http://127.0.0.1:3001}
     depends_on:
       backend:
         condition: service_healthy

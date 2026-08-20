@@ -92,6 +92,7 @@ function WorkspaceNavigation() {
 }
 
 export function AppShell() {
+  const grafanaUrl = import.meta.env.VITE_GRAFANA_URL?.trim();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -123,8 +124,9 @@ export function AppShell() {
             );
           })}
           <a
+            aria-disabled={!grafanaUrl}
             className="block rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-white/8 hover:text-white"
-            href="http://127.0.0.1:3001"
+            href={grafanaUrl || "#"}
             rel="noreferrer"
             target="_blank"
           >
