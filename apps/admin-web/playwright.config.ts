@@ -4,7 +4,7 @@ export default defineConfig({
   testDir: "./e2e",
   use: { baseURL: "http://127.0.0.1:4173" },
   webServer: {
-    command: "./node_modules/.bin/vite --host 127.0.0.1 --port 4173",
+    command: "./node_modules/.bin/vite --mode e2e --host 127.0.0.1 --port 4173",
     port: 4173,
     reuseExistingServer: !process.env.CI,
   },
