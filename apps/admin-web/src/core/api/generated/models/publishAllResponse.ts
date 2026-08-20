@@ -5,6 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HTTPValidationError {
-  detail?: unknown;
+export interface PublishAllResponse {
+  published_sections: string[];
 }

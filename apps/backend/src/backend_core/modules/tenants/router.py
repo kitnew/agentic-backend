@@ -630,6 +630,19 @@ async def get_published_knowledge_base(
         raise prompt_http_exception(error) from error
 
 
+@router.get(
+    "/{tenant_id}/knowledge-base/draft",
+    response_model=KnowledgeBaseSnapshotResponse,
+)
+async def get_draft_knowledge_base(
+    tenant_id: UUID, use_cases: PromptCompositionUseCasesDependency
+) -> KnowledgeBaseSnapshotResponse:
+    try:
+        return await use_cases.draft_knowledge_base(tenant_id)
+    except (TenantNotFoundError, PromptRevisionError) as error:
+        raise prompt_http_exception(error) from error
+
+
 @router.post(
     "/{tenant_id}/knowledge-base/plan",
     response_model=KnowledgeBasePlanResponse,

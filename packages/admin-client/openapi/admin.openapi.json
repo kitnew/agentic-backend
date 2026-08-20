@@ -1252,13 +1252,7 @@
       },
       "HTTPValidationError": {
         "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
+          "detail": {}
         },
         "title": "HTTPValidationError",
         "type": "object"
@@ -2734,6 +2728,22 @@
           "version"
         ],
         "title": "PromptTextRevisionResponse",
+        "type": "object"
+      },
+      "PublishAllResponse": {
+        "properties": {
+          "published_sections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Published Sections",
+            "type": "array"
+          }
+        },
+        "required": [
+          "published_sections"
+        ],
+        "title": "PublishAllResponse",
         "type": "object"
       },
       "RuntimeRevisionStatus": {
@@ -4518,6 +4528,32 @@
         "summary": "List System Prompt Revisions",
         "tags": [
           "admin:platform-prompts"
+        ]
+      }
+    },
+    "/admin/v1/platform/publish-all": {
+      "post": {
+        "operationId": "publish_platform_all_admin_v1_platform_publish_all_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishAllResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Publish Platform All",
+        "tags": [
+          "admin:releases"
         ]
       }
     },
@@ -6334,6 +6370,54 @@
         ]
       }
     },
+    "/admin/v1/tenants/{tenant_id}/knowledge-base/draft": {
+      "get": {
+        "operationId": "get_draft_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_draft_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Get Draft Knowledge Base",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
     "/admin/v1/tenants/{tenant_id}/knowledge-base/plan": {
       "post": {
         "operationId": "plan_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_plan_post",
@@ -7165,6 +7249,54 @@
         "summary": "List Prompt Set Revisions",
         "tags": [
           "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/publish-all": {
+      "post": {
+        "operationId": "publish_tenant_all_admin_v1_tenants__tenant_id__publish_all_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishAllResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Publish Tenant All",
+        "tags": [
+          "admin:releases"
         ]
       }
     },

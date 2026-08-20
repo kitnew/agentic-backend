@@ -896,6 +896,55 @@ export const showKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseGet = async (te
 }
 
 
+export type getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse200 = {
+  data: KnowledgeBaseSnapshotResponse
+  status: 200
+}
+
+export type getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponseSuccess = (getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse200) & {
+  headers: Headers;
+};
+export type getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponseError = (getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse422) & {
+  headers: Headers;
+};
+
+export type getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse = (getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponseSuccess | getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponseError)
+
+export const getGetDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetUrl = (tenantId: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/knowledge-base/draft`
+}
+
+/**
+ * @summary Get Draft Knowledge Base
+ */
+export const getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGet = async (tenantId: string, options?: RequestInit): Promise<getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse> => {
+
+  const res = await fetch(getGetDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetUrl(tenantId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDraftKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBaseDraftGetResponse
+}
+
+
 export type planKnowledgeBaseAdminV1TenantsTenantIdKnowledgeBasePlanPostResponse200 = {
   data: KnowledgeBasePlanResponse
   status: 200

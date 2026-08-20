@@ -386,6 +386,22 @@ class PromptCompositionUseCases:
             raise PromptRevisionNotFoundError
         return await self._knowledge_snapshot_response(revision)
 
+    async def draft_knowledge_base(
+        self, tenant_id: UUID
+    ) -> KnowledgeBaseSnapshotResponse:
+        revisions = await self.list_knowledge_bases(tenant_id)
+        draft = next(
+            (
+                revision
+                for revision in revisions
+                if revision.status is PromptRevisionStatus.DRAFT
+            ),
+            None,
+        )
+        if draft is None:
+            raise PromptRevisionNotFoundError
+        return await self._knowledge_snapshot_response(draft)
+
     async def plan_knowledge_base(
         self, tenant_id: UUID, data: KnowledgeDocumentsRequest
     ) -> KnowledgeBasePlanResponse:

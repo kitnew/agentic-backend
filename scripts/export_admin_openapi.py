@@ -15,7 +15,14 @@ DEFAULT_OUTPUT = ROOT / "packages/admin-client/openapi/admin.openapi.json"
 def admin_openapi() -> dict[str, Any]:
     app = FastAPI(title="Agent Platform Admin API", version="0.1.0")
     app.include_router(admin_router)
-    return app.openapi()
+    schema = app.openapi()
+    # FastAPI's default validation schema only describes list-shaped details,
+    # while our HTTPException handlers also return structured domain errors.
+    # Keep the generated client from trying to parse those mappings as lists.
+    schema["components"]["schemas"]["HTTPValidationError"]["properties"][
+        "detail"
+    ] = {}
+    return schema
 
 
 def render_admin_openapi() -> bytes:

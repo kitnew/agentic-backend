@@ -98,6 +98,7 @@ export * from './promptSetResolutionErrorResponse';
 export * from './promptSetRevisionResponse';
 export * from './promptSetRolloutSummaryResponse';
 export * from './promptTextRevisionResponse';
+export * from './publishAllResponse';
 export * from './runtimeRevisionStatus';
 export * from './runtimeValidationResponse';
 export * from './serverVADRuntimeSettings';

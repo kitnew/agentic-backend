@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
 from ..types import UNSET, Unset
-
-if TYPE_CHECKING:
-    from ..models.validation_error import ValidationError
-
 
 T = TypeVar("T", bound="HTTPValidationError")
 
@@ -20,19 +16,14 @@ T = TypeVar("T", bound="HTTPValidationError")
 class HTTPValidationError:
     """
     Attributes:
-        detail (list[ValidationError] | Unset):
+        detail (Any | Unset):
     """
 
-    detail: list[ValidationError] | Unset = UNSET
+    detail: Any | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        detail: list[dict[str, Any]] | Unset = UNSET
-        if not isinstance(self.detail, Unset):
-            detail = []
-            for detail_item_data in self.detail:
-                detail_item = detail_item_data.to_dict()
-                detail.append(detail_item)
+        detail = self.detail
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -44,17 +35,8 @@ class HTTPValidationError:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.validation_error import ValidationError
-
         d = dict(src_dict)
-        _detail = d.pop("detail", UNSET)
-        detail: list[ValidationError] | Unset = UNSET
-        if _detail is not UNSET:
-            detail = []
-            for detail_item_data in _detail:
-                detail_item = ValidationError.from_dict(detail_item_data)
-
-                detail.append(detail_item)
+        detail = d.pop("detail", UNSET)
 
         http_validation_error = cls(
             detail=detail,
