@@ -1,18 +1,15 @@
-import { z } from "zod";
+export type HandoffForm = Record<
+  string,
+  { description: string; phoneNumber: string }
+>;
 
-export const agentFormSchema = z.object({
-  displayName: z.string().trim().min(1, "Agent name is required").max(100),
-  greeting: z.string().trim().min(1, "Greeting is required").max(1000),
-  profile: z.string().trim().min(1, "Profile is required").max(100),
-  defaultLocale: z
-    .string()
-    .trim()
-    .regex(/^[a-z]{2,3}(?:-[A-Z]{2})?$/, "Use a locale such as sk-SK"),
-  tenantInstructions: z
-    .string()
-    .trim()
-    .min(1, "Tenant instructions are required"),
-  voiceId: z.string().trim().max(255),
-});
-
-export type AgentForm = z.infer<typeof agentFormSchema>;
+export type AgentForm = {
+  displayName: string;
+  greeting: string;
+  profile: string;
+  address: string;
+  website: string;
+  emails: string;
+  phones: string;
+  handoff: HandoffForm;
+};

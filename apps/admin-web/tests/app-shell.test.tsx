@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -9,7 +10,7 @@ const tenant = {
   id: "11111111-1111-4111-8111-111111111111",
   slug: "demo",
   display_name: "Demo tenant",
-  business_type: "demo",
+  business_type: "hotel",
   status: "active",
   active_config_revision_id: null,
   active_prompt_set_revision_id: null,
@@ -19,34 +20,80 @@ const tenant = {
 };
 
 describe("Admin app shell", () => {
-  it("renders feature-derived navigation and tenant selector data", async () => {
+  it("renders exactly four product navigation items and tenant cards without UUID copy", async () => {
     server.use(
       http.get("/admin/v1/tenants", () => HttpResponse.json([tenant])),
     );
+    window.history.pushState({}, "", "/");
     render(<App />);
+    const navigation = await screen.findByRole("navigation", {
+      name: "Main navigation",
+    });
+    expect(within(navigation).getAllByRole("link")).toHaveLength(4);
     expect(
-      await screen.findByRole("navigation", { name: "Admin navigation" }),
+      within(navigation).getByRole("link", { name: "Overview" }),
     ).toBeVisible();
-    expect(screen.getByRole("link", { name: "Overview" })).toBeVisible();
-    expect(screen.getByText("Example")).toBeVisible();
     expect(
-      await screen.findByRole("option", { name: "Demo tenant" }),
+      within(navigation).getByRole("link", { name: "Platform" }),
     ).toBeVisible();
+    expect(
+      within(navigation).getByRole("link", { name: "Tenants" }),
+    ).toBeVisible();
+    expect(
+      within(navigation).getByRole("link", { name: "Observability ↗" }),
+    ).toHaveAttribute("target", "_blank");
+    expect(
+      await screen.findByRole("heading", { name: "Demo tenant" }),
+    ).toBeVisible();
+    expect(screen.queryByText(tenant.id)).not.toBeInTheDocument();
+    expect(screen.queryByText("Example")).not.toBeInTheDocument();
+    expect(screen.queryByText("Admin Web V0")).not.toBeInTheDocument();
   });
 
-  it("renders a tenant-list failure predictably", async () => {
+  it("renders the exact tenant secondary navigation", async () => {
+    const user = userEvent.setup();
     server.use(
-      http.get("/admin/v1/tenants", () =>
-        HttpResponse.json({ detail: "denied" }, { status: 401 }),
+      http.get("/admin/v1/tenants", () => HttpResponse.json([tenant])),
+      http.get(`/admin/v1/tenants/${tenant.id}/config/revisions`, () =>
+        HttpResponse.json([]),
+      ),
+      http.get(`/admin/v1/tenants/${tenant.id}/tenant-prompt/revisions`, () =>
+        HttpResponse.json([]),
+      ),
+      http.get(`/admin/v1/tenants/${tenant.id}/runtime`, () =>
+        HttpResponse.json({
+          draft_revision: null,
+          latest_published_revision: null,
+        }),
+      ),
+      http.get(`/admin/v1/tenants/${tenant.id}/knowledge-base`, () =>
+        HttpResponse.json({
+          tenant_id: tenant.id,
+          draft_revision: null,
+          latest_published_revision: null,
+          published_documents: [],
+        }),
       ),
     );
+    window.history.pushState({}, "", "/");
     render(<App />);
-    expect(await screen.findByText("Tenant list unavailable")).toBeVisible();
-  });
-
-  it("renders an empty tenant selector without manual ID entry", async () => {
-    server.use(http.get("/admin/v1/tenants", () => HttpResponse.json([])));
-    render(<App />);
-    expect(await screen.findByText("No tenants")).toBeVisible();
+    await user.click(await screen.findByRole("link", { name: /Demo tenant/ }));
+    const navigation = await screen.findByRole("navigation", {
+      name: "Tenant navigation",
+    });
+    expect(
+      within(navigation)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual([
+      "Runtime",
+      "Agent",
+      "Prompt",
+      "Knowledge Base",
+      "Capabilities",
+      "Playground",
+    ]);
+    expect(screen.getByText("Demo tenant", { selector: "a" })).toBeVisible();
+    expect(screen.queryByText(tenant.id)).not.toBeInTheDocument();
   });
 });

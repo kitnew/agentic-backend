@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  enabledCapabilities,
   toAgentForm,
   toUpdateRequest,
 } from "../src/features/agent/lib/mappings";
-import { agentFormSchema } from "../src/features/agent/schemas/agent-form";
 
 const config = {
   schema_version: 4 as const,
@@ -17,47 +15,35 @@ const config = {
   business: { name: "Debug Hotel", type: "hotel" },
   conversation: { scope: "property_only" as const },
   localization: { default_locale: "sk-SK", timezone: "Europe/Bratislava" },
-  capabilities: { enabled: true, disabled: false },
+  capabilities: { enabled: true },
+  contact: {
+    address: "Main street",
+    emails: ["hello@example.com"],
+    phones: ["+421900000000"],
+    website: "https://example.com",
+  },
+  handoff: {
+    destinations: {
+      reception: { description: "Reception", phone_number: "+421900000001" },
+    },
+  },
 };
 
 describe("agent form mappings", () => {
-  it("maps editable fields without discarding the rest of the configuration", () => {
-    const form = toAgentForm(config, "Be helpful.", {
-      draft_revision: null,
-      latest_published_revision: null,
-    });
+  it("maps structured contact and handoff without discarding unrelated config", () => {
+    const form = toAgentForm(config);
     const update = toUpdateRequest(config, {
       ...form,
       displayName: "Updated",
-      voiceId: "voice",
+      emails: "one@example.com\ntwo@example.com",
     });
     expect(update.config).toMatchObject({
       agent: { display_name: "Updated" },
       business: config.business,
+      contact: { emails: ["one@example.com", "two@example.com"] },
+      handoff: {
+        destinations: { reception: { phone_number: "+421900000001" } },
+      },
     });
-    expect(enabledCapabilities(config)).toEqual(["enabled"]);
-  });
-
-  it("validates required fields and locale format", () => {
-    expect(
-      agentFormSchema.safeParse({
-        displayName: "",
-        greeting: "",
-        profile: "",
-        defaultLocale: "sk",
-        tenantInstructions: "",
-        voiceId: "",
-      }).success,
-    ).toBe(false);
-    expect(
-      agentFormSchema.safeParse({
-        displayName: "Amelia",
-        greeting: "Hello",
-        profile: "hotel_assistant",
-        defaultLocale: "sk-SK",
-        tenantInstructions: "Be helpful.",
-        voiceId: "",
-      }).success,
-    ).toBe(true);
   });
 });

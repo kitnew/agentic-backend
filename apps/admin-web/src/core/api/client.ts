@@ -2,6 +2,12 @@ import type { ApiError } from "./errors";
 
 type GeneratedResponse = { data: unknown; status: number; headers: Headers };
 
+export function responseData<T>(response: GeneratedResponse): T {
+  if (response.status >= 200 && response.status < 300)
+    return response.data as T;
+  return throwAdminResponse(response);
+}
+
 export function throwAdminResponse(response: GeneratedResponse): never {
   const detail =
     typeof response.data === "object" &&

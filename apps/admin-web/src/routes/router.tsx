@@ -4,10 +4,12 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
+import type { ComponentType } from "react";
 
 import { PageError, PageLoading } from "../components/page-states";
-import type { AdminFeatureRoute } from "../core/navigation/types";
 import { AppShell } from "../core/shell/app-shell";
+
+type AdminRoute = { id: string; path: string; component: ComponentType };
 
 const rootRoute = createRootRoute({
   component: () => <AppShell />,
@@ -20,8 +22,8 @@ const rootRoute = createRootRoute({
 const routeModules = import.meta.glob("../features/**/routes.tsx", {
   eager: true,
   import: "routes",
-}) as Record<string, AdminFeatureRoute[]>;
-const definitions = Object.values(routeModules).flat() as AdminFeatureRoute[];
+}) as Record<string, AdminRoute[]>;
+const definitions = Object.values(routeModules).flat();
 const routes = definitions.map((route) => {
   const Component = route.component;
   return createRoute({
