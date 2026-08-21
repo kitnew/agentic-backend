@@ -23,23 +23,6 @@
 	}
 }
 
-{$DEBUG_CHAT_DOMAIN} {
-	import access_log
-
-	@debug_chat_api path /api/*
-	handle @debug_chat_api {
-		reverse_proxy debug-chat:80
-	}
-
-	handle {
-		basic_auth {
-			{$DEBUG_CHAT_BASIC_AUTH_USER} {$DEBUG_CHAT_BASIC_AUTH_HASH}
-		}
-
-		reverse_proxy debug-chat:80
-	}
-}
-
 {$ADMIN_WEB_DOMAIN} {
 	import access_log
 
@@ -57,6 +40,12 @@
 	handle {
 		reverse_proxy admin-web:8080
 	}
+}
+
+{$GRAFANA_DOMAIN} {
+	import access_log
+
+	reverse_proxy grafana:3000
 }
 
 {$LIVEKIT_DOMAIN} {

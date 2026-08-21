@@ -30,7 +30,7 @@ def test_egress_is_pinned_private_and_uses_shared_redis_and_global_s3() -> None:
 def test_credentials_follow_service_responsibilities() -> None:
     backend = BASE[BASE.index("  backend:") : BASE.index("  voice-agent:")]
     voice = BASE[BASE.index("  voice-agent:") : BASE.index("  job-worker:")]
-    worker = DEPLOY[DEPLOY.index("  job-worker:") : DEPLOY.index("  debug-chat:")]
+    worker = DEPLOY[DEPLOY.index("  job-worker:") : DEPLOY.index("  admin-web:")]
     assert "MINIO_" not in backend
     assert "MINIO_" not in voice
     assert "MINIO_WORKER_ACCESS_KEY" in worker

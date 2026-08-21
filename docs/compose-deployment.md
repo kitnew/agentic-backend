@@ -32,11 +32,31 @@ Prometheus / Tempo -----------------------------------> Grafana
 
 `7880` and Redis `6379` are bound only to `127.0.0.1`; Caddy still reaches LiveKit through `livekit:7880`, while host-networked SIP reaches both dependencies through loopback. The SIP service binds its configured `5060` and `10000-20000/udp` directly on the host, so Docker does not create a large RTP port mapping. The repository does not contain the server firewall configuration, so its current rules could not be read here; they must match this table before staging/production rollout. TURN is unchanged and remains deferred.
 
+## DNS and subdomain preflight
+
+Before `deploy`, create DNS records for the public names and wait until they
+resolve to the deployment host:
+
+| Name | Current Compose role |
+| --- | --- |
+| `api.makmanagency.com` | Caddy → Backend API |
+| `voice-admin.makmanagency.com` | Caddy → Admin Web |
+| `livekit.makmanagency.com` | Caddy → LiveKit HTTP/WebSocket |
+| `sip.makmanagency.com` | No HTTP route; SIP uses 5060 and 10000–20000/UDP |
+| `grafana.makmanagency.com` | Caddy → Grafana with Grafana login |
+
+Grafana, Prometheus, Tempo, and the OpenTelemetry Collector run in both staging
+and production. Grafana is the only public observability endpoint; Prometheus,
+Tempo, and Collector ports remain internal to the Compose network. Set
+`GRAFANA_ADMIN_PASSWORD` to a generated value before the first start. Grafana's
+database is persisted in `grafana-data`; changing the environment password does
+not rotate an existing Grafana database.
+
 ## Operations boundary
 
-All deployment services use `unless-stopped`; `minio-init` uses `restart: "no"` and idempotently creates the bucket/users. Redis uses AOF on `redis-data`, preserving Streams across container/daemon restarts. Persistent state is `postgres-data`, `redis-data`, `minio-data`, `caddy-data`, `caddy-config`, and the development-only `prometheus-data`/`tempo-data`/`grafana-data` (each Compose project scopes its own volumes). Prometheus keeps 15 days by default (`PROMETHEUS_RETENTION_TIME`) and Tempo keeps 168 hours by default (`TEMPO_RETENTION`); both are local single-node storage rather than backups. The Collector remains the applications' only telemetry ingestion boundary. Grafana is a development-only, loopback-bound UI (`GRAFANA_PORT`, default 3001) that uses Git-provisioned internal Prometheus and Tempo datasources; it is not an ingestion dependency. Prometheus and Tempo query APIs remain loopback-bound for diagnostics and smoke verification. Dashboards, alerts, and logs storage are not configured.
+All deployment services use `unless-stopped`; `minio-init` uses `restart: "no"` and idempotently creates the bucket/users. Redis uses AOF on `redis-data`, preserving Streams across container/daemon restarts. Persistent state is `postgres-data`, `redis-data`, `minio-data`, `prometheus-data`, `tempo-data`, `grafana-data`, `caddy-data`, and `caddy-config` (each Compose project scopes its own volumes). Prometheus keeps 15 days by default (`PROMETHEUS_RETENTION_TIME`) and Tempo keeps 168 hours by default (`TEMPO_RETENTION`); both are local single-node storage rather than backups. The Collector remains the applications' only telemetry ingestion boundary. Grafana uses Git-provisioned internal Prometheus and Tempo datasources; it is not an ingestion dependency. Prometheus and Tempo query APIs remain internal-only. Dashboards, alerts, and logs storage are not configured.
 
-Application images already run as UID 10001. Deployment adds `no-new-privileges`, read-only roots, and `/tmp` tmpfs to Backend, Voice Agent, and Job Worker; Caddy receives the same hardening. Debug Chat remains on upstream nginx defaults because its image needs nginx runtime writable paths. LiveKit, SIP, Egress, PostgreSQL, Redis, and MinIO keep upstream runtime permissions; Egress retains its pinned Chrome seccomp profile and Chrome sandbox. Backend/Worker receive 30s and Voice Agent 60s SIGTERM grace periods; backend closes its Redis consumers/outbox and Voice Agent drains sessions.
+Application images already run as UID 10001. Deployment adds `no-new-privileges`, read-only roots, and `/tmp` tmpfs to Backend, Voice Agent, and Job Worker; Caddy receives the same hardening. LiveKit, SIP, Egress, PostgreSQL, Redis, MinIO, and observability storage keep upstream runtime permissions; Egress retains its pinned Chrome seccomp profile and Chrome sandbox. Backend/Worker receive 30s and Voice Agent 60s SIGTERM grace periods; backend closes its Redis consumers/outbox and Voice Agent drains sessions.
 
 Docker uses the `local` logging driver, defaulting to five 10 MiB files per service. Caddy access logs go to stdout; Caddy does not log request bodies or headers. Egress is the resource-sensitive service (Chrome/encoding); no speculative CPU or memory caps are applied.
 
@@ -61,7 +81,7 @@ AZURE_OPENAI_API_KEY
 MINIO_ROOT_PASSWORD
 MINIO_EGRESS_SECRET_KEY
 MINIO_WORKER_SECRET_KEY
-DEBUG_CHAT_BASIC_AUTH_HASH
+GRAFANA_ADMIN_PASSWORD
 ```
 
 The Worker’s optional Google Sheets and managed-webhook credential directory is a separate host path (`GOOGLE_SHEETS_CREDENTIALS_DIR`) and is mounted only at `/secrets`; it must remain outside the repository.

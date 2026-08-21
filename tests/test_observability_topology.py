@@ -9,18 +9,18 @@ DEPLOY = (COMPOSE / "docker-compose.deploy.yml").read_text()
 COLLECTOR = (COMPOSE / "otel-collector.yml").read_text()
 PROMETHEUS = (COMPOSE / "prometheus.yml").read_text()
 TEMPO = (COMPOSE / "tempo.yml").read_text()
-GRAFANA = (COMPOSE / "grafana" / "provisioning" / "datasources" / "datasources.yml").read_text()
+GRAFANA = (COMPOSE.parent / "grafana" / "provisioning" / "datasources" / "datasources.yml").read_text()
 DASHBOARD_PROVIDER = (
-    COMPOSE / "grafana" / "provisioning" / "dashboards" / "dashboards.yml"
+    COMPOSE.parent / "grafana" / "provisioning" / "dashboards" / "dashboards.yml"
 ).read_text()
 DASHBOARDS = [
-    json.loads(path.read_text()) for path in sorted((COMPOSE / "grafana" / "dashboards").glob("*.json"))
+    json.loads(path.read_text()) for path in sorted((COMPOSE.parent / "grafana" / "dashboards").glob("*.json"))
 ]
 
 
-def test_collector_is_pinned_and_development_only() -> None:
+def test_collector_is_pinned_and_internal() -> None:
     assert "otel/opentelemetry-collector-contrib:0.158.0" in DEV
-    assert "otel-collector:" not in BASE + DEPLOY
+    assert "otel-collector:" in DEPLOY
     assert '"127.0.0.1:${OTEL_COLLECTOR_OTLP_HTTP_PORT:-4318}:4318"' in DEV
     assert '"127.0.0.1:${OTEL_COLLECTOR_HEALTH_PORT:-13133}:13133"' in DEV
     assert "./otel-collector.yml:/etc/otelcol/config.yaml:ro" in DEV
@@ -40,16 +40,17 @@ def test_development_storage_is_pinned_private_and_persistent() -> None:
     assert "8889:8889" not in DEV
 
 
-def test_grafana_is_pinned_dev_only_and_provisioned_from_git() -> None:
+def test_grafana_is_pinned_and_provisioned_from_git() -> None:
     assert "grafana/grafana:12.4.3" in DEV
-    assert "grafana:" not in BASE + DEPLOY
+    assert "grafana:" in DEPLOY
     assert '"127.0.0.1:${GRAFANA_PORT:-3001}:3000"' in DEV
     assert "grafana-data:/var/lib/grafana" in DEV
     assert "grafana-data:" in DEV
-    assert "./grafana/provisioning/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro" in DEV
-    assert "./grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro" in DEV
-    assert "./grafana/dashboards:/var/lib/grafana/dashboards:ro" in DEV
+    assert "../grafana/provisioning/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro" in DEV
+    assert "../grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro" in DEV
+    assert "../grafana/dashboards:/var/lib/grafana/dashboards:ro" in DEV
     assert "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}" in DEV
+    assert "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}" in DEPLOY
     assert "healthcheck:" in DEV
     assert "depends_on:" not in DEV.split("  grafana:", 1)[1].split("  redis:", 1)[0]
 

@@ -140,7 +140,7 @@ available; it does not force a call-long shared trace.
 
 ## Development telemetry storage
 
-`docker-compose.dev.yml` adds a development-only telemetry stack:
+`docker-compose.dev.yml` and `docker-compose.deploy.yml` add the telemetry stack:
 
 ```text
 Applications
@@ -169,7 +169,7 @@ pipeline drops other resource attributes before exposition, so build revisions a
 domain identifiers such as `call.id` are not Prometheus labels. Tempo retains the
 trace resource/span attributes and SpanLinks, including the trace-only `call.id`.
 
-Grafana OSS (`grafana/grafana:12.4.3`) is the development query and
+Grafana OSS (`grafana/grafana:12.4.3`) is the staging and production query and
 visualization UI. Its persistent state is in `grafana-data`; the provisioned
 connections remain Git-managed source of truth in
 `infrastructure/grafana/provisioning/datasources/datasources.yml` and
@@ -181,10 +181,10 @@ connections in the UI. The fixed datasource identities are:
 | Prometheus | `prometheus` (default) | `http://prometheus:9090` |
 | Tempo | `tempo` | `http://tempo:3200` |
 
-Grafana binds only to `http://127.0.0.1:${GRAFANA_PORT:-3001}`. Set
-`GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` in the uncommitted
-`infrastructure/compose/.env.dev`; `.env.dev.example` supplies development-only
-bootstrap placeholders. Grafana is a consumer only: its outage does not block
+Deployment Grafana is published at `https://${GRAFANA_DOMAIN}` through Caddy;
+Prometheus, Tempo, and Collector remain internal-only. Set
+`GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` in the uncommitted staging or
+production env file. Grafana is a consumer only: its outage does not block
 applications, Collector, Prometheus, or Tempo.
 
 Prometheus HTTP (9090) and Tempo HTTP/query (3200) bind to loopback solely for
@@ -210,7 +210,9 @@ OTEL_GRAFANA_SMOKE=1 pytest tests/test_observability_collector_smoke.py
 
 ## Observability UX v1
 
-Grafana starts at `http://127.0.0.1:${GRAFANA_PORT:-3001}`. Its entry point is
+In development Grafana starts at `http://127.0.0.1:${GRAFANA_PORT:-3001}`; in
+staging and production it is published through Caddy at `https://${GRAFANA_DOMAIN}`.
+Its entry point is
 **Agentic Backend — Overview** (`agentic-backend-overview`), which links to the
 three specialist dashboards. All four are provisioned from Git and are restored
 when `grafana-data` is recreated; do not import or edit canonical copies in the
