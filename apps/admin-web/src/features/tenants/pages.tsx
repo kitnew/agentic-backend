@@ -530,6 +530,11 @@ function KnowledgeEditor({
               { key: "knowledge", media_type: "text/markdown", content },
             ],
           },
+          {
+            headers: {
+              "If-Match": `"${data.state.draft_revision?.version ?? data.state.latest_published_revision?.version ?? 0}"`,
+            },
+          },
         ),
       );
       await refetch();
