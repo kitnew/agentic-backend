@@ -45,7 +45,9 @@ const isReasoningModel = (model: string) =>
 function draftAndPublished(revisions: PromptTextRevisionResponse[]) {
   return {
     draft: revisions.find((item) => item.status === "draft"),
-    published: revisions.find((item) => item.status === "published"),
+    published: revisions
+      .filter((item) => item.status === "published")
+      .sort((a, b) => b.revision_number - a.revision_number)[0],
   };
 }
 
