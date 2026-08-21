@@ -39,6 +39,9 @@ import {
 
 const platformKey = ["admin", "platform"];
 
+const isReasoningModel = (model: string) =>
+  /^(gpt-5|o1|o3|o4)/.test(model.split("/").pop()?.toLowerCase() ?? "");
+
 function draftAndPublished(revisions: PromptTextRevisionResponse[]) {
   return {
     draft: revisions.find((item) => item.status === "draft"),
@@ -216,6 +219,7 @@ function PlatformRuntimeEditor({
     value: string,
   ) =>
     setPolicy({ ...policy, [section]: { ...policy[section], [key]: value } });
+  const reasoningModel = isReasoningModel(policy.llm.model);
   return (
     <>
       <PageHeader title="Runtime" />
@@ -232,21 +236,55 @@ function PlatformRuntimeEditor({
           <Field label="LLM model">
             <input
               value={policy.llm.model}
-              onChange={(event) => text("llm", "model", event.target.value)}
+              onChange={(event) => {
+                const model = event.target.value;
+                setPolicy({
+                  ...policy,
+                  llm: {
+                    ...policy.llm,
+                    model,
+                    reasoning_effort: isReasoningModel(model)
+                      ? (policy.llm.reasoning_effort ?? "none")
+                      : "none",
+                    ...(isReasoningModel(model) ? { temperature: null } : {}),
+                  },
+                });
+              }}
             />
           </Field>
-          <Field label="LLM temperature">
-            <input
-              min="0"
-              max="2"
-              step="0.1"
-              type="number"
-              value={policy.llm.temperature}
+          <Field label="LLM reasoning effort">
+            <select
+              disabled={!reasoningModel}
+              value={policy.llm.reasoning_effort ?? "none"}
               onChange={(event) =>
-                number("llm", "temperature", event.target.value)
+                text("llm", "reasoning_effort", event.target.value)
               }
-            />
+            >
+              {(
+                reasoningModel
+                  ? (["none", "low", "medium", "high", "xhigh", "max"] as const)
+                  : (["none"] as const)
+              ).map((effort) => (
+                <option key={effort} value={effort}>
+                  {effort}
+                </option>
+              ))}
+            </select>
           </Field>
+          {!reasoningModel && (
+            <Field label="LLM temperature">
+              <input
+                min="0"
+                max="2"
+                step="0.1"
+                type="number"
+                value={policy.llm.temperature ?? ""}
+                onChange={(event) =>
+                  number("llm", "temperature", event.target.value)
+                }
+              />
+            </Field>
+          )}
           <Field label="ElevenLabs voice ID">
             <input
               value={policy.tts.voice_id}

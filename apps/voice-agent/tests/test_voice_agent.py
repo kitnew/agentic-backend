@@ -34,6 +34,7 @@ from voice_agent.main import (
 from voice_agent.providers import (
     azure_endpoint,
     create_agent_session,
+    llm_behavior_options,
     provider_languages,
 )
 from voice_agent.settings import VoiceAgentSettings
@@ -115,6 +116,28 @@ def runtime_settings(**overrides: object) -> EffectiveVoiceRuntime:
     }
     payload.update(overrides)
     return EffectiveVoiceRuntime.model_validate(payload)
+
+
+def test_llm_behavior_options_follow_runtime_model() -> None:
+    reasoning = runtime_settings(
+        llm={
+            "provider": "azure_openai",
+            "model": "gpt-5.6-terra",
+            "temperature": None,
+            "reasoning_effort": "none",
+        }
+    )
+    assert llm_behavior_options(reasoning) == {"reasoning_effort": "none"}
+
+    classic = runtime_settings(
+        llm={
+            "provider": "azure_openai",
+            "model": "gpt-4o-mini",
+            "temperature": 0,
+            "reasoning_effort": "none",
+        }
+    )
+    assert llm_behavior_options(classic) == {"temperature": 0}
 
 
 @pytest.mark.parametrize(

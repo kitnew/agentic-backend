@@ -214,7 +214,12 @@ credentials, endpoint, Azure deployment name, or provider reliability timeout:
 llm:
   provider: azure_openai
   model: <logical-model-key>
-  temperature: 0.0
+  # Set one of these according to the model family, not the Azure deployment.
+  # Reasoning models: use reasoning_effort and omit temperature.
+  reasoning_effort: none
+  # Non-reasoning models such as gpt-4o-mini: omit reasoning_effort or set none,
+  # then configure temperature instead.
+  # temperature: 0.0
 stt:
   provider: elevenlabs
   model: scribe_v2_realtime
@@ -236,6 +241,22 @@ turn:
   min_endpointing_delay_seconds: 0.1
   max_endpointing_delay_seconds: 0.7
 ```
+
+`tenants/<slug>/runtime.yaml` is an optional override. It may override the LLM
+model, `reasoning_effort`, `temperature`, and TTS voice. Repeat the model when
+setting LLM behavior so the compatibility check is unambiguous:
+
+```yaml
+llm:
+  model: gpt-4o-mini
+  temperature: 0.0
+  reasoning_effort: none
+tts:
+  voice_id: <tenant-elevenlabs-voice-id>
+```
+
+For a reasoning model, omit `temperature` and use `reasoning_effort` instead.
+Omitted fields inherit from the published platform runtime.
 
 The only tenant override in this slice is either an explicit voice:
 

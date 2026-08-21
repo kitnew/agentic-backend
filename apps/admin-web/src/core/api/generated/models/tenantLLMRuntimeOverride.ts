@@ -4,6 +4,7 @@
  * Agent Platform Admin API
  * OpenAPI spec version: 0.1.0
  */
+import type { TenantLLMRuntimeOverrideReasoningEffort } from './tenantLLMRuntimeOverrideReasoningEffort';
 
 export interface TenantLLMRuntimeOverride {
   /**
@@ -11,4 +12,6 @@ export interface TenantLLMRuntimeOverride {
      * @maxLength 255
      */
   model: string;
+  reasoning_effort?: TenantLLMRuntimeOverrideReasoningEffort;
+  temperature?: number | null;
 }

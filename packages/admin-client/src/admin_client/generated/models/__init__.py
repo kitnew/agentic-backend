@@ -65,6 +65,9 @@ from .knowledge_document_revision_response import KnowledgeDocumentRevisionRespo
 from .knowledge_document_summary_response import KnowledgeDocumentSummaryResponse
 from .knowledge_documents_request import KnowledgeDocumentsRequest
 from .llm_runtime_settings import LLMRuntimeSettings
+from .llm_runtime_settings_reasoning_effort_type_0 import (
+    LLMRuntimeSettingsReasoningEffortType0,
+)
 from .local_vad_runtime_settings import LocalVADRuntimeSettings
 from .localization_config import LocalizationConfig
 from .managed_webhook_execution import ManagedWebhookExecution
@@ -122,6 +125,9 @@ from .tenant_config_v3_capabilities import TenantConfigV3Capabilities
 from .tenant_config_v4 import TenantConfigV4
 from .tenant_config_v4_capabilities import TenantConfigV4Capabilities
 from .tenant_llm_runtime_override import TenantLLMRuntimeOverride
+from .tenant_llm_runtime_override_reasoning_effort_type_0 import (
+    TenantLLMRuntimeOverrideReasoningEffortType0,
+)
 from .tenant_prompt_revision_response import TenantPromptRevisionResponse
 from .tenant_response import TenantResponse
 from .tenant_runtime_override import TenantRuntimeOverride
@@ -219,6 +225,7 @@ __all__ = (
     "KnowledgeDocumentSummaryResponse",
     "KnowledgeDocumentsRequest",
     "LLMRuntimeSettings",
+    "LLMRuntimeSettingsReasoningEffortType0",
     "LocalVADRuntimeSettings",
     "LocalizationConfig",
     "ManagedWebhookExecution",
@@ -269,6 +276,7 @@ __all__ = (
     "TenantConfigV4",
     "TenantConfigV4Capabilities",
     "TenantLLMRuntimeOverride",
+    "TenantLLMRuntimeOverrideReasoningEffortType0",
     "TenantPromptRevisionResponse",
     "TenantResponse",
     "TenantRuntimeOverride",

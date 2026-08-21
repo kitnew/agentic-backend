@@ -25,3 +25,9 @@ def test_runtime_paths_and_serialization_are_canonical(tmp_path: Path) -> None:
     )
     rendered = runtimes.serialize_runtime_yaml({"tts": {"voice_id": "hlas-á"}})
     assert rendered == "tts:\n  voice_id: hlas-á\n"
+
+
+def test_remote_runtime_comparison_ignores_optional_nulls() -> None:
+    assert runtimes._without_none(
+        {"llm": {"model": "gpt-5.6-terra", "temperature": None}}
+    ) == {"llm": {"model": "gpt-5.6-terra"}}

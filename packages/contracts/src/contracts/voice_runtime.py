@@ -13,12 +13,43 @@ class _RuntimeModel(BaseModel):
 
 Identifier = Annotated[str, Field(min_length=1, max_length=255)]
 Threshold = Annotated[FiniteFloat, Field(ge=0, le=1)]
+ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+
+
+def model_supports_reasoning(model: str) -> bool:
+    name = model.rsplit("/", 1)[-1].lower()
+    return name.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
+def validate_llm_behavior(
+    model: str,
+    temperature: FiniteFloat | None,
+    reasoning_effort: ReasoningEffort | None,
+) -> None:
+    if model_supports_reasoning(model):
+        if temperature is not None:
+            raise ValueError(
+                "temperature must be omitted for reasoning models; "
+                "use reasoning_effort instead"
+            )
+    elif reasoning_effort not in (None, "none"):
+        raise ValueError(
+            "reasoning_effort other than 'none' requires a reasoning model"
+        )
 
 
 class LLMRuntimeSettings(_RuntimeModel):
     provider: Literal["azure_openai"]
     model: Identifier
-    temperature: Annotated[FiniteFloat, Field(ge=0, le=2)]
+    temperature: Annotated[FiniteFloat, Field(ge=0, le=2)] | None = None
+    reasoning_effort: ReasoningEffort | None = None
+
+    @model_validator(mode="after")
+    def provider_parameters_are_compatible(self) -> LLMRuntimeSettings:
+        validate_llm_behavior(
+            self.model, self.temperature, self.reasoning_effort
+        )
+        return self
 
 
 class ServerVADRuntimeSettings(_RuntimeModel):
@@ -75,6 +106,15 @@ class TenantTTSRuntimeOverride(_RuntimeModel):
 
 class TenantLLMRuntimeOverride(_RuntimeModel):
     model: Identifier
+    temperature: Annotated[FiniteFloat, Field(ge=0, le=2)] | None = None
+    reasoning_effort: ReasoningEffort | None = None
+
+    @model_validator(mode="after")
+    def provider_parameters_are_compatible(self) -> TenantLLMRuntimeOverride:
+        validate_llm_behavior(
+            self.model, self.temperature, self.reasoning_effort
+        )
+        return self
 
 
 class TenantRuntimeOverride(_RuntimeModel):

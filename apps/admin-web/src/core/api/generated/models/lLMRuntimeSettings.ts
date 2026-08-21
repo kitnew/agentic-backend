@@ -4,6 +4,7 @@
  * Agent Platform Admin API
  * OpenAPI spec version: 0.1.0
  */
+import type { LLMRuntimeSettingsReasoningEffort } from './lLMRuntimeSettingsReasoningEffort';
 
 export interface LLMRuntimeSettings {
   /**
@@ -12,9 +13,6 @@ export interface LLMRuntimeSettings {
      */
   model: string;
   provider: 'azure_openai';
-  /**
-     * @minimum 0
-     * @maximum 2
-     */
-  temperature: number;
+  reasoning_effort?: LLMRuntimeSettingsReasoningEffort;
+  temperature?: number | null;
 }

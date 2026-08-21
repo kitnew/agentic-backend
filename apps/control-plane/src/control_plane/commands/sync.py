@@ -1084,7 +1084,7 @@ def _preflight_platform_runtime(
         state = runtimes.platform_state(client)
         if (
             state.draft_revision is not None
-            and desired.settings == state.draft_revision.policy.to_dict()
+            and desired.settings == runtimes._platform_value(state.draft_revision)
         ):
             tasks.append(
                 _PublishTask(resource, "platform-runtime", desired, None, state)
@@ -1092,7 +1092,8 @@ def _preflight_platform_runtime(
         elif (
             state.draft_revision is None
             and state.latest_published_revision is not None
-            and desired.settings == state.latest_published_revision.policy.to_dict()
+            and desired.settings
+            == runtimes._platform_value(state.latest_published_revision)
         ):
             report.unchanged.append(resource)
         else:
@@ -1253,7 +1254,7 @@ def _preflight_tenant(
             if (
                 runtime_state.draft_revision is not None
                 and desired.runtime.settings
-                == runtime_state.draft_revision.settings.to_dict()
+                == runtimes._tenant_value(runtime_state.draft_revision)
             ):
                 tasks.append(
                     _PublishTask(
@@ -1268,7 +1269,9 @@ def _preflight_tenant(
                 runtime_state.draft_revision is None
                 and runtime_state.latest_published_revision is not None
                 and desired.runtime.settings
-                == runtime_state.latest_published_revision.settings.to_dict()
+                == runtimes._tenant_value(
+                    runtime_state.latest_published_revision
+                )
             ):
                 report.unchanged.append(resource)
             else:

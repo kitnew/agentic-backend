@@ -47,6 +47,37 @@ def test_valid_complete_platform_runtime_policy() -> None:
     )
 
 
+def test_reasoning_and_temperature_are_model_compatible() -> None:
+    payload = policy()
+    payload["llm"] = {
+        "provider": "azure_openai",
+        "model": "gpt-5.6-terra",
+        "reasoning_effort": "none",
+    }
+    PlatformRuntimePolicy.model_validate(payload)
+
+    payload["llm"] = {
+        "provider": "azure_openai",
+        "model": "gpt-4o-mini",
+        "temperature": 0,
+        "reasoning_effort": "none",
+    }
+    PlatformRuntimePolicy.model_validate(payload)
+
+    payload["llm"]["reasoning_effort"] = "low"  # type: ignore[index]
+    with pytest.raises(ValidationError):
+        PlatformRuntimePolicy.model_validate(payload)
+
+    payload["llm"] = {
+        "provider": "azure_openai",
+        "model": "gpt-5.6-terra",
+        "temperature": 0,
+        "reasoning_effort": "none",
+    }
+    with pytest.raises(ValidationError):
+        PlatformRuntimePolicy.model_validate(payload)
+
+
 @pytest.mark.parametrize(
     ("path", "value"),
     [
@@ -82,5 +113,20 @@ def test_tenant_runtime_override_is_strict_and_may_be_empty() -> None:
         TenantRuntimeOverride.model_validate({"llm": {"model": "model-b"}}).llm.model
         == "model-b"
     )  # type: ignore[union-attr]
+    tenant_llm = TenantRuntimeOverride.model_validate(
+        {
+            "llm": {
+                "model": "gpt-4o-mini",
+                "temperature": 0,
+                "reasoning_effort": "none",
+            }
+        }
+    ).llm
+    assert tenant_llm is not None
+    assert tenant_llm.temperature == 0
+    with pytest.raises(ValidationError):
+        TenantRuntimeOverride.model_validate(
+            {"llm": {"model": "gpt-5.6-terra", "temperature": 0}}
+        )
     with pytest.raises(ValidationError):
         TenantRuntimeOverride.model_validate({"llm": {"model": ""}})

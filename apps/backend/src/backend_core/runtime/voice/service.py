@@ -10,6 +10,7 @@ from contracts import (
     TenantConfigV3,
     TenantRuntimeOverride,
 )
+from contracts.voice_runtime import model_supports_reasoning
 from pydantic import ValidationError
 
 from backend_core.modules.tenants.models import (
@@ -100,7 +101,7 @@ class VoiceRuntimeUseCases:
             revision_number=await self._runtimes.next_platform_revision_number(
                 platform.id
             ),
-            policy=policy.model_dump(mode="json"),
+            policy=policy.model_dump(mode="json", exclude_none=True),
         )
         await self._runtimes.add(revision)
         return revision
@@ -115,7 +116,7 @@ class VoiceRuntimeUseCases:
         if revision is None:
             raise RuntimeNotFoundError
         self._check_mutable(revision.status, revision.version, expected_version)
-        normalized = policy.model_dump(mode="json")
+        normalized = policy.model_dump(mode="json", exclude_none=True)
         if revision.policy != normalized:
             revision.policy = normalized
             revision.version += 1
@@ -372,6 +373,14 @@ class VoiceRuntimeUseCases:
         payload = policy.model_dump(mode="json")
         if override.llm is not None:
             payload["llm"]["model"] = override.llm.model
+            if override.llm.temperature is not None:
+                payload["llm"]["temperature"] = override.llm.temperature
+            elif model_supports_reasoning(override.llm.model):
+                payload["llm"]["temperature"] = None
+            if override.llm.reasoning_effort is not None:
+                payload["llm"]["reasoning_effort"] = override.llm.reasoning_effort
+            elif not model_supports_reasoning(override.llm.model):
+                payload["llm"]["reasoning_effort"] = "none"
         if override.tts is not None:
             payload["tts"]["voice_id"] = override.tts.voice_id
         return (

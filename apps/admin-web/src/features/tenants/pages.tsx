@@ -54,6 +54,21 @@ function useCurrentTenant() {
   };
 }
 
+const isReasoningModel = (model: string) =>
+  /^(gpt-5|o1|o3|o4)/.test(model.split("/").pop()?.toLowerCase() ?? "");
+type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh" | "max";
+
+const withoutNull = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(withoutNull);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, item]) => item !== null)
+        .map(([key, item]) => [key, withoutNull(item)]),
+    );
+  return value;
+};
+
 export function TenantsPage() {
   const tenants = useTenants();
   if (tenants.isPending) return <PageLoading />;
@@ -221,10 +236,27 @@ function TenantRuntimeEditor({
     state.tenant.latest_published_revision?.settings ??
     {};
   const [model, setModel] = useState(saved.llm?.model ?? "");
+  const [temperature, setTemperature] = useState(
+    saved.llm?.temperature?.toString() ?? "",
+  );
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
+    saved.llm?.reasoning_effort ?? "none",
+  );
   const [voice, setVoice] = useState(saved.tts?.voice_id ?? "");
-  const canonical = JSON.stringify(saved);
+  const canonical = JSON.stringify(withoutNull(saved));
+  const reasoningModel = isReasoningModel(model);
   const settings = {
-    ...(model ? { llm: { model } } : {}),
+    ...(model
+      ? {
+          llm: {
+            model,
+            reasoning_effort: reasoningModel ? reasoningEffort : "none",
+            ...(reasoningModel || !temperature
+              ? {}
+              : { temperature: Number(temperature) }),
+          },
+        }
+      : {}),
     ...(voice ? { tts: { voice_id: voice } } : {}),
   };
   const dirty = JSON.stringify(settings) !== canonical;
@@ -278,13 +310,48 @@ function TenantRuntimeEditor({
           >
             <select
               value={model}
-              onChange={(event) => setModel(event.target.value)}
+              onChange={(event) => {
+                const nextModel = event.target.value;
+                setModel(nextModel);
+                setTemperature("");
+                setReasoningEffort("none");
+              }}
             >
               <option value="">Use platform default</option>
               <option value="gpt-4o-mini">gpt-4o-mini</option>
               <option value="gpt-5.6-terra">gpt-5.6-terra</option>
             </select>
           </Field>
+          <Field label="LLM reasoning effort">
+            <select
+              disabled={!reasoningModel}
+              value={reasoningEffort}
+              onChange={(event) =>
+                setReasoningEffort(event.target.value as ReasoningEffort)
+              }
+            >
+              {(reasoningModel
+                ? ["none", "low", "medium", "high", "xhigh", "max"]
+                : ["none"]
+              ).map((effort) => (
+                <option key={effort} value={effort}>
+                  {effort}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {!reasoningModel && (
+            <Field label="LLM temperature">
+              <input
+                min="0"
+                max="2"
+                step="0.1"
+                type="number"
+                value={temperature}
+                onChange={(event) => setTemperature(event.target.value)}
+              />
+            </Field>
+          )}
           <Field
             label="ElevenLabs Voice ID"
             detail={`Platform default: ${defaults.tts.voice_id}`}

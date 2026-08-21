@@ -186,11 +186,23 @@ def tenant_state(
 
 
 def _platform_value(revision: PlatformRuntimeRevisionResponse) -> dict[str, Any]:
-    return revision.policy.to_dict()
+    return _without_none(revision.policy.to_dict())
 
 
 def _tenant_value(revision: TenantRuntimeRevisionResponse) -> dict[str, Any]:
-    return revision.settings.to_dict()
+    return _without_none(revision.settings.to_dict())
+
+
+def _without_none(value: object) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _without_none(item)
+            for key, item in value.items()
+            if item is not None
+        }
+    if isinstance(value, list):
+        return [_without_none(item) for item in value]
+    return value
 
 
 def _comparison(

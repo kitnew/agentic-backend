@@ -1,5 +1,6 @@
 import httpx
 from contracts import EffectiveVoiceRuntime
+from contracts.voice_runtime import model_supports_reasoning
 from livekit import agents
 from livekit.agents import inference
 from livekit.agents.voice.agent_session import SessionConnectOptions
@@ -19,6 +20,20 @@ def provider_languages(locale: str) -> tuple[str, str]:
 def azure_endpoint(value: str) -> str:
     endpoint = value.rstrip("/")
     return endpoint.removesuffix("/openai/v1")
+
+
+def llm_behavior_options(runtime: EffectiveVoiceRuntime) -> dict[str, object]:
+    if model_supports_reasoning(runtime.llm.model):
+        return (
+            {"reasoning_effort": runtime.llm.reasoning_effort}
+            if runtime.llm.reasoning_effort is not None
+            else {}
+        )
+    return (
+        {"temperature": runtime.llm.temperature}
+        if runtime.llm.temperature is not None
+        else {}
+    )
 
 
 def create_agent_session(
@@ -62,8 +77,8 @@ def create_agent_session(
         api_key=settings.azure_openai_api_key.get_secret_value(),
         prompt_cache_key=prompt_cache_key,
         timeout=httpx.Timeout(settings.provider_timeout_seconds),
-        temperature=runtime.llm.temperature,
         max_completion_tokens=256,
+        **llm_behavior_options(runtime),
     )
     tts = elevenlabs.TTS(
         api_key=settings.elevenlabs_api_key.get_secret_value(),

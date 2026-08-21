@@ -153,6 +153,23 @@ async def test_tenant_llm_model_override_uses_platform_as_default() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tenant_llm_behavior_override_is_applied() -> None:
+    service, _, tenant = service_fixture(
+        override={
+            "llm": {
+                "model": "gpt-4o-mini",
+                "temperature": 0,
+                "reasoning_effort": "none",
+            }
+        }
+    )
+    plan = await service.plan_voice_runtime(tenant.id)
+    assert plan.desired_settings.llm.model == "gpt-4o-mini"
+    assert plan.desired_settings.llm.temperature == 0
+    assert plan.desired_settings.llm.reasoning_effort == "none"
+
+
+@pytest.mark.asyncio
 async def test_empty_override_uses_platform_and_plan_is_read_only() -> None:
     service, runtimes, tenant = service_fixture(override={})
     plan = await service.plan_voice_runtime(tenant.id)
