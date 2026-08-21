@@ -68,7 +68,7 @@ services:
         VITE_GRAFANA_URL: ${ADMIN_WEB_GRAFANA_URL:?set ADMIN_WEB_GRAFANA_URL}
     restart: unless-stopped
     read_only: true
-    tmpfs: [/tmp, /var/cache/nginx, /var/run]
+    tmpfs: [/tmp, /var/cache/nginx, /var/run, /etc/nginx/conf.d]
     security_opt: [no-new-privileges:true]
     logging: *service-logging
     networks: [application, edge]
