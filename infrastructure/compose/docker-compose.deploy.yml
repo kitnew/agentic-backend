@@ -66,6 +66,8 @@ services:
     build:
       args:
         VITE_GRAFANA_URL: ${ADMIN_WEB_GRAFANA_URL:?set ADMIN_WEB_GRAFANA_URL}
+    environment:
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
     restart: unless-stopped
     read_only: true
     tmpfs:
