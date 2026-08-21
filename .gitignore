@@ -168,6 +168,7 @@ infrastructure/compose/secrets/
 !infrastructure/livekit/sip/*.example.json
 !infrastructure/livekit/egress/chrome-sandboxing-seccomp-profile.json
 !infrastructure/grafana/dashboards/*.json
+!apps/admin-web/*.json
 debug-chat/node_modules/
 backups/
 env/
