@@ -27,8 +27,8 @@ Generate values instead of inventing them:
 # Random tokens, service secrets, API tokens, and MinIO passwords
 openssl rand -hex 32
 
-# Fernet-compatible integration encryption key
-python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+# Standard Base64 AES-256 integration encryption key (exactly 32 decoded bytes)
+openssl rand -base64 32 | tr -d '\n'; echo
 
 # Caddy Basic Auth hash; prompts for the password
 docker run --rm -it caddy:2.10.2-alpine caddy hash-password
