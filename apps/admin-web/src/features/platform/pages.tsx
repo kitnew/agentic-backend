@@ -495,6 +495,7 @@ function PromptEditorForm({
 }) {
   const canonical = revisions.draft?.text ?? revisions.published?.text ?? "";
   const [text, setText] = useState(canonical);
+  useEffect(() => setText(canonical), [canonical]);
   const dirty = text !== canonical;
   const save = useMutation({
     mutationFn: async () => {

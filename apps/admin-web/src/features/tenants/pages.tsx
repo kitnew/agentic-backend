@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   PageError,
@@ -414,6 +414,7 @@ function TenantPromptEditor({
 }) {
   const canonical = revisions.draft?.text ?? revisions.published?.text ?? "";
   const [text, setText] = useState(canonical);
+  useEffect(() => setText(canonical), [canonical]);
   const save = useMutation({
     mutationFn: async () => {
       const response = revisions.draft
