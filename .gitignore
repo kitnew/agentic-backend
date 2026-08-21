@@ -159,6 +159,13 @@ secrets/*.json
 infrastructure/compose/secrets/
 *.json
 *.tsbuildinfo
+
+# Admin Web source directories named `lib` must be tracked; the generic Python
+# `lib/` rule above must not hide these TypeScript modules.
+!apps/admin-web/src/lib/
+!apps/admin-web/src/lib/**
+!apps/admin-web/src/features/agent/lib/
+!apps/admin-web/src/features/agent/lib/**
 !debug-chat/package.json
 !debug-chat/package-lock.json
 !apps/admin-web/package.json
