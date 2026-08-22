@@ -24,5 +24,6 @@ def test_staging_and_production_add_only_internal_sip_topology() -> None:
         assert "${LIVEKIT_SIP_PORT:-5060}:5060/udp" not in DEPLOY
         assert "${LIVEKIT_SIP_RTP_PORT:-10000-20000}:${LIVEKIT_SIP_RTP_PORT:-10000-20000}/udp" not in DEPLOY
         assert "LIVEKIT_SIP_WS_URL=" not in env
-        assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID=" in env
-        assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID:" in DEPLOY
+        assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID" not in env
+        assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID" not in DEPLOY
+        assert "SIP_PROVIDER_ADDRESS=" in env

@@ -7,11 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
-    InboundRoute,
     KnowledgeBase,
     KnowledgeBaseRevisionDocument,
     KnowledgeDocument,
     KnowledgeDocumentRevision,
+    PlatformTelephony,
     ProfilePrompt,
     PromptBundleRevision,
     PromptBundleRevisionStatus,
@@ -22,6 +22,7 @@ from backend_core.modules.tenants.models import (
     TenantConfigRevision,
     TenantPrompt,
     TenantStatus,
+    TenantTelephony,
 )
 
 
@@ -67,39 +68,54 @@ class TenantRepository:
         return list(tenants)
 
 
-class InboundRouteRepository:
+class TelephonyRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def add(self, route: InboundRoute) -> InboundRoute:
-        self._session.add(route)
-        await self._session.flush()
-        return route
+    async def get(self, tenant_id: UUID) -> TenantTelephony | None:
+        return await self._session.get(TenantTelephony, tenant_id)
 
-    async def get(self, tenant_id: UUID, route_id: UUID) -> InboundRoute | None:
+    async def get_for_update(self, tenant_id: UUID) -> TenantTelephony | None:
         return await self._session.scalar(
-            select(InboundRoute).where(
-                InboundRoute.tenant_id == tenant_id,
-                InboundRoute.id == route_id,
+            select(TenantTelephony)
+            .where(TenantTelephony.tenant_id == tenant_id)
+            .with_for_update()
+        )
+
+    async def phone_owner(self, phone_number: str) -> UUID | None:
+        return await self._session.scalar(
+            select(TenantTelephony.tenant_id).where(
+                TenantTelephony.phone_number == phone_number
             )
         )
 
-    async def list(self, tenant_id: UUID) -> list[InboundRoute]:
-        routes = await self._session.scalars(
-            select(InboundRoute)
-            .where(InboundRoute.tenant_id == tenant_id)
-            .order_by(InboundRoute.created_at, InboundRoute.id)
+    async def upsert(self, telephony: TenantTelephony) -> TenantTelephony:
+        self._session.add(telephony)
+        await self._session.flush()
+        return telephony
+
+    async def list(self) -> list[TenantTelephony]:
+        return list(await self._session.scalars(select(TenantTelephony)))
+
+    async def active_published(self) -> Sequence[TenantTelephony]:
+        return list(
+            await self._session.scalars(
+                select(TenantTelephony)
+                .join(Tenant, Tenant.id == TenantTelephony.tenant_id)
+                .join(
+                    TenantConfigRevision,
+                    TenantConfigRevision.id == Tenant.active_config_revision_id,
+                )
+                .where(
+                    Tenant.status == TenantStatus.ACTIVE,
+                    TenantConfigRevision.status == ConfigRevisionStatus.PUBLISHED,
+                    TenantTelephony.config_revision_id
+                    == TenantConfigRevision.id,
+                )
+            )
         )
-        return list(routes)
 
     async def flush(self) -> None:
-        await self._session.flush()
-
-    async def refresh(self, route: InboundRoute) -> None:
-        await self._session.refresh(route)
-
-    async def delete(self, route: InboundRoute) -> None:
-        await self._session.delete(route)
         await self._session.flush()
 
     async def resolve(
@@ -110,14 +126,14 @@ class InboundRouteRepository:
     ) -> tuple[Tenant, TenantConfigRevision] | None:
         query = (
             select(Tenant, TenantConfigRevision)
-            .join(InboundRoute, InboundRoute.tenant_id == Tenant.id)
+            .join(TenantTelephony, TenantTelephony.tenant_id == Tenant.id)
             .join(
                 TenantConfigRevision,
                 TenantConfigRevision.id == Tenant.active_config_revision_id,
             )
             .where(
-                InboundRoute.normalized_did == normalized_did,
-                InboundRoute.enabled.is_(True),
+                TenantTelephony.phone_number == normalized_did,
+                TenantTelephony.config_revision_id == TenantConfigRevision.id,
                 Tenant.status == TenantStatus.ACTIVE,
                 TenantConfigRevision.status == ConfigRevisionStatus.PUBLISHED,
                 TenantConfigRevision.published_at.is_not(None),
@@ -127,6 +143,17 @@ class InboundRouteRepository:
             query = query.with_for_update(of=Tenant)
         row = (await self._session.execute(query)).one_or_none()
         return None if row is None else (row[0], row[1])
+
+    async def platform(self, *, for_update: bool = False) -> PlatformTelephony:
+        query = select(PlatformTelephony).where(PlatformTelephony.id == 1)
+        if for_update:
+            query = query.with_for_update()
+        state = await self._session.scalar(query)
+        if state is None:
+            state = PlatformTelephony(id=1)
+            self._session.add(state)
+            await self._session.flush()
+        return state
 
 
 class PromptBundleRevisionRepository:

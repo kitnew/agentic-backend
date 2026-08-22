@@ -27,9 +27,9 @@ class Settings(BaseSettings):
         int,
         Field(gt=0, le=600),
     ] = 600
-    livekit_sip_outbound_trunk_id: (
-        Annotated[str, Field(min_length=1, max_length=255)] | None
-    ) = None
+    sip_provider_address: Annotated[str, Field(min_length=1, max_length=255)] | None = None
+    sip_provider_username: SecretStr | None = None
+    sip_provider_password: SecretStr | None = None
     redis_url: RedisDsn = RedisDsn("redis://redis:6379/0")
     capability_job_stream: Annotated[str, Field(min_length=1, max_length=255)] = (
         "capability:jobs"
@@ -68,6 +68,10 @@ class Settings(BaseSettings):
         float, Field(gt=0, le=86400)
     ] = 120.0
     call_runtime_reconciliation_batch_size: Annotated[int, Field(gt=0, le=1000)] = 100
+    telephony_reconciliation_enabled: bool = True
+    telephony_reconciliation_interval_seconds: Annotated[
+        float, Field(gt=0, le=3600)
+    ] = 5.0
     call_recording_enabled: bool = False
 
     @model_validator(mode="after")

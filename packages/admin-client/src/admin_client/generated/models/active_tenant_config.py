@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..models.tenant_config_v2 import TenantConfigV2
     from ..models.tenant_config_v3 import TenantConfigV3
     from ..models.tenant_config_v4 import TenantConfigV4
+    from ..models.tenant_config_v5 import TenantConfigV5
 
 
 T = TypeVar("T", bound="ActiveTenantConfig")
@@ -22,14 +23,20 @@ T = TypeVar("T", bound="ActiveTenantConfig")
 class ActiveTenantConfig:
     """
     Attributes:
-        config (TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4):
+        config (TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4 | TenantConfigV5):
         published_at (datetime.datetime):
         revision_id (UUID):
         revision_number (int):
         tenant_id (UUID):
     """
 
-    config: TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4
+    config: (
+        TenantConfigV1
+        | TenantConfigV2
+        | TenantConfigV3
+        | TenantConfigV4
+        | TenantConfigV5
+    )
     published_at: datetime.datetime
     revision_id: UUID
     revision_number: int
@@ -39,12 +46,14 @@ class ActiveTenantConfig:
         from ..models.tenant_config_v1 import TenantConfigV1
         from ..models.tenant_config_v2 import TenantConfigV2
         from ..models.tenant_config_v3 import TenantConfigV3
+        from ..models.tenant_config_v4 import TenantConfigV4
 
         config: dict[str, Any]
         if (
             isinstance(self.config, TenantConfigV1)
             or isinstance(self.config, TenantConfigV2)
             or isinstance(self.config, TenantConfigV3)
+            or isinstance(self.config, TenantConfigV4)
         ):
             config = self.config.to_dict()
         else:
@@ -78,12 +87,19 @@ class ActiveTenantConfig:
         from ..models.tenant_config_v2 import TenantConfigV2
         from ..models.tenant_config_v3 import TenantConfigV3
         from ..models.tenant_config_v4 import TenantConfigV4
+        from ..models.tenant_config_v5 import TenantConfigV5
 
         d = dict(src_dict)
 
         def _parse_config(
             data: object,
-        ) -> TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4:
+        ) -> (
+            TenantConfigV1
+            | TenantConfigV2
+            | TenantConfigV3
+            | TenantConfigV4
+            | TenantConfigV5
+        ):
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
@@ -108,11 +124,19 @@ class ActiveTenantConfig:
                 return config_type_2
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                config_type_3 = TenantConfigV4.from_dict(data)
+
+                return config_type_3
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
             if not isinstance(data, dict):
                 raise TypeError()
-            config_type_3 = TenantConfigV4.from_dict(data)
+            config_type_4 = TenantConfigV5.from_dict(data)
 
-            return config_type_3
+            return config_type_4
 
         config = _parse_config(d.pop("config"))
 

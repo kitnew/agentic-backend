@@ -171,7 +171,6 @@ describe("Agent page", () => {
     expect(screen.getByLabelText(/Email addresses/)).toHaveValue(
       "hello@example.com",
     );
-    expect(screen.getByLabelText("Phone number")).toHaveValue("+421900000001");
     await user.clear(name);
     await user.type(name, "Amelia Updated");
     expect(screen.getByText("Unsaved changes")).toBeVisible();

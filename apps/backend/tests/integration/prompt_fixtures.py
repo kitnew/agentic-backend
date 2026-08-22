@@ -156,9 +156,13 @@ async def create_voice_ready_tenant(
     await publish_config(client, tenant_id, greeting="Dobrý deň")
     await apply_voice_runtime(client, tenant_id)
     did = f"+421{uuid4().int % 10**9:09d}"
-    route = await client.post(
-        f"/admin/v1/tenants/{tenant_id}/inbound-routes",
-        json={"normalized_did": did},
+    telephony = await client.put(
+        f"/admin/v1/tenants/{tenant_id}/telephony",
+        json={"phone_number": did, "handoff": {"destinations": {}}},
     )
-    assert route.status_code == 201
+    assert telephony.status_code == 200
+    draft_id = telephony.json()["draft_revision_id"]
+    assert (
+        await client.post(f"/admin/v1/tenants/{tenant_id}/config/drafts/{draft_id}/publish")
+    ).status_code == 200
     return tenant_id, did

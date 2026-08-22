@@ -8,12 +8,10 @@ import type {
   ActiveTenantConfig,
   ConfigRevisionResponse,
   CreateDraftRequest,
-  CreateInboundRouteRequest,
   CreatePromptSetDraftRequest,
   CreateTenantRequest,
   CreateTextDraftRequest,
   HTTPValidationError,
-  InboundRouteResponse,
   KnowledgeBasePlanResponse,
   KnowledgeBasePublishResponse,
   KnowledgeBasePushResponse,
@@ -29,8 +27,9 @@ import type {
   PromptSetRevisionResponse,
   TenantPromptRevisionResponse,
   TenantResponse,
+  TenantTelephonyResponse,
+  TenantTelephonyUpdate,
   UpdateDraftRequest,
-  UpdateInboundRouteRequest,
   UpdatePromptSetDraftRequest,
   UpdateTextDraftRequest,
   ValidateConfigRequest,
@@ -642,208 +641,6 @@ export const validateConfigAdminV1TenantsTenantIdConfigValidatePost = async (ten
 
   const data: validateConfigAdminV1TenantsTenantIdConfigValidatePostResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as validateConfigAdminV1TenantsTenantIdConfigValidatePostResponse
-}
-
-
-export type listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse200 = {
-  data: InboundRouteResponse[]
-  status: 200
-}
-
-export type listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponseSuccess = (listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse200) & {
-  headers: Headers;
-};
-export type listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponseError = (listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse422) & {
-  headers: Headers;
-};
-
-export type listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse = (listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponseSuccess | listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponseError)
-
-export const getListInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetUrl = (tenantId: string,) => {
-
-
-
-
-  return `/admin/v1/tenants/${tenantId}/inbound-routes`
-}
-
-/**
- * @summary List Inbound Routes
- */
-export const listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGet = async (tenantId: string, options?: RequestInit): Promise<listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse> => {
-
-  const res = await fetch(getListInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetUrl(tenantId),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listInboundRoutesAdminV1TenantsTenantIdInboundRoutesGetResponse
-}
-
-
-export type createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse201 = {
-  data: InboundRouteResponse
-  status: 201
-}
-
-export type createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponseSuccess = (createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse201) & {
-  headers: Headers;
-};
-export type createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponseError = (createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse422) & {
-  headers: Headers;
-};
-
-export type createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse = (createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponseSuccess | createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponseError)
-
-export const getCreateInboundRouteAdminV1TenantsTenantIdInboundRoutesPostUrl = (tenantId: string,) => {
-
-
-
-
-  return `/admin/v1/tenants/${tenantId}/inbound-routes`
-}
-
-/**
- * @summary Create Inbound Route
- */
-export const createInboundRouteAdminV1TenantsTenantIdInboundRoutesPost = async (tenantId: string,
-    createInboundRouteRequest: CreateInboundRouteRequest, options?: RequestInit): Promise<createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse> => {
-
-  const res = await fetch(getCreateInboundRouteAdminV1TenantsTenantIdInboundRoutesPostUrl(tenantId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(createInboundRouteRequest)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createInboundRouteAdminV1TenantsTenantIdInboundRoutesPostResponse
-}
-
-
-export type deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponseSuccess = (deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse204) & {
-  headers: Headers;
-};
-export type deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponseError = (deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse422) & {
-  headers: Headers;
-};
-
-export type deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse = (deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponseSuccess | deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponseError)
-
-export const getDeleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteUrl = (tenantId: string,
-    routeId: string,) => {
-
-
-
-
-  return `/admin/v1/tenants/${tenantId}/inbound-routes/${routeId}`
-}
-
-/**
- * @summary Delete Inbound Route
- */
-export const deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDelete = async (tenantId: string,
-    routeId: string, options?: RequestInit): Promise<deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse> => {
-
-  const res = await fetch(getDeleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteUrl(tenantId,routeId),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdDeleteResponse
-}
-
-
-export type updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse200 = {
-  data: InboundRouteResponse
-  status: 200
-}
-
-export type updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponseSuccess = (updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse200) & {
-  headers: Headers;
-};
-export type updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponseError = (updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse422) & {
-  headers: Headers;
-};
-
-export type updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse = (updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponseSuccess | updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponseError)
-
-export const getUpdateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchUrl = (tenantId: string,
-    routeId: string,) => {
-
-
-
-
-  return `/admin/v1/tenants/${tenantId}/inbound-routes/${routeId}`
-}
-
-/**
- * @summary Update Inbound Route
- */
-export const updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatch = async (tenantId: string,
-    routeId: string,
-    updateInboundRouteRequest: UpdateInboundRouteRequest, options?: RequestInit): Promise<updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse> => {
-
-  const res = await fetch(getUpdateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchUrl(tenantId,routeId),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateInboundRouteRequest)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateInboundRouteAdminV1TenantsTenantIdInboundRoutesRouteIdPatchResponse
 }
 
 
@@ -1687,6 +1484,154 @@ export const listPromptSetRevisionsAdminV1TenantsTenantIdPromptSetRevisionsGet =
 
   const data: listPromptSetRevisionsAdminV1TenantsTenantIdPromptSetRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listPromptSetRevisionsAdminV1TenantsTenantIdPromptSetRevisionsGetResponse
+}
+
+
+export type showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse200 = {
+  data: TenantTelephonyResponse
+  status: 200
+}
+
+export type showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponseSuccess = (showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse200) & {
+  headers: Headers;
+};
+export type showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponseError = (showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse422) & {
+  headers: Headers;
+};
+
+export type showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse = (showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponseSuccess | showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponseError)
+
+export const getShowTenantTelephonyAdminV1TenantsTenantIdTelephonyGetUrl = (tenantId: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/telephony`
+}
+
+/**
+ * @summary Show Tenant Telephony
+ */
+export const showTenantTelephonyAdminV1TenantsTenantIdTelephonyGet = async (tenantId: string, options?: RequestInit): Promise<showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse> => {
+
+  const res = await fetch(getShowTenantTelephonyAdminV1TenantsTenantIdTelephonyGetUrl(tenantId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as showTenantTelephonyAdminV1TenantsTenantIdTelephonyGetResponse
+}
+
+
+export type saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse200 = {
+  data: TenantTelephonyResponse
+  status: 200
+}
+
+export type saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponseSuccess = (saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse200) & {
+  headers: Headers;
+};
+export type saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponseError = (saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse422) & {
+  headers: Headers;
+};
+
+export type saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse = (saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponseSuccess | saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponseError)
+
+export const getSaveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutUrl = (tenantId: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/telephony`
+}
+
+/**
+ * @summary Save Tenant Telephony
+ */
+export const saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPut = async (tenantId: string,
+    tenantTelephonyUpdate: TenantTelephonyUpdate, options?: RequestInit): Promise<saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse> => {
+
+  const res = await fetch(getSaveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutUrl(tenantId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tenantTelephonyUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveTenantTelephonyAdminV1TenantsTenantIdTelephonyPutResponse
+}
+
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse200 = {
+  data: TenantTelephonyResponse
+  status: 200
+}
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseSuccess = (tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse200) & {
+  headers: Headers;
+};
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseError = (tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse422) & {
+  headers: Headers;
+};
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse = (tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseSuccess | tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseError)
+
+export const getTenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetUrl = (tenantId: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/telephony/status`
+}
+
+/**
+ * @summary Tenant Telephony Status
+ */
+export const tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGet = async (tenantId: string, options?: RequestInit): Promise<tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse> => {
+
+  const res = await fetch(getTenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetUrl(tenantId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse
 }
 
 

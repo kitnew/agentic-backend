@@ -14,6 +14,7 @@ from backend_core.modules.tenants.models import (
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
     PromptCompositionRepository,
+    TelephonyRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.service import (
@@ -50,6 +51,7 @@ class ReleaseUseCases:
             configs,
             IntegrationConnectionRepository(session),
             prompts,
+            TelephonyRepository(session),
         )
         self.prompts = PromptCompositionUseCases(tenants, prompts, configs)
         self.runtimes = VoiceRuntimeUseCases(

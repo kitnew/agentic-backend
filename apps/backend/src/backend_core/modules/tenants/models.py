@@ -4,7 +4,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -35,6 +34,13 @@ class ConfigRevisionStatus(StrEnum):
     DRAFT = "draft"
     PUBLISHED = "published"
     ARCHIVED = "archived"
+
+
+class TelephonyProvisioningStatus(StrEnum):
+    PENDING = "pending"
+    READY = "ready"
+    DEGRADED = "degraded"
+    ERROR = "error"
 
 
 class PromptBundleRevisionStatus(StrEnum):
@@ -176,34 +182,47 @@ class TenantConfigRevision(Base):
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
 
-class InboundRoute(Base):
-    __tablename__ = "inbound_routes"
+class TenantTelephony(Base):
+    __tablename__ = "tenant_telephony"
     __table_args__ = (
         UniqueConstraint(
-            "normalized_did",
-            name="uq_inbound_routes_normalized_did",
+            "phone_number",
+            name="uq_tenant_telephony_phone_number",
         ),
         CheckConstraint(
-            "normalized_did ~ '^\\+[1-9][0-9]{1,14}$'",
-            name="ck_inbound_routes_normalized_did_e164",
+            "phone_number IS NULL OR phone_number ~ '^\\+[1-9][0-9]{1,14}$'",
+            name="ck_tenant_telephony_phone_number_e164",
         ),
-        Index("ix_inbound_routes_tenant_id", "tenant_id"),
     )
 
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         Uuid,
         ForeignKey(
             "tenants.id",
-            name="fk_inbound_routes_tenant_id_tenants",
+            name="fk_tenant_telephony_tenant_id_tenants",
             ondelete="CASCADE",
-        ),
+        ), primary_key=True,
     )
-    normalized_did: Mapped[str] = mapped_column(String(16))
-    enabled: Mapped[bool] = mapped_column(
-        Boolean,
-        default=True,
-        server_default="true",
+    config_revision_id: Mapped[UUID] = mapped_column(
+        Uuid,
+        ForeignKey("tenant_config_revisions.id", ondelete="CASCADE"),
+    )
+    phone_number: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    handoff_destinations: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb")
+    )
+    provisioning_status: Mapped[TelephonyProvisioningStatus] = mapped_column(
+        Enum(
+            TelephonyProvisioningStatus,
+            name="telephony_provisioning_status",
+            values_callable=lambda statuses: [status.value for status in statuses],
+        ),
+        default=TelephonyProvisioningStatus.PENDING,
+        server_default=TelephonyProvisioningStatus.PENDING.value,
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -213,6 +232,33 @@ class InboundRoute(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+class PlatformTelephony(Base):
+    __tablename__ = "platform_telephony"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_platform_telephony_singleton"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    inbound_trunk_id: Mapped[str | None] = mapped_column(String(255))
+    outbound_trunk_id: Mapped[str | None] = mapped_column(String(255))
+    dispatch_rule_id: Mapped[str | None] = mapped_column(String(255))
+    provisioning_status: Mapped[TelephonyProvisioningStatus] = mapped_column(
+        Enum(
+            TelephonyProvisioningStatus,
+            name="telephony_provisioning_status",
+            values_callable=lambda statuses: [status.value for status in statuses],
+            create_type=False,
+        ),
+        default=TelephonyProvisioningStatus.PENDING,
+        server_default=TelephonyProvisioningStatus.PENDING.value,
+    )
+    last_error: Mapped[str | None] = mapped_column(Text)
+    last_reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 

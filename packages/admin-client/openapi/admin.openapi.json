@@ -17,6 +17,9 @@
               },
               {
                 "$ref": "#/components/schemas/TenantConfigV4"
+              },
+              {
+                "$ref": "#/components/schemas/TenantConfigV5"
               }
             ],
             "title": "Config"
@@ -904,28 +907,6 @@
         "title": "CreateDraftRequest",
         "type": "object"
       },
-      "CreateInboundRouteRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "enabled": {
-            "default": true,
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "normalized_did": {
-            "maxLength": 16,
-            "minLength": 3,
-            "pattern": "^\\+[1-9][0-9]{1,14}$",
-            "title": "Normalized Did",
-            "type": "string"
-          }
-        },
-        "required": [
-          "normalized_did"
-        ],
-        "title": "CreateInboundRouteRequest",
-        "type": "object"
-      },
       "CreateIntegrationConnectionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1294,48 +1275,6 @@
           "phone_number"
         ],
         "title": "HandoffDestination",
-        "type": "object"
-      },
-      "InboundRouteResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "normalized_did": {
-            "title": "Normalized Did",
-            "type": "string"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "tenant_id",
-          "normalized_did",
-          "enabled",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "InboundRouteResponse",
         "type": "object"
       },
       "IntegrationConnectionResponse": {
@@ -2306,6 +2245,79 @@
         "title": "PlatformRuntimeStateResponse",
         "type": "object"
       },
+      "PlatformTelephonyResponse": {
+        "properties": {
+          "diagnostics": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Diagnostics",
+            "type": "object"
+          },
+          "dispatch": {
+            "title": "Dispatch",
+            "type": "string"
+          },
+          "inbound": {
+            "title": "Inbound",
+            "type": "string"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_reconciled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reconciled At"
+          },
+          "outbound": {
+            "title": "Outbound",
+            "type": "string"
+          },
+          "overall": {
+            "title": "Overall",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "inbound",
+          "outbound",
+          "dispatch",
+          "overall",
+          "last_error",
+          "last_reconciled_at",
+          "diagnostics"
+        ],
+        "title": "PlatformTelephonyResponse",
+        "type": "object"
+      },
       "PostCallAction": {
         "additionalProperties": false,
         "properties": {
@@ -2898,6 +2910,34 @@
         "title": "TTSRuntimeSettings",
         "type": "object"
       },
+      "TelephonyReadiness": {
+        "properties": {
+          "human_handoff": {
+            "title": "Human Handoff",
+            "type": "string"
+          },
+          "incoming_calls": {
+            "title": "Incoming Calls",
+            "type": "string"
+          },
+          "outgoing_calls": {
+            "title": "Outgoing Calls",
+            "type": "string"
+          },
+          "phone_number": {
+            "title": "Phone Number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "phone_number",
+          "incoming_calls",
+          "outgoing_calls",
+          "human_handoff"
+        ],
+        "title": "TelephonyReadiness",
+        "type": "object"
+      },
       "TenantCapabilityProfile": {
         "additionalProperties": false,
         "properties": {
@@ -3172,6 +3212,65 @@
           "conversation"
         ],
         "title": "TenantConfigV4",
+        "type": "object"
+      },
+      "TenantConfigV5": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentConfigV3"
+          },
+          "business": {
+            "$ref": "#/components/schemas/BusinessConfig"
+          },
+          "capabilities": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "$ref": "#/components/schemas/TenantCapabilityProfile"
+                }
+              ]
+            },
+            "title": "Capabilities",
+            "type": "object"
+          },
+          "contact": {
+            "$ref": "#/components/schemas/ContactConfig"
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/ConversationConfig"
+          },
+          "localization": {
+            "$ref": "#/components/schemas/LocalizationConfig"
+          },
+          "post_call_actions": {
+            "items": {
+              "$ref": "#/components/schemas/PostCallAction"
+            },
+            "maxItems": 20,
+            "title": "Post Call Actions",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 5,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "telephony": {
+            "$ref": "#/components/schemas/TenantTelephonyConfig"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business",
+          "localization",
+          "agent",
+          "conversation"
+        ],
+        "title": "TenantConfigV5",
         "type": "object"
       },
       "TenantLLMRuntimeOverride": {
@@ -3522,6 +3621,142 @@
         "title": "TenantTTSRuntimeOverride",
         "type": "object"
       },
+      "TenantTelephonyConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "handoff": {
+            "$ref": "#/components/schemas/HandoffConfig"
+          },
+          "phone_number": {
+            "anyOf": [
+              {
+                "pattern": "^\\+[1-9]\\d{1,14}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          }
+        },
+        "title": "TenantTelephonyConfig",
+        "type": "object"
+      },
+      "TenantTelephonyResponse": {
+        "properties": {
+          "desired": {
+            "$ref": "#/components/schemas/TenantTelephonyConfig"
+          },
+          "draft_revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Revision Id"
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Version"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_reconciled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reconciled At"
+          },
+          "provisioning_status": {
+            "title": "Provisioning Status",
+            "type": "string"
+          },
+          "published_revision_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Revision Id"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/TelephonyReadiness"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "desired",
+          "draft_revision_id",
+          "draft_version",
+          "published_revision_id",
+          "provisioning_status",
+          "last_error",
+          "last_reconciled_at",
+          "readiness"
+        ],
+        "title": "TenantTelephonyResponse",
+        "type": "object"
+      },
+      "TenantTelephonyUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "handoff": {
+            "$ref": "#/components/schemas/HandoffConfig"
+          },
+          "phone_number": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 3,
+                "pattern": "^\\+[1-9][0-9]{1,14}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          }
+        },
+        "title": "TenantTelephonyUpdate",
+        "type": "object"
+      },
       "TurnRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
@@ -3592,38 +3827,6 @@
           }
         },
         "title": "UpdateDraftRequest",
-        "type": "object"
-      },
-      "UpdateInboundRouteRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "normalized_did": {
-            "anyOf": [
-              {
-                "maxLength": 16,
-                "minLength": 3,
-                "pattern": "^\\+[1-9][0-9]{1,14}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Normalized Did"
-          }
-        },
-        "title": "UpdateInboundRouteRequest",
         "type": "object"
       },
       "UpdateIntegrationConnectionRequest": {
@@ -4884,6 +5087,58 @@
         ]
       }
     },
+    "/admin/v1/platform/telephony": {
+      "get": {
+        "operationId": "show_platform_telephony_admin_v1_platform_telephony_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformTelephonyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Show Platform Telephony",
+        "tags": [
+          "admin:platform-telephony"
+        ]
+      }
+    },
+    "/admin/v1/platform/telephony/reconcile": {
+      "post": {
+        "operationId": "reconcile_platform_telephony_admin_v1_platform_telephony_reconcile_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformTelephonyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Reconcile Platform Telephony",
+        "tags": [
+          "admin:platform-telephony"
+        ]
+      }
+    },
     "/admin/v1/tenants": {
       "get": {
         "operationId": "list_tenants_admin_v1_tenants_get",
@@ -5558,231 +5813,6 @@
           }
         ],
         "summary": "Validate Config",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/inbound-routes": {
-      "get": {
-        "operationId": "list_inbound_routes_admin_v1_tenants__tenant_id__inbound_routes_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/InboundRouteResponse"
-                  },
-                  "title": "Response List Inbound Routes Admin V1 Tenants  Tenant Id  Inbound Routes Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Inbound Routes",
-        "tags": [
-          "admin:tenants"
-        ]
-      },
-      "post": {
-        "operationId": "create_inbound_route_admin_v1_tenants__tenant_id__inbound_routes_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateInboundRouteRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InboundRouteResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Create Inbound Route",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/inbound-routes/{route_id}": {
-      "delete": {
-        "operationId": "delete_inbound_route_admin_v1_tenants__tenant_id__inbound_routes__route_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "route_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Route Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Delete Inbound Route",
-        "tags": [
-          "admin:tenants"
-        ]
-      },
-      "patch": {
-        "operationId": "update_inbound_route_admin_v1_tenants__tenant_id__inbound_routes__route_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "route_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Route Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateInboundRouteRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InboundRouteResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Update Inbound Route",
         "tags": [
           "admin:tenants"
         ]
@@ -7712,6 +7742,174 @@
         "summary": "Validate Tenant Runtime",
         "tags": [
           "admin:tenant-runtime"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/telephony": {
+      "get": {
+        "operationId": "show_tenant_telephony_admin_v1_tenants__tenant_id__telephony_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantTelephonyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Show Tenant Telephony",
+        "tags": [
+          "admin:tenants"
+        ]
+      },
+      "put": {
+        "operationId": "save_tenant_telephony_admin_v1_tenants__tenant_id__telephony_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantTelephonyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantTelephonyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Save Tenant Telephony",
+        "tags": [
+          "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/telephony/status": {
+      "get": {
+        "operationId": "tenant_telephony_status_admin_v1_tenants__tenant_id__telephony_status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantTelephonyResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Tenant Telephony Status",
+        "tags": [
+          "admin:tenants"
         ]
       }
     },

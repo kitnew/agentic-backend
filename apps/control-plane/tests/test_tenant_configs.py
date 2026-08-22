@@ -17,6 +17,9 @@ from admin_client.generated.models.integration_connection_response import (
 )
 from admin_client.generated.models.tenant_response import TenantResponse
 from admin_client.generated.models.tenant_status import TenantStatus
+from admin_client.generated.models.tenant_telephony_response import (
+    TenantTelephonyResponse,
+)
 from admin_client.generated.models.validate_config_response import (
     ValidateConfigResponse,
 )
@@ -117,6 +120,33 @@ def response(
         content=content,
         headers=httpx.Headers(),
         parsed=parsed,
+    )
+
+
+@pytest.fixture(autouse=True)
+def mock_telephony(monkeypatch: pytest.MonkeyPatch) -> None:
+    parsed = TenantTelephonyResponse.from_dict(
+        {
+            "tenant_id": str(TENANT_ID),
+            "desired": {"phone_number": None, "handoff": {"destinations": {}}},
+            "draft_revision_id": None,
+            "draft_version": None,
+            "published_revision_id": None,
+            "provisioning_status": "pending",
+            "last_error": None,
+            "last_reconciled_at": None,
+            "readiness": {
+                "phone_number": "pending",
+                "incoming_calls": "pending",
+                "outgoing_calls": "pending",
+                "human_handoff": "pending",
+            },
+        }
+    )
+    monkeypatch.setattr(
+        tenant_configs.show_tenant_telephony_admin_v1_tenants_tenant_id_telephony_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response(parsed),
     )
 
 
@@ -999,6 +1029,79 @@ def test_push_updates_with_etag_and_semantic_noop(
     )
     tenant_configs.run_tenant_config(settings(tmp_path), "push", SLUG)
     assert "No changes" in capsys.readouterr().out
+
+
+def test_push_preserves_backend_owned_draft_telephony(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    path = tenant_configs.tenant_config_path(tmp_path, SLUG)
+    changed = {**CONFIG, "business": {"name": "Changed", "type": "hotel"}}
+    write_yaml(path, changed)
+    draft = revision(2, "draft", CONFIG, version=7)
+    mock_state(monkeypatch, [revision(1, "published"), draft], active())
+    telephony = TenantTelephonyResponse.from_dict(
+        {
+            "tenant_id": str(TENANT_ID),
+            "desired": {
+                "phone_number": "+421551234567",
+                "handoff": {"destinations": {}},
+            },
+            "draft_revision_id": str(draft.id),
+            "draft_version": 7,
+            "published_revision_id": str(UUID(int=1)),
+            "provisioning_status": "ready",
+            "last_error": None,
+            "last_reconciled_at": None,
+            "readiness": {
+                "phone_number": "ready",
+                "incoming_calls": "ready",
+                "outgoing_calls": "ready",
+                "human_handoff": "pending",
+            },
+        }
+    )
+    monkeypatch.setattr(
+        tenant_configs.show_tenant_telephony_admin_v1_tenants_tenant_id_telephony_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response(telephony),
+    )
+
+    def validate(tenant_id: UUID, *, client: object, body: object) -> Response[object]:
+        config = body.config.to_dict()  # type: ignore[attr-defined]
+        assert config["telephony"]["phone_number"] == "+421551234567"
+        return response(
+            ValidateConfigResponse.from_dict(
+                {"valid": True, "errors": [], "normalized_config": config}
+            )
+        )
+
+    monkeypatch.setattr(
+        tenant_configs.validate_config_admin_v1_tenants_tenant_id_config_validate_post,
+        "sync_detailed",
+        validate,
+    )
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        tenant_configs.update_config_draft_admin_v1_tenants_tenant_id_config_drafts_revision_id_patch,
+        "sync_detailed",
+        lambda tenant_id, revision_id, *, client, body, if_match: (
+            seen.update(body=body, if_match=if_match)
+            or response(revision(2, "draft", changed, version=8))
+        ),
+    )
+    monkeypatch.setattr(
+        tenant_configs.validate_config_draft_admin_v1_tenants_tenant_id_config_drafts_revision_id_validate_post,
+        "sync_detailed",
+        lambda tenant_id, revision_id, *, client: response(
+            ValidateDraftResponse.from_dict({"valid": True, "errors": []})
+        ),
+    )
+
+    tenant_configs.run_tenant_config(settings(tmp_path), "push", SLUG)
+    assert seen["if_match"] == '"7"'
+    assert seen["body"].to_dict()["config"]["telephony"]["phone_number"] == (
+        "+421551234567"
+    )
 
 
 @pytest.mark.parametrize(

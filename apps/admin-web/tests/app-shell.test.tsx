@@ -87,6 +87,7 @@ describe("Admin app shell", () => {
         .map((link) => link.textContent),
     ).toEqual([
       "Runtime",
+      "Telephony",
       "Agent",
       "Prompt",
       "Knowledge Base",

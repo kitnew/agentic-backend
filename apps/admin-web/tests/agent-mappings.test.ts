@@ -30,7 +30,7 @@ const config = {
 };
 
 describe("agent form mappings", () => {
-  it("maps structured contact and handoff without discarding unrelated config", () => {
+  it("maps structured contact without discarding telephony-owned legacy data", () => {
     const form = toAgentForm(config);
     const update = toUpdateRequest(config, {
       ...form,

@@ -12,7 +12,11 @@ from backend_core.modules.conversations.router import (
 )
 from backend_core.modules.integrations.router import router as integrations_router
 from backend_core.modules.tenants import router as tenants_router
-from backend_core.modules.tenants.router import internal_router, platform_router
+from backend_core.modules.tenants.router import (
+    internal_router,
+    platform_router,
+    telephony_platform_router,
+)
 from backend_core.runtime.capabilities.router import (
     runtime_router as capability_runtime_router,
 )
@@ -35,6 +39,7 @@ from fastapi import APIRouter
 admin_router = APIRouter()
 admin_router.include_router(tenants_router)
 admin_router.include_router(platform_router)
+admin_router.include_router(telephony_platform_router)
 admin_router.include_router(platform_runtime_router)
 admin_router.include_router(tenant_runtime_router)
 admin_router.include_router(voice_admin_router)

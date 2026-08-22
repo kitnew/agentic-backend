@@ -64,6 +64,8 @@ from contracts.tenant_config import (
     TenantConfigV2,
     TenantConfigV3,
     TenantConfigV4,
+    TenantConfigV5,
+    TenantTelephonyConfig,
 )
 from contracts.voice import (
     CallLifecycleResponse,
@@ -162,9 +164,11 @@ __all__ = [
     "TenantConfigV2",
     "TenantConfigV3",
     "TenantConfigV4",
+    "TenantConfigV5",
     "TenantLLMRuntimeOverride",
     "TenantRuntimeOverride",
     "TenantTTSRuntimeOverride",
+    "TenantTelephonyConfig",
     "TraceContext",
     "TurnRuntimeSettings",
     "VoiceAgentPrompt",

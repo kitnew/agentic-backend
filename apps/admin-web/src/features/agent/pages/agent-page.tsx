@@ -101,7 +101,6 @@ function AgentEditor({
   });
   const update = (field: keyof AgentForm, value: string) =>
     setForm({ ...form, [field]: value });
-  const destinations = Object.entries(form.handoff);
   return (
     <>
       <PageHeader title="Agent" />
@@ -171,60 +170,6 @@ function AgentEditor({
                 />
               </Field>
             </div>
-          </section>
-          <section className="space-y-4 border-t pt-6">
-            <h2 className="text-lg font-semibold">Handoff</h2>
-            {destinations.length ? (
-              destinations.map(([key, destination]) => (
-                <div
-                  className="grid gap-4 rounded-md border p-4 sm:grid-cols-2"
-                  key={key}
-                >
-                  <div className="sm:col-span-2 font-medium capitalize">
-                    {key.replaceAll("_", " ")}
-                  </div>
-                  <Field label="Description">
-                    <input
-                      value={destination.description}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          handoff: {
-                            ...form.handoff,
-                            [key]: {
-                              ...destination,
-                              description: event.target.value,
-                            },
-                          },
-                        })
-                      }
-                    />
-                  </Field>
-                  <Field label="Phone number">
-                    <input
-                      type="tel"
-                      value={destination.phoneNumber}
-                      onChange={(event) =>
-                        setForm({
-                          ...form,
-                          handoff: {
-                            ...form.handoff,
-                            [key]: {
-                              ...destination,
-                              phoneNumber: event.target.value,
-                            },
-                          },
-                        })
-                      }
-                    />
-                  </Field>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-muted">
-                No handoff destinations configured.
-              </p>
-            )}
           </section>
         </div>
         {(save.isError || publish.isError) && (

@@ -11,12 +11,14 @@ const mainNavigation = [
 
 const platformNavigation = [
   { label: "Runtime", to: "/platform/runtime" },
+  { label: "Telephony", to: "/platform/telephony" },
   { label: "System Prompt", to: "/platform/system-prompt" },
   { label: "Profile Prompt", to: "/platform/profile-prompt" },
 ] as const;
 
 const tenantNavigation = [
   { label: "Runtime", suffix: "/runtime" },
+  { label: "Telephony", suffix: "/telephony" },
   { label: "Agent", suffix: "/agent" },
   { label: "Prompt", suffix: "/prompt" },
   { label: "Knowledge Base", suffix: "/knowledge-base" },

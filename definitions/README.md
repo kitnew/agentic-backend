@@ -114,13 +114,13 @@ it: a separately published PromptSet must reference that revision.
 `tenant.yaml` contains structured deterministic TenantConfig data;
 `tenant_prompt.md` contains tenant-specific behavioral instructions; and
 `knowledge/*.md` contains factual source documents. YAML uses
-the current explicit `schema_version: 4`, stable model-field ordering, two-space
+the explicit authoring `schema_version: 4`, stable model-field ordering, two-space
 indentation, Unicode text, block style, sorted free-form capability mappings,
 and one final newline. Mapping order and formatting do not affect comparison.
 An explicit `pull --force` writes canonical formatting and does not preserve
-comments. TenantConfig schema migrations are never implicit: historical V1/V2/V3
-revisions remain immutable and a future V4 will require an explicit migration
-workflow.
+comments. Telephony and legacy `handoff` are rejected in authoring YAML. During
+explicit validation/push, `agentctl` reads Backend-owned Tenant Telephony and
+compiles the draft to runtime `schema_version: 5`; YAML never owns that state.
 
 `tenant config push` writes and validates only a draft. `tenant config publish`
 activates that revision for new calls according to Backend semantics; existing
@@ -318,16 +318,11 @@ agent:
 conversation:
   scope: property_only
 capabilities: {}
-handoff:
-  destinations:
-    reception:
-      description: Reservations, check-in, payments and general reception requests
-      phone_number: "+421900000001"
 ```
 
-`phone_number` stays in Backend-owned TenantConfig and is never projected into
-the Voice Agent tool schema. Existing version 3 revisions remain readable;
-create and publish an explicit version 4 draft to configure handoff for new calls.
+Configure phone number and handoff destinations only through **Tenant → Telephony**
+or `agentctl tenant telephony`. They are Backend-owned and never projected into
+the Voice Agent tool schema.
 
 Canonical authoring uses a flat Markdown-only knowledge directory:
 

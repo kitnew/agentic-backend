@@ -16,6 +16,7 @@ from backend_core.bootstrap.instrumentation import (
 )
 from backend_core.modules.calls.reconciliation import CallRuntimeReconciler
 from backend_core.modules.calls.repository import CallSessionRepository
+from backend_core.modules.tenants.telephony import PlatformTelephonyReconciler
 from backend_core.platform.messaging import (
     FINALIZATION_EVENT_GROUP,
     FINALIZATION_RESULT_GROUP,
@@ -61,6 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     dispatcher: OutboxDispatcher | None = None
     consumers: list[RedisStreamConsumer] = []
     reconciliation_task: asyncio.Task[None] | None = None
+    telephony_reconciliation_task: asyncio.Task[None] | None = None
     if app.state.settings.outbox_dispatch_enabled:
         redis = Redis.from_url(
             str(app.state.settings.redis_url),
@@ -178,6 +180,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 metrics=metrics,
             ).run(app.state.settings.call_runtime_reconciliation_interval_seconds)
         )
+    if app.state.settings.telephony_reconciliation_enabled:
+        telephony_reconciliation_task = asyncio.create_task(
+            PlatformTelephonyReconciler(
+                app.state.database,
+                app.state.livekit,
+                app.state.settings,
+                tracer=tracer,
+                metrics=metrics,
+            ).run(app.state.settings.telephony_reconciliation_interval_seconds)
+        )
     logger.info("Backend Core started")
 
     try:
@@ -187,6 +199,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             reconciliation_task.cancel()
             with suppress(asyncio.CancelledError):
                 await reconciliation_task
+        if telephony_reconciliation_task is not None:
+            telephony_reconciliation_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await telephony_reconciliation_task
         for consumer in consumers:
             await consumer.close()
         if dispatcher is not None:

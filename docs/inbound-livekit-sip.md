@@ -1,107 +1,64 @@
-# Inbound Telnyx calls through LiveKit SIP
+# Tenant Telephony and LiveKit SIP
 
-Development remains Debug Chat only. `livekit-sip` is present only when the staging or production Compose overlay is selected.
+Tenant Telephony is canonical Backend state. Operators never configure LiveKit resource IDs or separate inbound routes.
 
-## Architecture
+## Operator workflow
+
+1. Create the tenant and its normal configuration.
+2. Open **Tenant → Telephony**.
+3. Set one E.164 phone number.
+4. Add semantic human-handoff destinations.
+5. Save and Publish.
+6. Publish commits the desired state and schedules automatic reconciliation; the control plane then reports readiness or a degraded/error state. **Platform → Telephony → Repair** is only for an explicit retry/diagnostic action.
+
+The same workflow is available through `agentctl tenant telephony show`, `set-number`, `handoff set`, `handoff remove`, and `status`. CLI changes use the existing TenantConfig draft and publish lifecycle.
+
+```bash
+agentctl tenant telephony set-number penzion-grand +421551234567
+agentctl tenant telephony handoff set penzion-grand reception +421900000001
+agentctl tenant config publish penzion-grand
+agentctl tenant telephony status penzion-grand
+```
+
+The published phone number is both the inbound DID and outbound handoff caller ID. Inbound calls resolve only from `sip.trunkPhoneNumber`; caller number is never used for tenant routing. Handoff phone numbers are not exposed to the model.
+
+## Platform bootstrap
+
+Set deployment credentials/settings only:
+
+```dotenv
+LIVEKIT_URL=ws://livekit:7880
+LIVEKIT_API_KEY=...
+LIVEKIT_API_SECRET=...
+LIVEKIT_AGENT_NAME=hospitality-voice-agent
+SIP_PROVIDER_ADDRESS=sip.telnyx.com
+SIP_PROVIDER_USERNAME=...
+SIP_PROVIDER_PASSWORD=...
+```
+
+Open **Platform → Telephony** and use **Repair**. Backend creates or updates one shared inbound trunk, outbound trunk, and shared dispatch rule, stores their external IDs in PostgreSQL, and synchronizes the exact set of phone numbers from active published tenants. The inbound trunk uses an explicit numbers list (not a wildcard); add/change/remove/disable operations reconcile that list, and Backend still routes DID fail-closed from canonical published state. Reconciliation is idempotent and retry-safe.
+
+`infrastructure/livekit/sip/*.json` and `lk sip ...` are legacy/emergency diagnostics. `LIVEKIT_SIP_OUTBOUND_TRUNK_ID` and `agentctl tenant inbound-route` are removed.
+
+## Remaining provider-side prerequisite
+
+The control plane does not purchase numbers or configure Telnyx FQDN connections. In Telnyx, an operator must still purchase/select the number, point it at the deployed LiveKit SIP endpoint, enable outbound calling for the provider credentials, and use E.164 formats.
+
+After that provider-side prerequisite, tenant onboarding is entirely **Tenant → Telephony**.
+
+## Runtime path
 
 ```text
-Telnyx PSTN call
-  -> LiveKit SIP inbound trunk
-  -> reusable individual dispatch rule
-  -> isolated LiveKit room + SIP participant
-  -> existing Voice Agent
-  -> POST /internal/v1/calls/inbound-sip/claim
-  -> Backend DID route + CallSession revision pins
-  -> existing runtime-context, AgentSession, and call lifecycle
+sip.trunkPhoneNumber
+  → tenant_telephony.phone_number
+  → published TenantConfig revision
+  → CallSession revision pins
+  → Voice Agent
+
+handoff semantic key
+  → pinned Tenant Telephony destination
+  → platform_telephony.outbound_trunk_id
+  → CreateSIPParticipant(sip_number=tenant phone number)
 ```
 
-Backend routes only by the called DID. LiveKit trunk/rule IDs are diagnostics, not tenant authority. The claim uses `sip.callIDFull` when available and `sip.callID` as the fallback; database uniqueness on both identifiers makes retries converge.
-
-## Environment topology
-
-Start base Compose with the environment overlay:
-
-```bash
-docker compose --env-file infrastructure/compose/.env.staging \
-  -f infrastructure/compose/docker-compose.yml \
-  -f infrastructure/compose/docker-compose.deploy.yml config
-
-docker compose --env-file infrastructure/compose/.env.production \
-  -f infrastructure/compose/docker-compose.yml \
-  -f infrastructure/compose/docker-compose.deploy.yml config
-```
-
-`livekit-sip:v1.2.0` runs with host networking so Docker does not publish the full RTP range. Its generated config uses `ws://127.0.0.1:7880` and Redis `127.0.0.1:6379`; LiveKit Server and Redis remain bridge-networked and expose those ports only on loopback. SIP binds `LIVEKIT_SIP_PORT` and `LIVEKIT_SIP_RTP_PORT` directly on the host. Its native health endpoint listens on `LIVEKIT_SIP_HEALTH_PORT` in the host network namespace; Backend readiness does not depend on it.
-
-## Configure a tenant DID
-
-The tenant must be active and have published active TenantConfig, PromptSet, and VoiceRuntime revisions.
-
-```bash
-agentctl tenant inbound-route list <tenant-slug>
-agentctl tenant inbound-route add <tenant-slug> +15550123456
-agentctl tenant inbound-route remove <tenant-slug> +15550123456
-```
-
-## Provision LiveKit once
-
-Copy the examples under `infrastructure/livekit/sip/`, replace the fake DID, verify the dispatch `agentName`, and run:
-
-```bash
-lk sip inbound create infrastructure/livekit/sip/inbound-trunk.telnyx.example.json
-lk sip inbound list
-lk sip dispatch create infrastructure/livekit/sip/dispatch-rule.example.json --trunks '<trunk-id>'
-lk sip dispatch list
-```
-
-The trunk and dispatch rule are long-lived reusable objects. The `--trunks` value is the environment-specific ID returned when the inbound trunk is created.
-
-## Provision the outbound handoff trunk once
-
-Human handoff keeps the caller in the original room and dials the configured
-human through one reusable Telnyx outbound trunk:
-
-```bash
-lk sip outbound create infrastructure/livekit/sip/outbound-trunk.telnyx.example.json \
-  --auth-user "$SIP_AUTH_USERNAME" \
-  --auth-pass "$SIP_AUTH_PASSWORD"
-```
-
-Replace the example caller number, store the returned trunk ID as
-`LIVEKIT_SIP_OUTBOUND_TRUNK_ID`, and keep the credentials out of source control.
-Backend resolves the destination number from the call's pinned TenantConfig and
-uses `CreateSIPParticipant(wait_until_answered=true)` to join the human to the
-existing room. It does not use SIP REFER, expose the number to the model, or
-create a trunk per handoff.
-
-After the human answers, Voice Agent drains its persisted AI conversation and
-leaves without ending the CallSession. The existing room reconciler ends the
-CallSession only after LiveKit removes the room when the caller and human have
-left. This preserves one room and one CallSession for a later room-scoped Egress
-slice; Egress itself is not configured here.
-
-## Configure Telnyx manually
-
-1. Purchase or select the Telnyx number.
-2. Create an inbound FQDN SIP connection pointing to the self-hosted LiveKit SIP endpoint.
-3. Set both Telnyx Destination Number Format and Origination Number Format to `+E.164`; TCP is recommended by Telnyx/LiveKit guidance.
-4. Associate the number with that connection.
-5. Ensure the same `+E.164` DID appears in the LiveKit inbound trunk and Backend InboundRoute.
-6. For handoff, enable outbound calling with a conversational outbound voice profile and credential authentication for the reusable LiveKit outbound trunk.
-
-No Telnyx credential, API client, or automatic provisioning belongs in this repository slice.
-
-## Real-number staging verification
-
-1. Backend: verify the tenant is active; verify active Config, PromptSet, and VoiceRuntime; add the inbound route.
-2. LiveKit: start/verify LiveKit Server, its shared Redis, LiveKit SIP, and the existing Voice Agent; create/verify the inbound trunk and trunk-scoped individual dispatch rule; verify `agentName`.
-3. Telnyx: point the purchased DID to the LiveKit SIP endpoint and confirm `+E.164` destination/origination formats.
-4. Call the real number.
-5. Verify the path is Telnyx -> LiveKit SIP -> isolated room -> SIP participant -> Voice Agent -> Backend claim -> runtime-context -> greeting/conversation -> existing terminal lifecycle.
-6. Inspect `GET /admin/v1/calls/<call-session-id>` and verify channel/provider, caller/called numbers, both available SIP IDs, trunk/rule IDs, room/participant identity, status, and all three pinned revisions.
-7. Repeat/reconnect the agent job and verify the same SIP call returns the same CallSession.
-8. Request a configured handoff and verify a second SIP participant joins the same room, the AI leaves after answer, and the CallSession remains connected until the room ends.
-
-## Deferred before real staging/production deployment
-
-This Compose topology is not an Internet-ready SIP edge. Separately configure and verify public SIP signaling, RTP/media range, host/cloud firewall, NAT/public-IP behavior, provider source restrictions, DNS, TLS, Caddy for HTTP/WSS only, and production health/metrics monitoring. No SIP or RTP proxying through Caddy is intended.
+Unknown or malformed DIDs, unavailable tenants, missing SIP attributes, and unavailable outbound infrastructure fail closed. Raw phone numbers are not metric labels; external IDs appear only in expandable platform diagnostics.

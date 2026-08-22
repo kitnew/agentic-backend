@@ -22,7 +22,6 @@ async def test_outbound_sip_participant_joins_existing_room_and_waits_for_answer
         api_key="key",
         api_secret="secret",
         participant_token_ttl_seconds=600,
-        sip_outbound_trunk_id="ST_outbound",
     )
     adapter._client = SimpleNamespace(sip=Sip())  # type: ignore[assignment]
 
@@ -30,12 +29,15 @@ async def test_outbound_sip_participant_joins_existing_room_and_waits_for_answer
         room_name="sip-call-1",
         participant_identity="handoff-call-1",
         phone_number="+421900000001",
+        caller_number="+421551234567",
+        outbound_trunk_id="ST_outbound",
     )
 
     request = requests[0]
     assert result == ("handoff-call-1", "SCL_handoff")
     assert request.room_name == "sip-call-1"  # type: ignore[union-attr]
     assert request.sip_call_to == "+421900000001"  # type: ignore[union-attr]
+    assert request.sip_number == "+421551234567"  # type: ignore[union-attr]
     assert request.sip_trunk_id == "ST_outbound"  # type: ignore[union-attr]
     assert request.wait_until_answered is True  # type: ignore[union-attr]
     assert request.hide_phone_number is True  # type: ignore[union-attr]

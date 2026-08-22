@@ -1,3 +1,4 @@
+from hashlib import sha256
 from uuid import uuid4
 
 import pytest
@@ -88,6 +89,24 @@ def service(
         ),
         events,
     )
+
+
+def test_phone_log_fingerprint_is_keyed_and_not_plain_sha256() -> None:
+    current = call()
+    keyed = CallSessionService(
+        Calls(current),
+        None,
+        None,
+        None,
+        None,
+        None,
+        Conversations(),
+        Events(),
+        privacy_key=b"test-key",
+    )
+    fingerprint = keyed._phone_hash("+421551234567")
+    assert fingerprint != ""
+    assert fingerprint != sha256(b"+421551234567").hexdigest()[:16]
 
 
 @pytest.mark.asyncio

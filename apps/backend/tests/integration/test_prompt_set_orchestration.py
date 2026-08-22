@@ -124,11 +124,20 @@ async def test_targeted_rollout_plan_apply_and_call_pinning(
                 }
             ]
 
-            route = await client.post(
-                f"/admin/v1/tenants/{tenant_id}/inbound-routes",
-                json={"normalized_did": "+421552309901"},
+            telephony = await client.put(
+                f"/admin/v1/tenants/{tenant_id}/telephony",
+                json={
+                    "phone_number": "+421552309901",
+                    "handoff": {"destinations": {}},
+                },
             )
-            assert route.status_code == 201
+            assert telephony.status_code == 200
+            assert (
+                await client.post(
+                    f"/admin/v1/tenants/{tenant_id}/config/drafts/"
+                    f"{telephony.json()['draft_revision_id']}/publish"
+                )
+            ).status_code == 200
             call_payload = {
                 "channel": "sip",
                 "called_number": "+421552309901",

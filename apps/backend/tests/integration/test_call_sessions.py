@@ -131,11 +131,12 @@ async def prepare_voice_ready_tenant(
     knowledge_revision_id = knowledge_published.json()["published"]["revision"]["id"]
 
     config_drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
+    selected_config = config or config_v3()
     config_draft = await client.post(
         config_drafts_url,
         json={
-            "config": config or config_v3(),
-            "schema_version": (config or config_v3())["schema_version"],
+            "config": selected_config,
+            "schema_version": selected_config["schema_version"],
         },
     )
     assert config_draft.status_code == 201
@@ -162,11 +163,22 @@ async def prepare_voice_ready_tenant(
 
     voice_runtime_revision_id = (await apply_voice_runtime(client, tenant_id))["id"]
 
-    route = await client.post(
-        f"/admin/v1/tenants/{tenant_id}/inbound-routes",
-        json={"normalized_did": "+421552301410"},
+    telephony = await client.put(
+        f"/admin/v1/tenants/{tenant_id}/telephony",
+        json={
+            "phone_number": "+421552301410",
+            "handoff": selected_config.get(
+                "handoff", {"destinations": {}}
+            ),
+        },
     )
-    assert route.status_code == 201
+    assert telephony.status_code == 200
+    telephony_revision = await client.post(
+        f"/admin/v1/tenants/{tenant_id}/config/drafts/"
+        f"{telephony.json()['draft_revision_id']}/publish"
+    )
+    assert telephony_revision.status_code == 200
+    config_revision_id = telephony_revision.json()["id"]
     return (
         tenant_id,
         config_revision_id,
@@ -437,12 +449,6 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
             assert (
                 await client.post(f"{legacy_drafts_url}/{legacy_revision_id}/publish")
             ).status_code == 200
-            assert (
-                await client.post(
-                    f"/admin/v1/tenants/{legacy_tenant_id}/inbound-routes",
-                    json={"normalized_did": "+421552301411"},
-                )
-            ).status_code == 201
             legacy_call = await client.post(
                 calls_url,
                 json={
@@ -452,10 +458,7 @@ async def test_call_session_pins_revisions_and_enforces_lifecycle(
                 },
                 headers=voice_headers,
             )
-            assert legacy_call.status_code == 409
-            assert legacy_call.json()["detail"]["code"] == (
-                "tenant_configuration_not_voice_ready"
-            )
+            assert legacy_call.status_code == 404
     finally:
         async with database.transaction() as session:
             await session.execute(
@@ -503,20 +506,40 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
 ) -> None:
     class LiveKit:
         def __init__(self) -> None:
-            self.calls: list[tuple[str, str, str]] = []
+            self.calls: list[tuple[str, str, str, str, str]] = []
             self.fail = False
 
+        async def reconcile_shared_sip(self, **kwargs) -> tuple[str, str, str]:
+            return "ST_inbound", "ST_outbound", "SDR_shared"
+
         async def create_sip_participant(
-            self, *, room_name: str, participant_identity: str, phone_number: str
+            self,
+            *,
+            room_name: str,
+            participant_identity: str,
+            phone_number: str,
+            caller_number: str,
+            outbound_trunk_id: str,
         ) -> tuple[str, str]:
             if self.fail:
                 raise RuntimeError("provider detail")
-            self.calls.append((room_name, participant_identity, phone_number))
+            self.calls.append(
+                (
+                    room_name,
+                    participant_identity,
+                    phone_number,
+                    caller_number,
+                    outbound_trunk_id,
+                )
+            )
             return participant_identity, "SCL_handoff_1"
 
     database = Database(migrated_database_url)
     livekit = LiveKit()
-    app = create_app(settings=app_settings, database=database, livekit=livekit)  # type: ignore[arg-type]
+    settings = app_settings.model_copy(
+        update={"sip_provider_address": "sip.provider.example"}
+    )
+    app = create_app(settings=settings, database=database, livekit=livekit)  # type: ignore[arg-type]
     transport = ASGITransport(app=app)
     voice_token = service_token(
         service="voice-agent",
@@ -684,7 +707,13 @@ async def test_inbound_sip_claim_is_concurrent_idempotent_and_observable(
             )
             assert duplicate.json() == transfer.json()
             assert livekit.calls == [
-                ("sip-call-example", f"handoff-{call_id}", "+421900000001")
+                (
+                    "sip-call-example",
+                    f"handoff-{call_id}",
+                    "+421900000001",
+                    "+421552301410",
+                    "ST_outbound",
+                )
             ]
             relinquished = await client.post(
                 f"/internal/v1/calls/{call_id}/observations",

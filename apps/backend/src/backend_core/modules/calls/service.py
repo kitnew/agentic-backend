@@ -1,3 +1,4 @@
+import hmac
 import logging
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -16,6 +17,7 @@ from contracts import (
     TenantConfigV2,
     TenantConfigV3,
     TenantConfigV4,
+    TenantConfigV5,
     VoiceAgentPrompt,
     VoiceAgentRuntimeContext,
 )
@@ -62,8 +64,8 @@ from backend_core.modules.tenants.models import (
 )
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
-    InboundRouteRepository,
     PromptCompositionRepository,
+    TelephonyRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import normalize_e164
@@ -82,7 +84,7 @@ class CallSessionService:
     def __init__(
         self,
         calls: CallSessionRepository,
-        routes: InboundRouteRepository,
+        routes: TelephonyRepository,
         prompts: PromptCompositionRepository,
         tenants: TenantRepository,
         configs: ConfigRevisionRepository,
@@ -91,6 +93,7 @@ class CallSessionService:
         events: EventBus,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
+        privacy_key: bytes | None = None,
     ) -> None:
         self._calls = calls
         self._routes = routes
@@ -102,6 +105,12 @@ class CallSessionService:
         self._events = events
         self._tracer = tracer
         self._metrics = metrics
+        self._privacy_key = privacy_key
+
+    def _phone_hash(self, value: str) -> str:
+        if self._privacy_key is None:
+            return f"{value[:2]}…{value[-2:]}"
+        return hmac.new(self._privacy_key, value.encode(), sha256).hexdigest()[:16]
 
     async def create(
         self,
@@ -126,6 +135,8 @@ class CallSessionService:
             return existing, False
         resolution = await self._routes.resolve(data.called_number, lock_tenant=True)
         if resolution is None:
+            if self._metrics is not None:
+                self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
         tenant, config_revision = resolution
 
@@ -174,6 +185,8 @@ class CallSessionService:
     ) -> tuple[CallSession, bool]:
         called_number = normalize_e164(data.called_number)
         if called_number is None:
+            if self._metrics is not None:
+                self._metrics.telephony_routing_failure("invalid_called_number")
             raise CallSessionRouteUnavailableError
         caller_number = normalize_e164(data.caller_number)
         existing = await self._calls.get_by_sip_call(
@@ -196,12 +209,18 @@ class CallSessionService:
 
         resolution = await self._routes.resolve(called_number, lock_tenant=True)
         if resolution is None:
+            if self._metrics is not None:
+                self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
         tenant, config_revision = resolution
         logger.info(
             "Inbound SIP DID resolved",
-            extra={"called_number": called_number, "tenant_id": str(tenant.id)},
+            extra={
+                "called_number_hash": self._phone_hash(called_number),
+                "tenant_id": str(tenant.id),
+            },
         )
+
         _, prompt_set, voice_runtime = await self._voice_config(tenant, config_revision)
         call = CallSession(
             tenant_id=tenant.id,
@@ -481,9 +500,13 @@ class CallSessionService:
                     key: HandoffDestinationDefinition(
                         description=destination.description
                     )
-                    for key, destination in config.handoff.destinations.items()
+                    for key, destination in (
+                        config.telephony.handoff.destinations.items()
+                        if isinstance(config, TenantConfigV5)
+                        else config.handoff.destinations.items()
+                    )
                 }
-                if isinstance(config, TenantConfigV4)
+                if isinstance(config, (TenantConfigV4, TenantConfigV5))
                 else {}
             ),
         )
@@ -519,22 +542,47 @@ class CallSessionService:
         )
         if revision is None:
             raise HumanHandoffError("handoff_not_configured")
+        actual = await self._routes.get(call.tenant_id)
         try:
-            config = TenantConfigV4.model_validate(revision.config)
+            config = TENANT_CONFIG_SCHEMAS[revision.schema_version].model_validate(
+                revision.config
+            )
         except ValidationError as error:
             raise HumanHandoffError("handoff_not_configured") from error
-        if not config.handoff.destinations:
+        if isinstance(config, TenantConfigV5):
+            phone_number = config.telephony.phone_number
+            destinations = config.telephony.handoff.destinations
+        elif isinstance(config, TenantConfigV4):
+            phone_number = actual.phone_number if actual else None
+            destinations = config.handoff.destinations
+        else:
             raise HumanHandoffError("handoff_not_configured")
-        destination = config.handoff.destinations.get(data.destination)
+        if not phone_number or not destinations:
+            raise HumanHandoffError("handoff_not_configured")
+        destination = destinations.get(data.destination)
         if destination is None:
+            if self._metrics is not None:
+                self._metrics.telephony_handoff_failure("unknown_destination")
             raise HumanHandoffError("unknown_destination")
+        platform = await self._routes.platform()
+        if (
+            platform.outbound_trunk_id is None
+            or platform.provisioning_status.value != "ready"
+        ):
+            if self._metrics is not None:
+                self._metrics.telephony_handoff_failure("outbound_unavailable")
+            raise HumanHandoffError("outbound_unavailable")
         try:
             participant_identity, sip_call_id = await livekit.create_sip_participant(
                 room_name=call.room_name,
                 participant_identity=f"handoff-{call.id}",
                 phone_number=destination.phone_number,
+                caller_number=phone_number,
+                outbound_trunk_id=platform.outbound_trunk_id,
             )
         except Exception as error:
+            if self._metrics is not None:
+                self._metrics.telephony_handoff_failure("provider_failure")
             logger.exception(
                 "LiveKit SIP handoff dial failed",
                 extra={

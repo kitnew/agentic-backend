@@ -6,7 +6,6 @@ from json import dumps, loads
 import httpx
 
 from control_plane import __version__
-from control_plane.commands.inbound_routes import run_inbound_route
 from control_plane.commands.integrations import run_integration
 from control_plane.commands.knowledge import run_tenant_knowledge
 from control_plane.commands.prompt_sets import run_tenant_prompt_set
@@ -18,6 +17,7 @@ from control_plane.commands.prompts import (
 )
 from control_plane.commands.runtimes import run_platform_runtime, run_tenant_runtime
 from control_plane.commands.sync import run_sync
+from control_plane.commands.telephony import run_tenant_telephony
 from control_plane.commands.tenant_configs import run_tenant_config
 from control_plane.commands.tenants import fetch_tenants, run_tenant_create
 from control_plane.commands.voice_runtimes import run_tenant_voice_runtime
@@ -87,18 +87,23 @@ def parser() -> ArgumentParser:
     tenant_config_pull = tenant_config_actions.add_parser("pull")
     tenant_config_pull.add_argument("tenant_slug")
     tenant_config_pull.add_argument("--force", action="store_true")
-    tenant_inbound_route = tenant_actions.add_parser(
-        "inbound-route", help="manage inbound DID routing"
-    )
-    tenant_inbound_route_actions = tenant_inbound_route.add_subparsers(
-        dest="inbound_route_action", required=True
-    )
-    inbound_route_list = tenant_inbound_route_actions.add_parser("list")
-    inbound_route_list.add_argument("tenant_slug")
-    for action in ("add", "remove"):
-        command = tenant_inbound_route_actions.add_parser(action)
-        command.add_argument("tenant_slug")
-        command.add_argument("e164_number")
+    telephony = tenant_actions.add_parser("telephony", help="manage Tenant Telephony")
+    telephony_actions = telephony.add_subparsers(dest="telephony_action", required=True)
+    for action in ("show", "status"):
+        telephony_actions.add_parser(action).add_argument("tenant_slug")
+    set_number = telephony_actions.add_parser("set-number")
+    set_number.add_argument("tenant_slug")
+    set_number.add_argument("e164_number")
+    handoff = telephony_actions.add_parser("handoff")
+    handoff_actions = handoff.add_subparsers(dest="handoff_action", required=True)
+    handoff_set = handoff_actions.add_parser("set")
+    handoff_set.add_argument("tenant_slug")
+    handoff_set.add_argument("destination")
+    handoff_set.add_argument("e164_number")
+    handoff_set.add_argument("--label")
+    handoff_remove = handoff_actions.add_parser("remove")
+    handoff_remove.add_argument("tenant_slug")
+    handoff_remove.add_argument("destination")
     tenant_prompt_set = tenant_actions.add_parser(
         "prompt-set", help="inspect and reconcile the derived PromptSet"
     )
@@ -268,15 +273,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 force=getattr(arguments, "force", False),
             )
             return 0
-        if (
-            arguments.resource == "tenant"
-            and arguments.tenant_action == "inbound-route"
-        ):
-            run_inbound_route(
+        if arguments.resource == "tenant" and arguments.tenant_action == "telephony":
+            action = arguments.telephony_action
+            run_tenant_telephony(
                 settings,
-                arguments.inbound_route_action,
+                f"handoff-{arguments.handoff_action}" if action == "handoff" else action,
                 arguments.tenant_slug,
-                getattr(arguments, "e164_number", None),
+                number=getattr(arguments, "e164_number", None),
+                destination=getattr(arguments, "destination", None),
+                label=getattr(arguments, "label", None),
             )
             return 0
         if arguments.resource == "tenant" and arguments.tenant_action == "runtime":

@@ -3,11 +3,15 @@ import type {
   ConfigRevisionResponse,
   TenantConfigV3,
   TenantConfigV4,
+  TenantConfigV5,
   UpdateDraftRequest,
 } from "../../../core/api/generated/models";
-import type { AgentForm, HandoffForm } from "../schemas/agent-form";
+import type { AgentForm } from "../schemas/agent-form";
 
-export type EditableTenantConfig = TenantConfigV3 | TenantConfigV4;
+export type EditableTenantConfig =
+  | TenantConfigV3
+  | TenantConfigV4
+  | TenantConfigV5;
 
 export function editableTenantConfig(
   source: ActiveTenantConfig | ConfigRevisionResponse,
@@ -26,9 +30,6 @@ export function editableTenantConfig(
 }
 
 export function toAgentForm(config: EditableTenantConfig): AgentForm {
-  const destinations = (
-    "handoff" in config ? config.handoff?.destinations : {}
-  ) as Record<string, { description?: unknown; phone_number?: unknown }>;
   return {
     displayName: config.agent.display_name,
     greeting: config.agent.greeting,
@@ -41,15 +42,6 @@ export function toAgentForm(config: EditableTenantConfig): AgentForm {
     phones: ("contact" in config ? (config.contact?.phones ?? []) : []).join(
       "\n",
     ),
-    handoff: Object.fromEntries(
-      Object.entries(destinations).map(([key, value]) => [
-        key,
-        {
-          description: String(value.description ?? ""),
-          phoneNumber: String(value.phone_number ?? ""),
-        },
-      ]),
-    ) as HandoffForm,
   };
 }
 
@@ -78,17 +70,6 @@ export function toUpdateRequest(
         website: form.website.trim() || null,
         emails: lines(form.emails),
         phones: lines(form.phones),
-      },
-      handoff: {
-        destinations: Object.fromEntries(
-          Object.entries(form.handoff).map(([key, value]) => [
-            key,
-            {
-              description: value.description.trim(),
-              phone_number: value.phoneNumber.trim(),
-            },
-          ]),
-        ),
       },
     },
   };

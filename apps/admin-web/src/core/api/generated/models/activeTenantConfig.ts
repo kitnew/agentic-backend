@@ -8,9 +8,10 @@ import type { TenantConfigV1 } from './tenantConfigV1';
 import type { TenantConfigV2 } from './tenantConfigV2';
 import type { TenantConfigV3 } from './tenantConfigV3';
 import type { TenantConfigV4 } from './tenantConfigV4';
+import type { TenantConfigV5 } from './tenantConfigV5';
 
 export interface ActiveTenantConfig {
-  config: TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4;
+  config: TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4 | TenantConfigV5;
   published_at: string;
   revision_id: string;
   revision_number: number;

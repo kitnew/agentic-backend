@@ -41,11 +41,12 @@ from backend_core.modules.calls.schemas import (
 )
 from backend_core.modules.calls.service import CallSessionService
 from backend_core.modules.conversations.router import build_conversation_service
+from backend_core.modules.integrations.crypto import derive_observability_key
 from backend_core.modules.tenants.errors import TenantNotFoundError
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
-    InboundRouteRepository,
     PromptCompositionRepository,
+    TelephonyRepository,
     TenantRepository,
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
@@ -75,10 +76,11 @@ def build_call_session_service(
     command_stream: str = "application:commands",
     tracer: Tracer | None = None,
     metrics: CoreMetrics | None = None,
+    privacy_key: bytes | None = None,
 ) -> CallSessionService:
     return CallSessionService(
         CallSessionRepository(session),
-        InboundRouteRepository(session),
+        TelephonyRepository(session),
         PromptCompositionRepository(session),
         TenantRepository(session),
         ConfigRevisionRepository(session),
@@ -87,6 +89,7 @@ def build_call_session_service(
         TransactionalOutboxBus(session, event_stream, command_stream, tracer),
         tracer,
         metrics,
+        privacy_key,
     )
 
 
@@ -99,6 +102,9 @@ def get_call_session_service(
         request.app.state.settings.command_stream,
         request.app.state.outbox_tracer,
         request.app.state.core_metrics,
+        derive_observability_key(
+            request.app.state.settings.integration_encryption_key.get_secret_value()
+        ),
     )
 
 

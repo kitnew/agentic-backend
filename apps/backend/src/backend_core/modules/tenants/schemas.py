@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
+from contracts import HandoffConfig, TenantTelephonyConfig
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend_core.modules.tenants.models import (
@@ -72,44 +73,6 @@ class TenantResponse(BaseModel):
     updated_at: datetime
 
 
-class CreateInboundRouteRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    normalized_did: E164Did
-    enabled: bool = True
-
-
-class UpdateInboundRouteRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    normalized_did: E164Did | None = None
-    enabled: bool | None = None
-
-    @field_validator("normalized_did", "enabled", mode="before")
-    @classmethod
-    def fields_cannot_be_cleared(cls, value: Any) -> Any:
-        if value is None:
-            raise ValueError("field cannot be null")
-        return value
-
-    @model_validator(mode="after")
-    def at_least_one_change(self) -> UpdateInboundRouteRequest:
-        if not self.model_fields_set:
-            raise ValueError("at least one field must be provided")
-        return self
-
-
-class InboundRouteResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    tenant_id: UUID
-    normalized_did: str
-    enabled: bool
-    created_at: datetime
-    updated_at: datetime
-
-
 class ResolveTenantRouteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -122,6 +85,43 @@ class TenantRouteResolutionResponse(BaseModel):
     tenant_slug: str
     active_config_revision_id: UUID
     active_config_revision_number: int
+
+
+class TenantTelephonyUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    phone_number: E164Did | None = None
+    handoff: HandoffConfig = Field(default_factory=HandoffConfig)
+
+
+class TelephonyReadiness(BaseModel):
+    phone_number: str
+    incoming_calls: str
+    outgoing_calls: str
+    human_handoff: str
+
+
+class TenantTelephonyResponse(BaseModel):
+    tenant_id: UUID
+    desired: TenantTelephonyConfig
+    draft_revision_id: UUID | None
+    draft_version: int | None
+    published_revision_id: UUID | None
+    provisioning_status: str
+    last_error: str | None
+    last_reconciled_at: datetime | None
+    readiness: TelephonyReadiness
+
+
+class PlatformTelephonyResponse(BaseModel):
+    provider: str
+    inbound: str
+    outbound: str
+    dispatch: str
+    overall: str
+    last_error: str | None
+    last_reconciled_at: datetime | None
+    diagnostics: dict[str, str | None]
 
 
 class CreatePromptBundleDraftRequest(BaseModel):

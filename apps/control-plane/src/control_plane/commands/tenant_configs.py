@@ -17,6 +17,7 @@ from admin_client.generated.api.admintenants import (
     get_active_config_admin_v1_tenants_tenant_id_config_active_get,
     list_config_revisions_admin_v1_tenants_tenant_id_config_revisions_get,
     publish_config_draft_admin_v1_tenants_tenant_id_config_drafts_revision_id_publish_post,
+    show_tenant_telephony_admin_v1_tenants_tenant_id_telephony_get,
     update_config_draft_admin_v1_tenants_tenant_id_config_drafts_revision_id_patch,
     validate_config_admin_v1_tenants_tenant_id_config_validate_post,
     validate_config_draft_admin_v1_tenants_tenant_id_config_drafts_revision_id_validate_post,
@@ -38,6 +39,9 @@ from admin_client.generated.models.integration_connection_status import (
 )
 from admin_client.generated.models.integration_provider import IntegrationProvider
 from admin_client.generated.models.tenant_response import TenantResponse
+from admin_client.generated.models.tenant_telephony_response import (
+    TenantTelephonyResponse,
+)
 from admin_client.generated.models.update_draft_request import UpdateDraftRequest
 from admin_client.generated.models.update_draft_request_config_type_0 import (
     UpdateDraftRequestConfigType0,
@@ -65,6 +69,7 @@ from control_plane.commands.prompts import (
 from control_plane.settings import Settings
 
 CURRENT_SCHEMA_VERSION = 4
+RUNTIME_SCHEMA_VERSION = 5
 MAX_DIFFS = 20
 _JSON_SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 _POST_CALL_EXECUTION = {
@@ -164,6 +169,11 @@ def parse_tenant_yaml(text: str) -> dict[str, Any]:
         raise PromptCommandError(
             f"TenantConfig schema version {shown} is not writable by this client. "
             f"Current authoring schema is version {CURRENT_SCHEMA_VERSION}.",
+            2,
+        )
+    if "telephony" in document or "handoff" in document:
+        raise PromptCommandError(
+            "Telephony is managed only through tenant telephony commands or Admin Web",
             2,
         )
     _require_json_values(document)
@@ -508,6 +518,8 @@ def authoring_config(
 ) -> dict[str, Any]:
     """Render a pinned runtime config back to its small authoring surface."""
     result = canonical_config(config)
+    result.pop("telephony", None)
+    result["schema_version"] = CURRENT_SCHEMA_VERSION
     actions = result.get("post_call_actions")
     capabilities = result.get("capabilities")
     has_capability_execution = isinstance(capabilities, dict) and any(
@@ -724,18 +736,27 @@ def _validate(
     client: AuthenticatedClient,
     tenant_id: UUID,
     config: Mapping[str, Any],
-    schema_version: int,
     *,
     local: bool,
 ) -> dict[str, Any] | None:
     runtime_config = compile_authoring_config(client, tenant_id, config)
+    telephony_response = (
+        show_tenant_telephony_admin_v1_tenants_tenant_id_telephony_get.sync_detailed(
+            tenant_id, client=client
+        )
+    )
+    _config_response_error(telephony_response)
+    if not isinstance(telephony_response.parsed, TenantTelephonyResponse):
+        raise PromptCommandError("invalid Backend telephony response", 1)
+    runtime_config["schema_version"] = RUNTIME_SCHEMA_VERSION
+    runtime_config["telephony"] = telephony_response.parsed.desired.to_dict()
     response = (
         validate_config_admin_v1_tenants_tenant_id_config_validate_post.sync_detailed(
             tenant_id,
             client=client,
             body=ValidateConfigRequest(
                 config=ValidateConfigRequestConfig.from_dict(runtime_config),
-                schema_version=schema_version,
+                schema_version=RUNTIME_SCHEMA_VERSION,
             ),
         )
     )
@@ -763,7 +784,10 @@ def _validate(
 
 def _schema_version(config: Mapping[str, Any], context: str) -> int:
     version = config.get("schema_version")
-    if type(version) is not int or version != CURRENT_SCHEMA_VERSION:
+    if type(version) is not int or version not in {
+        CURRENT_SCHEMA_VERSION,
+        RUNTIME_SCHEMA_VERSION,
+    }:
         raise PromptCommandError(
             f"{context} uses TenantConfig schema version {version!r}; explicit migration "
             f"to writable schema {CURRENT_SCHEMA_VERSION} is required",
@@ -790,7 +814,6 @@ def _comparison_config(
             client,
             tenant_id,
             raw,
-            state.draft.schema_version,
             local=False,
         ) or canonical_config(raw)
     if state.active is not None:
@@ -943,7 +966,7 @@ def _plan(
 ) -> None:
     raw = _read(path, required=False)
     local = (
-        _validate(client, tenant.id, raw, CURRENT_SCHEMA_VERSION, local=True)
+        _validate(client, tenant.id, raw, local=True)
         if raw is not None
         else None
     )
@@ -983,7 +1006,7 @@ def _push(
 ) -> None:
     raw = _read(path, required=True)
     assert raw is not None
-    local = _validate(client, tenant.id, raw, CURRENT_SCHEMA_VERSION, local=True)
+    local = _validate(client, tenant.id, raw, local=True)
     assert local is not None
     state = _state(client, tenant.id)
     remote = _comparison_config(client, tenant.id, state)
@@ -998,7 +1021,7 @@ def _push(
             client=client,
             body=CreateDraftRequest(
                 config=CreateDraftRequestConfigType0.from_dict(local),
-                schema_version=CURRENT_SCHEMA_VERSION,
+                schema_version=RUNTIME_SCHEMA_VERSION,
             ),
         )
     else:
@@ -1008,7 +1031,7 @@ def _push(
             client=client,
             body=UpdateDraftRequest(
                 config=UpdateDraftRequestConfigType0.from_dict(local),
-                schema_version=CURRENT_SCHEMA_VERSION,
+                schema_version=RUNTIME_SCHEMA_VERSION,
             ),
             if_match=f'"{state.draft.version}"',
         )

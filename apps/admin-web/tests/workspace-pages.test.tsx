@@ -71,7 +71,7 @@ describe("workspace overviews", () => {
       within(navigation)
         .getAllByRole("link")
         .map((link) => link.textContent),
-    ).toEqual(["Runtime", "System Prompt", "Profile Prompt"]);
+    ).toEqual(["Runtime", "Telephony", "System Prompt", "Profile Prompt"]);
     await user.click(
       await screen.findByRole("button", { name: "Publish All" }),
     );

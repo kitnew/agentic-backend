@@ -262,10 +262,9 @@ function PlatformRuntimeEditor({
                 text("llm", "reasoning_effort", event.target.value)
               }
             >
-              {(
-                reasoningModel
-                  ? (["none", "low", "medium", "high", "xhigh", "max"] as const)
-                  : (["none"] as const)
+              {(reasoningModel
+                ? (["none", "low", "medium", "high", "xhigh", "max"] as const)
+                : (["none"] as const)
               ).map((effort) => (
                 <option key={effort} value={effort}>
                   {effort}

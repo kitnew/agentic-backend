@@ -73,11 +73,6 @@ contact:
   phones:
   - '+421900000000'
   website: null
-handoff:
-  destinations:
-    reception:
-      description: Reservations, check-in, payments and general reception requests
-      phone_number: '+421900000001'
 post_call_actions:
 - id: send_transcript
   type: http.post_json

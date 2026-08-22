@@ -210,16 +210,38 @@ class TenantConfigV4(TenantConfigV3):
     handoff: HandoffConfig = Field(default_factory=HandoffConfig)
 
 
-TenantConfig = TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4
+class TenantTelephonyConfig(_TenantConfigModel):
+    phone_number: str | None = Field(
+        default=None, pattern=r"^\+[1-9]\d{1,14}$"
+    )
+    handoff: HandoffConfig = Field(default_factory=HandoffConfig)
+
+
+class TenantConfigV5(TenantConfigV3):
+    schema_version: Literal[5]  # type: ignore[assignment]
+    telephony: TenantTelephonyConfig = Field(default_factory=TenantTelephonyConfig)
+
+
+TenantConfig = (
+    TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4 | TenantConfigV5
+)
 
 # The persisted revision schema version is the dispatch key for deserialization.
 TENANT_CONFIG_SCHEMAS: dict[
-    int, type[TenantConfigV1 | TenantConfigV2 | TenantConfigV3 | TenantConfigV4]
+    int,
+    type[
+        TenantConfigV1
+        | TenantConfigV2
+        | TenantConfigV3
+        | TenantConfigV4
+        | TenantConfigV5
+    ],
 ] = {
     1: TenantConfigV1,
     2: TenantConfigV2,
     3: TenantConfigV3,
     4: TenantConfigV4,
+    5: TenantConfigV5,
 }
 
 

@@ -83,6 +83,18 @@ class CoreMetrics:
         self._integration_duration = self.meter.create_histogram(
             "integration.duration", unit="s"
         )
+        self._telephony_reconciliations = self.meter.create_counter(
+            "telephony.reconciliations"
+        )
+        self._telephony_reconciliation_duration = self.meter.create_histogram(
+            "telephony.reconciliation.duration", unit="s"
+        )
+        self._telephony_routing_failures = self.meter.create_counter(
+            "telephony.inbound_routing.failures"
+        )
+        self._telephony_handoff_failures = self.meter.create_counter(
+            "telephony.handoff_setup.failures"
+        )
 
     def call_started(self) -> None:
         self._calls_started.add(1)
@@ -171,6 +183,21 @@ class CoreMetrics:
         self._integration_duration.record(duration_seconds, attributes)
         if status == "failed":
             self._integration_failures.add(1, attributes)
+
+    def telephony_reconciliation(self, status: str, duration_seconds: float) -> None:
+        attributes = metric_attributes({"status": status})
+        self._telephony_reconciliations.add(1, attributes)
+        self._telephony_reconciliation_duration.record(duration_seconds, attributes)
+
+    def telephony_routing_failure(self, reason: str) -> None:
+        self._telephony_routing_failures.add(
+            1, metric_attributes({"error.type": reason})
+        )
+
+    def telephony_handoff_failure(self, reason: str) -> None:
+        self._telephony_handoff_failures.add(
+            1, metric_attributes({"error.type": reason})
+        )
 
 
 def _capability_attributes(

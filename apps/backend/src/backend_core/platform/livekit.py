@@ -29,13 +29,11 @@ class LiveKitAdapter:
         api_key: str,
         api_secret: str,
         participant_token_ttl_seconds: int,
-        sip_outbound_trunk_id: str | None = None,
     ) -> None:
         self._url = url
         self._api_key = api_key
         self._api_secret = api_secret
         self._participant_token_ttl_seconds = participant_token_ttl_seconds
-        self._sip_outbound_trunk_id = sip_outbound_trunk_id
         self._client: api.LiveKitAPI | None = None
         self._session: aiohttp.ClientSession | None = None
         self._trace_config: aiohttp.TraceConfig | None = None
@@ -162,21 +160,137 @@ class LiveKitAdapter:
         )
 
     async def create_sip_participant(
-        self, *, room_name: str, participant_identity: str, phone_number: str
+        self,
+        *,
+        room_name: str,
+        participant_identity: str,
+        phone_number: str,
+        caller_number: str,
+        outbound_trunk_id: str,
     ) -> tuple[str, str]:
-        if self._sip_outbound_trunk_id is None:
-            raise RuntimeError("LiveKit SIP outbound trunk is not configured")
         participant = await self.client.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
                 room_name=room_name,
                 participant_identity=participant_identity,
                 sip_call_to=phone_number,
-                sip_trunk_id=self._sip_outbound_trunk_id,
+                sip_number=caller_number,
+                sip_trunk_id=outbound_trunk_id,
                 wait_until_answered=True,
                 hide_phone_number=True,
             )
         )
         return participant.participant_identity, participant.sip_call_id
+
+    async def reconcile_shared_sip(
+        self,
+        *,
+        numbers: list[str],
+        provider_address: str,
+        provider_username: str | None,
+        provider_password: str | None,
+        agent_name: str,
+        inbound_trunk_id: str | None,
+        outbound_trunk_id: str | None,
+        dispatch_rule_id: str | None,
+    ) -> tuple[str, str, str]:
+        inbound = await self.client.sip.list_sip_inbound_trunk(
+            api.ListSIPInboundTrunkRequest(
+                trunk_ids=[inbound_trunk_id] if inbound_trunk_id else []
+            )
+        )
+        inbound_item = next(
+            (
+                item
+                for item in inbound.items
+                if inbound_trunk_id or item.name == "Agent Platform shared inbound"
+            ),
+            None,
+        )
+        if inbound_item is None:
+            inbound_item = await self.client.sip.create_sip_inbound_trunk(
+                api.CreateSIPInboundTrunkRequest(
+                    trunk=api.SIPInboundTrunkInfo(
+                        name="Agent Platform shared inbound", numbers=numbers
+                    )
+                )
+            )
+        elif list(inbound_item.numbers) != numbers:
+            inbound_item = await self.client.sip.update_sip_inbound_trunk_fields(
+                inbound_item.sip_trunk_id, numbers=numbers
+            )
+
+        outbound = await self.client.sip.list_sip_outbound_trunk(
+            api.ListSIPOutboundTrunkRequest(
+                trunk_ids=[outbound_trunk_id] if outbound_trunk_id else []
+            )
+        )
+        outbound_item = next(
+            (
+                item
+                for item in outbound.items
+                if outbound_trunk_id or item.name == "Agent Platform shared outbound"
+            ),
+            None,
+        )
+        if outbound_item is None:
+            outbound_item = await self.client.sip.create_sip_outbound_trunk(
+                api.CreateSIPOutboundTrunkRequest(
+                    trunk=api.SIPOutboundTrunkInfo(
+                        name="Agent Platform shared outbound",
+                        address=provider_address,
+                        numbers=numbers,
+                        auth_username=provider_username or "",
+                        auth_password=provider_password or "",
+                    )
+                )
+            )
+        else:
+            outbound_item = await self.client.sip.update_sip_outbound_trunk_fields(
+                outbound_item.sip_trunk_id,
+                address=provider_address,
+                numbers=numbers,
+                auth_username=provider_username,
+                auth_password=provider_password,
+            )
+
+        dispatch = await self.client.sip.list_sip_dispatch_rule(
+            api.ListSIPDispatchRuleRequest(
+                dispatch_rule_ids=[dispatch_rule_id] if dispatch_rule_id else []
+            )
+        )
+        dispatch_item = next(
+            (
+                item
+                for item in dispatch.items
+                if dispatch_rule_id or item.name == "Agent Platform shared dispatch"
+            ),
+            None,
+        )
+        if dispatch_item is None:
+            dispatch_item = await self.client.sip.create_sip_dispatch_rule(
+                api.CreateSIPDispatchRuleRequest(
+                    name="Agent Platform shared dispatch",
+                    trunk_ids=[inbound_item.sip_trunk_id],
+                    rule=api.SIPDispatchRule(
+                        dispatch_rule_individual=api.SIPDispatchRuleIndividual(
+                            room_prefix="sip-call-"
+                        )
+                    ),
+                    room_config=api.RoomConfiguration(
+                        agents=[api.RoomAgentDispatch(agent_name=agent_name)]
+                    ),
+                )
+            )
+        elif list(dispatch_item.trunk_ids) != [inbound_item.sip_trunk_id]:
+            dispatch_item = await self.client.sip.update_sip_dispatch_rule_fields(
+                dispatch_item.sip_dispatch_rule_id,
+                trunk_ids=[inbound_item.sip_trunk_id],
+            )
+        return (
+            inbound_item.sip_trunk_id,
+            outbound_item.sip_trunk_id,
+            dispatch_item.sip_dispatch_rule_id,
+        )
 
     def issue_participant_token(self, *, room_name: str, identity: str) -> str:
         grants = api.VideoGrants(

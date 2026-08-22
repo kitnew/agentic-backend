@@ -10,18 +10,6 @@ class TenantSlugConflictError(Exception):
     pass
 
 
-class InboundRouteNotFoundError(Exception):
-    pass
-
-
-class InboundRouteDidConflictError(Exception):
-    pass
-
-
-class InboundRouteUnavailableError(Exception):
-    pass
-
-
 class PromptBundleRevisionError(Exception):
     pass
 
@@ -99,4 +87,8 @@ class InvalidTenantConfigError(ConfigRevisionError):
 
 
 class ActiveConfigNotFoundError(ConfigRevisionError):
+    pass
+
+
+class TelephonyPhoneConflictError(ConfigRevisionError):
     pass

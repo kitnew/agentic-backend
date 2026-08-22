@@ -36,6 +36,9 @@ def test_core_metrics_have_authoritative_units_and_no_identifier_dimensions() ->
     )
     metrics.command_retry("summary_generation")
     metrics.command_dlq("summary_generation", "provider_timeout")
+    metrics.telephony_reconciliation("ready", 0.5)
+    metrics.telephony_routing_failure("unknown_did")
+    metrics.telephony_handoff_failure("outbound_unavailable")
     provider.force_flush()
 
     points = _points(reader)
@@ -43,6 +46,10 @@ def test_core_metrics_have_authoritative_units_and_no_identifier_dimensions() ->
     assert points["call.duration"][0].sum == 12.5
     assert points["capability.executions"][0].value == 1
     assert points["worker.command.retries"][0].value == 1
+    assert points["telephony.reconciliations"][0].value == 1
+    assert points["telephony.reconciliation.duration"][0].sum == 0.5
+    assert points["telephony.inbound_routing.failures"][0].value == 1
+    assert points["telephony.handoff_setup.failures"][0].value == 1
     assert all(
         not {"call.id", "conversation.id", "operation.id", "message.id"}
         & set(point.attributes)

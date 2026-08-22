@@ -1,8 +1,3 @@
-export type HandoffForm = Record<
-  string,
-  { description: string; phoneNumber: string }
->;
-
 export type AgentForm = {
   displayName: string;
   greeting: string;
@@ -11,5 +6,4 @@ export type AgentForm = {
   website: string;
   emails: string;
   phones: string;
-  handoff: HandoffForm;
 };

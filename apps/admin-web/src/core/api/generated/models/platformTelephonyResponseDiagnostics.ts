@@ -5,7 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface UpdateInboundRouteRequest {
-  enabled?: boolean | null;
-  normalized_did?: string | null;
-}
+export type PlatformTelephonyResponseDiagnostics = {[key: string]: string | null};

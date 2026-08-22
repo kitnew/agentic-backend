@@ -3,7 +3,10 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from backend_core.modules.integrations.crypto import IntegrationSecretCipher
+from backend_core.modules.integrations.crypto import (
+    IntegrationSecretCipher,
+    derive_observability_key,
+)
 from backend_core.modules.integrations.models import (
     IntegrationConnection,
     IntegrationConnectionStatus,
@@ -27,6 +30,12 @@ SECRET = {
         "token_uri": "https://oauth2.googleapis.com/token",
     }
 }
+
+
+def test_observability_key_is_domain_separated_from_master_key() -> None:
+    derived = derive_observability_key(KEY)
+    assert derived != base64.b64decode(KEY)
+    assert derived == derive_observability_key(KEY)
 
 
 class Tenants:

@@ -23,7 +23,6 @@ from .conversation_response import ConversationResponse
 from .conversation_scope import ConversationScope
 from .create_draft_request import CreateDraftRequest
 from .create_draft_request_config_type_0 import CreateDraftRequestConfigType0
-from .create_inbound_route_request import CreateInboundRouteRequest
 from .create_integration_connection_request import CreateIntegrationConnectionRequest
 from .create_integration_connection_request_config import (
     CreateIntegrationConnectionRequestConfig,
@@ -44,7 +43,6 @@ from .handoff_config import HandoffConfig
 from .handoff_config_destinations import HandoffConfigDestinations
 from .handoff_destination import HandoffDestination
 from .http_validation_error import HTTPValidationError
-from .inbound_route_response import InboundRouteResponse
 from .integration_connection_response import IntegrationConnectionResponse
 from .integration_connection_response_config import IntegrationConnectionResponseConfig
 from .integration_connection_status import IntegrationConnectionStatus
@@ -85,6 +83,10 @@ from .platform_runtime_policy import PlatformRuntimePolicy
 from .platform_runtime_request import PlatformRuntimeRequest
 from .platform_runtime_revision_response import PlatformRuntimeRevisionResponse
 from .platform_runtime_state_response import PlatformRuntimeStateResponse
+from .platform_telephony_response import PlatformTelephonyResponse
+from .platform_telephony_response_diagnostics import (
+    PlatformTelephonyResponseDiagnostics,
+)
 from .post_call_action import PostCallAction
 from .post_call_action_input import PostCallActionInput
 from .post_call_action_input_artifact import PostCallActionInputArtifact
@@ -103,12 +105,14 @@ from .prompt_set_resolution_error_response import PromptSetResolutionErrorRespon
 from .prompt_set_revision_response import PromptSetRevisionResponse
 from .prompt_set_rollout_summary_response import PromptSetRolloutSummaryResponse
 from .prompt_text_revision_response import PromptTextRevisionResponse
+from .publish_all_response import PublishAllResponse
 from .runtime_revision_status import RuntimeRevisionStatus
 from .runtime_validation_response import RuntimeValidationResponse
 from .server_vad_runtime_settings import ServerVADRuntimeSettings
 from .set_integration_secret_request import SetIntegrationSecretRequest
 from .set_integration_secret_request_secret import SetIntegrationSecretRequestSecret
 from .stt_runtime_settings import STTRuntimeSettings
+from .telephony_readiness import TelephonyReadiness
 from .tenant_capability_profile import TenantCapabilityProfile
 from .tenant_capability_profile_agent_input_schema import (
     TenantCapabilityProfileAgentInputSchema,
@@ -124,6 +128,8 @@ from .tenant_config_v3 import TenantConfigV3
 from .tenant_config_v3_capabilities import TenantConfigV3Capabilities
 from .tenant_config_v4 import TenantConfigV4
 from .tenant_config_v4_capabilities import TenantConfigV4Capabilities
+from .tenant_config_v5 import TenantConfigV5
+from .tenant_config_v5_capabilities import TenantConfigV5Capabilities
 from .tenant_llm_runtime_override import TenantLLMRuntimeOverride
 from .tenant_llm_runtime_override_reasoning_effort_type_0 import (
     TenantLLMRuntimeOverrideReasoningEffortType0,
@@ -135,12 +141,14 @@ from .tenant_runtime_request import TenantRuntimeRequest
 from .tenant_runtime_revision_response import TenantRuntimeRevisionResponse
 from .tenant_runtime_state_response import TenantRuntimeStateResponse
 from .tenant_status import TenantStatus
+from .tenant_telephony_config import TenantTelephonyConfig
+from .tenant_telephony_response import TenantTelephonyResponse
+from .tenant_telephony_update import TenantTelephonyUpdate
 from .tenant_tts_runtime_override import TenantTTSRuntimeOverride
 from .tts_runtime_settings import TTSRuntimeSettings
 from .turn_runtime_settings import TurnRuntimeSettings
 from .update_draft_request import UpdateDraftRequest
 from .update_draft_request_config_type_0 import UpdateDraftRequestConfigType0
-from .update_inbound_route_request import UpdateInboundRouteRequest
 from .update_integration_connection_request import UpdateIntegrationConnectionRequest
 from .update_integration_connection_request_config_type_0 import (
     UpdateIntegrationConnectionRequestConfigType0,
@@ -187,7 +195,6 @@ __all__ = (
     "ConversationScope",
     "CreateDraftRequest",
     "CreateDraftRequestConfigType0",
-    "CreateInboundRouteRequest",
     "CreateIntegrationConnectionRequest",
     "CreateIntegrationConnectionRequestConfig",
     "CreatePlatformPromptDraftRequest",
@@ -204,7 +211,6 @@ __all__ = (
     "HandoffConfig",
     "HandoffConfigDestinations",
     "HandoffDestination",
-    "InboundRouteResponse",
     "IntegrationConnectionResponse",
     "IntegrationConnectionResponseConfig",
     "IntegrationConnectionStatus",
@@ -239,6 +245,8 @@ __all__ = (
     "PlatformRuntimeRequest",
     "PlatformRuntimeRevisionResponse",
     "PlatformRuntimeStateResponse",
+    "PlatformTelephonyResponse",
+    "PlatformTelephonyResponseDiagnostics",
     "PostCallAction",
     "PostCallActionInput",
     "PostCallActionInputArtifact",
@@ -257,6 +265,7 @@ __all__ = (
     "PromptSetRevisionResponse",
     "PromptSetRolloutSummaryResponse",
     "PromptTextRevisionResponse",
+    "PublishAllResponse",
     "RuntimeRevisionStatus",
     "RuntimeValidationResponse",
     "STTRuntimeSettings",
@@ -264,6 +273,7 @@ __all__ = (
     "SetIntegrationSecretRequest",
     "SetIntegrationSecretRequestSecret",
     "TTSRuntimeSettings",
+    "TelephonyReadiness",
     "TenantCapabilityProfile",
     "TenantCapabilityProfileAgentInputSchema",
     "TenantCapabilityProfileValidationFixturesItem",
@@ -275,6 +285,8 @@ __all__ = (
     "TenantConfigV3Capabilities",
     "TenantConfigV4",
     "TenantConfigV4Capabilities",
+    "TenantConfigV5",
+    "TenantConfigV5Capabilities",
     "TenantLLMRuntimeOverride",
     "TenantLLMRuntimeOverrideReasoningEffortType0",
     "TenantPromptRevisionResponse",
@@ -285,10 +297,12 @@ __all__ = (
     "TenantRuntimeStateResponse",
     "TenantStatus",
     "TenantTTSRuntimeOverride",
+    "TenantTelephonyConfig",
+    "TenantTelephonyResponse",
+    "TenantTelephonyUpdate",
     "TurnRuntimeSettings",
     "UpdateDraftRequest",
     "UpdateDraftRequestConfigType0",
-    "UpdateInboundRouteRequest",
     "UpdateIntegrationConnectionRequest",
     "UpdateIntegrationConnectionRequestConfigType0",
     "UpdatePromptSetDraftRequest",

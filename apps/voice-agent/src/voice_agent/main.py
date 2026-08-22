@@ -234,6 +234,7 @@ def handoff_tool(
                     "unknown_destination",
                     "call_not_transferable",
                     "transfer_failed",
+                    "outbound_unavailable",
                 }:
                     code = candidate
             except KeyError, TypeError, ValueError:

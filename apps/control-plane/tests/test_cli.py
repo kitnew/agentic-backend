@@ -404,11 +404,8 @@ def test_integration_command_hierarchy(monkeypatch: pytest.MonkeyPatch) -> None:
     }
 
 
-@pytest.mark.parametrize(
-    ("action", "number"),
-    [("list", None), ("add", "+421552301410"), ("remove", "+421552301410")],
-)
-def test_inbound_route_command_hierarchy(
+@pytest.mark.parametrize(("action", "number"), [("show", None), ("set-number", "+421552301410")])
+def test_telephony_command_hierarchy(
     monkeypatch: pytest.MonkeyPatch, action: str, number: str | None
 ) -> None:
     monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
@@ -416,12 +413,12 @@ def test_inbound_route_command_hierarchy(
     seen: dict[str, object] = {}
     monkeypatch.setattr(
         cli,
-        "run_inbound_route",
-        lambda settings, selected, slug, did=None: seen.update(
-            action=selected, slug=slug, number=did
+        "run_tenant_telephony",
+        lambda settings, selected, slug, **kwargs: seen.update(
+            action=selected, slug=slug, number=kwargs.get("number")
         ),
     )
-    arguments = ["tenant", "inbound-route", action, "penzion-grand"]
+    arguments = ["tenant", "telephony", action, "penzion-grand"]
     if number is not None:
         arguments.append(number)
     assert cli.main(arguments) == 0

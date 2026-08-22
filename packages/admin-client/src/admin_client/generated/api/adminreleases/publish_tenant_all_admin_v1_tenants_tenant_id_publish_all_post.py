@@ -8,7 +8,7 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
-from ...models.inbound_route_response import InboundRouteResponse
+from ...models.publish_all_response import PublishAllResponse
 from ...types import Response
 
 
@@ -17,8 +17,8 @@ def _get_kwargs(
 ) -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
-        "method": "get",
-        "url": "/admin/v1/tenants/{tenant_id}/inbound-routes".format(
+        "method": "post",
+        "url": "/admin/v1/tenants/{tenant_id}/publish-all".format(
             tenant_id=quote(str(tenant_id), safe=""),
         ),
     }
@@ -28,14 +28,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | list[InboundRouteResponse] | None:
+) -> HTTPValidationError | PublishAllResponse | None:
     if response.status_code == 200:
-        response_200 = []
-        _response_200 = response.json()
-        for response_200_item_data in _response_200:
-            response_200_item = InboundRouteResponse.from_dict(response_200_item_data)
-
-            response_200.append(response_200_item)
+        response_200 = PublishAllResponse.from_dict(response.json())
 
         return response_200
 
@@ -52,7 +47,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | list[InboundRouteResponse]]:
+) -> Response[HTTPValidationError | PublishAllResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -65,8 +60,8 @@ def sync_detailed(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | list[InboundRouteResponse]]:
-    """List Inbound Routes
+) -> Response[HTTPValidationError | PublishAllResponse]:
+    """Publish Tenant All
 
     Args:
         tenant_id (UUID):
@@ -76,7 +71,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[InboundRouteResponse]]
+        Response[HTTPValidationError | PublishAllResponse]
     """
 
     kwargs = _get_kwargs(
@@ -94,8 +89,8 @@ def sync(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | list[InboundRouteResponse] | None:
-    """List Inbound Routes
+) -> HTTPValidationError | PublishAllResponse | None:
+    """Publish Tenant All
 
     Args:
         tenant_id (UUID):
@@ -105,7 +100,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[InboundRouteResponse]
+        HTTPValidationError | PublishAllResponse
     """
 
     return sync_detailed(
@@ -118,8 +113,8 @@ async def asyncio_detailed(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[HTTPValidationError | list[InboundRouteResponse]]:
-    """List Inbound Routes
+) -> Response[HTTPValidationError | PublishAllResponse]:
+    """Publish Tenant All
 
     Args:
         tenant_id (UUID):
@@ -129,7 +124,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[InboundRouteResponse]]
+        Response[HTTPValidationError | PublishAllResponse]
     """
 
     kwargs = _get_kwargs(
@@ -145,8 +140,8 @@ async def asyncio(
     tenant_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> HTTPValidationError | list[InboundRouteResponse] | None:
-    """List Inbound Routes
+) -> HTTPValidationError | PublishAllResponse | None:
+    """Publish Tenant All
 
     Args:
         tenant_id (UUID):
@@ -156,7 +151,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[InboundRouteResponse]
+        HTTPValidationError | PublishAllResponse
     """
 
     return (

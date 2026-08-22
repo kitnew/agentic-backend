@@ -8,6 +8,7 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     Response,
     status,
 )
@@ -20,30 +21,26 @@ from backend_core.modules.tenants.errors import (
     ConfigRevisionImmutableError,
     ConfigRevisionNotFoundError,
     ConfigRevisionVersionConflictError,
-    InboundRouteDidConflictError,
-    InboundRouteNotFoundError,
-    InboundRouteUnavailableError,
     InvalidTenantConfigError,
     PromptRevisionError,
     PromptSetResolutionError,
+    TelephonyPhoneConflictError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
-    InboundRouteRepository,
     PromptCompositionRepository,
+    TelephonyRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     ConfigRevisionResponse,
     CreateDraftRequest,
-    CreateInboundRouteRequest,
     CreatePlatformPromptDraftRequest,
     CreatePromptSetDraftRequest,
     CreateTenantRequest,
     CreateTextDraftRequest,
-    InboundRouteResponse,
     KnowledgeBasePlanResponse,
     KnowledgeBasePublishResponse,
     KnowledgeBasePushResponse,
@@ -53,6 +50,7 @@ from backend_core.modules.tenants.schemas import (
     KnowledgeDocumentsRequest,
     PlatformPromptPublishResponse,
     PlatformPromptRevisionResponse,
+    PlatformTelephonyResponse,
     PromptSetApplyResponse,
     PromptSetDetailResponse,
     PromptSetPlanResponse,
@@ -64,8 +62,9 @@ from backend_core.modules.tenants.schemas import (
     TenantPromptRevisionResponse,
     TenantResponse,
     TenantRouteResolutionResponse,
+    TenantTelephonyResponse,
+    TenantTelephonyUpdate,
     UpdateDraftRequest,
-    UpdateInboundRouteRequest,
     UpdatePromptSetDraftRequest,
     UpdateTextDraftRequest,
     ValidateConfigRequest,
@@ -74,9 +73,12 @@ from backend_core.modules.tenants.schemas import (
 )
 from backend_core.modules.tenants.service import (
     ConfigUseCases,
-    InboundRouteService,
     PromptCompositionUseCases,
     TenantService,
+)
+from backend_core.modules.tenants.telephony import (
+    PlatformTelephonyService,
+    TenantTelephonyService,
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import DatabaseSession
@@ -93,6 +95,11 @@ internal_router = APIRouter(
 platform_router = APIRouter(
     prefix="/admin/v1/platform/prompts",
     tags=["admin:platform-prompts"],
+    dependencies=[Depends(require_admin)],
+)
+telephony_platform_router = APIRouter(
+    prefix="/admin/v1/platform/telephony",
+    tags=["admin:platform-telephony"],
     dependencies=[Depends(require_admin)],
 )
 
@@ -112,6 +119,7 @@ def get_config_use_cases(
         ConfigRevisionRepository(session),
         IntegrationConnectionRepository(session),
         PromptCompositionRepository(session),
+        TelephonyRepository(session),
     )
 
 
@@ -121,18 +129,33 @@ ConfigUseCasesDependency = Annotated[
 ]
 
 
-def get_inbound_route_service(
-    session: DatabaseSession,
-) -> InboundRouteService:
-    return InboundRouteService(
+def get_tenant_telephony_service(session: DatabaseSession) -> TenantTelephonyService:
+    return TenantTelephonyService(
         TenantRepository(session),
-        InboundRouteRepository(session),
+        TelephonyRepository(session),
+        get_config_use_cases(session),
     )
 
 
-InboundRouteServiceDependency = Annotated[
-    InboundRouteService,
-    Depends(get_inbound_route_service),
+TenantTelephonyServiceDependency = Annotated[
+    TenantTelephonyService, Depends(get_tenant_telephony_service)
+]
+
+
+def platform_telephony_service(
+    session: DatabaseSession, request: Request
+) -> PlatformTelephonyService:
+    return PlatformTelephonyService(
+        TelephonyRepository(session),
+        request.app.state.livekit,
+        request.app.state.settings,
+        request.app.state.outbox_tracer,
+        request.app.state.core_metrics,
+    )
+
+
+PlatformTelephonyServiceDependency = Annotated[
+    PlatformTelephonyService, Depends(platform_telephony_service)
 ]
 
 
@@ -180,6 +203,8 @@ def config_http_exception(
         )
     if isinstance(error, ActiveDraftExistsError):
         detail = "tenant already has an active draft"
+    elif isinstance(error, TelephonyPhoneConflictError):
+        detail = "phone number already belongs to another tenant"
     elif isinstance(error, ConfigRevisionImmutableError):
         detail = "published or archived revisions are immutable"
     else:
@@ -219,27 +244,6 @@ def prompt_http_exception(
             detail="draft version does not match If-Match",
         )
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
-
-
-def inbound_route_http_exception(
-    error: (
-        TenantNotFoundError | InboundRouteNotFoundError | InboundRouteDidConflictError
-    ),
-) -> HTTPException:
-    if isinstance(error, TenantNotFoundError):
-        return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="tenant not found",
-        )
-    if isinstance(error, InboundRouteNotFoundError):
-        return HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="inbound route not found",
-        )
-    return HTTPException(
-        status_code=status.HTTP_409_CONFLICT,
-        detail="DID is already assigned to an inbound route",
-    )
 
 
 def etag(version: int) -> str:
@@ -843,74 +847,69 @@ async def apply_prompt_set(
         raise prompt_http_exception(error) from error
 
 
-@router.post(
-    "/{tenant_id}/inbound-routes",
-    response_model=InboundRouteResponse,
-    status_code=status.HTTP_201_CREATED,
+@router.get(
+    "/{tenant_id}/telephony",
+    response_model=TenantTelephonyResponse,
 )
-async def create_inbound_route(
+async def show_tenant_telephony(
     tenant_id: UUID,
-    data: CreateInboundRouteRequest,
-    service: InboundRouteServiceDependency,
-) -> InboundRouteResponse:
+    service: TenantTelephonyServiceDependency,
+) -> TenantTelephonyResponse:
     try:
-        route = await service.create(tenant_id, data)
-    except (
-        TenantNotFoundError,
-        InboundRouteDidConflictError,
-    ) as error:
-        raise inbound_route_http_exception(error) from error
-    return InboundRouteResponse.model_validate(route)
+        return await service.show(tenant_id)
+    except TenantNotFoundError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "tenant not found") from error
+
+
+@router.put(
+    "/{tenant_id}/telephony",
+    response_model=TenantTelephonyResponse,
+)
+async def save_tenant_telephony(
+    tenant_id: UUID,
+    data: TenantTelephonyUpdate,
+    response: Response,
+    service: TenantTelephonyServiceDependency,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> TenantTelephonyResponse:
+    try:
+        result = await service.save(
+            tenant_id,
+            data,
+            parse_if_match(if_match) if if_match is not None else None,
+        )
+    except (TenantNotFoundError, ConfigRevisionError) as error:
+        raise config_http_exception(error) from error
+    if result.draft_version is not None:
+        response.headers["ETag"] = etag(result.draft_version)
+    return result
 
 
 @router.get(
-    "/{tenant_id}/inbound-routes",
-    response_model=list[InboundRouteResponse],
+    "/{tenant_id}/telephony/status",
+    response_model=TenantTelephonyResponse,
 )
-async def list_inbound_routes(
+async def tenant_telephony_status(
     tenant_id: UUID,
-    service: InboundRouteServiceDependency,
-) -> list[InboundRouteResponse]:
-    try:
-        routes = await service.list(tenant_id)
-    except TenantNotFoundError as error:
-        raise inbound_route_http_exception(error) from error
-    return [InboundRouteResponse.model_validate(route) for route in routes]
+    service: TenantTelephonyServiceDependency,
+) -> TenantTelephonyResponse:
+    return await show_tenant_telephony(tenant_id, service)
 
 
-@router.patch(
-    "/{tenant_id}/inbound-routes/{route_id}",
-    response_model=InboundRouteResponse,
+@telephony_platform_router.get("", response_model=PlatformTelephonyResponse)
+async def show_platform_telephony(
+    service: PlatformTelephonyServiceDependency,
+) -> PlatformTelephonyResponse:
+    return await service.show()
+
+
+@telephony_platform_router.post(
+    "/reconcile", response_model=PlatformTelephonyResponse
 )
-async def update_inbound_route(
-    tenant_id: UUID,
-    route_id: UUID,
-    data: UpdateInboundRouteRequest,
-    service: InboundRouteServiceDependency,
-) -> InboundRouteResponse:
-    try:
-        route = await service.update(tenant_id, route_id, data)
-    except (
-        InboundRouteNotFoundError,
-        InboundRouteDidConflictError,
-    ) as error:
-        raise inbound_route_http_exception(error) from error
-    return InboundRouteResponse.model_validate(route)
-
-
-@router.delete(
-    "/{tenant_id}/inbound-routes/{route_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
-async def delete_inbound_route(
-    tenant_id: UUID,
-    route_id: UUID,
-    service: InboundRouteServiceDependency,
-) -> None:
-    try:
-        await service.delete(tenant_id, route_id)
-    except (TenantNotFoundError, InboundRouteNotFoundError) as error:
-        raise inbound_route_http_exception(error) from error
+async def reconcile_platform_telephony(
+    service: PlatformTelephonyServiceDependency,
+) -> PlatformTelephonyResponse:
+    return await service.reconcile()
 
 
 @router.post(
@@ -1094,15 +1093,15 @@ async def get_internal_active_config(
 )
 async def resolve_tenant_route(
     data: ResolveTenantRouteRequest,
-    service: InboundRouteServiceDependency,
+    session: DatabaseSession,
 ) -> TenantRouteResolutionResponse:
-    try:
-        tenant, revision = await service.resolve(data.called_number)
-    except InboundRouteUnavailableError as error:
+    resolution = await TelephonyRepository(session).resolve(data.called_number)
+    if resolution is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="inbound route unavailable",
-        ) from error
+            detail="tenant telephony unavailable",
+        )
+    tenant, revision = resolution
     return TenantRouteResolutionResponse(
         tenant_id=tenant.id,
         tenant_slug=tenant.slug,

@@ -80,6 +80,12 @@ async def test_admin_and_internal_access_boundaries(
             assert tenant_response.status_code == 201
             tenant_id = tenant_response.json()["id"]
             drafts_url = f"/admin/v1/tenants/{tenant_id}/config/drafts"
+            assert (
+                await client.get(f"/admin/v1/tenants/{tenant_id}/telephony")
+            ).status_code == 401
+            assert (
+                await client.get("/admin/v1/platform/telephony")
+            ).status_code == 401
 
             client_authorship = await client.post(
                 drafts_url,
@@ -169,6 +175,12 @@ async def test_admin_and_internal_access_boundaries(
             assert (
                 await client.get(
                     "/admin/v1/tenants",
+                    headers={"Authorization": f"Bearer {voice_token}"},
+                )
+            ).status_code == 401
+            assert (
+                await client.get(
+                    "/admin/v1/platform/telephony",
                     headers={"Authorization": f"Bearer {voice_token}"},
                 )
             ).status_code == 401

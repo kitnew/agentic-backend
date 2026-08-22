@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any, cast
+from typing import Any
 from urllib.parse import quote
 from uuid import UUID
 
@@ -8,19 +8,18 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.http_validation_error import HTTPValidationError
+from ...models.tenant_telephony_response import TenantTelephonyResponse
 from ...types import Response
 
 
 def _get_kwargs(
     tenant_id: UUID,
-    route_id: UUID,
 ) -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
-        "method": "delete",
-        "url": "/admin/v1/tenants/{tenant_id}/inbound-routes/{route_id}".format(
+        "method": "get",
+        "url": "/admin/v1/tenants/{tenant_id}/telephony/status".format(
             tenant_id=quote(str(tenant_id), safe=""),
-            route_id=quote(str(route_id), safe=""),
         ),
     }
 
@@ -29,10 +28,11 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Any | HTTPValidationError | None:
-    if response.status_code == 204:
-        response_204 = cast(Any, None)
-        return response_204
+) -> HTTPValidationError | TenantTelephonyResponse | None:
+    if response.status_code == 200:
+        response_200 = TenantTelephonyResponse.from_dict(response.json())
+
+        return response_200
 
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
@@ -47,7 +47,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[Any | HTTPValidationError]:
+) -> Response[HTTPValidationError | TenantTelephonyResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -58,27 +58,24 @@ def _build_response(
 
 def sync_detailed(
     tenant_id: UUID,
-    route_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[Any | HTTPValidationError]:
-    """Delete Inbound Route
+) -> Response[HTTPValidationError | TenantTelephonyResponse]:
+    """Tenant Telephony Status
 
     Args:
         tenant_id (UUID):
-        route_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError]
+        Response[HTTPValidationError | TenantTelephonyResponse]
     """
 
     kwargs = _get_kwargs(
         tenant_id=tenant_id,
-        route_id=route_id,
     )
 
     response = client.get_httpx_client().request(
@@ -90,54 +87,48 @@ def sync_detailed(
 
 def sync(
     tenant_id: UUID,
-    route_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Any | HTTPValidationError | None:
-    """Delete Inbound Route
+) -> HTTPValidationError | TenantTelephonyResponse | None:
+    """Tenant Telephony Status
 
     Args:
         tenant_id (UUID):
-        route_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError
+        HTTPValidationError | TenantTelephonyResponse
     """
 
     return sync_detailed(
         tenant_id=tenant_id,
-        route_id=route_id,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
     tenant_id: UUID,
-    route_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Response[Any | HTTPValidationError]:
-    """Delete Inbound Route
+) -> Response[HTTPValidationError | TenantTelephonyResponse]:
+    """Tenant Telephony Status
 
     Args:
         tenant_id (UUID):
-        route_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | HTTPValidationError]
+        Response[HTTPValidationError | TenantTelephonyResponse]
     """
 
     kwargs = _get_kwargs(
         tenant_id=tenant_id,
-        route_id=route_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -147,28 +138,25 @@ async def asyncio_detailed(
 
 async def asyncio(
     tenant_id: UUID,
-    route_id: UUID,
     *,
     client: AuthenticatedClient,
-) -> Any | HTTPValidationError | None:
-    """Delete Inbound Route
+) -> HTTPValidationError | TenantTelephonyResponse | None:
+    """Tenant Telephony Status
 
     Args:
         tenant_id (UUID):
-        route_id (UUID):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | HTTPValidationError
+        HTTPValidationError | TenantTelephonyResponse
     """
 
     return (
         await asyncio_detailed(
             tenant_id=tenant_id,
-            route_id=route_id,
             client=client,
         )
     ).parsed

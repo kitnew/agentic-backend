@@ -9,6 +9,7 @@ from contracts import (
     TenantConfig,
     TenantConfigV2,
     TenantConfigV3,
+    TenantConfigV5,
 )
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -24,9 +25,6 @@ from backend_core.modules.tenants.errors import (
     ConfigRevisionImmutableError,
     ConfigRevisionNotFoundError,
     ConfigRevisionVersionConflictError,
-    InboundRouteDidConflictError,
-    InboundRouteNotFoundError,
-    InboundRouteUnavailableError,
     InvalidPromptSetError,
     InvalidTenantConfigError,
     PromptRevisionActiveDraftExistsError,
@@ -34,6 +32,7 @@ from backend_core.modules.tenants.errors import (
     PromptRevisionNotFoundError,
     PromptRevisionVersionConflictError,
     PromptSetResolutionError,
+    TelephonyPhoneConflictError,
     TenantNotFoundError,
     TenantSlugConflictError,
 )
@@ -43,7 +42,6 @@ from backend_core.modules.tenants.knowledge import (
 )
 from backend_core.modules.tenants.models import (
     ConfigRevisionStatus,
-    InboundRoute,
     KnowledgeBase,
     KnowledgeBaseRevision,
     KnowledgeBaseRevisionDocument,
@@ -56,20 +54,21 @@ from backend_core.modules.tenants.models import (
     PromptSetRevision,
     SystemPrompt,
     SystemPromptRevision,
+    TelephonyProvisioningStatus,
     Tenant,
     TenantConfigRevision,
     TenantPrompt,
     TenantPromptRevision,
+    TenantTelephony,
 )
 from backend_core.modules.tenants.repository import (
     ConfigRevisionRepository,
-    InboundRouteRepository,
     PromptCompositionRepository,
+    TelephonyRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import (
     CreateDraftRequest,
-    CreateInboundRouteRequest,
     CreatePlatformPromptDraftRequest,
     CreatePromptSetDraftRequest,
     CreateTenantRequest,
@@ -93,7 +92,6 @@ from backend_core.modules.tenants.schemas import (
     PromptSetPlanResponse,
     PromptSetRevisionResponse,
     UpdateDraftRequest,
-    UpdateInboundRouteRequest,
     UpdatePromptSetDraftRequest,
     UpdateTextDraftRequest,
     ValidateConfigRequest,
@@ -140,67 +138,6 @@ class TenantService:
 
     async def list(self, *, offset: int, limit: int) -> list[Tenant]:
         return await self._repository.list(offset=offset, limit=limit)
-
-
-class InboundRouteService:
-    def __init__(
-        self,
-        tenants: TenantRepository,
-        routes: InboundRouteRepository,
-    ) -> None:
-        self._tenants = tenants
-        self._routes = routes
-
-    async def create(
-        self,
-        tenant_id: UUID,
-        data: CreateInboundRouteRequest,
-    ) -> InboundRoute:
-        if await self._tenants.get(tenant_id) is None:
-            raise TenantNotFoundError
-        route = InboundRoute(tenant_id=tenant_id, **data.model_dump())
-        try:
-            return await self._routes.add(route)
-        except IntegrityError as error:
-            raise InboundRouteDidConflictError from error
-
-    async def list(self, tenant_id: UUID) -> list[InboundRoute]:
-        if await self._tenants.get(tenant_id) is None:
-            raise TenantNotFoundError
-        return await self._routes.list(tenant_id)
-
-    async def update(
-        self,
-        tenant_id: UUID,
-        route_id: UUID,
-        data: UpdateInboundRouteRequest,
-    ) -> InboundRoute:
-        route = await self._routes.get(tenant_id, route_id)
-        if route is None:
-            raise InboundRouteNotFoundError
-        for field, value in data.model_dump(exclude_unset=True).items():
-            setattr(route, field, value)
-        try:
-            await self._routes.flush()
-            await self._routes.refresh(route)
-        except IntegrityError as error:
-            raise InboundRouteDidConflictError from error
-        return route
-
-    async def delete(self, tenant_id: UUID, route_id: UUID) -> None:
-        route = await self._routes.get(tenant_id, route_id)
-        if route is None:
-            raise InboundRouteNotFoundError
-        await self._routes.delete(route)
-
-    async def resolve(
-        self,
-        normalized_did: str,
-    ) -> tuple[Tenant, TenantConfigRevision]:
-        resolution = await self._routes.resolve(normalized_did)
-        if resolution is None:
-            raise InboundRouteUnavailableError
-        return resolution
 
 
 class PromptCompositionUseCases:
@@ -838,7 +775,7 @@ class PromptCompositionUseCases:
                 )
             return None
         revision = await self._configs.get(tenant.id, tenant.active_config_revision_id)
-        if revision is None or revision.schema_version not in {3, 4}:
+        if revision is None or revision.schema_version not in {3, 4, 5}:
             if required:
                 raise PromptSetResolutionError(
                     "tenant.active_config_revision",
@@ -1289,7 +1226,11 @@ class PromptCompositionUseCases:
             config_revision = await self._configs.get(
                 tenant_id, tenant.active_config_revision_id
             )
-            if config_revision is not None and config_revision.schema_version in {3, 4}:
+            if config_revision is not None and config_revision.schema_version in {
+                3,
+                4,
+                5,
+            }:
                 model = TENANT_CONFIG_SCHEMAS[config_revision.schema_version]
                 config = model.model_validate(config_revision.config)
                 assert isinstance(config, TenantConfigV3)
@@ -1344,11 +1285,13 @@ class ConfigUseCases:
         revisions: ConfigRevisionRepository,
         connections: IntegrationConnectionRepository,
         prompts: PromptCompositionRepository,
+        telephony: TelephonyRepository,
     ) -> None:
         self._tenants = tenants
         self._revisions = revisions
         self._connections = connections
         self._prompts = prompts
+        self._telephony = telephony
 
     async def create_config_draft(
         self,
@@ -1460,9 +1403,25 @@ class ConfigUseCases:
         revision = await self._revision_for_update(tenant_id, revision_id)
         if revision.status is not ConfigRevisionStatus.DRAFT:
             raise ConfigRevisionImmutableError
-        _, errors = await self._validate_config(revision)
+        config, errors = await self._validate_config(revision)
         if errors:
             raise InvalidTenantConfigError([error.model_dump() for error in errors])
+        telephony = await self._telephony.get_for_update(tenant_id)
+        if (
+            isinstance(config, TenantConfigV3)
+            and not isinstance(config, TenantConfigV5)
+            and telephony is not None
+        ):
+            upgraded = config.model_dump(mode="json")
+            upgraded.pop("handoff", None)
+            upgraded["schema_version"] = 5
+            upgraded["telephony"] = {
+                "phone_number": telephony.phone_number,
+                "handoff": {"destinations": telephony.handoff_destinations},
+            }
+            config = TenantConfigV5.model_validate(upgraded)
+            revision.schema_version = 5
+            revision.config = config.model_dump(mode="json")
 
         if tenant.active_config_revision_id:
             active = await self._revision_for_update(
@@ -1474,7 +1433,29 @@ class ConfigUseCases:
         revision.status = ConfigRevisionStatus.PUBLISHED
         revision.published_at = datetime.now(UTC)
         tenant.active_config_revision_id = revision.id
-        await self._revisions.flush()
+        if isinstance(config, TenantConfigV5):
+            platform = await self._telephony.platform(for_update=True)
+            platform.provisioning_status = TelephonyProvisioningStatus.PENDING
+            platform.last_error = None
+            values = {
+                "config_revision_id": revision.id,
+                "phone_number": config.telephony.phone_number,
+                "handoff_destinations": config.telephony.handoff.model_dump(mode="json")[
+                    "destinations"
+                ],
+            }
+            if telephony is None:
+                telephony = TenantTelephony(tenant_id=tenant_id, **values)
+                await self._telephony.upsert(telephony)
+            else:
+                for field, value in values.items():
+                    setattr(telephony, field, value)
+                telephony.provisioning_status = TelephonyProvisioningStatus.PENDING
+                telephony.last_error = None
+        try:
+            await self._revisions.flush()
+        except IntegrityError as error:
+            raise TelephonyPhoneConflictError from error
         return revision
 
     async def list_config_revisions(

@@ -23,7 +23,6 @@ def create_app(
             participant_token_ttl_seconds=(
                 settings.livekit_participant_token_ttl_seconds
             ),
-            sip_outbound_trunk_id=settings.livekit_sip_outbound_trunk_id,
         )
 
     app = FastAPI(
