@@ -6,7 +6,7 @@ from alembic import context
 from backend_core.modules.calls.models import CallSession  # noqa: F401
 from backend_core.modules.conversations.models import Conversation, ConversationMessage  # noqa: F401
 from backend_core.modules.integrations.models import IntegrationConnection  # noqa: F401
-from backend_core.modules.tenants.models import Tenant  # noqa: F401
+from backend_core.modules.tenants.models import PlatformTelephony, Tenant  # noqa: F401
 from backend_core.modules.tenants.platform_release_models import PlatformRelease  # noqa: F401
 from backend_core.modules.tenants.release_models import TenantRelease  # noqa: F401
 from backend_core.platform.database.metadata import Base

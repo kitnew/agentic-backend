@@ -4,9 +4,8 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import text
-
 from backend_core.platform.database import Database
+from sqlalchemy import text
 
 
 @pytest.mark.asyncio

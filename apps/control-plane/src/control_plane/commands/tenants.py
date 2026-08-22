@@ -2,6 +2,7 @@ import httpx
 from admin_client import AuthenticatedClient
 from admin_client.generated.api.admintenants import (
     create_tenant_admin_v1_tenants_post,
+    get_tenant_by_slug_admin_v1_tenants_by_slug_slug_get,
     list_tenants_admin_v1_tenants_get,
 )
 from admin_client.generated.models.create_tenant_request import CreateTenantRequest
@@ -57,3 +58,20 @@ def run_tenant_create(
         print(f"  Display name: {tenant.display_name}")
         print(f"  Business type: {tenant.business_type}")
         print(f"  Status: {tenant.status.value}")
+
+
+def run_tenant_show(settings: Settings, slug: str) -> None:
+    with _client(settings) as client:
+        response = get_tenant_by_slug_admin_v1_tenants_by_slug_slug_get.sync_detailed(
+            slug, client=client
+        )
+        _response_error(response)
+        if not isinstance(response.parsed, TenantResponse):
+            raise CommandError("unexpected client failure: invalid Backend response", 1)
+        tenant = response.parsed
+    print(f"ID: {tenant.id}")
+    print(f"Slug: {tenant.slug}")
+    print(f"Display name: {tenant.display_name}")
+    print(f"Business type: {tenant.business_type}")
+    print(f"Status: {tenant.status.value}")
+    print(f"Active release: {tenant.active_release_id or 'none'}")

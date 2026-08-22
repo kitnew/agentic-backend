@@ -26,3 +26,18 @@ def test_tenant_config_dispatches_component_authoring(
     assert cli.main(["--state-dir", str(tmp_path), "tenant", "config", "push", "demo"]) == 0
     assert seen["action"] == "push"
     assert seen["slug"] == "demo"
+
+
+def test_sync_dispatches_component_reconciliation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
+    monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli,
+        "run_sync",
+        lambda settings, action, **kwargs: seen.update(action=action),
+    )
+    assert cli.main(["sync", "plan"]) == 0
+    assert seen["action"] == "plan"

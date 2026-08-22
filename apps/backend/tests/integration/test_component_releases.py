@@ -42,8 +42,8 @@ from backend_core.modules.tenants.release_service import (
     TenantReleaseUseCases,
 )
 from backend_core.modules.tenants.repository import TenantRepository
-from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.platform.database import Database
+from backend_core.runtime.bundle_store import RuntimeBundleStore
 from contracts.runtime_bundle import (
     RuntimeBundlePayload,
     RuntimeBundleProvenance,

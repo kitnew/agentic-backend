@@ -57,10 +57,36 @@ def parse_tenant_yaml(text: str) -> dict[str, dict[str, Any]]:
     return sections
 
 
-def run_tenant_components(settings: Settings, action: str, slug: str) -> None:
+def run_tenant_components(settings: Settings, action: str, slug: str, *, force: bool = False) -> None:
     path = tenant_config_path(settings.state_dir, slug)
     if action == "show":
-        print(path.read_text(encoding="utf-8"))
+        if path.exists():
+            print(path.read_text(encoding="utf-8"))
+            return
+        with AuthenticatedClient(base_url=settings.api_url, token=settings.token) as client:
+            tenant = _tenant(client, slug)
+            document: dict[str, Any] = {}
+            for component in COMPONENTS:
+                state = _state(client, tenant.id, component)
+                selected = state.draft or state.active_revision
+                if selected is not None:
+                    document[component] = selected.payload.to_dict()
+        print(yaml.safe_dump(document, allow_unicode=True, sort_keys=False), end="")
+        return
+    if action == "pull":
+        if path.exists() and not force:
+            raise CommandError(f"refusing to overwrite existing file: {path}", 2)
+        with AuthenticatedClient(base_url=settings.api_url, token=settings.token) as client:
+            tenant = _tenant(client, slug)
+            document: dict[str, Any] = {}
+            for component in COMPONENTS:
+                state = _state(client, tenant.id, component)
+                selected = state.draft or state.active_revision
+                if selected is not None:
+                    document[component] = selected.payload.to_dict()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        print(f"Wrote {path}")
         return
     sections = parse_tenant_yaml(path.read_text(encoding="utf-8"))
     with AuthenticatedClient(base_url=settings.api_url, token=settings.token) as client:
