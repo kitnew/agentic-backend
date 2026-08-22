@@ -10,7 +10,6 @@ from attrs import field as _attrs_field
 from typing_extensions import Self
 
 from ..models.tenant_status import TenantStatus
-from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="TenantResponse")
 
@@ -19,8 +18,7 @@ T = TypeVar("T", bound="TenantResponse")
 class TenantResponse:
     """
     Attributes:
-        active_config_revision_id (None | UUID):
-        active_prompt_set_revision_id (None | UUID):
+        active_release_id (None | UUID):
         business_type (str):
         created_at (datetime.datetime):
         display_name (str):
@@ -28,11 +26,9 @@ class TenantResponse:
         slug (str):
         status (TenantStatus):
         updated_at (datetime.datetime):
-        active_voice_runtime_revision_id (None | Unset | UUID):
     """
 
-    active_config_revision_id: None | UUID
-    active_prompt_set_revision_id: None | UUID
+    active_release_id: None | UUID
     business_type: str
     created_at: datetime.datetime
     display_name: str
@@ -40,21 +36,14 @@ class TenantResponse:
     slug: str
     status: TenantStatus
     updated_at: datetime.datetime
-    active_voice_runtime_revision_id: None | Unset | UUID = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        active_config_revision_id: None | str
-        if isinstance(self.active_config_revision_id, UUID):
-            active_config_revision_id = str(self.active_config_revision_id)
+        active_release_id: None | str
+        if isinstance(self.active_release_id, UUID):
+            active_release_id = str(self.active_release_id)
         else:
-            active_config_revision_id = self.active_config_revision_id
-
-        active_prompt_set_revision_id: None | str
-        if isinstance(self.active_prompt_set_revision_id, UUID):
-            active_prompt_set_revision_id = str(self.active_prompt_set_revision_id)
-        else:
-            active_prompt_set_revision_id = self.active_prompt_set_revision_id
+            active_release_id = self.active_release_id
 
         business_type = self.business_type
 
@@ -70,22 +59,11 @@ class TenantResponse:
 
         updated_at = self.updated_at.isoformat()
 
-        active_voice_runtime_revision_id: None | str | Unset
-        if isinstance(self.active_voice_runtime_revision_id, Unset):
-            active_voice_runtime_revision_id = UNSET
-        elif isinstance(self.active_voice_runtime_revision_id, UUID):
-            active_voice_runtime_revision_id = str(
-                self.active_voice_runtime_revision_id
-            )
-        else:
-            active_voice_runtime_revision_id = self.active_voice_runtime_revision_id
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "active_config_revision_id": active_config_revision_id,
-                "active_prompt_set_revision_id": active_prompt_set_revision_id,
+                "active_release_id": active_release_id,
                 "business_type": business_type,
                 "created_at": created_at,
                 "display_name": display_name,
@@ -95,10 +73,6 @@ class TenantResponse:
                 "updated_at": updated_at,
             }
         )
-        if active_voice_runtime_revision_id is not UNSET:
-            field_dict["active_voice_runtime_revision_id"] = (
-                active_voice_runtime_revision_id
-            )
 
         return field_dict
 
@@ -106,39 +80,20 @@ class TenantResponse:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
 
-        def _parse_active_config_revision_id(data: object) -> None | UUID:
+        def _parse_active_release_id(data: object) -> None | UUID:
             if data is None:
                 return data
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                active_config_revision_id_type_0 = UUID(data)
+                active_release_id_type_0 = UUID(data)
 
-                return active_config_revision_id_type_0
+                return active_release_id_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
             return cast(None | UUID, data)
 
-        active_config_revision_id = _parse_active_config_revision_id(
-            d.pop("active_config_revision_id")
-        )
-
-        def _parse_active_prompt_set_revision_id(data: object) -> None | UUID:
-            if data is None:
-                return data
-            try:
-                if not isinstance(data, str):
-                    raise TypeError()
-                active_prompt_set_revision_id_type_0 = UUID(data)
-
-                return active_prompt_set_revision_id_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(None | UUID, data)
-
-        active_prompt_set_revision_id = _parse_active_prompt_set_revision_id(
-            d.pop("active_prompt_set_revision_id")
-        )
+        active_release_id = _parse_active_release_id(d.pop("active_release_id"))
 
         business_type = d.pop("business_type")
 
@@ -154,30 +109,8 @@ class TenantResponse:
 
         updated_at = datetime.datetime.fromisoformat(d.pop("updated_at"))
 
-        def _parse_active_voice_runtime_revision_id(
-            data: object,
-        ) -> None | Unset | UUID:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, str):
-                    raise TypeError()
-                active_voice_runtime_revision_id_type_0 = UUID(data)
-
-                return active_voice_runtime_revision_id_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(None | Unset | UUID, data)
-
-        active_voice_runtime_revision_id = _parse_active_voice_runtime_revision_id(
-            d.pop("active_voice_runtime_revision_id", UNSET)
-        )
-
         tenant_response = cls(
-            active_config_revision_id=active_config_revision_id,
-            active_prompt_set_revision_id=active_prompt_set_revision_id,
+            active_release_id=active_release_id,
             business_type=business_type,
             created_at=created_at,
             display_name=display_name,
@@ -185,7 +118,6 @@ class TenantResponse:
             slug=slug,
             status=status,
             updated_at=updated_at,
-            active_voice_runtime_revision_id=active_voice_runtime_revision_id,
         )
 
         tenant_response.additional_properties = d

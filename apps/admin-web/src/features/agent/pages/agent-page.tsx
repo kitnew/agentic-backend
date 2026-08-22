@@ -9,14 +9,12 @@ import {
 } from "../../../components/page-states";
 import { responseData } from "../../../core/api/client";
 import {
-  applyPromptSetAdminV1TenantsTenantIdPromptSetApplyPost,
-  createConfigDraftAdminV1TenantsTenantIdConfigDraftsPost,
-  publishConfigDraftAdminV1TenantsTenantIdConfigDraftsRevisionIdPublishPost,
-  updateConfigDraftAdminV1TenantsTenantIdConfigDraftsRevisionIdPatch,
-} from "../../../core/api/generated/admin-tenants/admin-tenants";
+  publishComponentAdminV1TenantsTenantIdComponentsComponentPublishPost,
+  saveDraftAdminV1TenantsTenantIdComponentsComponentDraftPut,
+} from "../../../core/api/generated/admin-tenant-components/admin-tenant-components";
 import { EditorActions, Field } from "../../../core/configuration/editor";
 import { useTenant } from "../../../core/tenant/use-tenant";
-import { toAgentForm, toUpdateRequest } from "../lib/mappings";
+import { toAgentForm, toAgentPayload } from "../lib/mappings";
 import {
   agentQueryKey,
   getAgentConfiguration,
@@ -67,34 +65,34 @@ function AgentEditor({
   };
   const save = useMutation({
     mutationFn: async () => {
-      const request = toUpdateRequest(configuration.config, form);
-      const response = configuration.configDraft
-        ? await updateConfigDraftAdminV1TenantsTenantIdConfigDraftsRevisionIdPatch(
-            tenantId,
-            configuration.configDraft.id,
-            request,
-            {
-              headers: { "If-Match": `"${configuration.configDraft.version}"` },
-            },
-          )
-        : await createConfigDraftAdminV1TenantsTenantIdConfigDraftsPost(
-            tenantId,
-            request,
-          );
-      responseData(response);
+      responseData(
+        await saveDraftAdminV1TenantsTenantIdComponentsComponentDraftPut(
+          tenantId,
+          "agent",
+          { payload: toAgentPayload(configuration.config, form) },
+          configuration.configDraft
+            ? {
+                headers: {
+                  "If-Match": `"${configuration.configDraft.version}"`,
+                },
+              }
+            : undefined,
+        ),
+      );
       await canonical();
     },
   });
   const publish = useMutation({
     mutationFn: async () => {
       responseData(
-        await publishConfigDraftAdminV1TenantsTenantIdConfigDraftsRevisionIdPublishPost(
+        await publishComponentAdminV1TenantsTenantIdComponentsComponentPublishPost(
           tenantId,
-          configuration.configDraft?.id ?? "",
+          "agent",
+          {
+            draft_id: configuration.configDraft?.id ?? "",
+            version: configuration.configDraft?.version ?? 0,
+          },
         ),
-      );
-      responseData(
-        await applyPromptSetAdminV1TenantsTenantIdPromptSetApplyPost(tenantId),
       );
       await canonical();
     },
@@ -128,16 +126,10 @@ function AgentEditor({
             />
           </Field>
           <Field label="Profile">
-            <select
+            <input
               value={form.profile}
               onChange={(event) => update("profile", event.target.value)}
-            >
-              {configuration.profiles.map((profile) => (
-                <option key={profile} value={profile}>
-                  {profile.replaceAll("_", " ")}
-                </option>
-              ))}
-            </select>
+            />
           </Field>
           <section className="space-y-4 border-t pt-6">
             <h2 className="text-lg font-semibold">Contact</h2>

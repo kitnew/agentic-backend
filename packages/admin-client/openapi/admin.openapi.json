@@ -1,136 +1,6 @@
 {
   "components": {
     "schemas": {
-      "ActiveTenantConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TenantConfigV1"
-              },
-              {
-                "$ref": "#/components/schemas/TenantConfigV2"
-              },
-              {
-                "$ref": "#/components/schemas/TenantConfigV3"
-              },
-              {
-                "$ref": "#/components/schemas/TenantConfigV4"
-              },
-              {
-                "$ref": "#/components/schemas/TenantConfigV5"
-              }
-            ],
-            "title": "Config"
-          },
-          "published_at": {
-            "format": "date-time",
-            "title": "Published At",
-            "type": "string"
-          },
-          "revision_id": {
-            "format": "uuid",
-            "title": "Revision Id",
-            "type": "string"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tenant_id",
-          "revision_id",
-          "revision_number",
-          "published_at",
-          "config"
-        ],
-        "title": "ActiveTenantConfig",
-        "type": "object"
-      },
-      "AgentConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "greeting": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Greeting",
-            "type": "string"
-          }
-        },
-        "required": [
-          "display_name",
-          "greeting"
-        ],
-        "title": "AgentConfig",
-        "type": "object"
-      },
-      "AgentConfigV3": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "title": "Display Name",
-            "type": "string"
-          },
-          "greeting": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Greeting",
-            "type": "string"
-          },
-          "profile": {
-            "maxLength": 100,
-            "minLength": 1,
-            "pattern": "^[a-z][a-z0-9_]*$",
-            "title": "Profile",
-            "type": "string"
-          }
-        },
-        "required": [
-          "display_name",
-          "greeting",
-          "profile"
-        ],
-        "title": "AgentConfigV3",
-        "type": "object"
-      },
-      "BusinessConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "type": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "type"
-        ],
-        "title": "BusinessConfig",
-        "type": "object"
-      },
       "CallChannel": {
         "enum": [
           "sip",
@@ -378,11 +248,6 @@
             ],
             "title": "Livekit Participant Identity"
           },
-          "prompt_set_revision_id": {
-            "format": "uuid",
-            "title": "Prompt Set Revision Id",
-            "type": "string"
-          },
           "provider": {
             "title": "Provider",
             "type": "string"
@@ -404,6 +269,11 @@
           },
           "room_name": {
             "title": "Room Name",
+            "type": "string"
+          },
+          "runtime_bundle_id": {
+            "format": "uuid",
+            "title": "Runtime Bundle Id",
             "type": "string"
           },
           "sip_call_id": {
@@ -465,35 +335,22 @@
           "status": {
             "$ref": "#/components/schemas/CallSessionStatus"
           },
-          "tenant_config_revision_id": {
-            "format": "uuid",
-            "title": "Tenant Config Revision Id",
-            "type": "string"
-          },
           "tenant_id": {
             "format": "uuid",
             "title": "Tenant Id",
             "type": "string"
           },
-          "voice_runtime_revision_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Voice Runtime Revision Id"
+          "tenant_release_id": {
+            "format": "uuid",
+            "title": "Tenant Release Id",
+            "type": "string"
           }
         },
         "required": [
           "id",
           "tenant_id",
-          "tenant_config_revision_id",
-          "prompt_set_revision_id",
-          "voice_runtime_revision_id",
+          "tenant_release_id",
+          "runtime_bundle_id",
           "channel",
           "direction",
           "provider",
@@ -534,42 +391,45 @@
         "title": "CallSessionStatus",
         "type": "string"
       },
-      "CapabilityBusinessPolicy": {
+      "ComponentDraftExpectation": {
         "additionalProperties": false,
         "properties": {
-          "availability_proof_ttl_seconds": {
+          "comment": {
             "anyOf": [
               {
-                "maximum": 86400.0,
-                "minimum": 1.0,
-                "type": "integer"
+                "maxLength": 4000,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Availability Proof Ttl Seconds"
+            "title": "Comment"
           },
-          "requires_availability_proof": {
-            "default": false,
-            "title": "Requires Availability Proof",
-            "type": "boolean"
+          "component": {
+            "title": "Component",
+            "type": "string"
           },
-          "requires_caller_phone": {
-            "default": false,
-            "title": "Requires Caller Phone",
-            "type": "boolean"
+          "draft_id": {
+            "format": "uuid",
+            "title": "Draft Id",
+            "type": "string"
           },
-          "requires_final_confirmation": {
-            "default": false,
-            "title": "Requires Final Confirmation",
-            "type": "boolean"
+          "version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Version",
+            "type": "integer"
           }
         },
-        "title": "CapabilityBusinessPolicy",
+        "required": [
+          "draft_id",
+          "version",
+          "component"
+        ],
+        "title": "ComponentDraftExpectation",
         "type": "object"
       },
-      "ConfigRevisionResponse": {
+      "ComponentDraftResponse": {
         "properties": {
           "comment": {
             "anyOf": [
@@ -582,59 +442,23 @@
             ],
             "title": "Comment"
           },
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
+          "component": {
+            "title": "Component",
             "type": "string"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Created By"
           },
           "id": {
             "format": "uuid",
             "title": "Id",
             "type": "string"
           },
-          "published_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Published At"
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
           },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "schema_version": {
-            "title": "Schema Version",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/ConfigRevisionStatus"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
             "type": "string"
           },
           "version": {
@@ -644,89 +468,151 @@
         },
         "required": [
           "id",
-          "tenant_id",
-          "revision_number",
-          "schema_version",
-          "status",
-          "config",
-          "created_at",
-          "published_at",
-          "created_by",
+          "component",
+          "payload",
+          "version",
           "comment",
-          "version"
+          "updated_at"
         ],
-        "title": "ConfigRevisionResponse",
+        "title": "ComponentDraftResponse",
         "type": "object"
       },
-      "ConfigRevisionStatus": {
-        "enum": [
-          "draft",
-          "published",
-          "archived"
-        ],
-        "title": "ConfigRevisionStatus",
-        "type": "string"
-      },
-      "ContactConfig": {
+      "ComponentDraftWrite": {
         "additionalProperties": false,
         "properties": {
-          "address": {
+          "comment": {
             "anyOf": [
               {
-                "maxLength": 1000,
-                "minLength": 1,
+                "maxLength": 4000,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Address"
+            "title": "Comment"
           },
-          "emails": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Emails",
-            "type": "array"
-          },
-          "phones": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Phones",
-            "type": "array"
-          },
-          "website": {
-            "anyOf": [
-              {
-                "maxLength": 2048,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Website"
-          }
-        },
-        "title": "ContactConfig",
-        "type": "object"
-      },
-      "ConversationConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "scope": {
-            "$ref": "#/components/schemas/ConversationScope"
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
           }
         },
         "required": [
-          "scope"
+          "payload"
         ],
-        "title": "ConversationConfig",
+        "title": "ComponentDraftWrite",
+        "type": "object"
+      },
+      "ComponentPublishRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "draft_id": {
+            "format": "uuid",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "draft_id",
+          "version"
+        ],
+        "title": "ComponentPublishRequest",
+        "type": "object"
+      },
+      "ComponentRevisionResponse": {
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          },
+          "sealed_at": {
+            "format": "date-time",
+            "title": "Sealed At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision_number",
+          "payload",
+          "comment",
+          "sealed_at"
+        ],
+        "title": "ComponentRevisionResponse",
+        "type": "object"
+      },
+      "ComponentStateResponse": {
+        "properties": {
+          "active_revision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComponentRevisionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "component": {
+            "title": "Component",
+            "type": "string"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ComponentDraftResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "component",
+          "draft",
+          "active_revision"
+        ],
+        "title": "ComponentStateResponse",
         "type": "object"
       },
       "ConversationMessageResponse": {
@@ -857,56 +743,6 @@
         "title": "ConversationResponse",
         "type": "object"
       },
-      "ConversationScope": {
-        "enum": [
-          "property_only"
-        ],
-        "title": "ConversationScope",
-        "type": "string"
-      },
-      "CreateDraftRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "comment": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Comment"
-          },
-          "config": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config"
-          },
-          "schema_version": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Schema Version"
-          }
-        },
-        "title": "CreateDraftRequest",
-        "type": "object"
-      },
       "CreateIntegrationConnectionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -929,62 +765,6 @@
           "provider"
         ],
         "title": "CreateIntegrationConnectionRequest",
-        "type": "object"
-      },
-      "CreatePlatformPromptDraftRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "key": {
-            "maxLength": 100,
-            "minLength": 1,
-            "pattern": "^[a-z][a-z0-9_]*$",
-            "title": "Key",
-            "type": "string"
-          },
-          "text": {
-            "maxLength": 1000000,
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "text"
-        ],
-        "title": "CreatePlatformPromptDraftRequest",
-        "type": "object"
-      },
-      "CreatePromptSetDraftRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "knowledge_base_revision_id": {
-            "format": "uuid",
-            "title": "Knowledge Base Revision Id",
-            "type": "string"
-          },
-          "profile_prompt_revision_id": {
-            "format": "uuid",
-            "title": "Profile Prompt Revision Id",
-            "type": "string"
-          },
-          "system_prompt_revision_id": {
-            "format": "uuid",
-            "title": "System Prompt Revision Id",
-            "type": "string"
-          },
-          "tenant_prompt_revision_id": {
-            "format": "uuid",
-            "title": "Tenant Prompt Revision Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "system_prompt_revision_id",
-          "profile_prompt_revision_id",
-          "tenant_prompt_revision_id",
-          "knowledge_base_revision_id"
-        ],
-        "title": "CreatePromptSetDraftRequest",
         "type": "object"
       },
       "CreateTenantRequest": {
@@ -1072,163 +852,22 @@
         "title": "CreateTestVoiceSessionResponse",
         "type": "object"
       },
-      "CreateTextDraftRequest": {
-        "additionalProperties": false,
+      "DraftResponse": {
         "properties": {
-          "text": {
-            "default": "",
-            "maxLength": 1000000,
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "title": "CreateTextDraftRequest",
-        "type": "object"
-      },
-      "EffectiveVoiceRuntime": {
-        "additionalProperties": false,
-        "properties": {
-          "llm": {
-            "$ref": "#/components/schemas/LLMRuntimeSettings"
-          },
-          "local_vad": {
-            "$ref": "#/components/schemas/LocalVADRuntimeSettings"
-          },
-          "locale": {
-            "maxLength": 35,
-            "minLength": 1,
-            "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$",
-            "title": "Locale",
+          "id": {
+            "title": "Id",
             "type": "string"
           },
-          "stt": {
-            "$ref": "#/components/schemas/STTRuntimeSettings"
-          },
-          "tts": {
-            "$ref": "#/components/schemas/TTSRuntimeSettings"
-          },
-          "turn": {
-            "$ref": "#/components/schemas/TurnRuntimeSettings"
-          }
-        },
-        "required": [
-          "llm",
-          "stt",
-          "tts",
-          "local_vad",
-          "turn",
-          "locale"
-        ],
-        "title": "EffectiveVoiceRuntime",
-        "type": "object"
-      },
-      "GoogleSheetsAppendExecution": {
-        "additionalProperties": false,
-        "properties": {
-          "append_range": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Append Range",
-            "type": "string"
-          },
-          "connection_id": {
-            "format": "uuid",
-            "title": "Connection Id",
-            "type": "string"
-          },
-          "idempotency": {
-            "$ref": "#/components/schemas/GoogleSheetsExecutionIdempotency"
-          },
-          "mapping_contract_version": {
-            "const": 1,
-            "title": "Mapping Contract Version",
-            "type": "integer"
-          },
-          "mapping_engine": {
-            "const": "jsonata-python",
-            "title": "Mapping Engine",
-            "type": "string"
-          },
-          "mapping_engine_version": {
-            "const": "0.7.0",
-            "title": "Mapping Engine Version",
-            "type": "string"
-          },
-          "mapping_language": {
-            "const": "jsonata",
-            "title": "Mapping Language",
-            "type": "string"
-          },
-          "plan_type": {
-            "const": "google_sheets.append_values.v1",
-            "title": "Plan Type",
-            "type": "string"
-          },
-          "request_mapping": {
-            "maxLength": 20000,
-            "minLength": 1,
-            "title": "Request Mapping",
-            "type": "string"
-          },
-          "sheet_name": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Sheet Name",
-            "type": "string"
-          },
-          "spreadsheet_id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Spreadsheet Id",
-            "type": "string"
-          },
-          "value_input_option": {
-            "default": "RAW",
-            "enum": [
-              "RAW",
-              "USER_ENTERED"
-            ],
-            "title": "Value Input Option",
-            "type": "string"
-          }
-        },
-        "required": [
-          "plan_type",
-          "mapping_language",
-          "mapping_contract_version",
-          "mapping_engine",
-          "mapping_engine_version",
-          "connection_id",
-          "spreadsheet_id",
-          "sheet_name",
-          "append_range",
-          "idempotency",
-          "request_mapping"
-        ],
-        "title": "GoogleSheetsAppendExecution",
-        "type": "object"
-      },
-      "GoogleSheetsExecutionIdempotency": {
-        "additionalProperties": false,
-        "properties": {
-          "lookup_range": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Lookup Range",
-            "type": "string"
-          },
-          "operation_id_column_index": {
-            "maximum": 1023.0,
-            "minimum": 0.0,
-            "title": "Operation Id Column Index",
+          "version": {
+            "title": "Version",
             "type": "integer"
           }
         },
         "required": [
-          "lookup_range",
-          "operation_id_column_index"
+          "id",
+          "version"
         ],
-        "title": "GoogleSheetsExecutionIdempotency",
+        "title": "DraftResponse",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1236,45 +875,6 @@
           "detail": {}
         },
         "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "HandoffConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "destinations": {
-            "maxProperties": 20,
-            "patternProperties": {
-              "^[a-z][a-z0-9_]{0,63}$": {
-                "$ref": "#/components/schemas/HandoffDestination"
-              }
-            },
-            "title": "Destinations",
-            "type": "object"
-          }
-        },
-        "title": "HandoffConfig",
-        "type": "object"
-      },
-      "HandoffDestination": {
-        "additionalProperties": false,
-        "properties": {
-          "description": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Description",
-            "type": "string"
-          },
-          "phone_number": {
-            "pattern": "^\\+[1-9]\\d{1,14}$",
-            "title": "Phone Number",
-            "type": "string"
-          }
-        },
-        "required": [
-          "description",
-          "phone_number"
-        ],
-        "title": "HandoffDestination",
         "type": "object"
       },
       "IntegrationConnectionResponse": {
@@ -1396,386 +996,6 @@
         "title": "IntegrationTestResponse",
         "type": "object"
       },
-      "KnowledgeBasePlanResponse": {
-        "properties": {
-          "base_version": {
-            "title": "Base Version",
-            "type": "integer"
-          },
-          "create_count": {
-            "title": "Create Count",
-            "type": "integer"
-          },
-          "documents": {
-            "items": {
-              "$ref": "#/components/schemas/KnowledgeDocumentPlanResponse"
-            },
-            "title": "Documents",
-            "type": "array"
-          },
-          "remove_count": {
-            "title": "Remove Count",
-            "type": "integer"
-          },
-          "reuse_count": {
-            "title": "Reuse Count",
-            "type": "integer"
-          },
-          "status": {
-            "enum": [
-              "unchanged",
-              "modified"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          },
-          "update_draft": {
-            "title": "Update Draft",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "tenant_id",
-          "status",
-          "base_version",
-          "documents",
-          "reuse_count",
-          "create_count",
-          "remove_count",
-          "update_draft"
-        ],
-        "title": "KnowledgeBasePlanResponse",
-        "type": "object"
-      },
-      "KnowledgeBasePublishResponse": {
-        "properties": {
-          "published": {
-            "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
-          }
-        },
-        "required": [
-          "published"
-        ],
-        "title": "KnowledgeBasePublishResponse",
-        "type": "object"
-      },
-      "KnowledgeBasePushResponse": {
-        "properties": {
-          "changed": {
-            "title": "Changed",
-            "type": "boolean"
-          },
-          "draft": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "changed",
-          "draft"
-        ],
-        "title": "KnowledgeBasePushResponse",
-        "type": "object"
-      },
-      "KnowledgeBaseRevisionResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "document_count": {
-            "title": "Document Count",
-            "type": "integer"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "knowledge_base_id": {
-            "format": "uuid",
-            "title": "Knowledge Base Id",
-            "type": "string"
-          },
-          "published_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Published At"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "tenant_id",
-          "knowledge_base_id",
-          "revision_number",
-          "status",
-          "created_at",
-          "published_at",
-          "version",
-          "document_count"
-        ],
-        "title": "KnowledgeBaseRevisionResponse",
-        "type": "object"
-      },
-      "KnowledgeBaseSnapshotResponse": {
-        "properties": {
-          "documents": {
-            "items": {
-              "$ref": "#/components/schemas/KnowledgeDocumentRevisionResponse"
-            },
-            "title": "Documents",
-            "type": "array"
-          },
-          "revision": {
-            "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
-          }
-        },
-        "required": [
-          "revision",
-          "documents"
-        ],
-        "title": "KnowledgeBaseSnapshotResponse",
-        "type": "object"
-      },
-      "KnowledgeBaseStateResponse": {
-        "properties": {
-          "draft_revision": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "latest_published_revision": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "published_documents": {
-            "items": {
-              "$ref": "#/components/schemas/KnowledgeDocumentSummaryResponse"
-            },
-            "title": "Published Documents",
-            "type": "array"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tenant_id",
-          "latest_published_revision",
-          "draft_revision",
-          "published_documents"
-        ],
-        "title": "KnowledgeBaseStateResponse",
-        "type": "object"
-      },
-      "KnowledgeDocumentInput": {
-        "additionalProperties": false,
-        "properties": {
-          "content": {
-            "default": "",
-            "maxLength": 1000000,
-            "title": "Content",
-            "type": "string"
-          },
-          "key": {
-            "maxLength": 100,
-            "minLength": 1,
-            "pattern": "^[a-z][a-z0-9_-]*$",
-            "title": "Key",
-            "type": "string"
-          },
-          "media_type": {
-            "const": "text/markdown",
-            "default": "text/markdown",
-            "title": "Media Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key"
-        ],
-        "title": "KnowledgeDocumentInput",
-        "type": "object"
-      },
-      "KnowledgeDocumentPlanResponse": {
-        "properties": {
-          "action": {
-            "enum": [
-              "reuse",
-              "create",
-              "remove"
-            ],
-            "title": "Action",
-            "type": "string"
-          },
-          "current_revision_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Current Revision Number"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "status": {
-            "enum": [
-              "unchanged",
-              "modified",
-              "local-only",
-              "missing-local"
-            ],
-            "title": "Status",
-            "type": "string"
-          }
-        },
-        "required": [
-          "key",
-          "status",
-          "current_revision_number",
-          "action"
-        ],
-        "title": "KnowledgeDocumentPlanResponse",
-        "type": "object"
-      },
-      "KnowledgeDocumentRevisionResponse": {
-        "properties": {
-          "content": {
-            "title": "Content",
-            "type": "string"
-          },
-          "content_hash": {
-            "title": "Content Hash",
-            "type": "string"
-          },
-          "document_revision_number": {
-            "title": "Document Revision Number",
-            "type": "integer"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "media_type": {
-            "title": "Media Type",
-            "type": "string"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "key",
-          "media_type",
-          "document_revision_number",
-          "content",
-          "content_hash",
-          "position"
-        ],
-        "title": "KnowledgeDocumentRevisionResponse",
-        "type": "object"
-      },
-      "KnowledgeDocumentSummaryResponse": {
-        "properties": {
-          "document_revision_number": {
-            "title": "Document Revision Number",
-            "type": "integer"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "media_type": {
-            "title": "Media Type",
-            "type": "string"
-          },
-          "position": {
-            "title": "Position",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "key",
-          "media_type",
-          "document_revision_number",
-          "position"
-        ],
-        "title": "KnowledgeDocumentSummaryResponse",
-        "type": "object"
-      },
-      "KnowledgeDocumentsRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "documents": {
-            "items": {
-              "$ref": "#/components/schemas/KnowledgeDocumentInput"
-            },
-            "maxItems": 100,
-            "title": "Documents",
-            "type": "array"
-          }
-        },
-        "required": [
-          "documents"
-        ],
-        "title": "KnowledgeDocumentsRequest",
-        "type": "object"
-      },
       "LLMRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
@@ -1860,185 +1080,23 @@
         "title": "LocalVADRuntimeSettings",
         "type": "object"
       },
-      "LocalizationConfig": {
-        "additionalProperties": false,
+      "PlatformDraftState": {
         "properties": {
-          "default_locale": {
-            "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$",
-            "title": "Default Locale",
+          "id": {
+            "title": "Id",
             "type": "string"
           },
-          "timezone": {
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Timezone",
-            "type": "string"
-          }
-        },
-        "required": [
-          "default_locale",
-          "timezone"
-        ],
-        "title": "LocalizationConfig",
-        "type": "object"
-      },
-      "ManagedWebhookExecution": {
-        "additionalProperties": false,
-        "properties": {
-          "connection_id": {
-            "format": "uuid",
-            "title": "Connection Id",
-            "type": "string"
-          },
-          "mapping_contract_version": {
-            "const": 1,
-            "title": "Mapping Contract Version",
-            "type": "integer"
-          },
-          "mapping_engine": {
-            "const": "jsonata-python",
-            "title": "Mapping Engine",
-            "type": "string"
-          },
-          "mapping_engine_version": {
-            "const": "0.7.0",
-            "title": "Mapping Engine Version",
-            "type": "string"
-          },
-          "mapping_language": {
-            "const": "jsonata",
-            "title": "Mapping Language",
-            "type": "string"
-          },
-          "plan_type": {
-            "const": "managed_webhook.post_json.v1",
-            "title": "Plan Type",
-            "type": "string"
-          },
-          "request_mapping": {
-            "maxLength": 20000,
-            "minLength": 1,
-            "title": "Request Mapping",
-            "type": "string"
-          },
-          "response": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ManagedWebhookResponseConfig"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "timeout_seconds": {
-            "exclusiveMinimum": 0.0,
-            "maximum": 60.0,
-            "title": "Timeout Seconds",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "plan_type",
-          "connection_id",
-          "mapping_language",
-          "mapping_contract_version",
-          "mapping_engine",
-          "mapping_engine_version",
-          "request_mapping",
-          "timeout_seconds"
-        ],
-        "title": "ManagedWebhookExecution",
-        "type": "object"
-      },
-      "ManagedWebhookResponseConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "mapping": {
-            "anyOf": [
-              {
-                "maxLength": 20000,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Mapping"
-          },
-          "mode": {
-            "enum": [
-              "status_only",
-              "text",
-              "json"
-            ],
-            "title": "Mode",
-            "type": "string"
-          },
-          "output_schema": {
-            "additionalProperties": true,
-            "title": "Output Schema",
-            "type": "object"
-          },
-          "success_output": {
+          "value": {
             "anyOf": [
               {
                 "additionalProperties": true,
                 "type": "object"
               },
               {
-                "type": "null"
-              }
-            ],
-            "title": "Success Output"
-          }
-        },
-        "required": [
-          "mode",
-          "output_schema"
-        ],
-        "title": "ManagedWebhookResponseConfig",
-        "type": "object"
-      },
-      "PlatformPromptPublishResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "published_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
                 "type": "string"
-              },
-              {
-                "type": "null"
               }
             ],
-            "title": "Published At"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "rollout": {
-            "$ref": "#/components/schemas/PromptSetRolloutSummaryResponse"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
+            "title": "Value"
           },
           "version": {
             "title": "Version",
@@ -2047,79 +1105,76 @@
         },
         "required": [
           "id",
-          "revision_number",
-          "status",
-          "text",
-          "created_at",
-          "published_at",
           "version",
-          "rollout"
+          "value"
         ],
-        "title": "PlatformPromptPublishResponse",
+        "title": "PlatformDraftState",
         "type": "object"
       },
-      "PlatformPromptRevisionResponse": {
+      "PlatformPublishRequest": {
+        "additionalProperties": false,
         "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
+          "profile_prompt_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Profile Prompt Versions",
+            "type": "object"
           },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "key": {
-            "title": "Key",
-            "type": "string"
-          },
-          "prompt_id": {
-            "format": "uuid",
-            "title": "Prompt Id",
-            "type": "string"
-          },
-          "published_at": {
+          "runtime_version": {
             "anyOf": [
               {
-                "format": "date-time",
-                "type": "string"
+                "minimum": 1.0,
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Published At"
+            "title": "Runtime Version"
           },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "status": {
-            "title": "Status",
+          "system_prompt_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Prompt Version"
+          }
+        },
+        "title": "PlatformPublishRequest",
+        "type": "object"
+      },
+      "PlatformReleaseResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
             "type": "string"
           },
-          "text": {
-            "title": "Text",
+          "release_number": {
+            "title": "Release Number",
+            "type": "integer"
+          },
+          "runtime_revision_id": {
+            "title": "Runtime Revision Id",
             "type": "string"
           },
-          "version": {
-            "title": "Version",
-            "type": "integer"
+          "system_prompt_revision_id": {
+            "title": "System Prompt Revision Id",
+            "type": "string"
           }
         },
         "required": [
           "id",
-          "revision_number",
-          "status",
-          "text",
-          "created_at",
-          "published_at",
-          "version",
-          "prompt_id",
-          "key"
+          "release_number",
+          "runtime_revision_id",
+          "system_prompt_revision_id"
         ],
-        "title": "PlatformPromptRevisionResponse",
+        "title": "PlatformReleaseResponse",
         "type": "object"
       },
       "PlatformRuntimePolicy": {
@@ -2151,86 +1206,69 @@
         "title": "PlatformRuntimePolicy",
         "type": "object"
       },
-      "PlatformRuntimeRequest": {
-        "additionalProperties": false,
+      "PlatformStateResponse": {
         "properties": {
-          "policy": {
-            "$ref": "#/components/schemas/PlatformRuntimePolicy"
-          }
-        },
-        "required": [
-          "policy"
-        ],
-        "title": "PlatformRuntimeRequest",
-        "type": "object"
-      },
-      "PlatformRuntimeRevisionResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
+          "active_profile_prompts": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Active Profile Prompts",
+            "type": "object"
           },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "policy": {
-            "$ref": "#/components/schemas/PlatformRuntimePolicy"
-          },
-          "published_at": {
+          "active_release": {
             "anyOf": [
               {
-                "format": "date-time",
+                "$ref": "#/components/schemas/PlatformReleaseResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_runtime": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Runtime"
+          },
+          "active_system_prompt": {
+            "anyOf": [
+              {
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Published At"
+            "title": "Active System Prompt"
           },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
+          "profile_prompt_drafts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PlatformDraftState"
+            },
+            "title": "Profile Prompt Drafts",
+            "type": "object"
           },
-          "status": {
-            "$ref": "#/components/schemas/RuntimeRevisionStatus"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "revision_number",
-          "status",
-          "policy",
-          "created_at",
-          "published_at",
-          "version"
-        ],
-        "title": "PlatformRuntimeRevisionResponse",
-        "type": "object"
-      },
-      "PlatformRuntimeStateResponse": {
-        "properties": {
-          "draft_revision": {
+          "runtime_draft": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+                "$ref": "#/components/schemas/PlatformDraftState"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "latest_published_revision": {
+          "system_prompt_draft": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+                "$ref": "#/components/schemas/PlatformDraftState"
               },
               {
                 "type": "null"
@@ -2239,10 +1277,15 @@
           }
         },
         "required": [
-          "latest_published_revision",
-          "draft_revision"
+          "runtime_draft",
+          "system_prompt_draft",
+          "profile_prompt_drafts",
+          "active_release",
+          "active_runtime",
+          "active_system_prompt",
+          "active_profile_prompts"
         ],
-        "title": "PlatformRuntimeStateResponse",
+        "title": "PlatformStateResponse",
         "type": "object"
       },
       "PlatformTelephonyResponse": {
@@ -2318,489 +1361,79 @@
         "title": "PlatformTelephonyResponse",
         "type": "object"
       },
-      "PostCallAction": {
+      "PromptDraftWrite": {
         "additionalProperties": false,
         "properties": {
-          "action_id": {
-            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
-            "title": "Action Id",
-            "type": "string"
-          },
-          "execution": {
-            "$ref": "#/components/schemas/ManagedWebhookExecution"
-          },
-          "inputs": {
-            "maxProperties": 10,
-            "patternProperties": {
-              "^[a-z][a-z0-9_]{0,63}$": {
-                "$ref": "#/components/schemas/PostCallActionInput"
-              }
-            },
-            "title": "Inputs",
-            "type": "object"
-          },
-          "semantic_key": {
-            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
-            "title": "Semantic Key",
-            "type": "string"
-          },
-          "semantic_version": {
-            "exclusiveMinimum": 0.0,
-            "title": "Semantic Version",
-            "type": "integer"
-          },
-          "type": {
-            "const": "http.post_json",
-            "default": "http.post_json",
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "action_id",
-          "semantic_key",
-          "semantic_version",
-          "execution"
-        ],
-        "title": "PostCallAction",
-        "type": "object"
-      },
-      "PostCallActionInput": {
-        "additionalProperties": false,
-        "properties": {
-          "artifact": {
-            "enum": [
-              "transcript",
-              "call_recording",
-              "call_summary"
-            ],
-            "title": "Artifact",
-            "type": "string"
-          },
-          "representation": {
-            "enum": [
-              "raw_json",
-              "plain_text",
-              "original",
-              "base64_text"
-            ],
-            "title": "Representation",
-            "type": "string"
-          }
-        },
-        "required": [
-          "artifact",
-          "representation"
-        ],
-        "title": "PostCallActionInput",
-        "type": "object"
-      },
-      "PromptSetApplyResponse": {
-        "properties": {
-          "changed": {
-            "title": "Changed",
-            "type": "boolean"
-          },
-          "prompt_set": {
-            "$ref": "#/components/schemas/PromptSetDetailResponse"
-          }
-        },
-        "required": [
-          "changed",
-          "prompt_set"
-        ],
-        "title": "PromptSetApplyResponse",
-        "type": "object"
-      },
-      "PromptSetComponentPlanResponse": {
-        "properties": {
-          "active": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PromptSetComponentResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "changed": {
-            "title": "Changed",
-            "type": "boolean"
-          },
-          "desired": {
-            "$ref": "#/components/schemas/PromptSetComponentResponse"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          }
-        },
-        "required": [
-          "active",
-          "desired",
-          "changed"
-        ],
-        "title": "PromptSetComponentPlanResponse",
-        "type": "object"
-      },
-      "PromptSetComponentResponse": {
-        "properties": {
-          "key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Key"
-          },
-          "revision_id": {
-            "format": "uuid",
-            "title": "Revision Id",
-            "type": "string"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "revision_id",
-          "revision_number"
-        ],
-        "title": "PromptSetComponentResponse",
-        "type": "object"
-      },
-      "PromptSetCompositionResponse": {
-        "properties": {
-          "knowledge_base": {
-            "$ref": "#/components/schemas/PromptSetComponentResponse"
-          },
-          "profile": {
-            "$ref": "#/components/schemas/PromptSetComponentResponse"
-          },
-          "system": {
-            "$ref": "#/components/schemas/PromptSetComponentResponse"
-          },
-          "tenant_prompt": {
-            "$ref": "#/components/schemas/PromptSetComponentResponse"
-          }
-        },
-        "required": [
-          "system",
-          "profile",
-          "tenant_prompt",
-          "knowledge_base"
-        ],
-        "title": "PromptSetCompositionResponse",
-        "type": "object"
-      },
-      "PromptSetDetailResponse": {
-        "properties": {
-          "components": {
-            "$ref": "#/components/schemas/PromptSetCompositionResponse"
-          },
-          "revision": {
-            "$ref": "#/components/schemas/PromptSetRevisionResponse"
-          }
-        },
-        "required": [
-          "revision",
-          "components"
-        ],
-        "title": "PromptSetDetailResponse",
-        "type": "object"
-      },
-      "PromptSetPlanComponentsResponse": {
-        "properties": {
-          "knowledge_base": {
-            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
-          },
-          "profile": {
-            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
-          },
-          "system": {
-            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
-          },
-          "tenant_prompt": {
-            "$ref": "#/components/schemas/PromptSetComponentPlanResponse"
-          }
-        },
-        "required": [
-          "system",
-          "profile",
-          "tenant_prompt",
-          "knowledge_base"
-        ],
-        "title": "PromptSetPlanComponentsResponse",
-        "type": "object"
-      },
-      "PromptSetPlanResponse": {
-        "properties": {
-          "active_revision_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Revision Number"
-          },
-          "components": {
-            "$ref": "#/components/schemas/PromptSetPlanComponentsResponse"
-          },
-          "status": {
-            "enum": [
-              "unchanged",
-              "modified",
-              "missing-active"
-            ],
-            "title": "Status",
-            "type": "string"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tenant_id",
-          "status",
-          "active_revision_number",
-          "components"
-        ],
-        "title": "PromptSetPlanResponse",
-        "type": "object"
-      },
-      "PromptSetResolutionErrorDetail": {
-        "properties": {
-          "errors": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationIssue"
-            },
-            "title": "Errors",
-            "type": "array"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "message",
-          "errors"
-        ],
-        "title": "PromptSetResolutionErrorDetail",
-        "type": "object"
-      },
-      "PromptSetResolutionErrorResponse": {
-        "properties": {
-          "detail": {
-            "$ref": "#/components/schemas/PromptSetResolutionErrorDetail"
-          }
-        },
-        "required": [
-          "detail"
-        ],
-        "title": "PromptSetResolutionErrorResponse",
-        "type": "object"
-      },
-      "PromptSetRevisionResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "knowledge_base_revision_id": {
-            "format": "uuid",
-            "title": "Knowledge Base Revision Id",
-            "type": "string"
-          },
-          "profile_prompt_revision_id": {
-            "format": "uuid",
-            "title": "Profile Prompt Revision Id",
-            "type": "string"
-          },
-          "published_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Published At"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
-          "system_prompt_revision_id": {
-            "format": "uuid",
-            "title": "System Prompt Revision Id",
-            "type": "string"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          },
-          "tenant_prompt_revision_id": {
-            "format": "uuid",
-            "title": "Tenant Prompt Revision Id",
-            "type": "string"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "tenant_id",
-          "revision_number",
-          "status",
-          "system_prompt_revision_id",
-          "profile_prompt_revision_id",
-          "tenant_prompt_revision_id",
-          "knowledge_base_revision_id",
-          "created_at",
-          "published_at",
-          "version"
-        ],
-        "title": "PromptSetRevisionResponse",
-        "type": "object"
-      },
-      "PromptSetRolloutSummaryResponse": {
-        "properties": {
-          "unchanged_tenants": {
-            "title": "Unchanged Tenants",
-            "type": "integer"
-          },
-          "updated_tenants": {
-            "title": "Updated Tenants",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "updated_tenants",
-          "unchanged_tenants"
-        ],
-        "title": "PromptSetRolloutSummaryResponse",
-        "type": "object"
-      },
-      "PromptTextRevisionResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "published_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Published At"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
-          },
           "text": {
+            "maxLength": 1000000,
+            "minLength": 1,
             "title": "Text",
             "type": "string"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
           }
         },
         "required": [
-          "id",
-          "revision_number",
-          "status",
-          "text",
-          "created_at",
-          "published_at",
-          "version"
+          "text"
         ],
-        "title": "PromptTextRevisionResponse",
+        "title": "PromptDraftWrite",
         "type": "object"
       },
-      "PublishAllResponse": {
+      "PublishAllRequest": {
+        "additionalProperties": false,
         "properties": {
-          "published_sections": {
+          "comment": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "drafts": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/ComponentDraftExpectation"
             },
-            "title": "Published Sections",
+            "maxItems": 6,
+            "minItems": 1,
+            "title": "Drafts",
             "type": "array"
           }
         },
         "required": [
-          "published_sections"
+          "drafts"
         ],
-        "title": "PublishAllResponse",
+        "title": "PublishAllRequest",
         "type": "object"
       },
-      "RuntimeRevisionStatus": {
-        "enum": [
-          "draft",
-          "published",
-          "archived"
-        ],
-        "title": "RuntimeRevisionStatus",
-        "type": "string"
-      },
-      "RuntimeValidationResponse": {
+      "RollbackRequest": {
+        "additionalProperties": false,
         "properties": {
-          "valid": {
-            "default": true,
-            "title": "Valid",
-            "type": "boolean"
+          "target_release_id": {
+            "format": "uuid",
+            "title": "Target Release Id",
+            "type": "string"
           }
         },
-        "title": "RuntimeValidationResponse",
+        "required": [
+          "target_release_id"
+        ],
+        "title": "RollbackRequest",
+        "type": "object"
+      },
+      "RuntimeDraftWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/PlatformRuntimePolicy"
+          }
+        },
+        "required": [
+          "policy"
+        ],
+        "title": "RuntimeDraftWrite",
         "type": "object"
       },
       "STTRuntimeSettings": {
@@ -2910,419 +1543,19 @@
         "title": "TTSRuntimeSettings",
         "type": "object"
       },
-      "TelephonyReadiness": {
+      "TenantReleaseResponse": {
         "properties": {
-          "human_handoff": {
-            "title": "Human Handoff",
-            "type": "string"
-          },
-          "incoming_calls": {
-            "title": "Incoming Calls",
-            "type": "string"
-          },
-          "outgoing_calls": {
-            "title": "Outgoing Calls",
-            "type": "string"
-          },
-          "phone_number": {
-            "title": "Phone Number",
-            "type": "string"
-          }
-        },
-        "required": [
-          "phone_number",
-          "incoming_calls",
-          "outgoing_calls",
-          "human_handoff"
-        ],
-        "title": "TelephonyReadiness",
-        "type": "object"
-      },
-      "TenantCapabilityProfile": {
-        "additionalProperties": false,
-        "properties": {
-          "agent_input_schema": {
-            "additionalProperties": true,
-            "title": "Agent Input Schema",
-            "type": "object"
-          },
-          "announcement": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Announcement",
-            "type": "string"
-          },
-          "business_policy": {
-            "$ref": "#/components/schemas/CapabilityBusinessPolicy"
-          },
-          "description": {
-            "maxLength": 1000,
-            "minLength": 1,
-            "title": "Description",
-            "type": "string"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "execution": {
-            "discriminator": {
-              "mapping": {
-                "google_sheets.append_values.v1": "#/components/schemas/GoogleSheetsAppendExecution",
-                "managed_webhook.post_json.v1": "#/components/schemas/ManagedWebhookExecution"
-              },
-              "propertyName": "plan_type"
-            },
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/GoogleSheetsAppendExecution"
-              },
-              {
-                "$ref": "#/components/schemas/ManagedWebhookExecution"
-              }
-            ],
-            "title": "Execution"
-          },
-          "semantic_version": {
-            "exclusiveMinimum": 0.0,
-            "title": "Semantic Version",
-            "type": "integer"
-          },
-          "validation_fixtures": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "maxItems": 3,
-            "minItems": 2,
-            "title": "Validation Fixtures",
-            "type": "array"
-          }
-        },
-        "required": [
-          "enabled",
-          "semantic_version",
-          "description",
-          "announcement",
-          "agent_input_schema",
-          "execution",
-          "validation_fixtures"
-        ],
-        "title": "TenantCapabilityProfile",
-        "type": "object"
-      },
-      "TenantConfigV1": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "$ref": "#/components/schemas/AgentConfig"
-          },
-          "capabilities": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "$ref": "#/components/schemas/TenantCapabilityProfile"
-                }
-              ]
-            },
-            "title": "Capabilities",
-            "type": "object"
-          },
-          "conversation": {
-            "$ref": "#/components/schemas/ConversationConfig"
-          },
-          "localization": {
-            "$ref": "#/components/schemas/LocalizationConfig"
-          },
-          "schema_version": {
-            "const": 1,
-            "title": "Schema Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "localization",
-          "agent",
-          "conversation",
-          "schema_version"
-        ],
-        "title": "TenantConfigV1",
-        "type": "object"
-      },
-      "TenantConfigV2": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "$ref": "#/components/schemas/AgentConfig"
-          },
-          "capabilities": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "$ref": "#/components/schemas/TenantCapabilityProfile"
-                }
-              ]
-            },
-            "title": "Capabilities",
-            "type": "object"
-          },
-          "conversation": {
-            "$ref": "#/components/schemas/ConversationConfig"
-          },
-          "localization": {
-            "$ref": "#/components/schemas/LocalizationConfig"
-          },
-          "prompt_bundle_revision_id": {
-            "format": "uuid",
-            "title": "Prompt Bundle Revision Id",
-            "type": "string"
-          },
-          "schema_version": {
-            "const": 2,
-            "title": "Schema Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "localization",
-          "agent",
-          "conversation",
-          "schema_version",
-          "prompt_bundle_revision_id"
-        ],
-        "title": "TenantConfigV2",
-        "type": "object"
-      },
-      "TenantConfigV3": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "$ref": "#/components/schemas/AgentConfigV3"
-          },
-          "business": {
-            "$ref": "#/components/schemas/BusinessConfig"
-          },
-          "capabilities": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "$ref": "#/components/schemas/TenantCapabilityProfile"
-                }
-              ]
-            },
-            "title": "Capabilities",
-            "type": "object"
-          },
-          "contact": {
-            "$ref": "#/components/schemas/ContactConfig"
-          },
-          "conversation": {
-            "$ref": "#/components/schemas/ConversationConfig"
-          },
-          "localization": {
-            "$ref": "#/components/schemas/LocalizationConfig"
-          },
-          "post_call_actions": {
-            "items": {
-              "$ref": "#/components/schemas/PostCallAction"
-            },
-            "maxItems": 20,
-            "title": "Post Call Actions",
-            "type": "array"
-          },
-          "schema_version": {
-            "const": 3,
-            "title": "Schema Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "schema_version",
-          "business",
-          "localization",
-          "agent",
-          "conversation"
-        ],
-        "title": "TenantConfigV3",
-        "type": "object"
-      },
-      "TenantConfigV4": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "$ref": "#/components/schemas/AgentConfigV3"
-          },
-          "business": {
-            "$ref": "#/components/schemas/BusinessConfig"
-          },
-          "capabilities": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "$ref": "#/components/schemas/TenantCapabilityProfile"
-                }
-              ]
-            },
-            "title": "Capabilities",
-            "type": "object"
-          },
-          "contact": {
-            "$ref": "#/components/schemas/ContactConfig"
-          },
-          "conversation": {
-            "$ref": "#/components/schemas/ConversationConfig"
-          },
-          "handoff": {
-            "$ref": "#/components/schemas/HandoffConfig"
-          },
-          "localization": {
-            "$ref": "#/components/schemas/LocalizationConfig"
-          },
-          "post_call_actions": {
-            "items": {
-              "$ref": "#/components/schemas/PostCallAction"
-            },
-            "maxItems": 20,
-            "title": "Post Call Actions",
-            "type": "array"
-          },
-          "schema_version": {
-            "const": 4,
-            "title": "Schema Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "schema_version",
-          "business",
-          "localization",
-          "agent",
-          "conversation"
-        ],
-        "title": "TenantConfigV4",
-        "type": "object"
-      },
-      "TenantConfigV5": {
-        "additionalProperties": false,
-        "properties": {
-          "agent": {
-            "$ref": "#/components/schemas/AgentConfigV3"
-          },
-          "business": {
-            "$ref": "#/components/schemas/BusinessConfig"
-          },
-          "capabilities": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "$ref": "#/components/schemas/TenantCapabilityProfile"
-                }
-              ]
-            },
-            "title": "Capabilities",
-            "type": "object"
-          },
-          "contact": {
-            "$ref": "#/components/schemas/ContactConfig"
-          },
-          "conversation": {
-            "$ref": "#/components/schemas/ConversationConfig"
-          },
-          "localization": {
-            "$ref": "#/components/schemas/LocalizationConfig"
-          },
-          "post_call_actions": {
-            "items": {
-              "$ref": "#/components/schemas/PostCallAction"
-            },
-            "maxItems": 20,
-            "title": "Post Call Actions",
-            "type": "array"
-          },
-          "schema_version": {
-            "const": 5,
-            "title": "Schema Version",
-            "type": "integer"
-          },
-          "telephony": {
-            "$ref": "#/components/schemas/TenantTelephonyConfig"
-          }
-        },
-        "required": [
-          "schema_version",
-          "business",
-          "localization",
-          "agent",
-          "conversation"
-        ],
-        "title": "TenantConfigV5",
-        "type": "object"
-      },
-      "TenantLLMRuntimeOverride": {
-        "additionalProperties": false,
-        "properties": {
-          "model": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Model",
-            "type": "string"
-          },
-          "reasoning_effort": {
+          "comment": {
             "anyOf": [
               {
-                "enum": [
-                  "none",
-                  "low",
-                  "medium",
-                  "high",
-                  "xhigh",
-                  "max"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Reasoning Effort"
+            "title": "Comment"
           },
-          "temperature": {
-            "anyOf": [
-              {
-                "maximum": 2.0,
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Temperature"
-          }
-        },
-        "required": [
-          "model"
-        ],
-        "title": "TenantLLMRuntimeOverride",
-        "type": "object"
-      },
-      "TenantPromptRevisionResponse": {
-        "properties": {
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3333,62 +1566,48 @@
             "title": "Id",
             "type": "string"
           },
-          "prompt_id": {
+          "release_number": {
+            "title": "Release Number",
+            "type": "integer"
+          },
+          "runtime_bundle_id": {
             "format": "uuid",
-            "title": "Prompt Id",
+            "title": "Runtime Bundle Id",
             "type": "string"
           },
-          "published_at": {
+          "source_release_id": {
             "anyOf": [
               {
-                "format": "date-time",
+                "format": "uuid",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Published At"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "status": {
-            "title": "Status",
-            "type": "string"
+            "title": "Source Release Id"
           },
           "tenant_id": {
             "format": "uuid",
             "title": "Tenant Id",
             "type": "string"
-          },
-          "text": {
-            "title": "Text",
-            "type": "string"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
           }
         },
         "required": [
           "id",
-          "revision_number",
-          "status",
-          "text",
-          "created_at",
-          "published_at",
-          "version",
           "tenant_id",
-          "prompt_id"
+          "release_number",
+          "runtime_bundle_id",
+          "source_release_id",
+          "created_at",
+          "comment"
         ],
-        "title": "TenantPromptRevisionResponse",
+        "title": "TenantReleaseResponse",
         "type": "object"
       },
       "TenantResponse": {
         "properties": {
-          "active_config_revision_id": {
+          "active_release_id": {
             "anyOf": [
               {
                 "format": "uuid",
@@ -3398,31 +1617,7 @@
                 "type": "null"
               }
             ],
-            "title": "Active Config Revision Id"
-          },
-          "active_prompt_set_revision_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Prompt Set Revision Id"
-          },
-          "active_voice_runtime_revision_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Voice Runtime Revision Id"
+            "title": "Active Release Id"
           },
           "business_type": {
             "title": "Business Type",
@@ -3461,139 +1656,11 @@
           "display_name",
           "business_type",
           "status",
-          "active_config_revision_id",
-          "active_prompt_set_revision_id",
+          "active_release_id",
           "created_at",
           "updated_at"
         ],
         "title": "TenantResponse",
-        "type": "object"
-      },
-      "TenantRuntimeOverride": {
-        "additionalProperties": false,
-        "properties": {
-          "llm": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TenantLLMRuntimeOverride"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "tts": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TenantTTSRuntimeOverride"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "TenantRuntimeOverride",
-        "type": "object"
-      },
-      "TenantRuntimeRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "settings": {
-            "$ref": "#/components/schemas/TenantRuntimeOverride"
-          }
-        },
-        "required": [
-          "settings"
-        ],
-        "title": "TenantRuntimeRequest",
-        "type": "object"
-      },
-      "TenantRuntimeRevisionResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "published_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Published At"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "settings": {
-            "$ref": "#/components/schemas/TenantRuntimeOverride"
-          },
-          "status": {
-            "$ref": "#/components/schemas/RuntimeRevisionStatus"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "id",
-          "tenant_id",
-          "revision_number",
-          "status",
-          "settings",
-          "created_at",
-          "published_at",
-          "version"
-        ],
-        "title": "TenantRuntimeRevisionResponse",
-        "type": "object"
-      },
-      "TenantRuntimeStateResponse": {
-        "properties": {
-          "draft_revision": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "latest_published_revision": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "required": [
-          "latest_published_revision",
-          "draft_revision"
-        ],
-        "title": "TenantRuntimeStateResponse",
         "type": "object"
       },
       "TenantStatus": {
@@ -3604,158 +1671,6 @@
         ],
         "title": "TenantStatus",
         "type": "string"
-      },
-      "TenantTTSRuntimeOverride": {
-        "additionalProperties": false,
-        "properties": {
-          "voice_id": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Voice Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "voice_id"
-        ],
-        "title": "TenantTTSRuntimeOverride",
-        "type": "object"
-      },
-      "TenantTelephonyConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "handoff": {
-            "$ref": "#/components/schemas/HandoffConfig"
-          },
-          "phone_number": {
-            "anyOf": [
-              {
-                "pattern": "^\\+[1-9]\\d{1,14}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone Number"
-          }
-        },
-        "title": "TenantTelephonyConfig",
-        "type": "object"
-      },
-      "TenantTelephonyResponse": {
-        "properties": {
-          "desired": {
-            "$ref": "#/components/schemas/TenantTelephonyConfig"
-          },
-          "draft_revision_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Draft Revision Id"
-          },
-          "draft_version": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Draft Version"
-          },
-          "last_error": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Error"
-          },
-          "last_reconciled_at": {
-            "anyOf": [
-              {
-                "format": "date-time",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Reconciled At"
-          },
-          "provisioning_status": {
-            "title": "Provisioning Status",
-            "type": "string"
-          },
-          "published_revision_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Published Revision Id"
-          },
-          "readiness": {
-            "$ref": "#/components/schemas/TelephonyReadiness"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "tenant_id",
-          "desired",
-          "draft_revision_id",
-          "draft_version",
-          "published_revision_id",
-          "provisioning_status",
-          "last_error",
-          "last_reconciled_at",
-          "readiness"
-        ],
-        "title": "TenantTelephonyResponse",
-        "type": "object"
-      },
-      "TenantTelephonyUpdate": {
-        "additionalProperties": false,
-        "properties": {
-          "handoff": {
-            "$ref": "#/components/schemas/HandoffConfig"
-          },
-          "phone_number": {
-            "anyOf": [
-              {
-                "maxLength": 16,
-                "minLength": 3,
-                "pattern": "^\\+[1-9][0-9]{1,14}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Phone Number"
-          }
-        },
-        "title": "TenantTelephonyUpdate",
-        "type": "object"
       },
       "TurnRuntimeSettings": {
         "additionalProperties": false,
@@ -3786,49 +1701,6 @@
         "title": "TurnRuntimeSettings",
         "type": "object"
       },
-      "UpdateDraftRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "comment": {
-            "anyOf": [
-              {
-                "maxLength": 1000,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Comment"
-          },
-          "config": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config"
-          },
-          "schema_version": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Schema Version"
-          }
-        },
-        "title": "UpdateDraftRequest",
-        "type": "object"
-      },
       "UpdateIntegrationConnectionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3856,127 +1728,6 @@
           }
         },
         "title": "UpdateIntegrationConnectionRequest",
-        "type": "object"
-      },
-      "UpdatePromptSetDraftRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "knowledge_base_revision_id": {
-            "format": "uuid",
-            "title": "Knowledge Base Revision Id",
-            "type": "string"
-          },
-          "profile_prompt_revision_id": {
-            "format": "uuid",
-            "title": "Profile Prompt Revision Id",
-            "type": "string"
-          },
-          "system_prompt_revision_id": {
-            "format": "uuid",
-            "title": "System Prompt Revision Id",
-            "type": "string"
-          },
-          "tenant_prompt_revision_id": {
-            "format": "uuid",
-            "title": "Tenant Prompt Revision Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "system_prompt_revision_id",
-          "profile_prompt_revision_id",
-          "tenant_prompt_revision_id",
-          "knowledge_base_revision_id"
-        ],
-        "title": "UpdatePromptSetDraftRequest",
-        "type": "object"
-      },
-      "UpdateTextDraftRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "text": {
-            "maxLength": 1000000,
-            "title": "Text",
-            "type": "string"
-          }
-        },
-        "required": [
-          "text"
-        ],
-        "title": "UpdateTextDraftRequest",
-        "type": "object"
-      },
-      "ValidateConfigRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
-          "schema_version": {
-            "exclusiveMinimum": 0.0,
-            "title": "Schema Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "schema_version",
-          "config"
-        ],
-        "title": "ValidateConfigRequest",
-        "type": "object"
-      },
-      "ValidateConfigResponse": {
-        "properties": {
-          "errors": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationIssue"
-            },
-            "title": "Errors",
-            "type": "array"
-          },
-          "normalized_config": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Normalized Config"
-          },
-          "valid": {
-            "title": "Valid",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "valid"
-        ],
-        "title": "ValidateConfigResponse",
-        "type": "object"
-      },
-      "ValidateDraftResponse": {
-        "properties": {
-          "errors": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationIssue"
-            },
-            "title": "Errors",
-            "type": "array"
-          },
-          "valid": {
-            "title": "Valid",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "valid"
-        ],
-        "title": "ValidateDraftResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -4017,200 +1768,6 @@
           "type"
         ],
         "title": "ValidationError",
-        "type": "object"
-      },
-      "ValidationIssue": {
-        "properties": {
-          "code": {
-            "title": "Code",
-            "type": "string"
-          },
-          "message": {
-            "title": "Message",
-            "type": "string"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "code",
-          "message"
-        ],
-        "title": "ValidationIssue",
-        "type": "object"
-      },
-      "VoiceRuntimeApplyResponse": {
-        "properties": {
-          "changed": {
-            "title": "Changed",
-            "type": "boolean"
-          },
-          "voice_runtime": {
-            "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
-          }
-        },
-        "required": [
-          "changed",
-          "voice_runtime"
-        ],
-        "title": "VoiceRuntimeApplyResponse",
-        "type": "object"
-      },
-      "VoiceRuntimeChange": {
-        "properties": {
-          "after": {
-            "title": "After"
-          },
-          "before": {
-            "anyOf": [
-              {},
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Before"
-          },
-          "path": {
-            "title": "Path",
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "before",
-          "after"
-        ],
-        "title": "VoiceRuntimeChange",
-        "type": "object"
-      },
-      "VoiceRuntimePlanResponse": {
-        "properties": {
-          "active_revision": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "changes": {
-            "items": {
-              "$ref": "#/components/schemas/VoiceRuntimeChange"
-            },
-            "title": "Changes",
-            "type": "array"
-          },
-          "desired_settings": {
-            "$ref": "#/components/schemas/EffectiveVoiceRuntime"
-          },
-          "platform_runtime_revision_id": {
-            "format": "uuid",
-            "title": "Platform Runtime Revision Id",
-            "type": "string"
-          },
-          "status": {
-            "$ref": "#/components/schemas/VoiceRuntimePlanStatus"
-          },
-          "tenant_runtime_revision_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Runtime Revision Id"
-          }
-        },
-        "required": [
-          "status",
-          "active_revision",
-          "desired_settings",
-          "platform_runtime_revision_id",
-          "tenant_runtime_revision_id",
-          "changes"
-        ],
-        "title": "VoiceRuntimePlanResponse",
-        "type": "object"
-      },
-      "VoiceRuntimePlanStatus": {
-        "enum": [
-          "missing-active",
-          "unchanged",
-          "modified"
-        ],
-        "title": "VoiceRuntimePlanStatus",
-        "type": "string"
-      },
-      "VoiceRuntimeRevisionResponse": {
-        "properties": {
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "effective_settings": {
-            "$ref": "#/components/schemas/EffectiveVoiceRuntime"
-          },
-          "id": {
-            "format": "uuid",
-            "title": "Id",
-            "type": "string"
-          },
-          "platform_runtime_revision_id": {
-            "format": "uuid",
-            "title": "Platform Runtime Revision Id",
-            "type": "string"
-          },
-          "published_at": {
-            "format": "date-time",
-            "title": "Published At",
-            "type": "string"
-          },
-          "revision_number": {
-            "title": "Revision Number",
-            "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/RuntimeRevisionStatus"
-          },
-          "tenant_id": {
-            "format": "uuid",
-            "title": "Tenant Id",
-            "type": "string"
-          },
-          "tenant_runtime_revision_id": {
-            "anyOf": [
-              {
-                "format": "uuid",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Runtime Revision Id"
-          }
-        },
-        "required": [
-          "id",
-          "tenant_id",
-          "revision_number",
-          "status",
-          "platform_runtime_revision_id",
-          "tenant_runtime_revision_id",
-          "effective_settings",
-          "created_at",
-          "published_at"
-        ],
-        "title": "VoiceRuntimeRevisionResponse",
         "type": "object"
       }
     },
@@ -4323,93 +1880,16 @@
         ]
       }
     },
-    "/admin/v1/platform/prompts/profiles": {
-      "get": {
-        "operationId": "list_profiles_admin_v1_platform_prompts_profiles_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "title": "Response List Profiles Admin V1 Platform Prompts Profiles Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Profiles",
-        "tags": [
-          "admin:platform-prompts"
-        ]
-      }
-    },
-    "/admin/v1/platform/prompts/profiles/drafts": {
-      "post": {
-        "operationId": "create_profile_prompt_draft_admin_v1_platform_prompts_profiles_drafts_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePlatformPromptDraftRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlatformPromptRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Create Profile Prompt Draft",
-        "tags": [
-          "admin:platform-prompts"
-        ]
-      }
-    },
-    "/admin/v1/platform/prompts/profiles/drafts/{revision_id}": {
-      "patch": {
-        "operationId": "update_profile_prompt_draft_admin_v1_platform_prompts_profiles_drafts__revision_id__patch",
+    "/admin/v1/platform/components/profiles/{profile}/draft": {
+      "put": {
+        "operationId": "save_profile_prompt_admin_v1_platform_components_profiles__profile__draft_put",
         "parameters": [
           {
             "in": "path",
-            "name": "revision_id",
+            "name": "profile",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
+              "title": "Profile",
               "type": "string"
             }
           },
@@ -4434,7 +1914,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateTextDraftRequest"
+                "$ref": "#/components/schemas/PromptDraftWrite"
               }
             }
           },
@@ -4445,7 +1925,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PromptTextRevisionResponse"
+                  "$ref": "#/components/schemas/DraftResponse"
                 }
               }
             },
@@ -4467,130 +1947,31 @@
             "AdminToken": []
           }
         ],
-        "summary": "Update Profile Prompt Draft",
+        "summary": "Save Profile Prompt",
         "tags": [
-          "admin:platform-prompts"
+          "admin:platform-components"
         ]
       }
     },
-    "/admin/v1/platform/prompts/profiles/drafts/{revision_id}/publish": {
+    "/admin/v1/platform/components/publish": {
       "post": {
-        "operationId": "publish_profile_prompt_draft_admin_v1_platform_prompts_profiles_drafts__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlatformPromptPublishResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Profile Prompt Draft",
-        "tags": [
-          "admin:platform-prompts"
-        ]
-      }
-    },
-    "/admin/v1/platform/prompts/profiles/{key}/revisions": {
-      "get": {
-        "operationId": "list_profile_prompt_revisions_admin_v1_platform_prompts_profiles__key__revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "key",
-            "required": true,
-            "schema": {
-              "title": "Key",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PromptTextRevisionResponse"
-                  },
-                  "title": "Response List Profile Prompt Revisions Admin V1 Platform Prompts Profiles  Key  Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Profile Prompt Revisions",
-        "tags": [
-          "admin:platform-prompts"
-        ]
-      }
-    },
-    "/admin/v1/platform/prompts/system/drafts": {
-      "post": {
-        "operationId": "create_system_prompt_draft_admin_v1_platform_prompts_system_drafts_post",
+        "operationId": "publish_admin_v1_platform_components_publish_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreatePlatformPromptDraftRequest"
+                "$ref": "#/components/schemas/PlatformPublishRequest"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlatformPromptRevisionResponse"
+                  "$ref": "#/components/schemas/PlatformReleaseResponse"
                 }
               }
             },
@@ -4612,26 +1993,16 @@
             "AdminToken": []
           }
         ],
-        "summary": "Create System Prompt Draft",
+        "summary": "Publish",
         "tags": [
-          "admin:platform-prompts"
+          "admin:platform-components"
         ]
       }
     },
-    "/admin/v1/platform/prompts/system/drafts/{revision_id}": {
-      "patch": {
-        "operationId": "update_system_prompt_draft_admin_v1_platform_prompts_system_drafts__revision_id__patch",
+    "/admin/v1/platform/components/runtime/draft": {
+      "put": {
+        "operationId": "save_runtime_admin_v1_platform_components_runtime_draft_put",
         "parameters": [
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          },
           {
             "in": "header",
             "name": "If-Match",
@@ -4653,7 +2024,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateTextDraftRequest"
+                "$ref": "#/components/schemas/RuntimeDraftWrite"
               }
             }
           },
@@ -4664,7 +2035,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PromptTextRevisionResponse"
+                  "$ref": "#/components/schemas/DraftResponse"
                 }
               }
             },
@@ -4686,223 +2057,42 @@
             "AdminToken": []
           }
         ],
-        "summary": "Update System Prompt Draft",
+        "summary": "Save Runtime",
         "tags": [
-          "admin:platform-prompts"
+          "admin:platform-components"
         ]
       }
     },
-    "/admin/v1/platform/prompts/system/drafts/{revision_id}/publish": {
-      "post": {
-        "operationId": "publish_system_prompt_draft_admin_v1_platform_prompts_system_drafts__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlatformPromptPublishResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish System Prompt Draft",
-        "tags": [
-          "admin:platform-prompts"
-        ]
-      }
-    },
-    "/admin/v1/platform/prompts/system/{key}/revisions": {
+    "/admin/v1/platform/components/state": {
       "get": {
-        "operationId": "list_system_prompt_revisions_admin_v1_platform_prompts_system__key__revisions_get",
+        "operationId": "state_admin_v1_platform_components_state_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformStateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "State",
+        "tags": [
+          "admin:platform-components"
+        ]
+      }
+    },
+    "/admin/v1/platform/components/system-prompt/draft": {
+      "put": {
+        "operationId": "save_system_prompt_admin_v1_platform_components_system_prompt_draft_put",
         "parameters": [
-          {
-            "in": "path",
-            "name": "key",
-            "required": true,
-            "schema": {
-              "title": "Key",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PromptTextRevisionResponse"
-                  },
-                  "title": "Response List System Prompt Revisions Admin V1 Platform Prompts System  Key  Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List System Prompt Revisions",
-        "tags": [
-          "admin:platform-prompts"
-        ]
-      }
-    },
-    "/admin/v1/platform/publish-all": {
-      "post": {
-        "operationId": "publish_platform_all_admin_v1_platform_publish_all_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishAllResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Platform All",
-        "tags": [
-          "admin:releases"
-        ]
-      }
-    },
-    "/admin/v1/platform/runtime": {
-      "get": {
-        "operationId": "show_platform_runtime_admin_v1_platform_runtime_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlatformRuntimeStateResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Show Platform Runtime",
-        "tags": [
-          "admin:platform-runtime"
-        ]
-      }
-    },
-    "/admin/v1/platform/runtime/drafts": {
-      "post": {
-        "operationId": "create_platform_runtime_draft_admin_v1_platform_runtime_drafts_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlatformRuntimeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Create Platform Runtime Draft",
-        "tags": [
-          "admin:platform-runtime"
-        ]
-      }
-    },
-    "/admin/v1/platform/runtime/drafts/{revision_id}": {
-      "patch": {
-        "operationId": "update_platform_runtime_draft_admin_v1_platform_runtime_drafts__revision_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          },
           {
             "in": "header",
             "name": "If-Match",
@@ -4924,7 +2114,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PlatformRuntimeRequest"
+                "$ref": "#/components/schemas/PromptDraftWrite"
               }
             }
           },
@@ -4935,7 +2125,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
+                  "$ref": "#/components/schemas/DraftResponse"
                 }
               }
             },
@@ -4957,133 +2147,9 @@
             "AdminToken": []
           }
         ],
-        "summary": "Update Platform Runtime Draft",
+        "summary": "Save System Prompt",
         "tags": [
-          "admin:platform-runtime"
-        ]
-      }
-    },
-    "/admin/v1/platform/runtime/drafts/{revision_id}/publish": {
-      "post": {
-        "operationId": "publish_platform_runtime_draft_admin_v1_platform_runtime_drafts__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Platform Runtime Draft",
-        "tags": [
-          "admin:platform-runtime"
-        ]
-      }
-    },
-    "/admin/v1/platform/runtime/revisions": {
-      "get": {
-        "operationId": "list_platform_runtime_revisions_admin_v1_platform_runtime_revisions_get",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PlatformRuntimeRevisionResponse"
-                  },
-                  "title": "Response List Platform Runtime Revisions Admin V1 Platform Runtime Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Platform Runtime Revisions",
-        "tags": [
-          "admin:platform-runtime"
-        ]
-      }
-    },
-    "/admin/v1/platform/runtime/validate": {
-      "post": {
-        "operationId": "validate_platform_runtime_admin_v1_platform_runtime_validate_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlatformRuntimeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuntimeValidationResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Validate Platform Runtime",
-        "tags": [
-          "admin:platform-runtime"
+          "admin:platform-components"
         ]
       }
     },
@@ -5346,57 +2412,9 @@
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/config/active": {
-      "get": {
-        "operationId": "get_active_config_admin_v1_tenants__tenant_id__config_active_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ActiveTenantConfig"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Get Active Config",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/config/drafts": {
+    "/admin/v1/tenants/{tenant_id}/components/publish-all": {
       "post": {
-        "operationId": "create_config_draft_admin_v1_tenants__tenant_id__config_drafts_post",
+        "operationId": "publish_all_admin_v1_tenants__tenant_id__components_publish_all_post",
         "parameters": [
           {
             "in": "path",
@@ -5413,18 +2431,18 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateDraftRequest"
+                "$ref": "#/components/schemas/PublishAllRequest"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConfigRevisionResponse"
+                  "$ref": "#/components/schemas/TenantReleaseResponse"
                 }
               }
             },
@@ -5446,15 +2464,15 @@
             "AdminToken": []
           }
         ],
-        "summary": "Create Config Draft",
+        "summary": "Publish All",
         "tags": [
-          "admin:tenants"
+          "admin:tenant-components"
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/config/drafts/{revision_id}": {
-      "get": {
-        "operationId": "get_config_draft_admin_v1_tenants__tenant_id__config_drafts__revision_id__get",
+    "/admin/v1/tenants/{tenant_id}/components/rollback": {
+      "post": {
+        "operationId": "rollback_admin_v1_tenants__tenant_id__components_rollback_post",
         "parameters": [
           {
             "in": "path",
@@ -5465,14 +2483,71 @@
               "title": "Tenant Id",
               "type": "string"
             }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RollbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Rollback",
+        "tags": [
+          "admin:tenant-components"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/components/{component}": {
+      "get": {
+        "operationId": "component_state_admin_v1_tenants__tenant_id__components__component__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "component",
+            "required": true,
+            "schema": {
+              "title": "Component",
+              "type": "string"
+            }
           },
           {
             "in": "path",
-            "name": "revision_id",
+            "name": "tenant_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Revision Id",
+              "title": "Tenant Id",
               "type": "string"
             }
           }
@@ -5482,7 +2557,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConfigRevisionResponse"
+                  "$ref": "#/components/schemas/ComponentStateResponse"
                 }
               }
             },
@@ -5504,14 +2579,25 @@
             "AdminToken": []
           }
         ],
-        "summary": "Get Config Draft",
+        "summary": "Component State",
         "tags": [
-          "admin:tenants"
+          "admin:tenant-components"
         ]
-      },
-      "patch": {
-        "operationId": "update_config_draft_admin_v1_tenants__tenant_id__config_drafts__revision_id__patch",
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/components/{component}/draft": {
+      "get": {
+        "operationId": "get_draft_admin_v1_tenants__tenant_id__components__component__draft_get",
         "parameters": [
+          {
+            "in": "path",
+            "name": "component",
+            "required": true,
+            "schema": {
+              "title": "Component",
+              "type": "string"
+            }
+          },
           {
             "in": "path",
             "name": "tenant_id",
@@ -5521,14 +2607,59 @@
               "title": "Tenant Id",
               "type": "string"
             }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ComponentDraftResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Get Draft",
+        "tags": [
+          "admin:tenant-components"
+        ]
+      },
+      "put": {
+        "operationId": "save_draft_admin_v1_tenants__tenant_id__components__component__draft_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "component",
+            "required": true,
+            "schema": {
+              "title": "Component",
+              "type": "string"
+            }
           },
           {
             "in": "path",
-            "name": "revision_id",
+            "name": "tenant_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Revision Id",
+              "title": "Tenant Id",
               "type": "string"
             }
           },
@@ -5553,7 +2684,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateDraftRequest"
+                "$ref": "#/components/schemas/ComponentDraftWrite"
               }
             }
           },
@@ -5564,7 +2695,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConfigRevisionResponse"
+                  "$ref": "#/components/schemas/ComponentDraftResponse"
                 }
               }
             },
@@ -5586,184 +2717,25 @@
             "AdminToken": []
           }
         ],
-        "summary": "Update Config Draft",
+        "summary": "Save Draft",
         "tags": [
-          "admin:tenants"
+          "admin:tenant-components"
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/config/drafts/{revision_id}/publish": {
+    "/admin/v1/tenants/{tenant_id}/components/{component}/publish": {
       "post": {
-        "operationId": "publish_config_draft_admin_v1_tenants__tenant_id__config_drafts__revision_id__publish_post",
+        "operationId": "publish_component_admin_v1_tenants__tenant_id__components__component__publish_post",
         "parameters": [
           {
             "in": "path",
-            "name": "tenant_id",
+            "name": "component",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
+              "title": "Component",
               "type": "string"
             }
           },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConfigRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Config Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/config/drafts/{revision_id}/validate": {
-      "post": {
-        "operationId": "validate_config_draft_admin_v1_tenants__tenant_id__config_drafts__revision_id__validate_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidateDraftResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Validate Config Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/config/revisions": {
-      "get": {
-        "operationId": "list_config_revisions_admin_v1_tenants__tenant_id__config_revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ConfigRevisionResponse"
-                  },
-                  "title": "Response List Config Revisions Admin V1 Tenants  Tenant Id  Config Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Config Revisions",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/config/validate": {
-      "post": {
-        "operationId": "validate_config_admin_v1_tenants__tenant_id__config_validate_post",
-        "parameters": [
           {
             "in": "path",
             "name": "tenant_id",
@@ -5779,7 +2751,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ValidateConfigRequest"
+                "$ref": "#/components/schemas/ComponentPublishRequest"
               }
             }
           },
@@ -5790,7 +2762,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ValidateConfigResponse"
+                  "$ref": "#/components/schemas/TenantReleaseResponse"
                 }
               }
             },
@@ -5812,9 +2784,9 @@
             "AdminToken": []
           }
         ],
-        "summary": "Validate Config",
+        "summary": "Publish Component",
         "tags": [
-          "admin:tenants"
+          "admin:tenant-components"
         ]
       }
     },
@@ -6406,1958 +3378,6 @@
         "summary": "Test Connection",
         "tags": [
           "admin:integrations"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base": {
-      "get": {
-        "operationId": "show_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBaseStateResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Show Knowledge Base",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/draft": {
-      "get": {
-        "operationId": "get_draft_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_draft_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Get Draft Knowledge Base",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/plan": {
-      "post": {
-        "operationId": "plan_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_plan_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeDocumentsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBasePlanResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Plan Knowledge Base",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/publish": {
-      "post": {
-        "operationId": "publish_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBasePublishResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Knowledge Base",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/published": {
-      "get": {
-        "operationId": "get_published_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_published_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBaseSnapshotResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Get Published Knowledge Base",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/push": {
-      "post": {
-        "operationId": "push_knowledge_base_admin_v1_tenants__tenant_id__knowledge_base_push_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/KnowledgeDocumentsRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/KnowledgeBasePushResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Push Knowledge Base",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/knowledge-base/revisions": {
-      "get": {
-        "operationId": "list_knowledge_base_revisions_admin_v1_tenants__tenant_id__knowledge_base_revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/KnowledgeBaseRevisionResponse"
-                  },
-                  "title": "Response List Knowledge Base Revisions Admin V1 Tenants  Tenant Id  Knowledge Base Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Knowledge Base Revisions",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set": {
-      "get": {
-        "operationId": "show_prompt_set_admin_v1_tenants__tenant_id__prompt_set_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetDetailResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Show Prompt Set",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/active": {
-      "get": {
-        "operationId": "active_prompt_set_admin_v1_tenants__tenant_id__prompt_set_active_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Active Prompt Set",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/apply": {
-      "post": {
-        "operationId": "apply_prompt_set_admin_v1_tenants__tenant_id__prompt_set_apply_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetApplyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetResolutionErrorResponse"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Apply Prompt Set",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/drafts": {
-      "post": {
-        "operationId": "create_prompt_set_draft_admin_v1_tenants__tenant_id__prompt_set_drafts_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePromptSetDraftRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Create Prompt Set Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/drafts/{revision_id}": {
-      "patch": {
-        "operationId": "update_prompt_set_draft_admin_v1_tenants__tenant_id__prompt_set_drafts__revision_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdatePromptSetDraftRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Update Prompt Set Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/drafts/{revision_id}/publish": {
-      "post": {
-        "operationId": "publish_prompt_set_draft_admin_v1_tenants__tenant_id__prompt_set_drafts__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Prompt Set Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/drafts/{revision_id}/validate": {
-      "post": {
-        "operationId": "validate_prompt_set_draft_admin_v1_tenants__tenant_id__prompt_set_drafts__revision_id__validate_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidateDraftResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Validate Prompt Set Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/history": {
-      "get": {
-        "operationId": "prompt_set_history_admin_v1_tenants__tenant_id__prompt_set_history_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PromptSetDetailResponse"
-                  },
-                  "title": "Response Prompt Set History Admin V1 Tenants  Tenant Id  Prompt Set History Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Prompt Set History",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/plan": {
-      "get": {
-        "operationId": "plan_prompt_set_admin_v1_tenants__tenant_id__prompt_set_plan_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetPlanResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PromptSetResolutionErrorResponse"
-                }
-              }
-            },
-            "description": "Unprocessable Content"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Plan Prompt Set",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/prompt-set/revisions": {
-      "get": {
-        "operationId": "list_prompt_set_revisions_admin_v1_tenants__tenant_id__prompt_set_revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/PromptSetRevisionResponse"
-                  },
-                  "title": "Response List Prompt Set Revisions Admin V1 Tenants  Tenant Id  Prompt Set Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Prompt Set Revisions",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/publish-all": {
-      "post": {
-        "operationId": "publish_tenant_all_admin_v1_tenants__tenant_id__publish_all_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PublishAllResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Tenant All",
-        "tags": [
-          "admin:releases"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/runtime": {
-      "get": {
-        "operationId": "show_tenant_runtime_admin_v1_tenants__tenant_id__runtime_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantRuntimeStateResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Show Tenant Runtime",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/runtime/drafts": {
-      "post": {
-        "operationId": "create_tenant_runtime_draft_admin_v1_tenants__tenant_id__runtime_drafts_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TenantRuntimeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Create Tenant Runtime Draft",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/runtime/drafts/{revision_id}": {
-      "patch": {
-        "operationId": "update_tenant_runtime_draft_admin_v1_tenants__tenant_id__runtime_drafts__revision_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TenantRuntimeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Update Tenant Runtime Draft",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/runtime/drafts/{revision_id}/publish": {
-      "post": {
-        "operationId": "publish_tenant_runtime_draft_admin_v1_tenants__tenant_id__runtime_drafts__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Tenant Runtime Draft",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/runtime/revisions": {
-      "get": {
-        "operationId": "list_tenant_runtime_revisions_admin_v1_tenants__tenant_id__runtime_revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/TenantRuntimeRevisionResponse"
-                  },
-                  "title": "Response List Tenant Runtime Revisions Admin V1 Tenants  Tenant Id  Runtime Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Tenant Runtime Revisions",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/runtime/validate": {
-      "post": {
-        "operationId": "validate_tenant_runtime_admin_v1_tenants__tenant_id__runtime_validate_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TenantRuntimeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RuntimeValidationResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Validate Tenant Runtime",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/telephony": {
-      "get": {
-        "operationId": "show_tenant_telephony_admin_v1_tenants__tenant_id__telephony_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantTelephonyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Show Tenant Telephony",
-        "tags": [
-          "admin:tenants"
-        ]
-      },
-      "put": {
-        "operationId": "save_tenant_telephony_admin_v1_tenants__tenant_id__telephony_put",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TenantTelephonyUpdate"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantTelephonyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Save Tenant Telephony",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/telephony/status": {
-      "get": {
-        "operationId": "tenant_telephony_status_admin_v1_tenants__tenant_id__telephony_status_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantTelephonyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Tenant Telephony Status",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts": {
-      "post": {
-        "operationId": "create_tenant_prompt_draft_admin_v1_tenants__tenant_id__tenant_prompt_drafts_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateTextDraftRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantPromptRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Create Tenant Prompt Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts/{revision_id}": {
-      "patch": {
-        "operationId": "update_tenant_prompt_draft_admin_v1_tenants__tenant_id__tenant_prompt_drafts__revision_id__patch",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "If-Match"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateTextDraftRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantPromptRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Update Tenant Prompt Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/tenant-prompt/drafts/{revision_id}/publish": {
-      "post": {
-        "operationId": "publish_tenant_prompt_draft_admin_v1_tenants__tenant_id__tenant_prompt_drafts__revision_id__publish_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "revision_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Revision Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TenantPromptRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Publish Tenant Prompt Draft",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/tenant-prompt/revisions": {
-      "get": {
-        "operationId": "list_tenant_prompt_revisions_admin_v1_tenants__tenant_id__tenant_prompt_revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/TenantPromptRevisionResponse"
-                  },
-                  "title": "Response List Tenant Prompt Revisions Admin V1 Tenants  Tenant Id  Tenant Prompt Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Tenant Prompt Revisions",
-        "tags": [
-          "admin:tenants"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/voice-runtime": {
-      "get": {
-        "operationId": "show_voice_runtime_admin_v1_tenants__tenant_id__voice_runtime_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Show Voice Runtime",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/voice-runtime/apply": {
-      "post": {
-        "operationId": "apply_voice_runtime_admin_v1_tenants__tenant_id__voice_runtime_apply_post",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VoiceRuntimeApplyResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Apply Voice Runtime",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/voice-runtime/plan": {
-      "get": {
-        "operationId": "plan_voice_runtime_admin_v1_tenants__tenant_id__voice_runtime_plan_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VoiceRuntimePlanResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Plan Voice Runtime",
-        "tags": [
-          "admin:tenant-runtime"
-        ]
-      }
-    },
-    "/admin/v1/tenants/{tenant_id}/voice-runtime/revisions": {
-      "get": {
-        "operationId": "list_voice_runtime_revisions_admin_v1_tenants__tenant_id__voice_runtime_revisions_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/VoiceRuntimeRevisionResponse"
-                  },
-                  "title": "Response List Voice Runtime Revisions Admin V1 Tenants  Tenant Id  Voice Runtime Revisions Get",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "List Voice Runtime Revisions",
-        "tags": [
-          "admin:tenant-runtime"
         ]
       }
     },

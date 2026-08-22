@@ -141,6 +141,9 @@ class IntegrationJob(_Contract):
     job_id: UUID
     job_type: Literal["integration.execute"] = "integration.execute"
     capability_invocation_id: UUID
+    call_id: UUID | None = None
+    tenant_release_id: UUID | None = None
+    runtime_bundle_id: UUID | None = None
     execution_plan: ExecutionPlan
     attempt: int = Field(default=1, ge=1, le=10)
     created_at: datetime

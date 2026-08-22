@@ -19,14 +19,29 @@ const tenant = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
-const prompt = (status: string) => ({
-  id: `${status}-prompt`,
-  text: "Prompt",
-  status,
-  version: 1,
-  revision_number: 1,
-  created_at: "2026-01-01T00:00:00Z",
-  published_at: status === "draft" ? null : "2026-01-01T00:00:00Z",
+const platformState = {
+  runtime_draft: null,
+  system_prompt_draft: { id: "system", version: 1, value: "System" },
+  profile_prompt_drafts: {},
+  active_release: null,
+  active_runtime: null,
+  active_system_prompt: null,
+  active_profile_prompts: {},
+};
+
+const componentState = (component: string, draft = false) => ({
+  component,
+  draft: draft
+    ? {
+        id: `${component}-draft`,
+        component,
+        payload: {},
+        version: 1,
+        comment: null,
+        updated_at: "2026-01-01T00:00:00Z",
+      }
+    : null,
+  active_revision: null,
 });
 
 describe("workspace overviews", () => {
@@ -35,30 +50,12 @@ describe("workspace overviews", () => {
     const publish = vi.fn();
     server.use(
       http.get("/admin/v1/tenants", () => HttpResponse.json([tenant])),
-      http.get("/admin/v1/platform/runtime", () =>
-        HttpResponse.json({
-          draft_revision: null,
-          latest_published_revision: {
-            id: "runtime",
-            policy: {},
-            status: "published",
-            version: 1,
-          },
-        }),
+      http.get("/admin/v1/platform/components/state", () =>
+        HttpResponse.json(platformState),
       ),
-      http.get("/admin/v1/platform/prompts/profiles", () =>
-        HttpResponse.json(["hotel_assistant"]),
-      ),
-      http.get("/admin/v1/platform/prompts/system/default/revisions", () =>
-        HttpResponse.json([prompt("draft"), prompt("published")]),
-      ),
-      http.get(
-        "/admin/v1/platform/prompts/profiles/hotel_assistant/revisions",
-        () => HttpResponse.json([prompt("published")]),
-      ),
-      http.post("/admin/v1/platform/publish-all", () => {
+      http.post("/admin/v1/platform/components/publish", () => {
         publish();
-        return HttpResponse.json({ published_sections: ["system_prompt"] });
+        return HttpResponse.json({ id: "release", release_number: 1 });
       }),
     );
     window.history.pushState({}, "", "/");
@@ -83,29 +80,19 @@ describe("workspace overviews", () => {
     const publish = vi.fn();
     server.use(
       http.get("/admin/v1/tenants", () => HttpResponse.json([tenant])),
-      http.get(`/admin/v1/tenants/${tenantId}/config/revisions`, () =>
-        HttpResponse.json([{ status: "draft" }]),
+      http.get(
+        `/admin/v1/tenants/${tenantId}/components/:component`,
+        ({ params }) =>
+          HttpResponse.json(
+            componentState(
+              params.component as string,
+              params.component === "agent",
+            ),
+          ),
       ),
-      http.get(`/admin/v1/tenants/${tenantId}/tenant-prompt/revisions`, () =>
-        HttpResponse.json([]),
-      ),
-      http.get(`/admin/v1/tenants/${tenantId}/runtime`, () =>
-        HttpResponse.json({
-          draft_revision: null,
-          latest_published_revision: null,
-        }),
-      ),
-      http.get(`/admin/v1/tenants/${tenantId}/knowledge-base`, () =>
-        HttpResponse.json({
-          tenant_id: tenantId,
-          draft_revision: null,
-          latest_published_revision: null,
-          published_documents: [],
-        }),
-      ),
-      http.post(`/admin/v1/tenants/${tenantId}/publish-all`, () => {
+      http.post(`/admin/v1/tenants/${tenantId}/components/publish-all`, () => {
         publish();
-        return HttpResponse.json({ published_sections: ["agent"] });
+        return HttpResponse.json({ id: "release", release_number: 1 });
       }),
     );
     window.history.pushState({}, "", "/");

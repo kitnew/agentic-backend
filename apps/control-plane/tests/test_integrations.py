@@ -12,7 +12,7 @@ from admin_client.generated.models.integration_connection_response import (
 )
 from admin_client.generated.models.tenant_response import TenantResponse
 from admin_client.generated.types import Response
-from control_plane.commands import integrations, prompts
+from control_plane.commands import common, integrations
 from control_plane.settings import Settings
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000010")
@@ -54,8 +54,7 @@ def mock_tenant(monkeypatch: pytest.MonkeyPatch, seen: list[str]) -> None:
         return response(
             TenantResponse.from_dict(
                 {
-                    "active_config_revision_id": None,
-                    "active_prompt_set_revision_id": None,
+                    "active_release_id": None,
                     "business_type": "hotel",
                     "created_at": NOW.isoformat(),
                     "display_name": "Penzión Grand",
@@ -68,7 +67,7 @@ def mock_tenant(monkeypatch: pytest.MonkeyPatch, seen: list[str]) -> None:
         )
 
     monkeypatch.setattr(
-        prompts.get_tenant_by_slug_admin_v1_tenants_by_slug_slug_get,
+        common.get_tenant_by_slug_admin_v1_tenants_by_slug_slug_get,
         "sync_detailed",
         resolve,
     )
@@ -154,13 +153,13 @@ def test_integration_show_rejects_missing_or_ambiguous_keys(
         "sync_detailed",
         lambda tenant_id, *, client: response(items),
     )
-    with pytest.raises(prompts.PromptCommandError, match="unknown integration"):
+    with pytest.raises(common.CommandError, match="unknown integration"):
         integrations.run_integration(
             settings(), "show", "penzion-grand", "recording_webhook"
         )
 
     items.extend((connection(), connection()))
-    with pytest.raises(prompts.PromptCommandError, match="ambiguous integration"):
+    with pytest.raises(common.CommandError, match="ambiguous integration"):
         integrations.run_integration(
             settings(), "show", "penzion-grand", "recording_webhook"
         )

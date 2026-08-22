@@ -81,12 +81,11 @@ class VoiceAgentPrompt(_VoiceModel):
     profile_prompt: str = ""
     tenant_prompt: str = ""
     knowledge_context: str = ""
-    knowledge_base_revision_id: UUID
+    knowledge_base_revision_id: UUID | None = None
 
 
 class VoiceAgentRuntimeContext(_VoiceModel):
     call_session_id: UUID
-    voice_runtime_revision_id: UUID
     voice_runtime: EffectiveVoiceRuntime
     room_name: str = Field(min_length=1, max_length=255)
     locale: str = Field(min_length=1, max_length=35)
@@ -99,6 +98,9 @@ class VoiceAgentRuntimeContext(_VoiceModel):
     handoff_destinations: dict[str, HandoffDestinationDefinition] = Field(
         default_factory=dict
     )
+    voice_runtime_revision_id: UUID
+    tenant_release_id: UUID
+    runtime_bundle_id: UUID
 
 
 class CallLifecycleResponse(_VoiceModel):

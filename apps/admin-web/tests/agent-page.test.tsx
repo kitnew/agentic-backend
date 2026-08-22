@@ -25,7 +25,6 @@ let draftVersion: number;
 
 function config(name: string) {
   return {
-    schema_version: 4,
     agent: {
       display_name: name,
       greeting: "Hello",
@@ -40,44 +39,35 @@ function config(name: string) {
       phones: ["+421900000000"],
       website: "https://example.com",
     },
-    handoff: {
-      destinations: {
-        reception: { description: "Reception", phone_number: "+421900000001" },
-      },
-    },
   };
 }
 
-function revision(name: string) {
+function draft(name: string) {
   return {
     id: "draft",
-    tenant_id: tenantId,
-    revision_number: 2,
-    schema_version: 4,
-    config: config(name),
-    status: "draft",
+    component: "agent",
+    payload: config(name),
     version: draftVersion,
     comment: null,
-    created_by: null,
-    created_at: "2026-01-01T00:00:00Z",
-    published_at: null,
+    updated_at: "2026-01-01T00:00:00Z",
   };
 }
 
 function useHandlers(saveSpy = vi.fn(), publishSpy = vi.fn()) {
   server.use(
     http.get("/admin/v1/tenants", () => HttpResponse.json([tenant])),
-    http.get(`/admin/v1/tenants/${tenantId}/config/active`, () =>
+    http.get(`/admin/v1/tenants/${tenantId}/components/agent`, () =>
       HttpResponse.json({
-        tenant_id: tenantId,
-        revision_id: "published",
-        revision_number: 1,
-        published_at: "2026-01-01T00:00:00Z",
-        config: config(publishedName),
+        component: "agent",
+        draft: draftName ? draft(draftName) : null,
+        active_revision: {
+          id: "published",
+          revision_number: 1,
+          payload: config(publishedName),
+          comment: null,
+          sealed_at: "2026-01-01T00:00:00Z",
+        },
       }),
-    ),
-    http.get(`/admin/v1/tenants/${tenantId}/config/revisions`, () =>
-      HttpResponse.json(draftName ? [revision(draftName)] : []),
     ),
     http.get("/admin/v1/platform/prompts/profiles", () =>
       HttpResponse.json(["hotel_assistant"]),
@@ -112,44 +102,33 @@ function useHandlers(saveSpy = vi.fn(), publishSpy = vi.fn()) {
         published_documents: [],
       }),
     ),
-    http.post(
-      `/admin/v1/tenants/${tenantId}/config/drafts`,
+    http.put(
+      `/admin/v1/tenants/${tenantId}/components/agent/draft`,
       async ({ request }) => {
         draftName = (
           (await request.json()) as {
-            config: { agent: { display_name: string } };
+            payload: { agent: { display_name: string } };
           }
-        ).config.agent.display_name;
-        draftVersion = 1;
+        ).payload.agent.display_name;
+        draftVersion = draftVersion + 1;
         saveSpy();
-        return HttpResponse.json(revision(draftName), { status: 201 });
+        return HttpResponse.json(draft(draftName));
       },
     ),
-    http.patch(
-      `/admin/v1/tenants/${tenantId}/config/drafts/draft`,
-      async ({ request }) => {
-        draftName = (
-          (await request.json()) as {
-            config: { agent: { display_name: string } };
-          }
-        ).config.agent.display_name;
-        draftVersion += 1;
-        saveSpy();
-        return HttpResponse.json(revision(draftName));
-      },
-    ),
-    http.post(
-      `/admin/v1/tenants/${tenantId}/config/drafts/draft/publish`,
-      () => {
-        publishedName = draftName as string;
-        draftName = undefined;
-        publishSpy();
-        return HttpResponse.json({ id: "draft" });
-      },
-    ),
-    http.post(`/admin/v1/tenants/${tenantId}/prompt-set/apply`, () =>
-      HttpResponse.json({ changed: true, prompt_set: {} }),
-    ),
+    http.post(`/admin/v1/tenants/${tenantId}/components/agent/publish`, () => {
+      publishedName = draftName as string;
+      draftName = undefined;
+      publishSpy();
+      return HttpResponse.json({
+        id: "release",
+        tenant_id: tenantId,
+        release_number: 2,
+        runtime_bundle_id: "bundle",
+        source_release_id: null,
+        created_at: "2026-01-01T00:00:00Z",
+        comment: null,
+      });
+    }),
   );
 }
 

@@ -43,6 +43,6 @@ async def test_migrations_and_transaction_round_trip(
             )
 
         assert values == ["committed"]
-        assert revision == "20260822_0029"
+        assert revision == "0001_component_release_baseline"
     finally:
         await database.close()

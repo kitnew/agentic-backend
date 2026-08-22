@@ -5,7 +5,6 @@ from uuid import UUID, uuid4
 
 from agentic_observability.domain import domain_span
 from contracts import (
-    TENANT_CONFIG_SCHEMAS,
     CallEventPayload,
     CommandResult,
     ExecutePostCallAction,
@@ -15,9 +14,10 @@ from contracts import (
     ManagedWebhookPostJsonPlan,
     MaterializeArtifactRepresentation,
     MessageEnvelope,
-    PostCallAction,
     PostCallActionInput,
-    TenantConfigV3,
+    RuntimeBundlePayload,
+    RuntimePostCallAction,
+    RuntimePostCallInput,
     command_envelope,
 )
 from opentelemetry.trace import Tracer
@@ -32,7 +32,7 @@ from backend_core.modules.integrations.models import (
     IntegrationConnectionStatus,
     IntegrationProvider,
 )
-from backend_core.modules.tenants.models import TenantConfigRevision
+from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.capabilities.domain import JsonataMappingEngine
 from backend_core.runtime.finalization.models import (
     ArtifactRepresentation,
@@ -88,7 +88,7 @@ class FinalizationService:
         call = await self._session.get(CallSession, payload.call_id)
         if call is None or call.status.value != "ended":
             raise FinalizationError("ended call not found")
-        config = await self._config(call)
+        actions = await self._actions(call)
         finalization = CallFinalization(
             id=uuid4(),
             call_id=call.id,
@@ -102,7 +102,7 @@ class FinalizationService:
                 action_id=action.action_id,
                 status=WorkStatus.PENDING,
             )
-            for action in config.post_call_actions
+            for action in actions
         )
         await self._session.flush()
         command = command_envelope(
@@ -277,7 +277,7 @@ class FinalizationService:
             or execution.command_id != command_id
         ):
             raise FinalizationError("finalization context not found")
-        action = self._action(await self._config(call), action_id)
+        action = self._action(await self._actions(call), action_id)
         connection = await self._session.get(
             IntegrationConnection, action.execution.connection_id
         )
@@ -366,7 +366,7 @@ class FinalizationService:
         )
         if call is None or representation.call_id != call.id:
             raise FinalizationError("artifact representation is unavailable")
-        action = self._action(await self._config(call), execution.action_id)
+        action = self._action(await self._actions(call), execution.action_id)
         if not any(
             requested.artifact == representation.artifact_type
             and requested.representation == representation.representation
@@ -424,7 +424,7 @@ class FinalizationService:
         )
         if call is None or representation.call_id != call.id:
             raise FinalizationError("artifact representation is unavailable")
-        action = self._action(await self._config(call), execution.action_id)
+        action = self._action(await self._actions(call), execution.action_id)
         if not any(
             requested.artifact == representation.artifact_type
             and requested.representation == representation.representation
@@ -467,7 +467,7 @@ class FinalizationService:
         call = await self._session.get(CallSession, finalization.call_id)
         if call is None:
             raise FinalizationError("call not found")
-        config = await self._config(call)
+        actions = await self._actions(call)
         executions = list(
             await self._session.scalars(
                 select(PostCallActionExecution).where(
@@ -487,7 +487,7 @@ class FinalizationService:
             select(CallRecording).where(CallRecording.call_id == finalization.call_id)
         )
         by_id = {execution.action_id: execution for execution in executions}
-        for action in config.post_call_actions:
+        for action in actions:
             execution = by_id[action.action_id]
             if execution.status is not WorkStatus.PENDING:
                 continue
@@ -542,7 +542,7 @@ class FinalizationService:
     async def _materialize(
         self,
         finalization: CallFinalization,
-        requested: PostCallActionInput,
+        requested: PostCallActionInput | RuntimePostCallInput,
         causation_id: UUID,
         recording: CallRecording | None,
     ) -> ArtifactRepresentation:
@@ -591,7 +591,7 @@ class FinalizationService:
     @staticmethod
     def _input_ready(
         finalization: CallFinalization,
-        requested: PostCallActionInput,
+        requested: PostCallActionInput | RuntimePostCallInput,
         recording: CallRecording | None,
         stored: ArtifactRepresentation | None,
     ) -> bool:
@@ -611,7 +611,8 @@ class FinalizationService:
 
     @staticmethod
     def _source_ready(
-        requested: PostCallActionInput, recording: CallRecording | None
+        requested: PostCallActionInput | RuntimePostCallInput,
+        recording: CallRecording | None,
     ) -> bool:
         return requested.artifact == "transcript" or (
             requested.artifact == "call_recording"
@@ -620,7 +621,9 @@ class FinalizationService:
         )
 
     async def _input_value(
-        self, finalization: CallFinalization, requested: PostCallActionInput
+        self,
+        finalization: CallFinalization,
+        requested: PostCallActionInput | RuntimePostCallInput,
     ) -> object:
         if (
             requested.artifact == "transcript"
@@ -661,7 +664,9 @@ class FinalizationService:
         return stored.content.decode()
 
     async def _mapping_input(
-        self, finalization: CallFinalization, requested: PostCallActionInput
+        self,
+        finalization: CallFinalization,
+        requested: PostCallActionInput | RuntimePostCallInput,
     ) -> tuple[object, set[UUID]]:
         if requested.representation == "base64_text":
             stored = await self._session.scalar(
@@ -750,7 +755,8 @@ class FinalizationService:
         )
         if conversation is None:
             raise FinalizationError("conversation not found")
-        config = await self._config(call)
+        bundle = await self._bundle_payload(call)
+        agent_id, agent_name = bundle.agent_profile, bundle.agent_display_name
         return {
             "call_id": str(call.id),
             "call": {
@@ -761,8 +767,8 @@ class FinalizationService:
                 "ended_at": call.ended_at.isoformat() if call.ended_at else None,
             },
             "agent": {
-                "id": config.agent.profile,
-                "name": config.agent.display_name,
+                "id": agent_id,
+                "name": agent_name,
             },
             "inputs": inputs,
         }
@@ -787,31 +793,37 @@ class FinalizationService:
         ]
 
     @staticmethod
-    def _action(config: TenantConfigV3, action_id: str) -> PostCallAction:
+    def _action(
+        actions: list[RuntimePostCallAction], action_id: str
+    ) -> RuntimePostCallAction:
         action = next(
-            (item for item in config.post_call_actions if item.action_id == action_id),
+            (item for item in actions if item.action_id == action_id),
             None,
         )
         if action is None:
             raise FinalizationError("post-call action not found")
         return action
 
+    async def _actions(
+        self, call: CallSession
+    ) -> list[RuntimePostCallAction]:
+        return (await self._bundle_payload(call)).post_call_actions
+
+    async def _bundle_payload(
+        self, call: CallSession
+    ) -> RuntimeBundlePayload:
+        bundle = await RuntimeBundleStore(self._session).get(
+            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
+        )
+        if bundle is None:
+            raise FinalizationError("pinned runtime bundle unavailable")
+        try:
+            return RuntimeBundlePayload.model_validate(bundle.payload)
+        except Exception as error:
+            raise FinalizationError("pinned runtime bundle unavailable") from error
+
     @staticmethod
     def _fail(finalization: CallFinalization, error: str) -> None:
         finalization.status = FinalizationStatus.FAILED
         finalization.last_error = error[:1000]
         finalization.completed_at = datetime.now(UTC)
-
-    async def _config(self, call: CallSession) -> TenantConfigV3:
-        revision = await self._session.get(
-            TenantConfigRevision, call.tenant_config_revision_id
-        )
-        if revision is None:
-            raise FinalizationError("pinned tenant configuration unavailable")
-        model = TENANT_CONFIG_SCHEMAS.get(revision.schema_version)
-        if model is None:
-            raise FinalizationError("pinned tenant configuration unavailable")
-        config = model.model_validate(revision.config)
-        if not isinstance(config, TenantConfigV3):
-            raise FinalizationError("pinned tenant configuration unavailable")
-        return config

@@ -43,12 +43,12 @@ from admin_client.generated.models.update_integration_connection_request_config_
     UpdateIntegrationConnectionRequestConfigType0,
 )
 
-from control_plane.commands.prompts import (
-    PromptCommandError,
+from control_plane.commands.common import (
     _client,
     _response_error,
     _tenant,
 )
+from control_plane.commands.errors import CommandError
 from control_plane.settings import Settings
 
 
@@ -56,9 +56,9 @@ def _json_object(value: str, label: str) -> dict[str, object]:
     try:
         parsed = loads(value)
     except JSONDecodeError as error:
-        raise PromptCommandError(f"{label} must be a JSON object", 2) from error
+        raise CommandError(f"{label} must be a JSON object", 2) from error
     if not isinstance(parsed, dict):
-        raise PromptCommandError(f"{label} must be a JSON object", 2)
+        raise CommandError(f"{label} must be a JSON object", 2)
     return parsed
 
 
@@ -67,7 +67,7 @@ def _secret() -> dict[str, object]:
         getpass("Integration secret JSON: ") if sys.stdin.isatty() else sys.stdin.read()
     )
     if not value.strip():
-        raise PromptCommandError("integration secret JSON is required on stdin", 2)
+        raise CommandError("integration secret JSON is required on stdin", 2)
     return _json_object(value, "integration secret")
 
 
@@ -81,7 +81,7 @@ def _connections(
     if not isinstance(response.parsed, list) or not all(
         isinstance(item, IntegrationConnectionResponse) for item in response.parsed
     ):
-        raise PromptCommandError(
+        raise CommandError(
             "unexpected client failure: invalid Backend response", 1
         )
     return response.parsed
@@ -92,9 +92,9 @@ def _connection(
 ) -> IntegrationConnectionResponse:
     matches = [item for item in _connections(client, tenant_id) if item.key == key]
     if not matches:
-        raise PromptCommandError(f"unknown integration connection: {key}", 2)
+        raise CommandError(f"unknown integration connection: {key}", 2)
     if len(matches) != 1:
-        raise PromptCommandError(f"ambiguous integration connection: {key}", 1)
+        raise CommandError(f"ambiguous integration connection: {key}", 1)
     return matches[0]
 
 
@@ -150,7 +150,7 @@ def run_integration(
             )
             _response_error(response)
             if not isinstance(response.parsed, IntegrationConnectionResponse):
-                raise PromptCommandError(
+                raise CommandError(
                     "unexpected client failure: invalid Backend response", 1
                 )
             _print(response.parsed)
@@ -162,7 +162,7 @@ def run_integration(
             )
             _response_error(test_response)
             if not isinstance(test_response.parsed, IntegrationTestResponse):
-                raise PromptCommandError(
+                raise CommandError(
                     "unexpected client failure: invalid Backend response", 1
                 )
             print(f"Integration {item.key} is {test_response.parsed.status}.")
@@ -209,10 +209,10 @@ def run_integration(
             print(f"Deleted integration {item.key}.")
             return
         else:
-            raise PromptCommandError(f"unsupported integration action: {action}", 2)
+            raise CommandError(f"unsupported integration action: {action}", 2)
         _response_error(response)
         if not isinstance(response.parsed, IntegrationConnectionResponse):
-            raise PromptCommandError(
+            raise CommandError(
                 "unexpected client failure: invalid Backend response", 1
             )
         _print(response.parsed)

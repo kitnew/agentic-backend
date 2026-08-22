@@ -1,10 +1,13 @@
-import { PlatformTelephonyPage, TenantTelephonyPage } from "./telephony-page";
+import { TenantComponentEditorPage } from "../tenants/component-pages";
+import { PlatformTelephonyPage } from "./telephony-page";
 
 export const routes = [
   {
     id: "tenant-telephony",
     path: "/tenants/$tenantId/telephony",
-    component: TenantTelephonyPage,
+    component: () => (
+      <TenantComponentEditorPage component="telephony" title="Telephony" />
+    ),
   },
   {
     id: "platform-telephony",

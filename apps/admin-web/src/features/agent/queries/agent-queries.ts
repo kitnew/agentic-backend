@@ -1,35 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { responseData } from "../../../core/api/client";
-import { listProfilesAdminV1PlatformPromptsProfilesGet } from "../../../core/api/generated/admin-platform-prompts/admin-platform-prompts";
-import {
-  getActiveConfigAdminV1TenantsTenantIdConfigActiveGet,
-  listConfigRevisionsAdminV1TenantsTenantIdConfigRevisionsGet,
-} from "../../../core/api/generated/admin-tenants/admin-tenants";
-import type {
-  ActiveTenantConfig,
-  ConfigRevisionResponse,
-} from "../../../core/api/generated/models";
-import { editableTenantConfig } from "../lib/mappings";
+import { componentStateAdminV1TenantsTenantIdComponentsComponentGet } from "../../../core/api/generated/admin-tenant-components/admin-tenant-components";
+import type { ComponentStateResponse } from "../../../core/api/generated/models";
+import { editableAgentComponent } from "../lib/mappings";
 
 export const agentQueryKey = (tenantId: string) => ["admin", "agent", tenantId];
 
 export async function getAgentConfiguration(tenantId: string) {
-  const [active, revisions, profiles] = await Promise.all([
-    getActiveConfigAdminV1TenantsTenantIdConfigActiveGet(tenantId),
-    listConfigRevisionsAdminV1TenantsTenantIdConfigRevisionsGet(tenantId),
-    listProfilesAdminV1PlatformPromptsProfilesGet(),
-  ]);
-  const activeConfig = responseData<ActiveTenantConfig>(active);
-  const configRevisions = responseData<ConfigRevisionResponse[]>(revisions);
-  const draft = configRevisions.find((revision) => revision.status === "draft");
-  const config = editableTenantConfig(draft ?? activeConfig);
-  if (!config) throw new Error("This tenant configuration cannot be edited");
+  const state = responseData<ComponentStateResponse>(
+    await componentStateAdminV1TenantsTenantIdComponentsComponentGet(
+      tenantId,
+      "agent",
+    ),
+  );
+  const config = editableAgentComponent(
+    state.draft?.payload ?? state.active_revision?.payload,
+  );
+  if (!config) throw new Error("Agent component has not been configured");
   return {
-    activeConfig,
     config,
-    configDraft: draft,
-    profiles: responseData<string[]>(profiles),
+    configDraft: state.draft,
   };
 }
 

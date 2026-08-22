@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import jsonata  # type: ignore[import-untyped]
 from contracts import (
     ExecutionPlan,
+    GoogleSheetsAppendExecution,
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsIdempotency,
     ManagedWebhookCapability,
@@ -18,7 +19,10 @@ from contracts import (
     ManagedWebhookPostJsonResult,
     ManagedWebhookResponseConfig,
     ReservationRequestSubmitted,
+    RuntimeCapabilityBinding,
     RuntimeCapabilityDefinition,
+    RuntimeGoogleSheetsExecution,
+    RuntimeManagedWebhookExecution,
     TechnicalResult,
     TenantCapabilityProfile,
 )
@@ -488,7 +492,7 @@ def mapped_rows(output: dict[str, Any]) -> list[list[str | int | float | bool | 
 
 
 def compile_plan(
-    profile: TenantCapabilityProfile,
+    profile: TenantCapabilityProfile | RuntimeCapabilityBinding,
     canonical_input: dict[str, Any],
     *,
     operation_id: UUID,
@@ -515,7 +519,7 @@ def compile_plan(
         execution.request_mapping,
         source,
     )
-    if isinstance(execution, ManagedWebhookExecution):
+    if isinstance(execution, (ManagedWebhookExecution, RuntimeManagedWebhookExecution)):
         if execution.response is not None:
             validate_response_config(execution.response)
         if semantic_key == AVAILABILITY_SEMANTIC_KEY and execution.response is None:
@@ -542,7 +546,13 @@ def compile_plan(
             timeout_seconds=execution.timeout_seconds,
         )
     rows = mapped_rows(mapped)
-    index = execution.idempotency.operation_id_column_index
+    if not isinstance(execution, (GoogleSheetsAppendExecution, RuntimeGoogleSheetsExecution)):
+        raise CapabilityValidationError("configuration_invalid", "Capability execution is unavailable")
+    index = (
+        execution.idempotency.operation_id_column_index
+        if isinstance(execution, GoogleSheetsAppendExecution)
+        else execution.operation_id_column_index
+    )
     if any(len(row) <= index or row[index] != str(operation_id) for row in rows):
         raise CapabilityValidationError(
             "operation_id_not_mapped",
@@ -563,7 +573,11 @@ def compile_plan(
         rows=rows,
         idempotency=GoogleSheetsIdempotency(
             operation_id=operation_id,
-            lookup_range=execution.idempotency.lookup_range,
+            lookup_range=(
+                execution.idempotency.lookup_range
+                if isinstance(execution, GoogleSheetsAppendExecution)
+                else execution.lookup_range
+            ),
             operation_id_column_index=index,
         ),
     )

@@ -24,12 +24,10 @@ from backend_core.modules.integrations.service import (
     IntegrationConnectionError,
     IntegrationConnectionService,
 )
-from backend_core.modules.tenants.repository import (
-    ConfigRevisionRepository,
-    TenantRepository,
-)
+from backend_core.modules.tenants.repository import TenantRepository
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
+from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.capabilities.domain import CapabilityValidationError
 from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
 from backend_core.runtime.capabilities.service import (
@@ -56,9 +54,8 @@ def build_service(
         CapabilityInvocationRepository(session),
         CallSessionRepository(session),
         ConversationRepository(session),
-        TenantRepository(session),
-        ConfigRevisionRepository(session),
         IntegrationConnectionRepository(session),
+        RuntimeBundleStore(session),
         tracer,
         metrics,
     )
@@ -194,9 +191,16 @@ async def integration_material(
     invocation_id: UUID,
     job_id: UUID,
     integrations: IntegrationResolver,
+    call_id: UUID | None = None,
+    runtime_bundle_id: UUID | None = None,
 ) -> RuntimeIntegrationMaterial:
     try:
-        return await integrations.resolve(invocation_id, job_id)
+        return await integrations.resolve(
+            invocation_id,
+            job_id,
+            call_id=call_id,
+            runtime_bundle_id=runtime_bundle_id,
+        )
     except IntegrationConnectionError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 

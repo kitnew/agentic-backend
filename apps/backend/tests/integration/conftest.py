@@ -65,10 +65,9 @@ async def migrated_database_url(
         isolated_database_url.replace("%", "%%"),
     )
     await asyncio.to_thread(command.upgrade, alembic, "head")
-    try:
-        yield isolated_database_url
-    finally:
-        await asyncio.to_thread(command.downgrade, alembic, "base")
+    # The component cutover is intentionally destructive; isolated databases
+    # are dropped by the outer fixture instead of exercising a fake downgrade.
+    yield isolated_database_url
 
 
 @pytest.fixture

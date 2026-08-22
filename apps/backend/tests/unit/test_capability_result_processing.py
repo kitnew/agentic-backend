@@ -50,7 +50,8 @@ def invocation(plan_type: str) -> CapabilityInvocation:
         tool_call_id="tool-call",
         semantic_key="reservation.submit_request",
         semantic_version=1,
-        tenant_config_revision_id=uuid4(),
+        tenant_release_id=uuid4(),
+        runtime_bundle_id=uuid4(),
         status=CapabilityInvocationStatus.QUEUED,
         canonical_input={},
         execution_plan={

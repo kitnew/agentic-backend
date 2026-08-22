@@ -7,9 +7,7 @@
 import type { TenantStatus } from './tenantStatus';
 
 export interface TenantResponse {
-  active_config_revision_id: string | null;
-  active_prompt_set_revision_id: string | null;
-  active_voice_runtime_revision_id?: string | null;
+  active_release_id: string | null;
   business_type: string;
   created_at: string;
   display_name: string;

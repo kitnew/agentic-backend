@@ -14,11 +14,11 @@ class CallSessionConfigUnavailableError(CallSessionError):
     pass
 
 
-class CallSessionLegacyRuntimeError(CallSessionError):
+class CallSessionRouteUnavailableError(CallSessionError):
     pass
 
 
-class CallSessionRouteUnavailableError(CallSessionError):
+class CallSessionTelephonyNotReadyError(CallSessionError):
     pass
 
 

@@ -22,8 +22,7 @@ def test_generated_client_calls_tenant_list_with_bearer_auth() -> None:
                     "display_name": "Penzion Grand",
                     "business_type": "hospitality",
                     "status": "active",
-                    "active_config_revision_id": None,
-                    "active_prompt_set_revision_id": None,
+                    "active_release_id": None,
                     "created_at": "2026-08-09T00:00:00Z",
                     "updated_at": "2026-08-09T00:00:00Z",
                 }

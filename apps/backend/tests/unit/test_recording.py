@@ -21,9 +21,8 @@ def call() -> CallSession:
     return CallSession(
         id=uuid4(),
         tenant_id=uuid4(),
-        tenant_config_revision_id=uuid4(),
-        prompt_set_revision_id=uuid4(),
-        voice_runtime_revision_id=uuid4(),
+        tenant_release_id=uuid4(),
+        runtime_bundle_id=uuid4(),
         channel=CallChannel.WEB,
         direction=CallDirection.INBOUND,
         provider="livekit",

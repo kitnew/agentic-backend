@@ -263,10 +263,19 @@ class CapabilityIntegrationResolver:
         self._integrations = integrations
 
     async def resolve(
-        self, invocation_id: UUID, job_id: UUID
+        self,
+        invocation_id: UUID,
+        job_id: UUID,
+        *,
+        call_id: UUID | None = None,
+        runtime_bundle_id: UUID | None = None,
     ) -> RuntimeIntegrationMaterial:
         invocation = await self._invocations.get(invocation_id)
         if invocation is None or invocation.job_id != job_id:
+            raise IntegrationConnectionError("capability_not_found")
+        if call_id is not None and invocation.call_id != call_id:
+            raise IntegrationConnectionError("capability_not_found")
+        if runtime_bundle_id is not None and invocation.runtime_bundle_id != runtime_bundle_id:
             raise IntegrationConnectionError("capability_not_found")
         try:
             plan = _execution_plan.validate_python(invocation.execution_plan)

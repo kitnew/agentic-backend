@@ -36,20 +36,19 @@ class CallSessionResponse:
         handoff_tool_call_id (None | str):
         id (UUID):
         livekit_participant_identity (None | str):
-        prompt_set_revision_id (UUID):
         provider (str):
         provider_call_id (str):
         provider_dispatch_id (None | str):
         room_name (str):
+        runtime_bundle_id (UUID):
         sip_call_id (None | str):
         sip_call_id_full (None | str):
         sip_dispatch_rule_id (None | str):
         sip_trunk_id (None | str):
         started_at (datetime.datetime | None):
         status (CallSessionStatus):
-        tenant_config_revision_id (UUID):
         tenant_id (UUID):
-        voice_runtime_revision_id (None | UUID):
+        tenant_release_id (UUID):
     """
 
     called_phone_e164: None | str
@@ -68,20 +67,19 @@ class CallSessionResponse:
     handoff_tool_call_id: None | str
     id: UUID
     livekit_participant_identity: None | str
-    prompt_set_revision_id: UUID
     provider: str
     provider_call_id: str
     provider_dispatch_id: None | str
     room_name: str
+    runtime_bundle_id: UUID
     sip_call_id: None | str
     sip_call_id_full: None | str
     sip_dispatch_rule_id: None | str
     sip_trunk_id: None | str
     started_at: datetime.datetime | None
     status: CallSessionStatus
-    tenant_config_revision_id: UUID
     tenant_id: UUID
-    voice_runtime_revision_id: None | UUID
+    tenant_release_id: UUID
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -135,8 +133,6 @@ class CallSessionResponse:
         livekit_participant_identity: None | str
         livekit_participant_identity = self.livekit_participant_identity
 
-        prompt_set_revision_id = str(self.prompt_set_revision_id)
-
         provider = self.provider
 
         provider_call_id = self.provider_call_id
@@ -145,6 +141,8 @@ class CallSessionResponse:
         provider_dispatch_id = self.provider_dispatch_id
 
         room_name = self.room_name
+
+        runtime_bundle_id = str(self.runtime_bundle_id)
 
         sip_call_id: None | str
         sip_call_id = self.sip_call_id
@@ -166,15 +164,9 @@ class CallSessionResponse:
 
         status = self.status.value
 
-        tenant_config_revision_id = str(self.tenant_config_revision_id)
-
         tenant_id = str(self.tenant_id)
 
-        voice_runtime_revision_id: None | str
-        if isinstance(self.voice_runtime_revision_id, UUID):
-            voice_runtime_revision_id = str(self.voice_runtime_revision_id)
-        else:
-            voice_runtime_revision_id = self.voice_runtime_revision_id
+        tenant_release_id = str(self.tenant_release_id)
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -196,20 +188,19 @@ class CallSessionResponse:
                 "handoff_tool_call_id": handoff_tool_call_id,
                 "id": id,
                 "livekit_participant_identity": livekit_participant_identity,
-                "prompt_set_revision_id": prompt_set_revision_id,
                 "provider": provider,
                 "provider_call_id": provider_call_id,
                 "provider_dispatch_id": provider_dispatch_id,
                 "room_name": room_name,
+                "runtime_bundle_id": runtime_bundle_id,
                 "sip_call_id": sip_call_id,
                 "sip_call_id_full": sip_call_id_full,
                 "sip_dispatch_rule_id": sip_dispatch_rule_id,
                 "sip_trunk_id": sip_trunk_id,
                 "started_at": started_at,
                 "status": status,
-                "tenant_config_revision_id": tenant_config_revision_id,
                 "tenant_id": tenant_id,
-                "voice_runtime_revision_id": voice_runtime_revision_id,
+                "tenant_release_id": tenant_release_id,
             }
         )
 
@@ -333,8 +324,6 @@ class CallSessionResponse:
             d.pop("livekit_participant_identity")
         )
 
-        prompt_set_revision_id = UUID(d.pop("prompt_set_revision_id"))
-
         provider = d.pop("provider")
 
         provider_call_id = d.pop("provider_call_id")
@@ -349,6 +338,8 @@ class CallSessionResponse:
         )
 
         room_name = d.pop("room_name")
+
+        runtime_bundle_id = UUID(d.pop("runtime_bundle_id"))
 
         def _parse_sip_call_id(data: object) -> None | str:
             if data is None:
@@ -397,26 +388,9 @@ class CallSessionResponse:
 
         status = CallSessionStatus(d.pop("status"))
 
-        tenant_config_revision_id = UUID(d.pop("tenant_config_revision_id"))
-
         tenant_id = UUID(d.pop("tenant_id"))
 
-        def _parse_voice_runtime_revision_id(data: object) -> None | UUID:
-            if data is None:
-                return data
-            try:
-                if not isinstance(data, str):
-                    raise TypeError()
-                voice_runtime_revision_id_type_0 = UUID(data)
-
-                return voice_runtime_revision_id_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(None | UUID, data)
-
-        voice_runtime_revision_id = _parse_voice_runtime_revision_id(
-            d.pop("voice_runtime_revision_id")
-        )
+        tenant_release_id = UUID(d.pop("tenant_release_id"))
 
         call_session_response = cls(
             called_phone_e164=called_phone_e164,
@@ -435,20 +409,19 @@ class CallSessionResponse:
             handoff_tool_call_id=handoff_tool_call_id,
             id=id,
             livekit_participant_identity=livekit_participant_identity,
-            prompt_set_revision_id=prompt_set_revision_id,
             provider=provider,
             provider_call_id=provider_call_id,
             provider_dispatch_id=provider_dispatch_id,
             room_name=room_name,
+            runtime_bundle_id=runtime_bundle_id,
             sip_call_id=sip_call_id,
             sip_call_id_full=sip_call_id_full,
             sip_dispatch_rule_id=sip_dispatch_rule_id,
             sip_trunk_id=sip_trunk_id,
             started_at=started_at,
             status=status,
-            tenant_config_revision_id=tenant_config_revision_id,
             tenant_id=tenant_id,
-            voice_runtime_revision_id=voice_runtime_revision_id,
+            tenant_release_id=tenant_release_id,
         )
 
         call_session_response.additional_properties = d

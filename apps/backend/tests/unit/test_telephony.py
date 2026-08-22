@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from backend_core.modules.tenants import telephony as telephony_module
@@ -21,22 +22,24 @@ class Repository:
             last_error=None,
             last_reconciled_at=None,
         )
-        self.tenant = SimpleNamespace(
-            phone_number="+421551234567",
-            provisioning_status=TelephonyProvisioningStatus.PENDING,
+        revision_id = uuid4()
+        self.provisioning_state = SimpleNamespace(
+            desired_revision_id=revision_id,
+            applied_revision_id=None,
+            status="pending",
             last_error=None,
             last_reconciled_at=None,
         )
-        self.active = [self.tenant]
+        self.claim = SimpleNamespace(normalized_phone_number="+421551234567")
 
     async def platform(self, *, for_update: bool = False):
         return self.state
 
-    async def list(self):
-        return [self.tenant]
+    async def provisioning(self):
+        return [self.provisioning_state]
 
-    async def active_published(self):
-        return self.active
+    async def active_phone_claims(self):
+        return [self.claim] if self.claim else []
 
     async def flush(self) -> None:
         pass
@@ -69,7 +72,7 @@ async def test_reconciliation_persists_failure_then_retries_with_stored_ids() ->
     failed = await service.reconcile()
     assert failed.overall == "error"
     assert "private provider detail" not in (failed.last_error or "")
-    assert repository.tenant.provisioning_status is TelephonyProvisioningStatus.ERROR
+    assert repository.provisioning_state.status == "error"
 
     livekit.failure = None
     ready = await service.reconcile()
@@ -79,18 +82,18 @@ async def test_reconciliation_persists_failure_then_retries_with_stored_ids() ->
         "outbound_trunk_id": "ST_outbound",
         "dispatch_rule_id": "SDR_shared",
     }
-    assert repository.tenant.provisioning_status is TelephonyProvisioningStatus.READY
-    assert isinstance(repository.tenant.last_reconciled_at, datetime)
+    assert repository.provisioning_state.status == "ready"
+    assert isinstance(repository.provisioning_state.last_reconciled_at, datetime)
 
     await service.reconcile()
     assert livekit.calls[-1]["inbound_trunk_id"] == "ST_inbound"
     assert livekit.calls[-1]["outbound_trunk_id"] == "ST_outbound"
     assert livekit.calls[-1]["dispatch_rule_id"] == "SDR_shared"
 
-    repository.tenant.phone_number = "+421551234568"
+    repository.claim.normalized_phone_number = "+421551234568"
     await service.reconcile()
     assert livekit.calls[-1]["numbers"] == ["+421551234568"]
-    repository.active.clear()
+    repository.claim = None
     await service.reconcile()
     assert livekit.calls[-1]["numbers"] == []
 
@@ -114,7 +117,10 @@ async def test_pending_publish_is_reconciled_automatically_after_commit(
 
     class Repository:
         async def platform(self):
-            return SimpleNamespace(provisioning_status=TelephonyProvisioningStatus.PENDING)
+            return SimpleNamespace(provisioning_status=TelephonyProvisioningStatus.READY)
+
+        async def provisioning(self):
+            return [SimpleNamespace(status=TelephonyProvisioningStatus.PENDING.value)]
 
     class Service:
         def __init__(self, *_args, **_kwargs):

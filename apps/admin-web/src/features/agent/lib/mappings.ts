@@ -1,35 +1,33 @@
-import type {
-  ActiveTenantConfig,
-  ConfigRevisionResponse,
-  TenantConfigV3,
-  TenantConfigV4,
-  TenantConfigV5,
-  UpdateDraftRequest,
-} from "../../../core/api/generated/models";
 import type { AgentForm } from "../schemas/agent-form";
 
-export type EditableTenantConfig =
-  | TenantConfigV3
-  | TenantConfigV4
-  | TenantConfigV5;
+export type EditableAgentComponent = {
+  business: { name: string; type: string };
+  contact?: {
+    address?: string | null;
+    website?: string | null;
+    emails?: string[];
+    phones?: string[];
+  };
+  localization: { default_locale: string; timezone: string };
+  agent: { display_name: string; greeting: string; profile: string };
+  conversation: { scope: string };
+};
 
-export function editableTenantConfig(
-  source: ActiveTenantConfig | ConfigRevisionResponse,
-): EditableTenantConfig | undefined {
-  const config = source.config;
-  const candidate = config as { schema_version?: unknown };
+export function editableAgentComponent(
+  source: Record<string, unknown> | undefined,
+): EditableAgentComponent | undefined {
+  const candidate = source as Partial<EditableAgentComponent> | undefined;
   if (
-    typeof config === "object" &&
-    config !== null &&
-    typeof candidate.schema_version === "number" &&
-    candidate.schema_version >= 3 &&
-    "agent" in config &&
-    "localization" in config
+    candidate &&
+    typeof candidate.agent?.display_name === "string" &&
+    typeof candidate.localization?.default_locale === "string" &&
+    typeof candidate.business?.name === "string" &&
+    typeof candidate.conversation?.scope === "string"
   )
-    return config as EditableTenantConfig;
+    return candidate as EditableAgentComponent;
 }
 
-export function toAgentForm(config: EditableTenantConfig): AgentForm {
+export function toAgentForm(config: EditableAgentComponent): AgentForm {
   return {
     displayName: config.agent.display_name,
     greeting: config.agent.greeting,
@@ -51,26 +49,23 @@ const lines = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
-export function toUpdateRequest(
-  config: EditableTenantConfig,
+export function toAgentPayload(
+  config: EditableAgentComponent,
   form: AgentForm,
-): UpdateDraftRequest {
+): Record<string, unknown> {
   return {
-    schema_version: config.schema_version,
-    config: {
-      ...config,
-      agent: {
-        ...config.agent,
-        display_name: form.displayName.trim(),
-        greeting: form.greeting.trim(),
-        profile: form.profile,
-      },
-      contact: {
-        address: form.address.trim() || null,
-        website: form.website.trim() || null,
-        emails: lines(form.emails),
-        phones: lines(form.phones),
-      },
+    ...config,
+    agent: {
+      ...config.agent,
+      display_name: form.displayName.trim(),
+      greeting: form.greeting.trim(),
+      profile: form.profile,
+    },
+    contact: {
+      address: form.address.trim() || null,
+      website: form.website.trim() || null,
+      emails: lines(form.emails),
+      phones: lines(form.phones),
     },
   };
 }

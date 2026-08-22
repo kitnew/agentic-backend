@@ -9,7 +9,6 @@ from uuid import UUID, uuid4
 from agentic_observability.domain import CoreMetrics, domain_span
 from agentic_observability.propagation import inject_trace_context
 from contracts import (
-    TENANT_CONFIG_SCHEMAS,
     CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
@@ -17,9 +16,8 @@ from contracts import (
     IntegrationJob,
     ManagedWebhookPostJsonPlan,
     ManagedWebhookPostJsonResult,
-    TenantCapabilityProfile,
-    TenantConfigV2,
-    TenantConfigV3,
+    RuntimeBundlePayload,
+    RuntimeCapabilityBinding,
     WorkerResultReport,
 )
 from opentelemetry.trace import Tracer
@@ -33,11 +31,7 @@ from backend_core.modules.integrations.models import (
     provider_for_plan_type,
 )
 from backend_core.modules.integrations.repository import IntegrationConnectionRepository
-from backend_core.modules.tenants.models import ConfigRevisionStatus, TenantStatus
-from backend_core.modules.tenants.repository import (
-    ConfigRevisionRepository,
-    TenantRepository,
-)
+from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.capabilities.domain import (
     CapabilityValidationError,
     compile_plan,
@@ -68,69 +62,80 @@ class CapabilityInvocationService:
         invocations: CapabilityInvocationRepository,
         calls: CallSessionRepository,
         conversations: ConversationRepository,
-        tenants: TenantRepository,
-        configs: ConfigRevisionRepository,
         connections: IntegrationConnectionRepository,
+        bundles: RuntimeBundleStore,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
         self._invocations = invocations
         self._calls = calls
         self._conversations = conversations
-        self._tenants = tenants
-        self._configs = configs
         self._connections = connections
+        self._bundles = bundles
         self._tracer = tracer
         self._metrics = metrics
 
     @staticmethod
-    def _requested_capability(
-        config: TenantConfigV2 | TenantConfigV3, requested: str
-    ) -> tuple[str, TenantCapabilityProfile, Any]:
-        for semantic_key, raw_profile in config.capabilities.items():
-            if not isinstance(raw_profile, TenantCapabilityProfile):
-                continue
-            semantic = definition(semantic_key, raw_profile.semantic_version)
-            if requested in {semantic.semantic_key, semantic.tool_name}:
-                return semantic_key, raw_profile, semantic
+    def _requested_bundle_capability(
+        bindings: list[RuntimeCapabilityBinding], requested: str
+    ) -> tuple[RuntimeCapabilityBinding, Any]:
+        for binding in bindings:
+            semantic = definition(binding.semantic_key, binding.semantic_version)
+            if requested in {semantic.semantic_key, binding.tool_name}:
+                return binding, semantic
         raise CapabilityValidationError(
             "capability_not_found", "Capability is not available"
         )
 
+    async def _bundle(
+        self, call: Any
+    ) -> tuple[RuntimeBundlePayload, UUID, UUID]:
+        bundle = await self._bundles.get(
+            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
+        )
+        if bundle is None:
+            raise CapabilityValidationError(
+                "configuration_invalid", "Pinned runtime bundle is unavailable"
+            )
+        try:
+            return (
+                RuntimeBundlePayload.model_validate(bundle.payload),
+                call.tenant_release_id,
+                bundle.id,
+            )
+        except ValidationError as error:
+            raise CapabilityValidationError(
+                "configuration_invalid", "Pinned runtime bundle is unavailable"
+            ) from error
+
     async def _validate_request(
         self, call_id: UUID, request: CapabilityInvocationRequest
-    ) -> tuple[Any, Any, TenantCapabilityProfile, Any, dict[str, object]]:
+    ) -> tuple[Any, UUID, UUID, UUID, RuntimeCapabilityBinding, Any, dict[str, object]]:
         call = await self._calls.get(call_id)
         if call is None:
             raise CapabilityValidationError("call_not_found", "Call does not exist")
-        tenant = await self._tenants.get(call.tenant_id)
-        if tenant is None or tenant.status is not TenantStatus.ACTIVE:
+        if not await self._bundles.tenant_active(call.tenant_id):
             raise CapabilityValidationError("tenant_inactive", "Tenant is not active")
         if call.status is not CallSessionStatus.CONNECTED:
             raise CapabilityValidationError(
                 "call_not_active", "Call does not allow capability execution"
             )
-        revision = await self._configs.get(
-            call.tenant_id, call.tenant_config_revision_id
+        payload, release_id, bundle_id = await self._bundle(call)
+        runtime_profile, semantic = self._requested_bundle_capability(
+            payload.capability_bindings, request.capability
         )
-        if revision is None or revision.status is not ConfigRevisionStatus.PUBLISHED:
-            raise CapabilityValidationError(
-                "configuration_invalid", "Pinned configuration is unavailable"
-            )
-        config = self._capability_config(revision.schema_version, revision.config)
-        _, profile, semantic = self._requested_capability(config, request.capability)
-        if not profile.enabled:
+        if not runtime_profile.enabled:
             raise CapabilityValidationError(
                 "capability_disabled", "Capability is disabled"
             )
-        validate_agent_input(profile.agent_input_schema, request.agent_input)
+        validate_agent_input(runtime_profile.input_schema, request.agent_input)
         canonical = validate_business_input(
-            normalize_input(profile.agent_input_schema, request.agent_input),
-            config.localization.timezone,
+            normalize_input(runtime_profile.input_schema, request.agent_input),
+            payload.timezone,
             required_fields=semantic.required_fields,
         )
         if (
-            profile.business_policy.requires_caller_phone
+            runtime_profile.policy.requires_caller_phone
             and call.caller_phone_e164 is None
         ):
             raise CapabilityValidationError(
@@ -138,20 +143,27 @@ class CapabilityInvocationService:
                 "Caller phone is required for reservation submission",
                 "metadata.caller_phone",
             )
-        return call, revision, profile, semantic, canonical
+        return call, release_id, bundle_id, bundle_id, runtime_profile, semantic, canonical
 
     async def prepare_confirmation(
         self, call_id: UUID, request: CapabilityInvocationRequest
     ) -> CapabilityConfirmationResponse:
-        call, revision, profile, semantic, canonical = await self._validate_request(
-            call_id, request
-        )
-        if not profile.business_policy.requires_final_confirmation:
+        (
+            call,
+            release_id,
+            bundle_id,
+            pin_id,
+            profile,
+            semantic,
+            canonical,
+        ) = await self._validate_request(call_id, request)
+        policy = profile.policy
+        if not policy.requires_final_confirmation:
             raise CapabilityValidationError(
                 "confirmation_not_required", "Capability does not require confirmation"
             )
         payload_hash = sha256(
-            f"{revision.id}:{semantic.semantic_key}:{semantic.semantic_version}:".encode()
+            f"{pin_id}:{semantic.semantic_key}:{semantic.semantic_version}:".encode()
             + json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         existing = await self._invocations.get_confirmation_by_tool_call(
@@ -188,7 +200,8 @@ class CapabilityInvocationService:
             tool_call_id=request.tool_call_id,
             semantic_key=semantic.semantic_key,
             semantic_version=semantic.semantic_version,
-            tenant_config_revision_id=revision.id,
+            tenant_release_id=release_id,
+            runtime_bundle_id=bundle_id,
             canonical_input=canonical,
             agent_input=request.agent_input,
             payload_hash=payload_hash,
@@ -230,11 +243,11 @@ class CapabilityInvocationService:
             capability=confirmation.semantic_key,
             agent_input=confirmation.agent_input,
         )
-        _, revision, _, semantic, canonical = await self._validate_request(
+        _, _, _, pin_id, _, semantic, canonical = await self._validate_request(
             call_id, request
         )
         payload_hash = sha256(
-            f"{revision.id}:{semantic.semantic_key}:{semantic.semantic_version}:".encode()
+            f"{pin_id}:{semantic.semantic_key}:{semantic.semantic_version}:".encode()
             + json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
         if payload_hash != confirmation.payload_hash:
@@ -297,45 +310,19 @@ class CapabilityInvocationService:
                 },
             )
             return existing, False
-        tenant = await self._tenants.get(call.tenant_id)
-        if tenant is None or tenant.status is not TenantStatus.ACTIVE:
-            raise CapabilityValidationError("tenant_inactive", "Tenant is not active")
-        if call.status is not CallSessionStatus.CONNECTED:
-            raise CapabilityValidationError(
-                "call_not_active", "Call does not allow capability execution"
-            )
-        revision = await self._configs.get(
-            call.tenant_id, call.tenant_config_revision_id
-        )
-        if revision is None or revision.status is not ConfigRevisionStatus.PUBLISHED:
-            raise CapabilityValidationError(
-                "configuration_invalid", "Pinned configuration is unavailable"
-            )
-        config = self._capability_config(revision.schema_version, revision.config)
-        semantic_key, profile, semantic = self._requested_capability(
-            config, request.capability
-        )
-        if not profile.enabled:
-            raise CapabilityValidationError(
-                "capability_disabled", "Capability is disabled"
-            )
-        validate_agent_input(profile.agent_input_schema, request.agent_input)
-        canonical = validate_business_input(
-            normalize_input(profile.agent_input_schema, request.agent_input),
-            config.localization.timezone,
-            required_fields=semantic.required_fields,
-        )
+        (
+            call,
+            release_id,
+            bundle_id,
+            _pin_id,
+            profile,
+            semantic,
+            canonical,
+        ) = await self._validate_request(call_id, request)
+        semantic_key = semantic.semantic_key
+        policy = profile.policy
         if (
-            profile.business_policy.requires_caller_phone
-            and call.caller_phone_e164 is None
-        ):
-            raise CapabilityValidationError(
-                "caller_phone_unavailable",
-                "Caller phone is required for reservation submission",
-                "metadata.caller_phone",
-            )
-        if (
-            profile.business_policy.requires_final_confirmation
+            policy.requires_final_confirmation
             and not skip_confirmation
         ):
             raise CapabilityValidationError(
@@ -349,12 +336,10 @@ class CapabilityInvocationService:
                 "call_id": str(call.id),
                 "semantic_key": semantic.semantic_key,
                 "semantic_version": semantic.semantic_version,
-                "tenant_config_revision_id": str(revision.id),
+                "runtime_bundle_id": str(bundle_id) if bundle_id else None,
             },
         )
-        connection = await self._connections.get(
-            call.tenant_id, profile.execution.connection_id
-        )
+        connection = await self._connections.get(call.tenant_id, profile.execution.connection_id)
         if connection is None:
             raise CapabilityValidationError(
                 "connection_not_found", "Integration connection was not found"
@@ -389,6 +374,9 @@ class CapabilityInvocationService:
         job = IntegrationJob(
             job_id=job_id,
             capability_invocation_id=invocation_id,
+            call_id=call.id,
+            tenant_release_id=release_id,
+            runtime_bundle_id=bundle_id,
             execution_plan=plan,
             created_at=now,
             expires_at=now + timedelta(minutes=10),
@@ -401,7 +389,8 @@ class CapabilityInvocationService:
             tool_call_id=request.tool_call_id,
             semantic_key=semantic.semantic_key,
             semantic_version=semantic.semantic_version,
-            tenant_config_revision_id=revision.id,
+            tenant_release_id=release_id,
+            runtime_bundle_id=bundle_id,
             canonical_input=canonical,
             execution_plan=plan.model_dump(mode="json"),
             operation_id=invocation_id,
@@ -440,33 +429,11 @@ class CapabilityInvocationService:
                     "job_id": str(job_id),
                     "semantic_key": semantic.semantic_key,
                     "semantic_version": semantic.semantic_version,
-                    "tenant_config_revision_id": str(revision.id),
+                    "runtime_bundle_id": str(bundle_id) if bundle_id else None,
                     "plan_type": plan.plan_type,
                 },
             )
         return created_invocation, created
-
-    @staticmethod
-    def _capability_config(
-        schema_version: int, config: object
-    ) -> TenantConfigV2 | TenantConfigV3:
-        model = TENANT_CONFIG_SCHEMAS.get(schema_version)
-        if model is None:
-            raise CapabilityValidationError(
-                "configuration_invalid", "Pinned configuration is unavailable"
-            )
-        try:
-            parsed = model.model_validate(config)
-        except ValidationError as error:
-            raise CapabilityValidationError(
-                "configuration_invalid", "Pinned configuration is unavailable"
-            ) from error
-        if not isinstance(parsed, (TenantConfigV2, TenantConfigV3)):
-            raise CapabilityValidationError(
-                "configuration_invalid",
-                "Pinned configuration has no capability profiles",
-            )
-        return parsed
 
     async def get(self, call_id: UUID, invocation_id: UUID) -> CapabilityInvocation:
         invocation = await self._invocations.get(invocation_id)
@@ -559,7 +526,7 @@ class CapabilityInvocationService:
                 "job_id": str(invocation.job_id),
                 "semantic_key": invocation.semantic_key,
                 "semantic_version": invocation.semantic_version,
-                "tenant_config_revision_id": str(invocation.tenant_config_revision_id),
+                "runtime_bundle_id": str(invocation.runtime_bundle_id),
                 "status": invocation.status.value,
                 "attempt": report.attempt,
                 "latency_ms": round(

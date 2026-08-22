@@ -44,22 +44,9 @@ class CallSession(Base):
     __tablename__ = "call_sessions"
     __table_args__ = (
         ForeignKeyConstraint(
-            ("tenant_id", "tenant_config_revision_id"),
-            (
-                "tenant_config_revisions.tenant_id",
-                "tenant_config_revisions.id",
-            ),
-            name="fk_call_sessions_config_revision_same_tenant",
-        ),
-        ForeignKeyConstraint(
-            ("tenant_id", "prompt_set_revision_id"),
-            ("prompt_set_revisions.tenant_id", "prompt_set_revisions.id"),
-            name="fk_call_sessions_prompt_set_revision_same_tenant",
-        ),
-        ForeignKeyConstraint(
-            ("tenant_id", "voice_runtime_revision_id"),
-            ("voice_runtime_revisions.tenant_id", "voice_runtime_revisions.id"),
-            name="fk_call_sessions_voice_runtime_revision_same_tenant",
+            ("tenant_id", "tenant_release_id", "runtime_bundle_id"),
+            ("tenant_releases.tenant_id", "tenant_releases.id", "tenant_releases.runtime_bundle_id"),
+            name="fk_call_sessions_release_bundle_same_tenant",
         ),
         UniqueConstraint(
             "provider",
@@ -123,9 +110,8 @@ class CallSession(Base):
             name="fk_call_sessions_tenant_id_tenants",
         ),
     )
-    tenant_config_revision_id: Mapped[UUID] = mapped_column(Uuid)
-    prompt_set_revision_id: Mapped[UUID] = mapped_column(Uuid)
-    voice_runtime_revision_id: Mapped[UUID | None] = mapped_column(Uuid)
+    tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
+    runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
     channel: Mapped[CallChannel] = mapped_column(
         Enum(
             CallChannel,

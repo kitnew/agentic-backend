@@ -24,9 +24,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend_core.modules.calls.errors import (
     CallSessionConfigUnavailableError,
     CallSessionConflictError,
-    CallSessionLegacyRuntimeError,
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
+    CallSessionTelephonyNotReadyError,
     HumanHandoffError,
 )
 from backend_core.modules.calls.models import CallSession
@@ -43,16 +43,15 @@ from backend_core.modules.calls.service import CallSessionService
 from backend_core.modules.conversations.router import build_conversation_service
 from backend_core.modules.integrations.crypto import derive_observability_key
 from backend_core.modules.tenants.errors import TenantNotFoundError
+from backend_core.modules.tenants.release_repository import TenantReleaseRepository
 from backend_core.modules.tenants.repository import (
-    ConfigRevisionRepository,
-    PromptCompositionRepository,
     TelephonyRepository,
     TenantRepository,
 )
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import Database, DatabaseSession
 from backend_core.platform.messaging import TransactionalOutboxBus
-from backend_core.runtime.voice.repository import VoiceRuntimeRepository
+from backend_core.runtime.bundle_store import RuntimeBundleStore
 
 router = APIRouter(prefix="/internal/v1/call-sessions", tags=["internal:calls"])
 admin_router = APIRouter(
@@ -81,12 +80,11 @@ def build_call_session_service(
     return CallSessionService(
         CallSessionRepository(session),
         TelephonyRepository(session),
-        PromptCompositionRepository(session),
         TenantRepository(session),
-        ConfigRevisionRepository(session),
-        VoiceRuntimeRepository(session),
         build_conversation_service(session),
         TransactionalOutboxBus(session, event_stream, command_stream, tracer),
+        TenantReleaseRepository(session),
+        RuntimeBundleStore(session),
         tracer,
         metrics,
         privacy_key,
@@ -183,20 +181,20 @@ def call_http_exception(error: Exception) -> HTTPException:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="inbound route unavailable",
         )
-    if isinstance(error, CallSessionLegacyRuntimeError):
+    if isinstance(error, CallSessionTelephonyNotReadyError):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": "historical_call_voice_runtime_unavailable",
-                "message": "this historical call has no pinned VoiceRuntime revision",
+                "code": "telephony_not_ready",
+                "message": "telephony provisioning is not ready",
             },
         )
     if isinstance(error, CallSessionConfigUnavailableError):
         return HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
-                "code": "tenant_configuration_not_voice_ready",
-                "message": "tenant needs published config, PromptSet, and active VoiceRuntime revisions",
+                "code": "tenant_configuration_not_runtime_ready",
+                "message": "tenant needs an active release and runtime bundle",
             },
         )
     return HTTPException(
@@ -222,6 +220,7 @@ async def create_call_session(
         CallSessionConfigUnavailableError,
         CallSessionConflictError,
         CallSessionRouteUnavailableError,
+        CallSessionTelephonyNotReadyError,
     ) as error:
         raise call_http_exception(error) from error
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
@@ -251,6 +250,7 @@ async def claim_inbound_sip_call(
         CallSessionConfigUnavailableError,
         CallSessionConflictError,
         CallSessionRouteUnavailableError,
+        CallSessionTelephonyNotReadyError,
     ) as error:
         logger.warning(
             "Inbound SIP claim rejected",
@@ -282,6 +282,8 @@ async def transfer_call_to_human(
             "handoff_not_configured": "Human handoff is not configured",
             "unknown_destination": "The requested handoff destination is unavailable",
             "call_not_transferable": "This call cannot be transferred",
+            "telephony_not_ready": "Telephony is not ready for this call",
+            "outbound_unavailable": "Outbound telephony is unavailable",
             "transfer_failed": "The call could not be transferred",
         }
         raise HTTPException(
@@ -435,7 +437,6 @@ async def get_call_runtime_context(
     except (
         CallSessionNotFoundError,
         CallSessionConfigUnavailableError,
-        CallSessionLegacyRuntimeError,
     ) as error:
         raise call_http_exception(error) from error
 

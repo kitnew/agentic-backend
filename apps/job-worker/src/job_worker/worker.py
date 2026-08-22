@@ -818,13 +818,19 @@ class BackendClient:
         response.raise_for_status()
 
     async def integration_material(
-        self, invocation_id: UUID, job_id: UUID
+        self, invocation_id: UUID, job_id: UUID, job: IntegrationJob
     ) -> RuntimeIntegrationMaterial:
         try:
             response = await self._client.get(
                 f"{self._settings.backend_url}/internal/v1/capability-invocations/"
                 f"{invocation_id}/integration-material",
-                params={"job_id": str(job_id)},
+                params={
+                    "job_id": str(job_id),
+                    "call_id": str(job.call_id) if job.call_id else None,
+                    "runtime_bundle_id": str(job.runtime_bundle_id)
+                    if job.runtime_bundle_id
+                    else None,
+                },
                 headers={"Authorization": f"Bearer {self._token()}"},
             )
         except httpx.HTTPError as error:
@@ -1128,7 +1134,7 @@ class CapabilityWorker:
                     },
                 )
                 material = await self._backend.integration_material(
-                    job.capability_invocation_id, job.job_id
+                    job.capability_invocation_id, job.job_id, job
                 )
                 result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult
                 if job.execution_plan.plan_type == "google_sheets.append_values.v1":

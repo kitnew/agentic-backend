@@ -10,11 +10,8 @@ from admin_client.generated.models.tenant_response import TenantResponse
 from admin_client.generated.models.tenant_status import TenantStatus
 from admin_client.generated.types import Response
 
-from control_plane.commands.prompts import (
-    PromptCommandError,
-    _client,
-    _response_error,
-)
+from control_plane.commands.common import _client, _response_error
+from control_plane.commands.errors import CommandError
 from control_plane.settings import Settings
 
 
@@ -47,10 +44,10 @@ def run_tenant_create(
             ),
         )
         if response.status_code == 409:
-            raise PromptCommandError("tenant slug already exists", 2)
+            raise CommandError("tenant slug already exists", 2)
         _response_error(response)
         if not isinstance(response.parsed, TenantResponse):
-            raise PromptCommandError(
+            raise CommandError(
                 "unexpected client failure: invalid Backend response", 1
             )
         tenant = response.parsed

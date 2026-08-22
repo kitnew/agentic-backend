@@ -6,19 +6,13 @@ from uuid import UUID, uuid4
 
 from agentic_observability.domain import CoreMetrics, domain_span
 from contracts import (
-    TENANT_CONFIG_SCHEMAS,
     ConversationPersistenceStatus,
-    EffectiveVoiceRuntime,
-    HandoffDestinationDefinition,
     HumanHandoffRequest,
     HumanHandoffResponse,
     InboundSipClaimRequest,
-    TenantCapabilityProfile,
-    TenantConfigV2,
-    TenantConfigV3,
-    TenantConfigV4,
-    TenantConfigV5,
-    VoiceAgentPrompt,
+    RuntimeBundlePayload,
+    RuntimeBundleProvenance,
+    RuntimeHandoffDestination,
     VoiceAgentRuntimeContext,
 )
 from opentelemetry.trace import Tracer
@@ -29,9 +23,9 @@ from backend_core.application.messaging import EventBus
 from backend_core.modules.calls.errors import (
     CallSessionConfigUnavailableError,
     CallSessionConflictError,
-    CallSessionLegacyRuntimeError,
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
+    CallSessionTelephonyNotReadyError,
     HumanHandoffError,
 )
 from backend_core.modules.calls.events import call_event
@@ -49,33 +43,18 @@ from backend_core.modules.conversations.errors import (
 )
 from backend_core.modules.conversations.service import ConversationService
 from backend_core.modules.tenants.errors import TenantNotFoundError
-from backend_core.modules.tenants.knowledge import render_knowledge_context
-from backend_core.modules.tenants.models import (
-    ConfigRevisionStatus,
-    KnowledgeBaseRevision,
-    ProfilePromptRevision,
-    PromptRevisionStatus,
-    PromptSetRevision,
-    SystemPromptRevision,
-    Tenant,
-    TenantConfigRevision,
-    TenantPromptRevision,
-    TenantStatus,
+from backend_core.modules.tenants.models import TenantStatus
+from backend_core.modules.tenants.release_repository import (
+    InboundReleaseRuntime,
+    TenantReleaseRepository,
 )
 from backend_core.modules.tenants.repository import (
-    ConfigRevisionRepository,
-    PromptCompositionRepository,
     TelephonyRepository,
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import normalize_e164
 from backend_core.platform.livekit import LiveKitAdapter
-from backend_core.runtime.capabilities.domain import runtime_definition
-from backend_core.runtime.voice.models import (
-    RuntimeRevisionStatus,
-    VoiceRuntimeRevision,
-)
-from backend_core.runtime.voice.repository import VoiceRuntimeRepository
+from backend_core.runtime.bundle_store import RuntimeBundleStore
 
 logger = logging.getLogger(__name__)
 
@@ -85,32 +64,48 @@ class CallSessionService:
         self,
         calls: CallSessionRepository,
         routes: TelephonyRepository,
-        prompts: PromptCompositionRepository,
         tenants: TenantRepository,
-        configs: ConfigRevisionRepository,
-        runtimes: VoiceRuntimeRepository,
         conversations: ConversationService,
         events: EventBus,
+        releases: TenantReleaseRepository,
+        bundles: RuntimeBundleStore,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
         privacy_key: bytes | None = None,
     ) -> None:
         self._calls = calls
         self._routes = routes
-        self._prompts = prompts
         self._tenants = tenants
-        self._configs = configs
-        self._runtimes = runtimes
         self._conversations = conversations
         self._events = events
         self._tracer = tracer
         self._metrics = metrics
         self._privacy_key = privacy_key
+        self._releases = releases
+        self._bundles = bundles
 
     def _phone_hash(self, value: str) -> str:
         if self._privacy_key is None:
             return f"{value[:2]}…{value[-2:]}"
         return hmac.new(self._privacy_key, value.encode(), sha256).hexdigest()[:16]
+
+    @staticmethod
+    def _require_inbound_telephony_ready(resolution: InboundReleaseRuntime) -> None:
+        state = resolution.provisioning
+        if (
+            state is None
+            or state.status != "ready"
+            or state.desired_revision_id != resolution.release.telephony_revision_id
+            or state.applied_revision_id != resolution.release.telephony_revision_id
+        ):
+            raise CallSessionTelephonyNotReadyError
+
+    @staticmethod
+    def _require_runtime_bundle(bundle_payload: dict[str, object]) -> None:
+        try:
+            RuntimeBundlePayload.model_validate(bundle_payload)
+        except ValidationError as error:
+            raise CallSessionConfigUnavailableError from error
 
     async def create(
         self,
@@ -133,23 +128,23 @@ class CallSessionService:
         )
         if existing is not None:
             return existing, False
-        resolution = await self._routes.resolve(data.called_number, lock_tenant=True)
-        if resolution is None:
+        called_number = normalize_e164(data.called_number)
+        resolution = (
+            await self._releases.inbound_runtime(called_number)
+            if called_number is not None
+            else None
+        )
+        if resolution is None or resolution.tenant.status is not TenantStatus.ACTIVE:
             if self._metrics is not None:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
-        tenant, config_revision = resolution
-
-        _, prompt_set, voice_runtime = await self._voice_config(
-            tenant,
-            config_revision,
-        )
+        self._require_inbound_telephony_ready(resolution)
+        self._require_runtime_bundle(resolution.bundle.payload)
 
         call = CallSession(
-            tenant_id=tenant.id,
-            tenant_config_revision_id=config_revision.id,
-            prompt_set_revision_id=prompt_set.id,
-            voice_runtime_revision_id=voice_runtime.id,
+            tenant_id=resolution.tenant.id,
+            tenant_release_id=resolution.release.id,
+            runtime_bundle_id=resolution.bundle.id,
             channel=CallChannel.SIP,
             direction=CallDirection.INBOUND,
             provider=data.provider,
@@ -207,26 +202,25 @@ class CallSessionService:
             )
             return existing, False
 
-        resolution = await self._routes.resolve(called_number, lock_tenant=True)
-        if resolution is None:
+        resolution = await self._releases.inbound_runtime(called_number)
+        if resolution is None or resolution.tenant.status is not TenantStatus.ACTIVE:
             if self._metrics is not None:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
-        tenant, config_revision = resolution
+        self._require_inbound_telephony_ready(resolution)
+        self._require_runtime_bundle(resolution.bundle.payload)
         logger.info(
             "Inbound SIP DID resolved",
             extra={
                 "called_number_hash": self._phone_hash(called_number),
-                "tenant_id": str(tenant.id),
+                "tenant_id": str(resolution.tenant.id),
             },
         )
 
-        _, prompt_set, voice_runtime = await self._voice_config(tenant, config_revision)
         call = CallSession(
-            tenant_id=tenant.id,
-            tenant_config_revision_id=config_revision.id,
-            prompt_set_revision_id=prompt_set.id,
-            voice_runtime_revision_id=voice_runtime.id,
+            tenant_id=resolution.tenant.id,
+            tenant_release_id=resolution.release.id,
+            runtime_bundle_id=resolution.bundle.id,
             channel=CallChannel.SIP,
             direction=CallDirection.INBOUND,
             provider="livekit",
@@ -343,22 +337,10 @@ class CallSessionService:
         tenant = await self._tenants.get_for_update(tenant_id)
         if tenant is None:
             raise TenantNotFoundError
-        if (
-            tenant.status is not TenantStatus.ACTIVE
-            or tenant.active_config_revision_id is None
-        ):
+        runtime = await self._releases.active_runtime(tenant.id)
+        if runtime is None or tenant.status is not TenantStatus.ACTIVE:
             raise CallSessionConfigUnavailableError
-        config_revision = await self._configs.get(
-            tenant.id,
-            tenant.active_config_revision_id,
-        )
-        if (
-            config_revision is None
-            or config_revision.status is not ConfigRevisionStatus.PUBLISHED
-            or config_revision.published_at is None
-        ):
-            raise CallSessionConfigUnavailableError
-        _, prompt_set, voice_runtime = await self._voice_config(tenant, config_revision)
+        self._require_runtime_bundle(runtime.bundle.payload)
 
         call_id = uuid4()
         room_name = f"call_{call_id}"
@@ -370,9 +352,8 @@ class CallSessionService:
         call = CallSession(
             id=call_id,
             tenant_id=tenant.id,
-            tenant_config_revision_id=config_revision.id,
-            prompt_set_revision_id=prompt_set.id,
-            voice_runtime_revision_id=voice_runtime.id,
+            tenant_release_id=runtime.release.id,
+            runtime_bundle_id=runtime.bundle.id,
             channel=CallChannel.WEB,
             direction=CallDirection.INBOUND,
             provider="livekit",
@@ -418,97 +399,31 @@ class CallSessionService:
         call_id: UUID,
     ) -> VoiceAgentRuntimeContext:
         call = await self.get(call_id)
-        if call.voice_runtime_revision_id is None:
-            raise CallSessionLegacyRuntimeError
-        config_revision = await self._configs.get(
-            call.tenant_id,
-            call.tenant_config_revision_id,
+        bundle = await self._bundles.get(
+            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
         )
-        prompt_set = await self._prompts.revision(
-            PromptSetRevision, call.prompt_set_revision_id, tenant_id=call.tenant_id
-        )
-        voice_runtime = await self._runtimes.voice_revision(
-            call.tenant_id, call.voice_runtime_revision_id
-        )
-        if config_revision is None or prompt_set is None or voice_runtime is None:
+        if bundle is None:
             raise CallSessionConfigUnavailableError
         try:
-            model = TENANT_CONFIG_SCHEMAS.get(config_revision.schema_version)
-            if model is None:
-                raise CallSessionConfigUnavailableError
-            config = model.model_validate(config_revision.config)
+            payload = RuntimeBundlePayload.model_validate(bundle.payload)
+            provenance = RuntimeBundleProvenance.model_validate(bundle.provenance)
         except ValidationError as error:
             raise CallSessionConfigUnavailableError from error
-        if not isinstance(config, (TenantConfigV2, TenantConfigV3)):
-            raise CallSessionConfigUnavailableError
-        system = await self._prompts.revision(
-            SystemPromptRevision, prompt_set.system_prompt_revision_id
-        )
-        profile = await self._prompts.revision(
-            ProfilePromptRevision, prompt_set.profile_prompt_revision_id
-        )
-        tenant_prompt = await self._prompts.revision(
-            TenantPromptRevision,
-            prompt_set.tenant_prompt_revision_id,
-            tenant_id=call.tenant_id,
-        )
-        knowledge = await self._prompts.revision(
-            KnowledgeBaseRevision,
-            prompt_set.knowledge_base_revision_id,
-            tenant_id=call.tenant_id,
-        )
-        if any(item is None for item in (system, profile, tenant_prompt, knowledge)):
-            raise CallSessionConfigUnavailableError
-        assert system is not None
-        assert profile is not None
-        assert tenant_prompt is not None
-        assert knowledge is not None
-        knowledge_documents = await self._prompts.knowledge_snapshot(
-            call.tenant_id, knowledge.id
-        )
         return VoiceAgentRuntimeContext(
             call_session_id=call.id,
-            voice_runtime_revision_id=voice_runtime.id,
-            voice_runtime=EffectiveVoiceRuntime.model_validate(
-                voice_runtime.effective_settings
-            ),
+            tenant_release_id=call.tenant_release_id,
+            runtime_bundle_id=call.runtime_bundle_id,
+            voice_runtime_revision_id=provenance.runtime_revision_id,
+            voice_runtime=payload.voice_runtime,
             room_name=call.room_name,
-            locale=config.localization.default_locale,
-            timezone=config.localization.timezone,
-            agent_display_name=config.agent.display_name,
-            greeting=config.agent.greeting,
-            conversation_scope=config.conversation.scope.value,
-            prompt=VoiceAgentPrompt(
-                system_prompt=system.text,
-                profile_prompt=profile.text,
-                tenant_prompt=tenant_prompt.text,
-                knowledge_context=render_knowledge_context(
-                    [
-                        (document.key, document_revision.content)
-                        for _, document, document_revision in knowledge_documents
-                    ]
-                ),
-                knowledge_base_revision_id=knowledge.id,
-            ),
-            capabilities=[
-                runtime_definition(key, profile)
-                for key, profile in config.capabilities.items()
-                if isinstance(profile, TenantCapabilityProfile) and profile.enabled
-            ],
-            handoff_destinations=(
-                {
-                    key: HandoffDestinationDefinition(
-                        description=destination.description
-                    )
-                    for key, destination in (
-                        config.telephony.handoff.destinations.items()
-                        if isinstance(config, TenantConfigV5)
-                        else config.handoff.destinations.items()
-                    )
-                }
-                if isinstance(config, (TenantConfigV4, TenantConfigV5))
-                else {}
-            ),
+            locale=payload.locale,
+            timezone=payload.timezone,
+            agent_display_name=payload.agent_display_name,
+            greeting=payload.greeting,
+            conversation_scope=payload.conversation_scope,
+            prompt=payload.prompt,
+            capabilities=payload.capabilities,
+            handoff_destinations=payload.handoff_destinations,
         )
 
     async def transfer_to_human(
@@ -537,26 +452,7 @@ class CallSessionService:
         tenant = await self._tenants.get(call.tenant_id)
         if tenant is None or tenant.status is not TenantStatus.ACTIVE:
             raise HumanHandoffError("call_not_transferable")
-        revision = await self._configs.get(
-            call.tenant_id, call.tenant_config_revision_id
-        )
-        if revision is None:
-            raise HumanHandoffError("handoff_not_configured")
-        actual = await self._routes.get(call.tenant_id)
-        try:
-            config = TENANT_CONFIG_SCHEMAS[revision.schema_version].model_validate(
-                revision.config
-            )
-        except ValidationError as error:
-            raise HumanHandoffError("handoff_not_configured") from error
-        if isinstance(config, TenantConfigV5):
-            phone_number = config.telephony.phone_number
-            destinations = config.telephony.handoff.destinations
-        elif isinstance(config, TenantConfigV4):
-            phone_number = actual.phone_number if actual else None
-            destinations = config.handoff.destinations
-        else:
-            raise HumanHandoffError("handoff_not_configured")
+        phone_number, destinations = await self._pinned_handoff(call)
         if not phone_number or not destinations:
             raise HumanHandoffError("handoff_not_configured")
         destination = destinations.get(data.destination)
@@ -608,6 +504,25 @@ class CallSessionService:
         )
         return HumanHandoffResponse(destination=data.destination)
 
+    async def _pinned_handoff(
+        self, call: CallSession
+    ) -> tuple[str | None, dict[str, RuntimeHandoffDestination]]:
+        bundle = await self._bundles.get(
+            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
+        )
+        if bundle is None:
+            raise HumanHandoffError("telephony_not_ready")
+        try:
+            payload = RuntimeBundlePayload.model_validate(bundle.payload)
+            provenance = RuntimeBundleProvenance.model_validate(bundle.provenance)
+        except ValidationError as error:
+            raise HumanHandoffError("telephony_not_ready") from error
+        if not await self._bundles.telephony_ready(
+            call.tenant_id, provenance.telephony_revision_id
+        ):
+            raise HumanHandoffError("telephony_not_ready")
+        return payload.telephony.caller_number, payload.telephony.handoff_destinations
+
     async def relinquish_agent(
         self,
         call_id: UUID,
@@ -624,44 +539,6 @@ class CallSessionService:
         except (ConversationConflictError, ConversationNotFoundError) as error:
             raise CallSessionConflictError from error
         return call
-
-    async def _voice_config(
-        self,
-        tenant: Tenant,
-        config_revision: TenantConfigRevision,
-    ) -> tuple[TenantConfigV3, PromptSetRevision, VoiceRuntimeRevision]:
-        try:
-            model = TENANT_CONFIG_SCHEMAS.get(config_revision.schema_version)
-            if model is None:
-                raise CallSessionConfigUnavailableError
-            config = model.model_validate(config_revision.config)
-        except ValidationError as error:
-            raise CallSessionConfigUnavailableError from error
-        if not isinstance(config, TenantConfigV3):
-            raise CallSessionConfigUnavailableError
-        if tenant.active_prompt_set_revision_id is None:
-            raise CallSessionConfigUnavailableError
-        if tenant.active_voice_runtime_revision_id is None:
-            raise CallSessionConfigUnavailableError
-        prompt_set = await self._prompts.revision(
-            PromptSetRevision,
-            tenant.active_prompt_set_revision_id,
-            tenant_id=tenant.id,
-        )
-        if (
-            prompt_set is None
-            or prompt_set.status is not PromptRevisionStatus.PUBLISHED
-        ):
-            raise CallSessionConfigUnavailableError
-        voice_runtime = await self._runtimes.voice_revision(
-            tenant.id, tenant.active_voice_runtime_revision_id
-        )
-        if (
-            voice_runtime is None
-            or voice_runtime.status is not RuntimeRevisionStatus.PUBLISHED
-        ):
-            raise CallSessionConfigUnavailableError
-        return config, prompt_set, voice_runtime
 
     async def mark_started(self, call_id: UUID) -> CallSession:
         call = await self._get_for_update(call_id)

@@ -25,18 +25,17 @@ export interface CallSessionResponse {
   handoff_tool_call_id: string | null;
   id: string;
   livekit_participant_identity: string | null;
-  prompt_set_revision_id: string;
   provider: string;
   provider_call_id: string;
   provider_dispatch_id: string | null;
   room_name: string;
+  runtime_bundle_id: string;
   sip_call_id: string | null;
   sip_call_id_full: string | null;
   sip_dispatch_rule_id: string | null;
   sip_trunk_id: string | null;
   started_at: string | null;
   status: CallSessionStatus;
-  tenant_config_revision_id: string;
   tenant_id: string;
-  voice_runtime_revision_id: string | null;
+  tenant_release_id: string;
 }
