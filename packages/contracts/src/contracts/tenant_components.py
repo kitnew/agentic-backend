@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -13,7 +15,12 @@ from pydantic import (
 )
 from pydantic_core import PydanticCustomError
 
-from contracts.capability import ManagedWebhookResponseConfig
+from contracts.http_operation import (
+    ExpressionNode,
+    HttpRequestSpec,
+    HttpResponseSpec,
+    MappingTemplate,
+)
 
 
 class _ComponentModel(BaseModel):
@@ -68,6 +75,7 @@ class TenantAgentConfig(_ComponentModel):
     localization: LocalizationConfig
     agent: AgentIdentityConfig
     conversation: ConversationConfig
+    handoff: HandoffConfig = Field(default_factory=lambda: HandoffConfig())
 
 
 class TenantPromptConfig(_ComponentModel):
@@ -109,16 +117,18 @@ class GoogleSheetsAppendExecution(_ComponentModel):
     request_mapping: str = Field(min_length=1, max_length=20_000)
 
 
-class ManagedWebhookExecution(_ComponentModel):
-    plan_type: Literal["managed_webhook.post_json.v1"]
+class HttpExecution(_ComponentModel):
+    plan_type: Literal["http.request.v1"] = "http.request.v1"
     connection_id: UUID
-    mapping_language: Literal["jsonata"]
-    mapping_contract_version: Literal[1]
-    mapping_engine: Literal["jsonata-python"]
-    mapping_engine_version: Literal["0.7.0"]
-    request_mapping: str = Field(min_length=1, max_length=20_000)
-    response: ManagedWebhookResponseConfig | None = None
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+    path: str | ExpressionNode | None = None
+    query: dict[str, MappingTemplate] | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    request: HttpRequestSpec = Field(default_factory=lambda: HttpRequestSpec(codec="none"))
+    response: HttpResponseSpec = Field(default_factory=lambda: HttpResponseSpec(codec="none"))
     timeout_seconds: int = Field(gt=0, le=60)
+    success_statuses: list[int] | None = Field(default=None, max_length=20)
+    result_schema: dict[str, object] | None = None
 
 
 class PostCallActionInput(_ComponentModel):
@@ -139,18 +149,16 @@ class PostCallActionInput(_ComponentModel):
 
 class PostCallAction(_ComponentModel):
     action_id: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
-    type: Literal["http.post_json"] = "http.post_json"
+    type: Literal["http"] = "http"
     inputs: dict[
         Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")],
         PostCallActionInput,
     ] = Field(default_factory=dict, max_length=10)
-    semantic_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
-    semantic_version: int = Field(gt=0)
-    execution: ManagedWebhookExecution
+    execution: HttpExecution
 
 
 CapabilityExecution = Annotated[
-    GoogleSheetsAppendExecution | ManagedWebhookExecution,
+    GoogleSheetsAppendExecution | HttpExecution,
     Field(discriminator="plan_type"),
 ]
 
@@ -161,22 +169,25 @@ class TenantCapabilityProfile(_ComponentModel):
     description: str = Field(min_length=1, max_length=1000)
     announcement: str = Field(min_length=1, max_length=1000)
     agent_input_schema: dict[str, Any]
+    bindings: dict[str, str] = Field(default_factory=dict)
     business_policy: CapabilityBusinessPolicy = Field(
         default_factory=CapabilityBusinessPolicy
     )
     execution: CapabilityExecution
-    validation_fixtures: list[dict[str, Any]] = Field(min_length=2, max_length=3)
 
 
 class TenantCapabilitiesConfig(_ComponentModel):
     capabilities: dict[str, StrictBool | TenantCapabilityProfile] = Field(
         default_factory=dict
     )
-    post_call_actions: list[PostCallAction] = Field(default_factory=list, max_length=20)
+
+
+class TenantPostCallConfig(_ComponentModel):
+    actions: list[PostCallAction] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
-    def post_call_action_ids_are_unique(self) -> TenantCapabilitiesConfig:
-        action_ids = [action.action_id for action in self.post_call_actions]
+    def action_ids_are_unique(self) -> TenantPostCallConfig:
+        action_ids = [action.action_id for action in self.actions]
         if len(action_ids) != len(set(action_ids)):
             raise ValueError("post-call action IDs must be unique")
         return self
@@ -198,4 +209,3 @@ class HandoffConfig(_ComponentModel):
 
 class TenantTelephonyConfig(_ComponentModel):
     phone_number: str | None = Field(default=None, pattern=r"^\+[1-9]\d{1,14}$")
-    handoff: HandoffConfig = Field(default_factory=HandoffConfig)

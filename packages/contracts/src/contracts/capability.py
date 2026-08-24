@@ -9,6 +9,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from contracts.http_operation import HttpRequestPlanV1
+
 JsonScalar = str | int | float | bool | None
 _DECIMAL_PATTERN = re.compile(
     r"^[+-]?(?:(?:\d+(?:\.\d*)?)|(?:\.\d+))(?:[eE][+-]?\d+)?$"
@@ -126,7 +128,7 @@ class ManagedWebhookPostJsonPlan(_Contract):
 
 
 ExecutionPlan = Annotated[
-    GoogleSheetsAppendValuesPlan | ManagedWebhookPostJsonPlan,
+    GoogleSheetsAppendValuesPlan | HttpRequestPlanV1 | ManagedWebhookPostJsonPlan,
     Field(discriminator="plan_type"),
 ]
 
@@ -161,10 +163,16 @@ class RuntimeIntegrationMaterial(_Contract):
     """Short-lived plaintext returned only to the scoped Job Worker request."""
 
     integration_id: UUID
-    provider: Literal["google_sheets", "managed_webhook"]
-    config: dict[str, object]
-    secret: dict[str, object]
-    credential_version: int = Field(gt=0)
+    kind: Literal["http", "google_sheets"] = "google_sheets"
+    provider: Literal["http", "google_sheets"] = "google_sheets"
+    endpoint: str | None = None
+    static_headers: dict[str, str] = Field(default_factory=dict)
+    authentication_header: str | None = None
+    allowed_hosts: list[str] = Field(default_factory=list)
+    config: dict[str, object] = Field(default_factory=dict)
+    secret: dict[str, object] | None = None
+    connection_revision: int = Field(default=1, gt=0)
+    credential_version: int | None = Field(default=None, gt=0)
 
 
 class GoogleSheetsAppendValuesResult(_Contract):
@@ -184,8 +192,17 @@ class ManagedWebhookPostJsonResult(_Contract):
     data: dict[str, object] | str = Field(default_factory=dict)
 
 
+class HttpRequestResult(_Contract):
+    result_type: Literal["http.request.v1"]
+    status: Literal["succeeded"]
+    operation_id: UUID
+    reference: str | None = Field(default=None, max_length=1024)
+    deduplicated: bool = False
+    data: object | None = None
+
+
 TechnicalResult = Annotated[
-    GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult,
+    GoogleSheetsAppendValuesResult | HttpRequestResult | ManagedWebhookPostJsonResult,
     Field(discriminator="result_type"),
 ]
 

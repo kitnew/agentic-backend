@@ -5,9 +5,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from contracts.capability import (
-    ManagedWebhookResponseConfig,
-    RuntimeCapabilityDefinition,
+from contracts.capability import RuntimeCapabilityDefinition
+from contracts.http_operation import (
+    ExpressionNode,
+    HttpRequestSpec,
+    HttpResponseSpec,
+    MappingTemplate,
 )
 from contracts.voice import HandoffDestinationDefinition, VoiceAgentPrompt
 from contracts.voice_runtime import EffectiveVoiceRuntime
@@ -23,6 +26,7 @@ class RuntimeBundleProvenance(_RuntimeBundleModel):
     prompt_revision_id: UUID
     knowledge_revision_id: UUID
     capabilities_revision_id: UUID
+    post_call_revision_id: UUID
     telephony_revision_id: UUID
     platform_runtime_revision_id: UUID
     system_prompt_revision_id: UUID
@@ -54,16 +58,18 @@ class RuntimeGoogleSheetsExecution(_RuntimeBundleModel):
     request_mapping: str = Field(min_length=1, max_length=20_000)
 
 
-class RuntimeManagedWebhookExecution(_RuntimeBundleModel):
-    plan_type: Literal["managed_webhook.post_json.v1"] = "managed_webhook.post_json.v1"
-    mapping_language: Literal["jsonata"] = "jsonata"
-    mapping_contract_version: Literal[1] = 1
-    mapping_engine: Literal["jsonata-python"] = "jsonata-python"
-    mapping_engine_version: Literal["0.7.0"] = "0.7.0"
+class RuntimeHttpExecution(_RuntimeBundleModel):
+    plan_type: Literal["http.request.v1"] = "http.request.v1"
     connection_id: UUID
-    request_mapping: str = Field(min_length=1, max_length=20_000)
-    response: ManagedWebhookResponseConfig | None = None
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
+    path: str | ExpressionNode | None = None
+    query: dict[str, MappingTemplate] | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    request: HttpRequestSpec = Field(default_factory=lambda: HttpRequestSpec(codec="none"))
+    response: HttpResponseSpec = Field(default_factory=lambda: HttpResponseSpec(codec="none"))
     timeout_seconds: int = Field(gt=0, le=60)
+    success_statuses: list[int] | None = Field(default=None, max_length=20)
+    result_schema: dict[str, object] | None = None
 
 
 class RuntimeCapabilityBinding(_RuntimeBundleModel):
@@ -72,8 +78,9 @@ class RuntimeCapabilityBinding(_RuntimeBundleModel):
     tool_name: str = Field(min_length=1, max_length=64)
     enabled: bool
     input_schema: dict[str, object]
+    bindings: dict[str, str] = Field(default_factory=dict)
     policy: RuntimeCapabilityPolicy = Field(default_factory=RuntimeCapabilityPolicy)
-    execution: RuntimeGoogleSheetsExecution | RuntimeManagedWebhookExecution
+    execution: RuntimeGoogleSheetsExecution | RuntimeHttpExecution
 
 
 class RuntimePostCallInput(_RuntimeBundleModel):
@@ -84,9 +91,7 @@ class RuntimePostCallInput(_RuntimeBundleModel):
 class RuntimePostCallAction(_RuntimeBundleModel):
     action_id: str = Field(min_length=1, max_length=128)
     inputs: dict[str, RuntimePostCallInput] = Field(default_factory=dict)
-    semantic_key: str = Field(min_length=1, max_length=128)
-    semantic_version: int = Field(gt=0)
-    execution: RuntimeManagedWebhookExecution
+    execution: RuntimeHttpExecution
 
 
 class RuntimeHandoffDestination(_RuntimeBundleModel):
