@@ -28,7 +28,7 @@ from admin_client.generated.types import UNSET, Response
 from control_plane.commands.errors import CommandError
 from control_plane.settings import Settings
 
-COMPONENTS = ("runtime", "agent", "prompt", "knowledge", "capabilities", "telephony")
+COMPONENTS = ("runtime", "agent", "prompt", "knowledge", "capabilities", "post_call")
 
 
 def tenant_config_path(state_dir: Path, slug: str) -> Path:
@@ -57,13 +57,17 @@ def parse_tenant_yaml(text: str) -> dict[str, dict[str, Any]]:
     return sections
 
 
-def run_tenant_components(settings: Settings, action: str, slug: str, *, force: bool = False) -> None:
+def run_tenant_components(
+    settings: Settings, action: str, slug: str, *, force: bool = False
+) -> None:
     path = tenant_config_path(settings.state_dir, slug)
     if action == "show":
         if path.exists():
             print(path.read_text(encoding="utf-8"))
             return
-        with AuthenticatedClient(base_url=settings.api_url, token=settings.token) as client:
+        with AuthenticatedClient(
+            base_url=settings.api_url, token=settings.token
+        ) as client:
             tenant = _tenant(client, slug)
             document: dict[str, Any] = {}
             for component in COMPONENTS:
@@ -76,7 +80,9 @@ def run_tenant_components(settings: Settings, action: str, slug: str, *, force: 
     if action == "pull":
         if path.exists() and not force:
             raise CommandError(f"refusing to overwrite existing file: {path}", 2)
-        with AuthenticatedClient(base_url=settings.api_url, token=settings.token) as client:
+        with AuthenticatedClient(
+            base_url=settings.api_url, token=settings.token
+        ) as client:
             tenant = _tenant(client, slug)
             document: dict[str, Any] = {}
             for component in COMPONENTS:
@@ -85,7 +91,10 @@ def run_tenant_components(settings: Settings, action: str, slug: str, *, force: 
                 if selected is not None:
                     document[component] = selected.payload.to_dict()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(yaml.safe_dump(document, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        path.write_text(
+            yaml.safe_dump(document, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
         print(f"Wrote {path}")
         return
     sections = parse_tenant_yaml(path.read_text(encoding="utf-8"))
@@ -138,18 +147,14 @@ def _push(
         if current == payload:
             print(f"{component}: unchanged")
             continue
-        response = (
-            save_draft_admin_v1_tenants_tenant_id_components_component_draft_put.sync_detailed(
-                tenant.id,
-                component,
-                client=client,
-                body=ComponentDraftWrite(
-                    payload=ComponentDraftWritePayload.from_dict(payload)
-                ),
-                if_match=(
-                    UNSET if state.draft is None else f'"{state.draft.version}"'
-                ),
-            )
+        response = save_draft_admin_v1_tenants_tenant_id_components_component_draft_put.sync_detailed(
+            tenant.id,
+            component,
+            client=client,
+            body=ComponentDraftWrite(
+                payload=ComponentDraftWritePayload.from_dict(payload)
+            ),
+            if_match=(UNSET if state.draft is None else f'"{state.draft.version}"'),
         )
         draft = _expect(response)
         print(f"{component}: saved draft version {draft.version}")

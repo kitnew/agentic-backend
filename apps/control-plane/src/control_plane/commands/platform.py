@@ -21,7 +21,6 @@ from admin_client.generated.models.prompt_draft_write import PromptDraftWrite
 from admin_client.generated.models.runtime_draft_write import RuntimeDraftWrite
 
 from control_plane.commands.common import _client, _response_error
-from control_plane.commands.components import run_tenant_components
 from control_plane.commands.errors import CommandError
 from control_plane.settings import Settings
 
@@ -207,48 +206,3 @@ def run_platform_runtime(settings: Settings, action: str, *, force: bool = False
         _publish(settings)
         return
     raise CommandError(f"unsupported runtime action: {action}", 2)
-
-
-def run_sync(settings: Settings, action: str, *, force: bool = False) -> None:
-    """Reconcile only authoring projections that exist in the checkout."""
-    platform_dir = settings.state_dir / "platform"
-    tenant_dir = settings.state_dir / "tenants"
-    has_platform = (
-        (platform_dir / "system_prompt.md").exists()
-        or (platform_dir / "runtime.yaml").exists()
-        or any((platform_dir / "profiles").glob("*.md"))
-    )
-    tenant_slugs = sorted(
-        path.name
-        for path in tenant_dir.iterdir()
-        if path.is_dir() and (path / "tenant.yaml").exists()
-    ) if tenant_dir.exists() else []
-    if action == "plan":
-        print(f"platform: {'managed' if has_platform else 'unmanaged'}")
-        for slug in tenant_slugs:
-            print(f"tenant {slug}: managed")
-        return
-    if action == "pull":
-        if has_platform:
-            if (platform_dir / "system_prompt.md").exists():
-                run_system_prompt(settings, "pull", force=force)
-            if (platform_dir / "runtime.yaml").exists():
-                run_platform_runtime(settings, "pull", force=force)
-            for profile in sorted((platform_dir / "profiles").glob("*.md")) if (platform_dir / "profiles").exists() else []:
-                run_profile(settings, "pull", profile.stem, force=force)
-        for slug in tenant_slugs:
-            run_tenant_components(settings, "pull", slug, force=force)
-        return
-    if (platform_dir / "system_prompt.md").exists():
-        run_system_prompt(settings, "push")
-    if (platform_dir / "runtime.yaml").exists():
-        run_platform_runtime(settings, "push")
-    for profile in sorted((platform_dir / "profiles").glob("*.md")) if (platform_dir / "profiles").exists() else []:
-        run_profile(settings, "push", profile.stem)
-    for slug in tenant_slugs:
-        run_tenant_components(settings, "push", slug)
-    if action == "publish":
-        if has_platform:
-            _publish(settings)
-        for slug in tenant_slugs:
-            run_tenant_components(settings, "publish", slug)

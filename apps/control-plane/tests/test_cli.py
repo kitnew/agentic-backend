@@ -12,7 +12,7 @@ def test_settings_validate_required_configuration(monkeypatch: pytest.MonkeyPatc
         Settings.load()
 
 
-def test_tenant_config_dispatches_component_authoring(
+def test_workspace_commands_dispatch_tenant_selection(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
@@ -20,24 +20,50 @@ def test_tenant_config_dispatches_component_authoring(
     seen: dict[str, object] = {}
     monkeypatch.setattr(
         cli,
-        "run_tenant_components",
-        lambda settings, action, slug: seen.update(settings=settings, action=action, slug=slug),
+        "run_workspace",
+        lambda settings, action, selection: seen.update(action=action, selection=selection),
     )
-    assert cli.main(["--state-dir", str(tmp_path), "tenant", "config", "push", "demo"]) == 0
+    assert cli.main(["--state-dir", str(tmp_path), "push", "tenant", "demo"]) == 0
     assert seen["action"] == "push"
-    assert seen["slug"] == "demo"
+    assert seen["selection"].scope == "tenant"
+    assert seen["selection"].tenant_slug == "demo"
 
 
-def test_sync_dispatches_component_reconciliation(
-    monkeypatch: pytest.MonkeyPatch,
+def test_workspace_commands_dispatch_platform_scope(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
     monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
     seen: dict[str, object] = {}
     monkeypatch.setattr(
         cli,
-        "run_sync",
-        lambda settings, action, **kwargs: seen.update(action=action),
+        "run_workspace",
+        lambda settings, action, selection: seen.update(action=action, selection=selection),
     )
-    assert cli.main(["sync", "plan"]) == 0
-    assert seen["action"] == "plan"
+    assert cli.main(["--state-dir", str(tmp_path), "status", "platform"]) == 0
+    assert seen["action"] == "status"
+    assert seen["selection"].scope == "platform"
+
+
+@pytest.mark.parametrize("action", ("status", "pull", "plan", "push", "publish"))
+def test_workspace_commands_default_to_all_scopes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, action: str
+) -> None:
+    monkeypatch.setenv("AGENTCTL_API_URL", "https://backend.example")
+    monkeypatch.setenv("AGENTCTL_TOKEN", "secret")
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(
+        cli,
+        "run_workspace",
+        lambda settings, verb, selection: seen.update(action=verb, selection=selection),
+    )
+    assert cli.main(["--state-dir", str(tmp_path), action]) == 0
+    assert seen["action"] == action
+    assert seen["selection"].scope == "all"
+
+
+def test_removed_duplicate_mutation_commands_are_not_registered() -> None:
+    help_text = cli.parser().format_help()
+    assert "sync" not in help_text
+    assert "config" not in cli.parser()._subparsers._group_actions[0].choices["tenant"].format_help()
+    assert "system-prompt" in help_text

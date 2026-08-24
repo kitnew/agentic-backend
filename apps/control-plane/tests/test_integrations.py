@@ -16,7 +16,6 @@ from control_plane.commands import common, integrations
 from control_plane.settings import Settings
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000010")
-CONNECTION_ID = UUID("00000000-0000-0000-0000-000000000020")
 NOW = datetime(2026, 8, 11, tzinfo=UTC)
 
 
@@ -26,20 +25,32 @@ def response(parsed: object, status: HTTPStatus = HTTPStatus.OK) -> Response[obj
     )
 
 
-def connection() -> IntegrationConnectionResponse:
+def connection(key: str = "previo") -> IntegrationConnectionResponse:
     return IntegrationConnectionResponse.from_dict(
         {
-            "config": {"allowed_hosts": ["example.test"]},
+            "configuration": {
+                "endpoint": "https://api.example.test/v1",
+                "authentication": {"type": "none"},
+                "headers": {"Accept": "application/json"},
+            },
             "created_at": NOW.isoformat(),
-            "credential_fingerprint": "a" * 64,
-            "credential_version": 1,
-            "id": str(CONNECTION_ID),
-            "key": "recording_webhook",
-            "provider": "managed_webhook",
+            "enabled": False,
+            "id": "00000000-0000-0000-0000-000000000020",
+            "key": key,
+            "kind": "http",
+            "readiness": {
+                "configuration": "valid",
+                "credentials": "not_required",
+                "ready": True,
+                "usable": False,
+                "issues": [],
+            },
             "revision": 1,
-            "status": "active",
             "tenant_id": str(TENANT_ID),
             "updated_at": NOW.isoformat(),
+            "credential_status": None,
+            "credential_version": None,
+            "credential_fingerprint": None,
         }
     )
 
@@ -48,118 +59,144 @@ def settings() -> Settings:
     return Settings("https://backend.example", "secret", Path("definitions"))
 
 
-def mock_tenant(monkeypatch: pytest.MonkeyPatch, seen: list[str]) -> None:
-    def resolve(slug: str, *, client: object) -> Response[object]:
-        seen.append(slug)
-        return response(
+def mock_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        common.get_tenant_by_slug_admin_v1_tenants_by_slug_slug_get,
+        "sync_detailed",
+        lambda slug, *, client: response(
             TenantResponse.from_dict(
                 {
                     "active_release_id": None,
                     "business_type": "hotel",
                     "created_at": NOW.isoformat(),
-                    "display_name": "Penzión Grand",
+                    "display_name": "Penzion Grand",
                     "id": str(TENANT_ID),
                     "slug": slug,
                     "status": "active",
                     "updated_at": NOW.isoformat(),
                 }
             )
-        )
-
-    monkeypatch.setattr(
-        common.get_tenant_by_slug_admin_v1_tenants_by_slug_slug_get,
-        "sync_detailed",
-        resolve,
+        ),
     )
 
 
-def test_integration_list_and_show_resolve_tenant_slug(
+def test_list_and_show_are_key_based_and_secret_free(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    seen: list[str] = []
-    mock_tenant(monkeypatch, seen)
+    mock_tenant(monkeypatch)
     monkeypatch.setattr(
-        integrations.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        integrations.list_connections_admin_v1_tenants_tenant_id_integrations_get,
         "sync_detailed",
         lambda tenant_id, *, client: response([connection()]),
     )
-
     integrations.run_integration(settings(), "list", "penzion-grand")
-    assert "recording_webhook\tmanaged_webhook\tactive" in capsys.readouterr().out
-    integrations.run_integration(
-        settings(), "show", "penzion-grand", "recording_webhook"
-    )
-    assert "Credential version: 1" in capsys.readouterr().out
-    assert seen == ["penzion-grand", "penzion-grand"]
+    assert "previo\thttp\tFalse\tTrue\tFalse" in capsys.readouterr().out
+    integrations.run_integration(settings(), "show", "penzion-grand", "previo")
+    output = capsys.readouterr().out
+    assert "https://api.example.test/v1" in output
+    assert "00000000-0000-0000-0000-000000000020" not in output
 
 
-def test_integration_create_and_delete_use_existing_admin_api(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    mock_tenant(monkeypatch, [])
-    created: list[dict[str, object]] = []
-    deleted: list[tuple[UUID, UUID]] = []
-    monkeypatch.setattr(
-        integrations.create_connection_admin_v1_tenants_tenant_id_integration_connections_post,
-        "sync_detailed",
-        lambda tenant_id, *, client, body: (
-            created.append(body.to_dict()) or response(connection(), HTTPStatus.CREATED)
-        ),
-    )
-    monkeypatch.setattr(
-        integrations.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
-        "sync_detailed",
-        lambda tenant_id, *, client: response([connection()]),
-    )
-    monkeypatch.setattr(
-        integrations.delete_connection_admin_v1_tenants_tenant_id_integration_connections_connection_id_delete,
-        "sync_detailed",
-        lambda tenant_id, connection_id, *, client: (
-            deleted.append((tenant_id, connection_id))
-            or response(None, HTTPStatus.NO_CONTENT)
-        ),
-    )
-
-    integrations.run_integration(
-        settings(),
-        "create",
-        "penzion-grand",
-        "recording_webhook",
-        provider="managed_webhook",
-        config_json='{"allowed_hosts":["example.test"]}',
-    )
-    integrations.run_integration(
-        settings(), "delete", "penzion-grand", "recording_webhook"
-    )
-
-    assert created == [
-        {
-            "config": {"allowed_hosts": ["example.test"]},
-            "key": "recording_webhook",
-            "provider": "managed_webhook",
-        }
-    ]
-    assert deleted == [(TENANT_ID, CONNECTION_ID)]
-    assert "Integration: recording_webhook" in capsys.readouterr().out
-
-
-def test_integration_show_rejects_missing_or_ambiguous_keys(
+def test_create_is_minimal_and_does_not_configure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    mock_tenant(monkeypatch, [])
-    items: list[IntegrationConnectionResponse] = []
+    mock_tenant(monkeypatch)
+    seen: list[dict[str, object]] = []
     monkeypatch.setattr(
-        integrations.list_connections_admin_v1_tenants_tenant_id_integration_connections_get,
+        integrations.create_connection_admin_v1_tenants_tenant_id_integrations_post,
         "sync_detailed",
-        lambda tenant_id, *, client: response(items),
+        lambda tenant_id, *, client, body: (
+            seen.append(body.to_dict()) or response(connection(), HTTPStatus.CREATED)
+        ),
     )
-    with pytest.raises(common.CommandError, match="unknown integration"):
-        integrations.run_integration(
-            settings(), "show", "penzion-grand", "recording_webhook"
-        )
+    integrations.run_integration(
+        settings(), "create", "penzion-grand", "previo", kind="http"
+    )
+    assert seen == [{"key": "previo", "kind": "http"}]
 
-    items.extend((connection(), connection()))
-    with pytest.raises(common.CommandError, match="ambiguous integration"):
-        integrations.run_integration(
-            settings(), "show", "penzion-grand", "recording_webhook"
-        )
+
+def test_configure_uses_typed_candidate_and_etag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_tenant(monkeypatch)
+    monkeypatch.setattr(
+        integrations.list_connections_admin_v1_tenants_tenant_id_integrations_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response([connection()]),
+    )
+    seen: list[tuple[dict[str, object], str]] = []
+    monkeypatch.setattr(
+        integrations.configure_connection_admin_v1_tenants_tenant_id_integrations_key_put,
+        "sync_detailed",
+        lambda tenant_id, key, *, client, body, if_match: (
+            seen.append((body.to_dict(), if_match)) or response(connection())
+        ),
+    )
+    integrations.run_integration(
+        settings(),
+        "configure",
+        "penzion-grand",
+        "previo",
+        endpoint="https://api.example.test",
+        auth="none",
+        headers=["Accept=application/json"],
+    )
+    assert seen[0][0]["configuration"]["endpoint"] == "https://api.example.test"
+    assert seen[0][1] == '"1"'
+
+
+def test_plan_delegates_and_hidden_credential_is_not_rendered(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mock_tenant(monkeypatch)
+    monkeypatch.setattr(
+        integrations.list_connections_admin_v1_tenants_tenant_id_integrations_get,
+        "sync_detailed",
+        lambda tenant_id, *, client: response([connection()]),
+    )
+    from admin_client.generated.models.integration_plan import IntegrationPlan
+
+    monkeypatch.setattr(
+        integrations.plan_connection_admin_v1_tenants_tenant_id_integrations_key_plan_post,
+        "sync_detailed",
+        lambda tenant_id, key, *, client, body: response(
+            IntegrationPlan.from_dict(
+                {
+                    "credential": "rotate",
+                    "valid": True,
+                    "would_be_ready": True,
+                    "changes": [],
+                    "issues": [],
+                    "live_apply": True,
+                }
+            )
+        ),
+    )
+    integrations.run_integration(
+        settings(),
+        "plan",
+        "penzion-grand",
+        "previo",
+        endpoint="https://api.example.test",
+        auth="api_key_header",
+        api_key="secret-value",
+    )
+    output = capsys.readouterr().out
+    assert "credential: rotate" in output
+    assert "secret-value" not in output
+
+
+def test_workspace_does_not_project_live_integration() -> None:
+    from control_plane.workspace.model import LiveResourceKind, ResourceId
+    from control_plane.workspace.registry import (
+        ResourceCapability,
+        resource_capabilities,
+    )
+
+    resource = ResourceId(
+        "tenant", "penzion-grand", LiveResourceKind.INTEGRATION, "previo"
+    )
+    capabilities = resource_capabilities(resource)
+    assert ResourceCapability.LIVE_MUTABLE in capabilities
+    assert ResourceCapability.LOCAL_PROJECTABLE not in capabilities
+    assert ResourceCapability.PUBLISHABLE not in capabilities

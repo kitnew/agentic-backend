@@ -6,21 +6,44 @@ from json import dumps, loads
 import httpx
 
 from control_plane import __version__
-from control_plane.commands.components import run_tenant_components
 from control_plane.commands.errors import CommandError
-from control_plane.commands.integrations import run_integration
 from control_plane.commands.platform import (
     run_platform_runtime,
     run_profile,
-    run_sync,
     run_system_prompt,
 )
-from control_plane.commands.tenants import (
-    fetch_tenants,
-    run_tenant_create,
-    run_tenant_show,
-)
+from control_plane.commands.workspace import WorkspaceSelection, run_workspace
 from control_plane.settings import Settings, SettingsError
+
+
+def run_integration(*args, **kwargs):
+    from control_plane.commands.integrations import run_integration as command
+
+    return command(*args, **kwargs)
+
+
+def run_did(*args, **kwargs):
+    from control_plane.commands.did import run_did as command
+
+    return command(*args, **kwargs)
+
+
+def fetch_tenants(*args, **kwargs):
+    from control_plane.commands.tenants import fetch_tenants as command
+
+    return command(*args, **kwargs)
+
+
+def run_tenant_create(*args, **kwargs):
+    from control_plane.commands.tenants import run_tenant_create as command
+
+    return command(*args, **kwargs)
+
+
+def run_tenant_show(*args, **kwargs):
+    from control_plane.commands.tenants import run_tenant_show as command
+
+    return command(*args, **kwargs)
 
 
 def parser() -> ArgumentParser:
@@ -37,58 +60,78 @@ def parser() -> ArgumentParser:
     create.add_argument("slug")
     create.add_argument("--display-name", required=True)
     create.add_argument("--business-type", required=True)
-    create.add_argument("--status", choices=("active", "suspended", "archived"), default="active")
-    config = actions.add_parser("config", help="manage tenant component drafts from tenant.yaml")
-    config_actions = config.add_subparsers(dest="tenant_config_action", required=True)
-    for action in ("show", "push", "publish"):
-        config_actions.add_parser(action).add_argument("tenant_slug")
-    system = resources.add_parser("system-prompt", help="manage the platform System Prompt")
+    create.add_argument(
+        "--status", choices=("active", "suspended", "archived"), default="active"
+    )
+    system = resources.add_parser(
+        "system-prompt", help="inspect the platform System Prompt"
+    )
     system_actions = system.add_subparsers(dest="action", required=True)
-    for action in ("show", "revisions", "plan", "push", "publish"):
+    for action in ("show", "revisions"):
         system_actions.add_parser(action)
-    pull = system_actions.add_parser("pull")
-    pull.add_argument("--force", action="store_true")
-    runtime = resources.add_parser("runtime", help="manage the platform Runtime policy")
+    runtime = resources.add_parser("runtime", help="inspect the platform Runtime policy")
     runtime_actions = runtime.add_subparsers(dest="action", required=True)
-    for action in ("show", "revisions", "plan", "push", "publish"):
+    for action in ("show", "revisions"):
         runtime_actions.add_parser(action)
-    pull = runtime_actions.add_parser("pull")
-    pull.add_argument("--force", action="store_true")
-    profile = resources.add_parser("profile", help="manage platform Profile Prompts")
+    profile = resources.add_parser("profile", help="inspect platform Profile Prompts")
     profile_actions = profile.add_subparsers(dest="action", required=True)
     profile_actions.add_parser("list")
-    for action in ("create", "show", "revisions", "plan", "push", "publish"):
+    for action in ("show", "revisions"):
         command = profile_actions.add_parser(action)
         command.add_argument("profile_key")
-    pull = profile_actions.add_parser("pull")
-    pull.add_argument("profile_key")
-    pull.add_argument("--force", action="store_true")
-    sync = resources.add_parser("sync", help="reconcile Git-managed component authoring")
-    sync_actions = sync.add_subparsers(dest="action", required=True)
-    for action in ("plan", "push", "publish"):
-        sync_actions.add_parser(action)
-    sync_pull = sync_actions.add_parser("pull")
-    sync_pull.add_argument("--force", action="store_true")
-    integration = resources.add_parser("integration", help="manage tenant integration connection metadata")
+    for workspace_action in ("status", "pull", "plan", "push", "publish"):
+        workspace = resources.add_parser(
+            workspace_action, help=f"workspace {workspace_action}"
+        )
+        scopes = workspace.add_subparsers(dest="workspace_scope")
+        scopes.add_parser("platform", help="select Platform")
+        tenant_scope = scopes.add_parser("tenant", help="select one tenant")
+        tenant_scope.add_argument("tenant_slug")
+    did = resources.add_parser(
+        "did", help="manage the tenant DID through Telephony drafts"
+    )
+    did_actions = did.add_subparsers(dest="action", required=True)
+    did_actions.add_parser("show").add_argument("tenant_slug")
+    assign = did_actions.add_parser("assign")
+    assign.add_argument("tenant_slug")
+    assign.add_argument("phone_number")
+    did_actions.add_parser("remove").add_argument("tenant_slug")
+    integration = resources.add_parser(
+        "integration", help="manage live tenant integration connections"
+    )
     integration_actions = integration.add_subparsers(dest="action", required=True)
     integration_actions.add_parser("list").add_argument("tenant_slug")
-    for action in ("show", "delete"):
+    for action in (
+        "show",
+        "plan",
+        "configure",
+        "validate",
+        "enable",
+        "disable",
+        "rotate-credential",
+        "revoke-credential",
+        "delete",
+    ):
         command = integration_actions.add_parser(action)
         command.add_argument("tenant_slug")
         command.add_argument("key")
     create_connection = integration_actions.add_parser("create")
     create_connection.add_argument("tenant_slug")
     create_connection.add_argument("key")
-    create_connection.add_argument("--provider", choices=("managed_webhook", "google_sheets"), required=True)
-    create_connection.add_argument("--config-json", default="{}")
-    configure = integration_actions.add_parser("configure")
-    configure.add_argument("tenant_slug")
-    configure.add_argument("key")
-    configure.add_argument("--config-json", required=True)
-    for action in ("set-secret", "rotate-secret", "test", "enable", "disable"):
-        command = integration_actions.add_parser(action)
-        command.add_argument("tenant_slug")
-        command.add_argument("key")
+    create_connection.add_argument(
+        "--kind", choices=("http", "google_sheets"), required=True
+    )
+    for action in ("plan", "configure"):
+        command = integration_actions.choices[action]
+        command.add_argument("--endpoint", required=True)
+        command.add_argument(
+            "--auth", choices=("none", "api_key_header"), default="none"
+        )
+        command.add_argument("--auth-header", default="X-API-Key")
+        command.add_argument("--header", action="append", default=[])
+        command.add_argument("--additional-allowed-host", action="append", default=[])
+    rotate = integration_actions.choices["rotate-credential"]
+    rotate.add_argument("--api-key")
     return root
 
 
@@ -102,28 +145,63 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         settings = Settings.load(arguments.api_url, arguments.state_dir)
         if arguments.resource == "integration":
-            run_integration(settings, arguments.action, arguments.tenant_slug, getattr(arguments, "key", None), provider=getattr(arguments, "provider", None), config_json=getattr(arguments, "config_json", None))
+            run_integration(
+                settings,
+                arguments.action,
+                arguments.tenant_slug,
+                getattr(arguments, "key", None),
+                kind=getattr(arguments, "kind", "http"),
+                endpoint=getattr(arguments, "endpoint", None),
+                auth=getattr(arguments, "auth", "none"),
+                auth_header=getattr(arguments, "auth_header", "X-API-Key"),
+                headers=getattr(arguments, "header", None),
+                additional_allowed_hosts=getattr(
+                    arguments, "additional_allowed_host", None
+                ),
+                api_key=getattr(arguments, "api_key", None),
+            )
+            return 0
+        if arguments.resource == "did":
+            run_did(
+                settings,
+                arguments.action,
+                arguments.tenant_slug,
+                getattr(arguments, "phone_number", None),
+            )
             return 0
         if arguments.resource == "system-prompt":
-            run_system_prompt(settings, arguments.action, force=getattr(arguments, "force", False))
+            run_system_prompt(settings, arguments.action)
             return 0
         if arguments.resource == "runtime":
-            run_platform_runtime(settings, arguments.action, force=getattr(arguments, "force", False))
+            run_platform_runtime(settings, arguments.action)
             return 0
         if arguments.resource == "profile":
-            run_profile(settings, arguments.action, getattr(arguments, "profile_key", None), force=getattr(arguments, "force", False))
+            run_profile(
+                settings,
+                arguments.action,
+                getattr(arguments, "profile_key", None),
+            )
             return 0
-        if arguments.resource == "sync":
-            run_sync(settings, arguments.action, force=getattr(arguments, "force", False))
+        if arguments.resource in {"status", "pull", "plan", "push", "publish"}:
+            if arguments.workspace_scope == "platform":
+                selection = WorkspaceSelection("platform")
+            elif arguments.workspace_scope == "tenant":
+                selection = WorkspaceSelection("tenant", arguments.tenant_slug)
+            else:
+                selection = WorkspaceSelection("all")
+            run_workspace(settings, arguments.resource, selection)
             return 0
         if arguments.tenant_action == "create":
-            run_tenant_create(settings, arguments.slug, arguments.display_name, arguments.business_type, arguments.status)
+            run_tenant_create(
+                settings,
+                arguments.slug,
+                arguments.display_name,
+                arguments.business_type,
+                arguments.status,
+            )
             return 0
         if arguments.tenant_action == "show":
             run_tenant_show(settings, arguments.slug)
-            return 0
-        if arguments.tenant_action == "config":
-            run_tenant_components(settings, arguments.tenant_config_action, arguments.tenant_slug)
             return 0
         response = fetch_tenants(settings)
     except SettingsError as error:
@@ -138,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         try:
             detail = loads(response.content).get("detail", "backend error")
             message = detail if isinstance(detail, str) else dumps(detail)
-        except (UnicodeDecodeError, ValueError):
+        except UnicodeDecodeError, ValueError:
             message = response.content.decode(errors="replace")
         return fail(f"Backend API error ({response.status_code}): {message[:500]}", 5)
     if not isinstance(response.parsed, list):

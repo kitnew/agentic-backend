@@ -1,0 +1,2 @@
+"""Local tenant workspace primitives."""
+
