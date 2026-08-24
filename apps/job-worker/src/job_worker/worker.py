@@ -28,6 +28,8 @@ from agentic_observability.propagation import process_message_span, trace_contex
 from contracts import (
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsAppendValuesResult,
+    HttpRequestPlanV1,
+    HttpRequestResult,
     IntegrationJob,
     ManagedWebhookFailureResponse,
     ManagedWebhookPostJsonPlan,
@@ -57,6 +59,8 @@ from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+MAX_STRUCTURED_PAYLOAD_BYTES = 64_000
+MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_WEBHOOK_RESPONSE_BYTES = 64_000
 
 
@@ -158,7 +162,12 @@ class RecordingStorage:
             else None
         )
 
-    async def base64(self, storage_key: str) -> AsyncIterator[bytes]:
+    async def base64(
+        self,
+        storage_key: str,
+        *,
+        max_source_bytes: int = MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES,
+    ) -> AsyncIterator[bytes]:
         if self._client is None:
             raise ExecutionError(
                 "recording_storage_unconfigured",
@@ -169,7 +178,15 @@ class RecordingStorage:
         try:
             response = self._client.get_object(self._bucket, storage_key)
             remainder = b""
+            source_size = 0
             while chunk := response.read(64 * 1024):
+                source_size += len(chunk)
+                if source_size > max_source_bytes:
+                    raise ExecutionError(
+                        "artifact_too_large",
+                        "Artifact source is too large",
+                        transient=False,
+                    )
                 data = remainder + chunk
                 usable = len(data) - len(data) % 3
                 if usable:
@@ -192,8 +209,9 @@ class RecordingStorage:
 @dataclass(frozen=True)
 class ResolvedManagedWebhookConnection:
     url: str
-    api_key: str
-    api_key_header: str
+    api_key: str | None
+    api_key_header: str | None
+    static_headers: dict[str, str]
     allowed_hosts: frozenset[str]
 
 
@@ -209,10 +227,12 @@ class ManagedWebhookPostJsonHandler:
 
     async def execute(
         self,
-        plan: ManagedWebhookPostJsonPlan,
+        plan: ManagedWebhookPostJsonPlan | HttpRequestPlanV1,
         material: RuntimeIntegrationMaterial,
         bodies: dict[str, AsyncIterator[bytes]] | None = None,
-    ) -> ManagedWebhookPostJsonResult:
+    ) -> ManagedWebhookPostJsonResult | HttpRequestResult:
+        if isinstance(plan, HttpRequestPlanV1):
+            return await self._execute_http(plan, material, bodies)
         connection = self._connection(plan, material)
         parsed = urlparse(connection.url)
         if parsed.scheme not in (
@@ -276,11 +296,12 @@ class ManagedWebhookPostJsonHandler:
             )
         else:
             content = encoded.encode()
-        headers = {
+        headers = dict(connection.static_headers)
+        headers.update({
             "Content-Type": "application/json",
             "X-Operation-Id": str(plan.operation_id),
-        }
-        if connection.api_key:
+        })
+        if connection.api_key and connection.api_key_header:
             headers[connection.api_key_header] = connection.api_key
         try:
             async with self._client.stream(
@@ -304,28 +325,190 @@ class ManagedWebhookPostJsonHandler:
                 transient=True,
             ) from error
 
+    async def _execute_http(
+        self,
+        plan: HttpRequestPlanV1,
+        material: RuntimeIntegrationMaterial,
+        bodies: dict[str, AsyncIterator[bytes]] | None,
+    ) -> HttpRequestResult:
+        connection = self._connection(plan, material)
+        url = self._operation_url(connection.url, plan.path)
+        parsed = self._validate_url(url, connection.allowed_hosts)
+        headers: dict[str, str] = {}
+        for source in (connection.static_headers, plan.headers):
+            for name, value in source.items():
+                self._set_header(headers, name, value)
+        if plan.body_bindings and plan.request.codec != "json":
+            raise ExecutionError(
+                "artifact_body_unsupported",
+                "HTTP artifact body bindings require a JSON request",
+                transient=False,
+            )
+        body: bytes | AsyncIterator[bytes] | None = None
+        if plan.request.codec != "none":
+            if plan.request.codec == "json":
+                structured = json.dumps(
+                    plan.payload, ensure_ascii=False, separators=(",", ":")
+                ).encode()
+                if len(structured) > MAX_STRUCTURED_PAYLOAD_BYTES:
+                    raise ExecutionError(
+                        "request_too_large",
+                        "HTTP structured payload is too large",
+                        transient=False,
+                    )
+                if plan.body_bindings:
+                    body_paths = {binding.payload_path for binding in plan.body_bindings}
+                    if len(body_paths) != len(plan.body_bindings):
+                        raise ExecutionError(
+                            "artifact_body_invalid",
+                            "HTTP artifact body bindings are duplicated",
+                            transient=False,
+                        )
+                    if bodies is None or body_paths != set(bodies):
+                        raise ExecutionError(
+                            "artifact_body_unavailable",
+                            "HTTP artifact body is unavailable",
+                            transient=False,
+                        )
+                    body = self._stream_json(plan.payload, "", bodies)
+                else:
+                    body = structured
+                self._set_header(headers, "Content-Type", "application/json")
+            elif not isinstance(plan.payload, str):
+                raise ExecutionError("request_mapping_failed", "Text request must evaluate to a string", transient=False)
+            else:
+                body = plan.payload.encode()
+                if plan.request.content_type:
+                    self._set_header(headers, "Content-Type", plan.request.content_type)
+        self._set_header(headers, "X-Operation-Id", str(plan.operation_id))
+        if connection.api_key and connection.api_key_header:
+            self._set_header(headers, connection.api_key_header, connection.api_key)
+        if (
+            isinstance(body, bytes)
+            and plan.request.codec != "json"
+            and len(body) > MAX_STRUCTURED_PAYLOAD_BYTES
+        ):
+            raise ExecutionError(
+                "request_too_large",
+                "HTTP structured payload is too large",
+                transient=False,
+            )
+        try:
+            async with self._client.stream(
+                plan.method,
+                parsed,
+                params=plan.query,
+                headers=headers,
+                content=body,
+                timeout=plan.timeout_seconds,
+                follow_redirects=False,
+            ) as response:
+                self._validate_http_status(response.status_code, plan.success_statuses)
+                data = await self._decode_http_response(plan, response)
+                return HttpRequestResult(
+                    result_type="http.request.v1",
+                    status="succeeded",
+                    operation_id=plan.operation_id,
+                    data=data,
+                )
+        except httpx.TimeoutException as error:
+            raise ExecutionError("provider_timeout", "HTTP request timed out", transient=True) from error
+        except httpx.TransportError as error:
+            raise ExecutionError("provider_transient_error", "HTTP transport failed", transient=True) from error
+
+    @staticmethod
+    def _operation_url(endpoint: str, path: object) -> str:
+        if path is None:
+            return endpoint
+        if not isinstance(path, str) or not path or path.startswith("//"):
+            raise ExecutionError("invalid_http_path", "HTTP operation path is invalid", transient=False)
+        parsed = urlparse(path)
+        if parsed.scheme or parsed.netloc or parsed.username or parsed.password or parsed.fragment or parsed.query:
+            raise ExecutionError("invalid_http_path", "HTTP operation path must be relative", transient=False)
+        base = urlparse(endpoint)
+        return base._replace(path=base.path.rstrip("/") + "/" + path.lstrip("/")).geturl()
+
+    @staticmethod
+    def _set_header(headers: dict[str, str], name: str, value: str) -> None:
+        lowered = name.lower()
+        for existing in tuple(headers):
+            if existing.lower() == lowered:
+                del headers[existing]
+        headers[name] = value
+
+    @staticmethod
+    def _validate_url(url: str, allowed_hosts: frozenset[str]) -> str:
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+            raise ExecutionError("provider_permanent_error", "HTTP URL is invalid", transient=False)
+        try:
+            hostname = ManagedWebhookPostJsonHandler._normalized_hostname(parsed.hostname)
+            port = parsed.port
+        except ValueError as error:
+            raise ExecutionError("provider_permanent_error", "HTTP URL is invalid", transient=False) from error
+        try:
+            ipaddress.ip_address(hostname)
+            is_ip = True
+        except ValueError:
+            is_ip = False
+        if port not in {None, 443} or is_ip or hostname not in allowed_hosts:
+            raise ExecutionError("provider_permanent_error", "HTTP destination is not allowed", transient=False)
+        return url
+
+    @staticmethod
+    def _validate_http_status(status_code: int, accepted: list[int] | None) -> None:
+        if 200 <= status_code < 300 or (accepted and status_code in accepted):
+            return
+        if status_code in {408, 429} or status_code >= 500:
+            raise ExecutionError("provider_transient_error", "HTTP request returned a retryable error", transient=True)
+        raise ExecutionError("provider_permanent_error", "HTTP request returned an unsupported status", transient=False)
+
+    async def _decode_http_response(self, plan: HttpRequestPlanV1, response: httpx.Response) -> object | None:
+        if plan.response.codec == "none":
+            body: object = None
+        else:
+            raw = await self._bounded_response(response)
+            try:
+                body = json.loads(raw) if plan.response.codec == "json" else raw.decode()
+            except (ValueError, UnicodeDecodeError) as error:
+                raise ExecutionError("response_decode_failed", "HTTP response does not match its codec", transient=False) from error
+        if plan.response.mapping is None:
+            return body
+        context = {"response": {"status_code": response.status_code, "content_type": response.headers.get("content-type", ""), "body": body}}
+        return self._evaluate_template(plan.response.mapping, context)
+
+    @staticmethod
+    def _evaluate_template(template: object, context: dict[str, object]) -> object:
+        if isinstance(template, dict):
+            if set(template) == {"$expr"} and isinstance(template["$expr"], str):
+                return jsonata.Jsonata(template["$expr"]).evaluate(context)
+            return {key: ManagedWebhookPostJsonHandler._evaluate_template(value, context) for key, value in template.items()}
+        if isinstance(template, list):
+            return [ManagedWebhookPostJsonHandler._evaluate_template(value, context) for value in template]
+        return template
+
     @staticmethod
     def _connection(
         plan: ManagedWebhookPostJsonPlan, material: RuntimeIntegrationMaterial
     ) -> ResolvedManagedWebhookConnection:
         if (
             material.integration_id != plan.integration_id
-            or material.provider != "managed_webhook"
+            or material.provider != "http"
         ):
             raise ExecutionError(
                 "integration_material_invalid",
                 "Managed webhook integration material is invalid",
                 transient=False,
             )
-        url = material.secret.get("url")
-        api_key = material.secret.get("api_key", "")
-        allowed_hosts = material.config.get("allowed_hosts")
-        header = material.config.get("api_key_header", "x-api-key")
+        url = material.endpoint
+        api_key = (material.secret or {}).get("api_key")
+        allowed_hosts = material.allowed_hosts
+        header = material.authentication_header
         if (
             not isinstance(url, str)
             or not url
-            or not isinstance(api_key, str)
-            or not isinstance(header, str)
+            or (api_key is not None and not isinstance(api_key, str))
+            or (header is not None and not isinstance(header, str))
             or not isinstance(allowed_hosts, list)
         ):
             raise ExecutionError(
@@ -344,7 +527,7 @@ class ManagedWebhookPostJsonHandler:
                 "Managed webhook integration material is invalid",
                 transient=False,
             ) from error
-        return ResolvedManagedWebhookConnection(url, api_key, header, hosts)
+        return ResolvedManagedWebhookConnection(url, api_key, header, material.static_headers, hosts)
 
     @staticmethod
     def _normalized_hostname(value: object) -> str:
@@ -706,7 +889,7 @@ class GoogleSheetsAppendValuesHandler:
     async def _access_token(
         plan: GoogleSheetsAppendValuesPlan, material: RuntimeIntegrationMaterial
     ) -> str:
-        account = material.secret.get("service_account")
+        account = (material.secret or {}).get("service_account")
         if (
             material.integration_id != plan.integration_id
             or material.provider != "google_sheets"
@@ -868,7 +1051,7 @@ class BackendClient:
         finalization_id: UUID,
         action_id: str,
         command_id: UUID,
-    ) -> ManagedWebhookPostJsonPlan:
+    ) -> HttpRequestPlanV1:
         response = await self._client.get(
             f"{self._settings.backend_url}/internal/v1/calls/{call_id}/post-call-actions/{action_id}",
             params={
@@ -878,7 +1061,7 @@ class BackendClient:
             headers={"Authorization": f"Bearer {self._token()}"},
         )
         response.raise_for_status()
-        return ManagedWebhookPostJsonPlan.model_validate(response.json())
+        return HttpRequestPlanV1.model_validate(response.json())
 
     async def post_call_action_material(
         self,
@@ -934,13 +1117,27 @@ class BackendClient:
         if source.status_code == 200:
             value = source.json()
             storage_key = value.get("storage_key") if isinstance(value, dict) else None
-            if not isinstance(storage_key, str) or not storage_key:
+            source_size = value.get("byte_size") if isinstance(value, dict) else None
+            if (
+                not isinstance(storage_key, str)
+                or not storage_key
+                or not isinstance(source_size, int)
+                or source_size <= 0
+            ):
                 raise ExecutionError(
                     "recording_source_invalid",
                     "Recording source is invalid",
                     transient=False,
                 )
-            async for chunk in self._recording_storage.base64(storage_key):
+            if source_size > MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES:
+                raise ExecutionError(
+                    "artifact_too_large",
+                    "Artifact source is too large",
+                    transient=False,
+                )
+            async for chunk in self._recording_storage.base64(
+                storage_key, max_source_bytes=MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES
+            ):
                 yield chunk
             return
         if source.status_code != 404:
@@ -955,7 +1152,30 @@ class BackendClient:
         response = await self._client.send(request, stream=True)
         try:
             response.raise_for_status()
+            declared_size = response.headers.get("content-length")
+            if declared_size is not None:
+                try:
+                    if int(declared_size) > MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES:
+                        raise ExecutionError(
+                            "artifact_too_large",
+                            "Artifact source is too large",
+                            transient=False,
+                        )
+                except ValueError as error:
+                    raise ExecutionError(
+                        "artifact_source_invalid",
+                        "Artifact content length is invalid",
+                        transient=False,
+                    ) from error
+            source_size = 0
             async for chunk in response.aiter_bytes():
+                source_size += len(chunk)
+                if source_size > MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES:
+                    raise ExecutionError(
+                        "artifact_too_large",
+                        "Artifact source is too large",
+                        transient=False,
+                    )
                 yield chunk
         finally:
             await response.aclose()
@@ -1115,8 +1335,10 @@ class CapabilityWorker:
                     "operation.id": operation_id,
                 },
             ):
-                if job.execution_plan.plan_type not in {
+                plan_type = job.execution_plan.plan_type
+                if plan_type not in {
                     "google_sheets.append_values.v1",
+                    "http.request.v1",
                     "managed_webhook.post_json.v1",
                 }:
                     raise ExecutionError(
@@ -1136,10 +1358,28 @@ class CapabilityWorker:
                 material = await self._backend.integration_material(
                     job.capability_invocation_id, job.job_id, job
                 )
-                result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult
-                if job.execution_plan.plan_type == "google_sheets.append_values.v1":
+                result: (
+                    GoogleSheetsAppendValuesResult
+                    | HttpRequestResult
+                    | ManagedWebhookPostJsonResult
+                )
+                if plan_type == "google_sheets.append_values.v1":
                     result = await self._sheets.execute(job.execution_plan, material)
-                elif self._webhooks is not None:
+                elif plan_type == "http.request.v1":
+                    if self._webhooks is None:
+                        raise ExecutionError(
+                            "unknown_plan_type",
+                            "HTTP handler is unavailable",
+                            transient=False,
+                        )
+                    result = await self._webhooks.execute(job.execution_plan, material)
+                elif plan_type == "managed_webhook.post_json.v1":
+                    if self._webhooks is None:
+                        raise ExecutionError(
+                            "unknown_plan_type",
+                            "Webhook handler is unavailable",
+                            transient=False,
+                        )
                     result = await self._webhooks.execute(job.execution_plan, material)
                 else:
                     raise ExecutionError(
@@ -1294,6 +1534,13 @@ class CapabilityWorker:
 
 def _capability_identity(job: IntegrationJob) -> tuple[str, str, str]:
     plan = job.execution_plan
+    if isinstance(plan, HttpRequestPlanV1):
+        capability = plan.capability or {}
+        return (
+            str(capability.get("semantic_key", "http")),
+            str(capability.get("semantic_version", "v1")),
+            str(plan.operation_id),
+        )
     if isinstance(plan, ManagedWebhookPostJsonPlan):
         return (
             plan.capability.semantic_key,

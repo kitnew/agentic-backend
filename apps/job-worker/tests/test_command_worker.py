@@ -1,9 +1,14 @@
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from contracts import (
     ExecutePostCallAction,
     GenerateCallSummary,
+    HttpRequestPlanV1,
+    HttpRequestResult,
+    HttpRequestSpec,
+    HttpResponseSpec,
     ManagedWebhookBodyBinding,
     ManagedWebhookCapability,
     ManagedWebhookPostJsonPlan,
@@ -16,8 +21,56 @@ from job_worker.command_worker import (
     CommandWorker,
     ExecutePostCallActionHandler,
     MaterializeArtifactRepresentationHandler,
+    azure_endpoint,
 )
-from job_worker.worker import ExecutionError, RecordingStorage, Settings
+from job_worker.worker import (
+    MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES,
+    BackendClient,
+    ExecutionError,
+    ManagedWebhookPostJsonHandler,
+    RecordingStorage,
+    Settings,
+)
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "expected"),
+    [
+        ("https://resource.openai.azure.com", "https://resource.openai.azure.com"),
+        (
+            "https://resource.openai.azure.com/openai/v1/",
+            "https://resource.openai.azure.com",
+        ),
+    ],
+)
+def test_azure_endpoint_normalizes_openai_compatible_suffix(endpoint, expected):
+    assert azure_endpoint(endpoint) == expected
+
+
+@pytest.mark.asyncio
+async def test_post_call_plan_client_parses_generic_http_plan() -> None:
+    plan = HttpRequestPlanV1(
+        integration_id=uuid4(),
+        operation_id=uuid4(),
+        method="POST",
+        request=HttpRequestSpec(codec="json"),
+        response=HttpResponseSpec(codec="none"),
+        payload={"ok": True},
+        timeout_seconds=5,
+    )
+
+    async def send(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=plan.model_dump(mode="json"), request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(send), base_url="http://backend")
+    try:
+        result = await BackendClient(settings(), client).post_call_action(
+            uuid4(), uuid4(), "notify", uuid4()
+        )
+    finally:
+        await client.aclose()
+
+    assert result == plan
 
 
 class Redis:
@@ -84,6 +137,65 @@ async def test_recording_storage_streams_base64_without_buffering_whole_object()
     )
 
     assert encoded == b"YWJjZGVm"
+
+
+@pytest.mark.asyncio
+async def test_recording_storage_rejects_source_over_artifact_limit() -> None:
+    class Response:
+        def read(self, size):
+            return b"x" * 4
+
+        def close(self):
+            return None
+
+        def release_conn(self):
+            return None
+
+    class Client:
+        def get_object(self, bucket, key):
+            return Response()
+
+    storage = RecordingStorage(settings())
+    storage._client = Client()  # type: ignore[assignment]
+
+    with pytest.raises(ExecutionError, match="Artifact source is too large"):
+        async for _ in storage.base64("recordings/t/c/r.mp3", max_source_bytes=3):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_backend_client_rejects_declared_recording_source_before_download() -> None:
+    downloaded = False
+
+    class Storage:
+        async def base64(self, storage_key, *, max_source_bytes):
+            nonlocal downloaded
+            downloaded = True
+            yield b"unused"
+
+    async def send(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "storage_key": "recordings/t/c/r.mp3",
+                "byte_size": MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES + 1,
+            },
+            request=request,
+        )
+
+    client = httpx.AsyncClient(
+        transport=httpx.MockTransport(send), base_url="http://backend"
+    )
+    try:
+        with pytest.raises(ExecutionError, match="Artifact source is too large"):
+            async for _ in BackendClient(settings(), client, Storage()).representation_content(
+                uuid4(), uuid4()
+            ):
+                pass
+    finally:
+        await client.aclose()
+
+    assert downloaded is False
 
 
 def message():
@@ -186,31 +298,32 @@ async def test_post_call_action_stays_logical_and_uses_generic_webhook_handler()
             self, call_id, finalization_id, action_id, command_id
         ):
             assert action_id == "notify"
-            return ManagedWebhookPostJsonPlan(
-                plan_type="managed_webhook.post_json.v1",
+            return HttpRequestPlanV1(
                 integration_id=self.integration_id,
                 operation_id=command_id,
-                capability=ManagedWebhookCapability(
-                    semantic_key="post_call.notify", semantic_version=1
-                ),
                 payload={"summary": "done"},
+                method="POST",
+                request=HttpRequestSpec(codec="json"),
+                response=HttpResponseSpec(codec="none"),
                 timeout_seconds=10,
             )
 
         async def post_call_action_material(self, *args):
             return RuntimeIntegrationMaterial(
                 integration_id=self.integration_id,
-                provider="managed_webhook",
-                config={"allowed_hosts": ["example.test"]},
-                secret={"url": "https://example.test"},
+                kind="http",
+                provider="http",
+                endpoint="https://example.test",
+                allowed_hosts=["example.test"],
+                secret={"api_key": "secret"},
                 credential_version=1,
             )
 
     class Webhooks:
         async def execute(self, plan, material):
             assert material.integration_id == plan.integration_id
-            return ManagedWebhookPostJsonResult(
-                result_type="managed_webhook.post_json.v1",
+            return HttpRequestResult(
+                result_type="http.request.v1",
                 status="succeeded",
                 operation_id=plan.operation_id,
                 reference="accepted",
@@ -231,6 +344,60 @@ async def test_post_call_action_stays_logical_and_uses_generic_webhook_handler()
 
     assert output["reference"] == "accepted"
     assert "make" not in envelope.model_dump_json().lower()
+
+
+@pytest.mark.asyncio
+async def test_post_call_action_executes_generic_http_request() -> None:
+    integration_id = uuid4()
+    seen: dict[str, object] = {}
+
+    async def send(request: httpx.Request) -> httpx.Response:
+        seen.update(method=request.method, url=str(request.url), body=request.content)
+        return httpx.Response(204, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(send))
+
+    class Backend:
+        async def post_call_action(self, *args):
+            return HttpRequestPlanV1(
+                integration_id=integration_id,
+                operation_id=args[-1],
+                method="POST",
+                request=HttpRequestSpec(codec="json"),
+                response=HttpResponseSpec(codec="none"),
+                payload={"summary": "done"},
+                timeout_seconds=5,
+            )
+
+        async def post_call_action_material(self, *args):
+            return RuntimeIntegrationMaterial(
+                integration_id=integration_id,
+                kind="http",
+                provider="http",
+                endpoint="https://example.test/v1",
+                static_headers={"X-Action": "post-call"},
+                allowed_hosts=["example.test"],
+            )
+
+    command = ExecutePostCallAction(
+        call_id=uuid4(), finalization_id=uuid4(), action_id="notify"
+    )
+    envelope = command_envelope(
+        command, tenant_id=uuid4(), correlation_id=command.call_id
+    )
+    try:
+        output = await ExecutePostCallActionHandler(
+            Backend(), ManagedWebhookPostJsonHandler(client)
+        )(command, envelope)
+    finally:
+        await client.aclose()
+
+    assert output["reference"] is None
+    assert seen == {
+        "method": "POST",
+        "url": "https://example.test/v1",
+        "body": b'{"summary":"done"}',
+    }
 
 
 @pytest.mark.asyncio
@@ -265,9 +432,11 @@ async def test_post_call_action_retry_reuses_representation_binding() -> None:
         async def post_call_action_material(self, *args):
             return RuntimeIntegrationMaterial(
                 integration_id=self.integration_id,
-                provider="managed_webhook",
-                config={"allowed_hosts": ["example.test"]},
-                secret={"url": "https://example.test"},
+                kind="http",
+                provider="http",
+                endpoint="https://example.test",
+                allowed_hosts=["example.test"],
+                secret={"api_key": "secret"},
                 credential_version=1,
             )
 
@@ -310,7 +479,7 @@ async def test_materialization_stores_base64_and_returns_metadata_only() -> None
         stored: bytes | None = None
 
         async def materialization_source(self, representation_id, command_id):
-            return b"recording", "call_recording", "base64_text"
+            return b"cmVjb3JkaW5n", "call_recording", "base64_text"
 
         async def store_representation(
             self, representation_id, command_id, content, content_type

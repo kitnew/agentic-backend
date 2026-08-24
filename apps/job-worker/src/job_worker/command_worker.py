@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import time
-from base64 import b64encode
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
@@ -37,6 +36,11 @@ CommandHandler = Callable[
     ],
     Awaitable[dict[str, object]],
 ]
+
+
+def azure_endpoint(value: str) -> str:
+    endpoint = value.rstrip("/")
+    return endpoint.removesuffix("/openai/v1")
 
 
 class GenerateCallSummaryHandler:
@@ -76,7 +80,7 @@ class GenerateCallSummaryHandler:
         )
         response = await self._client.post(
             (
-                f"{self._settings.azure_openai_endpoint.rstrip('/')}"
+                f"{azure_endpoint(self._settings.azure_openai_endpoint)}"
                 f"/openai/deployments/{self._settings.azure_openai_deployment}"
                 "/chat/completions"
             ),
@@ -189,7 +193,7 @@ class MaterializeArtifactRepresentationHandler:
             command.representation_id, envelope.message_id
         )
         if (artifact, target) == ("call_recording", "base64_text"):
-            content = b64encode(source)
+            content = source
         elif (artifact, target) == ("transcript", "plain_text"):
             try:
                 messages = json.loads(source)

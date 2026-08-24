@@ -61,14 +61,12 @@ def resolver(
 ) -> RuntimeIntegrationMaterial:
     return RuntimeIntegrationMaterial(
         integration_id=webhook_plan().integration_id,
-        provider="managed_webhook",
-        config={
-            "api_key_header": "x-make-apikey",
-            "allowed_hosts": ["example.test"]
-            if allowed_hosts is None
-            else allowed_hosts,
-        },
-        secret={"url": url, "api_key": "secret"},
+        kind="http",
+        provider="http",
+        endpoint=url,
+        authentication_header="x-make-apikey",
+        allowed_hosts=["example.test"] if allowed_hosts is None else allowed_hosts,
+        secret={"api_key": "secret"},
         credential_version=1,
     )
 
