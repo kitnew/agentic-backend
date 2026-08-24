@@ -1,0 +1,28 @@
+business:
+  name: Penzion Grand
+  type: hotel
+contact:
+  address: null
+  phones:
+  - '+421900000000'
+  emails:
+  - user.example@gmail.com
+  - user.example@example.com
+  website: null
+localization:
+  default_locale: sk-SK
+  timezone: Europe/Bratislava
+agent:
+  display_name: Amelia
+  greeting: Dobrý deň, tu je Amélia. Ako vám môžem pomôcť?
+  profile: hotel_assistant
+conversation:
+  scope: property_only
+handoff:
+  destinations:
+    nikita:
+      description: bruhbruh
+      phone_number: '+421944015686'
+    reception:
+      description: Reservations, check-in, payments and general reception requests
+      phone_number: '+421900000001'

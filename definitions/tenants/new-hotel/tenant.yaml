@@ -1,0 +1,19 @@
+business:
+  name: New Hotel
+  type: hotel
+contact:
+  address: null
+  phones: []
+  emails: []
+  website: null
+localization:
+  default_locale: en-US
+  timezone: UTC
+agent:
+  display_name: New Hotel
+  greeting: Hello, how can I help you?
+  profile: hotel_assistant
+conversation:
+  scope: property_only
+handoff:
+  destinations: {}
