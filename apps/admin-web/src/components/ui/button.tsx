@@ -1,20 +1,29 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, Ref } from "react";
 
 import { cn } from "../../lib/utils";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "default" | "outline" | "ghost";
+  ref?: Ref<HTMLButtonElement>;
+  variant?: "default" | "outline" | "ghost" | "danger";
+  loading?: boolean;
+  loadingLabel?: string;
 };
 
 export function Button({
+  ref,
   className,
   variant = "default",
+  loading = false,
+  loadingLabel = "Working…",
+  children,
+  disabled,
   ...props
 }: ButtonProps) {
   const variants = {
     default: "bg-primary text-primary-foreground hover:bg-slate-700",
     outline: "border bg-panel hover:bg-slate-50",
     ghost: "hover:bg-slate-100",
+    danger: "bg-danger text-white hover:opacity-90",
   };
   return (
     <button
@@ -23,8 +32,13 @@ export function Button({
         variants[variant],
         className,
       )}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
       type="button"
+      ref={ref}
       {...props}
-    />
+    >
+      {loading ? loadingLabel : children}
+    </button>
   );
 }

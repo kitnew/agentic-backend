@@ -6,7 +6,7 @@
     "dev": "vite --mode dev",
     "build": "tsc -b && vite build",
     "api:generate": "orval --config orval.config.ts",
-    "api:check": "pnpm api:generate && git diff --exit-code -- src/core/api/generated",
+    "api:check": "node scripts/api-check.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format:check": "biome format .",
@@ -14,16 +14,13 @@
     "e2e": "playwright test"
   },
   "dependencies": {
-    "@hookform/resolvers": "5.9.0",
     "@tanstack/react-query": "5.101.4",
     "@tanstack/react-router": "1.170.29",
     "clsx": "2.1.1",
     "livekit-client": "2.22.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-hook-form": "7.85.0",
-    "tailwind-merge": "3.6.0",
-    "zod": "4.4.3"
+    "tailwind-merge": "3.6.0"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.8",

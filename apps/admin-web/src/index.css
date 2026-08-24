@@ -8,6 +8,12 @@
   --color-panel: #ffffff;
   --color-primary: #0f172a;
   --color-primary-foreground: #ffffff;
+  --color-success: #047857;
+  --color-warning: #b45309;
+  --color-danger: #b91c1c;
+  --color-interactive: #1d4ed8;
+  --color-danger-soft: #fef2f2;
+  --color-warning-soft: #fffbeb;
 }
 
 @layer base {

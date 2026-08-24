@@ -8,9 +8,7 @@ const tenant = [
     display_name: "Demo tenant",
     business_type: "hotel",
     status: "active",
-    active_config_revision_id: null,
-    active_prompt_set_revision_id: null,
-    active_voice_runtime_revision_id: null,
+    active_release_id: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
   },
@@ -50,5 +48,24 @@ test("overview opens the tenant product workspace", async ({ page }) => {
       .getByRole("navigation", { name: "Tenant navigation" })
       .getByRole("link"),
   ).toHaveCount(6);
+  for (const label of [
+    "Capabilities",
+    "Integrations",
+    "Post-call",
+    "Telephony",
+  ]) {
+    const item = page.getByText(label, { exact: true });
+    await expect(item.locator("xpath=..")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await expect(item.locator("xpath=..")).toContainText("Coming later");
+  }
+  await page.goto(`/tenants/${tenantId}/integrations`);
+  await expect(
+    page.getByRole("heading", {
+      name: "Feature temporarily unavailable in Admin Web",
+    }),
+  ).toBeVisible();
   await expect(page.getByText(tenantId)).toHaveCount(0);
 });

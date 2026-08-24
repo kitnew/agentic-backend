@@ -20,6 +20,14 @@ const config = {
     phones: ["+421900000000"],
     website: "https://example.com",
   },
+  handoff: {
+    destinations: {
+      reception: {
+        description: "Reception",
+        phone_number: "+421900000001",
+      },
+    },
+  },
 };
 
 describe("agent form mappings", () => {
@@ -33,7 +41,63 @@ describe("agent form mappings", () => {
     expect(update).toMatchObject({
       agent: { display_name: "Updated" },
       business: config.business,
+      conversation: config.conversation,
+      localization: config.localization,
+      handoff: config.handoff,
       contact: { emails: ["one@example.com", "two@example.com"] },
     });
+  });
+
+  it("maps and edits localization and multiple handoff destinations", () => {
+    const form = toAgentForm(config);
+    expect(form.defaultLocale).toBe("sk-SK");
+    expect(form.timezone).toBe("Europe/Bratislava");
+    expect(form.handoffDestinations).toEqual([
+      {
+        id: "reception",
+        key: "reception",
+        description: "Reception",
+        phoneNumber: "+421900000001",
+      },
+    ]);
+    const update = toAgentPayload(config, {
+      ...form,
+      defaultLocale: "en-US",
+      timezone: "UTC",
+      handoffDestinations: [
+        ...form.handoffDestinations,
+        {
+          id: "manager",
+          key: "manager",
+          description: "Manager",
+          phoneNumber: "+421900000002",
+        },
+      ],
+    });
+    expect(update.localization).toEqual({
+      default_locale: "en-US",
+      timezone: "UTC",
+    });
+    expect(update.handoff?.destinations).toEqual({
+      reception: {
+        description: "Reception",
+        phone_number: "+421900000001",
+      },
+      manager: {
+        description: "Manager",
+        phone_number: "+421900000002",
+      },
+    });
+  });
+
+  it("maps empty optional contact and handoff values without dirty-side effects", () => {
+    const form = toAgentForm({
+      ...config,
+      contact: undefined,
+      handoff: undefined,
+    });
+    expect(form.address).toBe("");
+    expect(form.emails).toBe("");
+    expect(form.handoffDestinations).toEqual([]);
   });
 });

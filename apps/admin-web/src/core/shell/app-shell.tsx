@@ -10,27 +10,55 @@ const mainNavigation = [
 ] as const;
 
 const platformNavigation = [
+  { label: "Overview", to: "/platform" },
   { label: "Runtime", to: "/platform/runtime" },
-  { label: "Telephony", to: "/platform/telephony" },
   { label: "System Prompt", to: "/platform/system-prompt" },
-  { label: "Profile Prompt", to: "/platform/profile-prompt" },
+  { label: "Profiles", to: "/platform/profile-prompt" },
+  { label: "Telephony", to: "/platform/telephony" },
 ] as const;
 
-const tenantNavigation = [
+type TenantNavigationItem = {
+  label: string;
+  suffix: string;
+  disabled?: boolean;
+};
+
+const tenantNavigation: readonly TenantNavigationItem[] = [
+  { label: "Overview", suffix: "" },
   { label: "Runtime", suffix: "/runtime" },
-  { label: "Telephony", suffix: "/telephony" },
   { label: "Agent", suffix: "/agent" },
   { label: "Prompt", suffix: "/prompt" },
   { label: "Knowledge Base", suffix: "/knowledge-base" },
-  { label: "Capabilities", suffix: "/capabilities" },
+  { label: "Capabilities", suffix: "/capabilities", disabled: true },
+  { label: "Integrations", suffix: "/integrations", disabled: true },
+  { label: "Post-call", suffix: "/post-call", disabled: true },
+  { label: "Telephony", suffix: "/telephony", disabled: true },
   { label: "Playground", suffix: "/playground" },
 ] as const;
 
-function NavLink({ to, label }: { to: string; label: string }) {
+function NavLink({
+  to,
+  label,
+  disabled = false,
+}: {
+  to: string;
+  label: string;
+  disabled?: boolean;
+}) {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const active = pathname === to;
+  if (disabled)
+    return (
+      <span
+        aria-disabled="true"
+        className="flex cursor-not-allowed items-center justify-between rounded-md px-3 py-2 text-sm text-slate-400"
+      >
+        <span>{label}</span>
+        <span className="text-xs text-slate-400">Coming later</span>
+      </span>
+    );
   return (
     <Link
       aria-current={active ? "page" : undefined}
@@ -82,6 +110,7 @@ function WorkspaceNavigation() {
           {tenantNavigation.map((item) => (
             <NavLink
               key={item.suffix}
+              disabled={item.disabled}
               label={item.label}
               to={`/tenants/${tenantId}${item.suffix}`}
             />
@@ -125,21 +154,29 @@ export function AppShell() {
               </Link>
             );
           })}
-          <a
-            aria-disabled={!grafanaUrl}
-            className="block rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-white/8 hover:text-white"
-            href={grafanaUrl || "#"}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Observability ↗
-          </a>
+          {grafanaUrl ? (
+            <a
+              className="block rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-white/8 hover:text-white"
+              href={grafanaUrl}
+              rel="noopener noreferrer"
+              target="_blank"
+            >
+              Observability ↗
+            </a>
+          ) : (
+            <span
+              aria-disabled="true"
+              className="block cursor-not-allowed rounded-md px-3 py-2 text-sm text-slate-500"
+            >
+              Observability <span className="text-xs">Unavailable</span>
+            </span>
+          )}
         </nav>
       </aside>
       <div className={workspace ? "md:grid md:grid-cols-[14rem_1fr]" : ""}>
         <WorkspaceNavigation />
         <main className="min-w-0 p-5 md:p-8 lg:p-10">
-          <div className="mx-auto max-w-5xl">
+          <div className="mx-auto w-full max-w-[68rem]">
             <Outlet />
           </div>
         </main>

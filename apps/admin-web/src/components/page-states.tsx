@@ -1,3 +1,4 @@
+import { WorkspaceHeader } from "../core/ui/foundation";
 import { Button } from "./ui/button";
 
 export function PageLoading() {
@@ -58,10 +59,5 @@ export function PageHeader({
   title: string;
   detail?: string;
 }) {
-  return (
-    <header className="mb-6">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      {detail && <p className="mt-1 text-sm text-muted">{detail}</p>}
-    </header>
-  );
+  return <WorkspaceHeader description={detail} title={title} />;
 }

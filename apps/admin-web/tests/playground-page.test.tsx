@@ -26,9 +26,7 @@ const tenant = {
   display_name: "Debug Hotel",
   business_type: "hotel",
   status: "active",
-  active_config_revision_id: "config",
-  active_prompt_set_revision_id: "prompt-set",
-  active_voice_runtime_revision_id: "runtime",
+  active_release_id: "config",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };

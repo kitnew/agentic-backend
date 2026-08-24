@@ -4,6 +4,8 @@ import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "../src/app/app";
+import type { AuthoringPlan } from "../src/core/api/generated/models";
+import { router } from "../src/routes/router";
 import { server } from "./setup";
 
 const tenantId = "11111111-1111-4111-8111-111111111111";
@@ -13,15 +15,14 @@ const tenant = {
   display_name: "Debug Hotel",
   business_type: "hotel",
   status: "active",
-  active_config_revision_id: "published",
-  active_prompt_set_revision_id: "prompt-set",
-  active_voice_runtime_revision_id: null,
+  active_release_id: "published",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
 let publishedName: string;
 let draftName: string | undefined;
 let draftVersion: number;
+let savedConfig: ReturnType<typeof config> | undefined;
 
 function config(name: string) {
   return {
@@ -39,35 +40,40 @@ function config(name: string) {
       phones: ["+421900000000"],
       website: "https://example.com",
     },
+    handoff: {
+      destinations: {
+        reception: {
+          description: "Reception requests",
+          phone_number: "+421900000001",
+        },
+      },
+    },
   };
 }
 
-function draft(name: string) {
+function authoringState(name: string, source: "draft" | "published") {
   return {
-    id: "draft",
-    component: "agent",
-    payload: config(name),
-    version: draftVersion,
-    comment: null,
-    updated_at: "2026-01-01T00:00:00Z",
+    value: config(name),
+    published_value: config(publishedName),
+    source,
+    etag: source === "draft" ? `"${draftVersion}"` : null,
   };
 }
 
-function useHandlers(saveSpy = vi.fn(), publishSpy = vi.fn()) {
+function useHandlers(
+  saveSpy = vi.fn(),
+  planResponse: AuthoringPlan = { valid: true, errors: [], warnings: [] },
+  conflict = false,
+) {
   server.use(
     http.get("/admin/v1/tenants", () => HttpResponse.json([tenant])),
-    http.get(`/admin/v1/tenants/${tenantId}/components/agent`, () =>
-      HttpResponse.json({
-        component: "agent",
-        draft: draftName ? draft(draftName) : null,
-        active_revision: {
-          id: "published",
-          revision_number: 1,
-          payload: config(publishedName),
-          comment: null,
-          sealed_at: "2026-01-01T00:00:00Z",
-        },
-      }),
+    http.get(`/admin/v1/tenants/${tenantId}/authoring/config`, () =>
+      HttpResponse.json(
+        authoringState(
+          draftName ?? publishedName,
+          draftName ? "draft" : "published",
+        ),
+      ),
     ),
     http.get("/admin/v1/platform/prompts/profiles", () =>
       HttpResponse.json(["hotel_assistant"]),
@@ -102,33 +108,27 @@ function useHandlers(saveSpy = vi.fn(), publishSpy = vi.fn()) {
         published_documents: [],
       }),
     ),
+    http.post(`/admin/v1/tenants/${tenantId}/authoring/config/plan`, () =>
+      HttpResponse.json(planResponse),
+    ),
     http.put(
-      `/admin/v1/tenants/${tenantId}/components/agent/draft`,
+      `/admin/v1/tenants/${tenantId}/authoring/config`,
       async ({ request }) => {
-        draftName = (
-          (await request.json()) as {
-            payload: { agent: { display_name: string } };
-          }
-        ).payload.agent.display_name;
+        expect(request.headers.get("If-Match")).toBe(
+          draftName ? `"${draftVersion}"` : null,
+        );
+        if (conflict)
+          return HttpResponse.json(
+            { detail: "draft version does not match If-Match" },
+            { status: 412 },
+          );
+        savedConfig = (await request.json()) as ReturnType<typeof config>;
+        draftName = savedConfig.agent.display_name;
         draftVersion = draftVersion + 1;
         saveSpy();
-        return HttpResponse.json(draft(draftName));
+        return HttpResponse.json(authoringState(draftName, "draft"));
       },
     ),
-    http.post(`/admin/v1/tenants/${tenantId}/components/agent/publish`, () => {
-      publishedName = draftName as string;
-      draftName = undefined;
-      publishSpy();
-      return HttpResponse.json({
-        id: "release",
-        tenant_id: tenantId,
-        release_number: 2,
-        runtime_bundle_id: "bundle",
-        source_release_id: null,
-        created_at: "2026-01-01T00:00:00Z",
-        comment: null,
-      });
-    }),
   );
 }
 
@@ -136,15 +136,98 @@ beforeEach(() => {
   publishedName = "Amelia";
   draftName = undefined;
   draftVersion = 0;
+  savedConfig = undefined;
   window.history.pushState({}, "", `/tenants/${tenantId}/agent`);
 });
 
 describe("Agent page", () => {
-  it("keeps Save and Publish separate and never publishes dirty local changes", async () => {
+  it("loads and saves localization and handoff destinations", async () => {
+    const user = userEvent.setup();
+    useHandlers();
+    render(<App />);
+    expect(await screen.findByLabelText(/Default locale/)).toHaveValue("sk-SK");
+    expect(screen.getByLabelText(/Timezone/)).toHaveValue("Europe/Bratislava");
+    expect(screen.getByLabelText(/Key/)).toHaveValue("reception");
+    expect(screen.getByLabelText("Description")).toHaveValue(
+      "Reception requests",
+    );
+    expect(screen.getAllByLabelText(/Phone number/)[1]).toHaveValue(
+      "+421900000001",
+    );
+
+    await user.clear(screen.getByLabelText(/Timezone/));
+    await user.type(screen.getByLabelText(/Timezone/), "UTC");
+    await user.click(screen.getByRole("button", { name: "Add destination" }));
+    const keys = screen.getAllByLabelText(/Key/);
+    const descriptions = screen.getAllByLabelText("Description");
+    const phones = screen.getAllByLabelText(/Phone number/);
+    await user.clear(keys[1]);
+    await user.type(keys[1], "manager");
+    await user.type(descriptions[1], "Manager requests");
+    await user.type(phones[2], "+421900000002");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Saved · Pending publish")).toBeVisible();
+    expect(savedConfig).toMatchObject({
+      localization: { default_locale: "sk-SK", timezone: "UTC" },
+      handoff: {
+        destinations: {
+          reception: { phone_number: "+421900000001" },
+          manager: { phone_number: "+421900000002" },
+        },
+      },
+      business: config("Amelia").business,
+      conversation: config("Amelia").conversation,
+    });
+  });
+
+  it("removes a handoff destination without rebuilding hidden config fields", async () => {
+    const user = userEvent.setup();
+    useHandlers();
+    render(<App />);
+    await screen.findByLabelText(/Default locale/);
+    await user.click(screen.getByRole("button", { name: "Remove reception" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Saved · Pending publish")).toBeVisible();
+    expect(savedConfig).toMatchObject({
+      business: config("Amelia").business,
+      conversation: config("Amelia").conversation,
+      handoff: { destinations: {} },
+    });
+  });
+
+  it("blocks Save on a Backend handoff validation error", async () => {
+    const user = userEvent.setup();
+    useHandlers(undefined, {
+      valid: false,
+      errors: [
+        {
+          code: "invalid_phone",
+          path: "handoff.destinations.reception.phone_number",
+          message: "Phone number is invalid",
+        },
+      ],
+      warnings: [],
+    });
+    render(<App />);
+    await screen.findByLabelText(/Default locale/);
+    const handoffPhone = screen.getAllByLabelText(/Phone number/)[1];
+    await user.clear(handoffPhone);
+    await user.type(handoffPhone, "not-a-phone");
+    expect(await screen.findByText(/Phone number is invalid/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("plans and saves through the authoring API without component publish", async () => {
     const user = userEvent.setup();
     const save = vi.fn();
-    const publish = vi.fn();
-    useHandlers(save, publish);
+    useHandlers(save);
     render(<App />);
     const name = await screen.findByLabelText("Display Name");
     expect(screen.getByLabelText(/Email addresses/)).toHaveValue(
@@ -153,15 +236,15 @@ describe("Agent page", () => {
     await user.clear(name);
     await user.type(name, "Amelia Updated");
     expect(screen.getByText("Unsaved changes")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
     await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(await screen.findByText("Saved · Not published")).toBeVisible();
+    expect(await screen.findByText("Saved · Pending publish")).toBeVisible();
     expect(save).toHaveBeenCalledOnce();
-    expect(publish).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Publish" }));
-    await waitFor(() => expect(publish).toHaveBeenCalledOnce());
-    expect(await screen.findByText("Published")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Publish" }),
+    ).not.toBeInTheDocument();
   });
 
   it("guards navigation with Stay, Discard, and Save and continue", async () => {
@@ -172,6 +255,9 @@ describe("Agent page", () => {
     const name = await screen.findByLabelText("Display Name");
     await user.clear(name);
     await user.type(name, "Changed");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
     await user.click(screen.getByRole("link", { name: "Platform" }));
     expect(
       screen.getByRole("dialog", { name: "Unsaved changes" }),
@@ -189,9 +275,59 @@ describe("Agent page", () => {
     const secondName = await screen.findByLabelText("Display Name");
     await user.clear(secondName);
     await user.type(secondName, "Saved on leave");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
     await user.click(screen.getByRole("link", { name: "Platform" }));
     await user.click(screen.getByRole("button", { name: "Save and continue" }));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     await waitFor(() => expect(window.location.pathname).toBe("/platform"));
+  });
+
+  it("blocks Save and shows backend plan issues", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn();
+    useHandlers(save, {
+      valid: false,
+      errors: [
+        {
+          code: "invalid_profile",
+          path: "agent.profile",
+          message: "Unknown profile",
+        },
+      ],
+      warnings: [],
+    });
+    render(<App />);
+    await router.navigate({ to: `/tenants/${tenantId}/agent` as never });
+    const name = await screen.findByLabelText("Display Name");
+    await user.clear(name);
+    await user.type(name, "Changed");
+    expect(await screen.findByText(/Unknown profile/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("reports an authoring save concurrency conflict", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn();
+    draftName = "Amelia";
+    draftVersion = 1;
+    useHandlers(save, undefined, true);
+    render(<App />);
+    await router.navigate({ to: `/tenants/${tenantId}/agent` as never });
+    const name = await screen.findByLabelText("Display Name");
+    await user.clear(name);
+    await user.type(name, "Changed");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      await screen.findByText(
+        "This configuration changed on the server. Reload before saving again.",
+      ),
+    ).toBeVisible();
+    expect(save).not.toHaveBeenCalled();
   });
 });

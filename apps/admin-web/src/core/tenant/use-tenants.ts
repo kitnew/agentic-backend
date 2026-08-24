@@ -9,9 +9,17 @@ export function useTenants() {
   return useQuery({
     queryKey: ["admin", "tenants"],
     queryFn: async () => {
-      const response = await listTenantsAdminV1TenantsGet({ limit: 100 });
-      if (response.status === 200) return response.data;
-      return throwAdminResponse(response);
+      const pageSize = 100;
+      const tenants: Tenant[] = [];
+      for (let offset = 0; ; offset += pageSize) {
+        const response = await listTenantsAdminV1TenantsGet({
+          limit: pageSize,
+          offset,
+        });
+        if (response.status !== 200) return throwAdminResponse(response);
+        tenants.push(...response.data);
+        if (response.data.length < pageSize) return tenants;
+      }
     },
   });
 }

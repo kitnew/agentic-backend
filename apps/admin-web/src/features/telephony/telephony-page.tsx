@@ -1,17 +1,22 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-import {
-  PageError,
-  PageHeader,
-  PageLoading,
-} from "../../components/page-states";
-import { Button } from "../../components/ui/button";
-import { responseData } from "../../core/api/client";
+import { PageError, PageLoading } from "../../components/page-states";
+import { apiErrorMessage, responseData } from "../../core/api/client";
 import {
   reconcilePlatformTelephonyAdminV1PlatformTelephonyReconcilePost,
   showPlatformTelephonyAdminV1PlatformTelephonyGet,
 } from "../../core/api/generated/admin-platform-telephony/admin-platform-telephony";
 import type { PlatformTelephonyResponse } from "../../core/api/generated/models";
+import {
+  TechnicalDiagnostics,
+  WorkspaceHeader,
+} from "../../core/ui/foundation";
+
+function humanize(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
 
 function StatusBlock({
   rows,
@@ -21,25 +26,25 @@ function StatusBlock({
   error?: string | null;
 }) {
   return (
-    <section className="space-y-3 border-t pt-6">
-      <h2 className="text-lg font-semibold">Status</h2>
+    <section className="space-y-3">
+      <h2 className="text-lg font-semibold">Infrastructure status</h2>
       <div className="divide-y border-y">
         {rows.map(([label, value]) => (
           <div className="flex justify-between py-3" key={label}>
-            <span>{label.replaceAll("_", " ")}</span>
+            <span>{label}</span>
             <span
               className={
                 value === "ready" || value === "connected"
-                  ? "text-emerald-700"
-                  : "text-amber-700"
+                  ? "text-success"
+                  : "text-warning"
               }
             >
-              {value}
+              {humanize(value)}
             </span>
           </div>
         ))}
       </div>
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="text-sm text-danger">{error}</p>}
     </section>
   );
 }
@@ -70,29 +75,55 @@ export function PlatformTelephonyPage() {
         onRetry={() => query.refetch()}
       />
     );
+  const canRepair =
+    query.data.provider === "connected" && query.data.overall !== "ready";
   return (
     <>
-      <PageHeader title="Telephony" />
+      <WorkspaceHeader
+        primaryAction={
+          canRepair
+            ? {
+                label: "Repair",
+                loading: repair.isPending,
+                loadingLabel: "Repairing…",
+                onClick: () => repair.mutate(),
+              }
+            : undefined
+        }
+        title="Telephony"
+      />
       <div className="max-w-2xl space-y-6">
         <StatusBlock
           rows={[
-            ["provider", query.data.provider],
-            ["inbound", query.data.inbound],
-            ["outbound", query.data.outbound],
-            ["dispatch", query.data.dispatch],
-            ["overall", query.data.overall],
+            ["Provider", query.data.provider],
+            ["Inbound", query.data.inbound],
+            ["Outbound", query.data.outbound],
+            ["Dispatch", query.data.dispatch],
+            ["Overall", query.data.overall],
           ]}
           error={query.data.last_error}
         />
-        <Button disabled={repair.isPending} onClick={() => repair.mutate()}>
-          {repair.isPending ? "Repairing..." : "Repair"}
-        </Button>
-        <details className="text-sm text-muted">
-          <summary>Technical diagnostics</summary>
+        {repair.isError && (
+          <PageError
+            compact
+            title={apiErrorMessage(
+              repair.error,
+              "Platform Telephony repair failed.",
+            )}
+          />
+        )}
+        <section className="rounded-md border bg-slate-50 p-4">
+          <h2 className="font-semibold">Trunk configuration</h2>
+          <p className="mt-1 text-sm text-muted">
+            Management will be available after the LiveKit provisioning contract
+            is finalized.
+          </p>
+        </section>
+        <TechnicalDiagnostics>
           <pre className="mt-3 overflow-auto">
             {JSON.stringify(query.data.diagnostics, null, 2)}
           </pre>
-        </details>
+        </TechnicalDiagnostics>
       </div>
     </>
   );

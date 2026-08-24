@@ -4,6 +4,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { App } from "../src/app/app";
+import { router } from "../src/routes/router";
 import { server } from "./setup";
 
 const tenant = {
@@ -12,9 +13,7 @@ const tenant = {
   display_name: "Demo tenant",
   business_type: "hotel",
   status: "active",
-  active_config_revision_id: null,
-  active_prompt_set_revision_id: null,
-  active_voice_runtime_revision_id: null,
+  active_release_id: null,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
@@ -86,15 +85,60 @@ describe("Admin app shell", () => {
         .getAllByRole("link")
         .map((link) => link.textContent),
     ).toEqual([
+      "Overview",
       "Runtime",
-      "Telephony",
       "Agent",
       "Prompt",
       "Knowledge Base",
-      "Capabilities",
       "Playground",
     ]);
+    for (const label of [
+      "Capabilities",
+      "Integrations",
+      "Post-call",
+      "Telephony",
+    ]) {
+      const item = within(navigation).getByText(label, { exact: true });
+      expect(item.parentElement).toHaveAttribute("aria-disabled", "true");
+      expect(item.parentElement).toHaveTextContent("Coming later");
+    }
+    await user.click(
+      within(navigation).getByText("Integrations", { exact: true }),
+    );
+    expect(router.state.location.pathname).toBe(`/tenants/${tenant.id}`);
     expect(screen.getByText("Demo tenant", { selector: "a" })).toBeVisible();
     expect(screen.queryByText(tenant.id)).not.toBeInTheDocument();
+  });
+
+  it("shows a read-only placeholder for deferred tenant routes", async () => {
+    server.use(
+      http.get("/admin/v1/tenants", () => HttpResponse.json([tenant])),
+    );
+    window.history.pushState({}, "", `/tenants/${tenant.id}`);
+    render(<App />);
+    for (const suffix of [
+      "/capabilities",
+      "/integrations",
+      "/integrations/check-availability",
+      "/post-call",
+      "/telephony",
+    ]) {
+      await router.navigate({
+        to: `/tenants/${tenant.id}${suffix}` as never,
+      });
+      expect(
+        await screen.findByRole("heading", {
+          name: "Feature temporarily unavailable in Admin Web",
+        }),
+      ).toBeVisible();
+      expect(
+        screen.getByText(
+          "Use agentctl for configuration and management until the Admin Web domain model is finalized.",
+        ),
+      ).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: /Save|Publish|Repair/i }),
+      ).not.toBeInTheDocument();
+    }
   });
 });

@@ -1,43 +1,83 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { PageError, PageLoading } from "../../components/page-states";
+import { apiErrorMessage, responseData } from "../../core/api/client";
 import {
-  PageError,
-  PageHeader,
-  PageLoading,
-} from "../../components/page-states";
-import { Button } from "../../components/ui/button";
-import { responseData } from "../../core/api/client";
+  planKnowledgeAdminV1TenantsTenantIdAuthoringKnowledgePlanPost,
+  planPromptAdminV1TenantsTenantIdAuthoringPromptPlanPost,
+  planRuntimeAdminV1TenantsTenantIdAuthoringRuntimePlanPost,
+  readKnowledgeAdminV1TenantsTenantIdAuthoringKnowledgeGet,
+  readPromptAdminV1TenantsTenantIdAuthoringPromptGet,
+  readRuntimeAdminV1TenantsTenantIdAuthoringRuntimeGet,
+  saveKnowledgeAdminV1TenantsTenantIdAuthoringKnowledgePut,
+  savePromptAdminV1TenantsTenantIdAuthoringPromptPut,
+  saveRuntimeAdminV1TenantsTenantIdAuthoringRuntimePut,
+} from "../../core/api/generated/admin-authoring/admin-authoring";
 import {
   componentStateAdminV1TenantsTenantIdComponentsComponentGet,
   publishAllAdminV1TenantsTenantIdComponentsPublishAllPost,
-  publishComponentAdminV1TenantsTenantIdComponentsComponentPublishPost,
-  saveDraftAdminV1TenantsTenantIdComponentsComponentDraftPut,
 } from "../../core/api/generated/admin-tenant-components/admin-tenant-components";
-import type { ComponentStateResponse } from "../../core/api/generated/models";
+import { getTenantAdminV1TenantsTenantIdGet } from "../../core/api/generated/admin-tenants/admin-tenants";
+import type {
+  AuthoringPlan,
+  AuthoringState,
+  ComponentStateResponse,
+  TenantKnowledgeAuthoring,
+  TenantPromptAuthoring,
+  TenantResponse,
+  TenantRuntimeAuthoring,
+} from "../../core/api/generated/models";
+import { TenantLLMRuntimeOverrideReasoningEffort } from "../../core/api/generated/models";
 import {
-  EditorActions,
-  Field,
-  StatusBadge,
-} from "../../core/configuration/editor";
+  AuthoringPlanStatus,
+  authoringErrorTitle,
+  type TenantAuthoringResource,
+  useTenantAuthoringResource,
+} from "../../core/configuration/authoring";
+import { EditorActions } from "../../core/configuration/editor";
 import { useTenant } from "../../core/tenant/use-tenant";
-import { useTenants } from "../../core/tenant/use-tenants";
+import {
+  CodeEditor,
+  Field,
+  FormGrid,
+  ResourceStatus,
+  ToggleSection,
+  WorkspaceHeader,
+} from "../../core/ui/foundation";
+import {
+  type RuntimeForm,
+  type RuntimeReasoningEffort,
+  toRuntimeForm,
+  toRuntimePayload,
+  validateRuntimeForm,
+} from "./runtime-mappings";
 
-const components = [
+const allComponents = [
   ["runtime", "Runtime"],
   ["agent", "Agent"],
   ["prompt", "Prompt"],
   ["knowledge", "Knowledge Base"],
   ["capabilities", "Capabilities"],
+  ["post_call", "Post-call"],
   ["telephony", "Telephony"],
 ] as const;
+const visibleComponents = allComponents.slice(0, 4);
 
 function useCurrentTenant() {
   const { tenantId } = useTenant();
-  const tenants = useTenants();
+  const tenant = useQuery({
+    queryKey: ["admin", "tenant", tenantId],
+    queryFn: async () =>
+      responseData<TenantResponse>(
+        await getTenantAdminV1TenantsTenantIdGet(tenantId as string),
+      ),
+    enabled: Boolean(tenantId),
+  });
   return {
     tenantId,
-    tenant: tenants.data?.find((item) => item.id === tenantId),
+    tenant: tenant.data,
+    tenantQuery: tenant,
   };
 }
 
@@ -50,13 +90,450 @@ async function componentState(tenantId: string, component: string) {
   );
 }
 
+export function TenantAuthoringEditorPage({
+  component,
+  title,
+}: {
+  component: "runtime" | "prompt" | "knowledge";
+  title: string;
+}) {
+  const { tenantId } = useTenant();
+  if (!tenantId) return <PageError title="Select a tenant first" />;
+  if (component === "runtime")
+    return <RuntimeAuthoringEditor tenantId={tenantId} title={title} />;
+  if (component === "prompt")
+    return <PromptAuthoringEditor tenantId={tenantId} title={title} />;
+  return <KnowledgeAuthoringEditor tenantId={tenantId} title={title} />;
+}
+
+function RuntimeAuthoringEditor({
+  tenantId,
+  title,
+}: {
+  tenantId: string;
+  title: string;
+}) {
+  const resource = useTenantAuthoringResource<TenantRuntimeAuthoring>({
+    queryKey: ["admin", "tenant-authoring", tenantId, "runtime"],
+    read: async () =>
+      responseData<AuthoringState>(
+        await readRuntimeAdminV1TenantsTenantIdAuthoringRuntimeGet(tenantId),
+      ),
+    plan: async (value) =>
+      responseData<AuthoringPlan>(
+        await planRuntimeAdminV1TenantsTenantIdAuthoringRuntimePlanPost(
+          tenantId,
+          value,
+        ),
+      ),
+    save: (value, options) =>
+      saveRuntimeAdminV1TenantsTenantIdAuthoringRuntimePut(
+        tenantId,
+        value,
+        options,
+      ),
+    emptyValue: {},
+  });
+  return <RuntimeEditor resource={resource} title={title} />;
+}
+
+function RuntimeEditor({
+  resource,
+  title,
+}: {
+  resource: TenantAuthoringResource<TenantRuntimeAuthoring>;
+  title: string;
+}) {
+  if (resource.query.isPending) return <PageLoading />;
+  if (resource.query.isError)
+    return <PageError title={`${title} could not be loaded`} />;
+  if (resource.value === undefined)
+    return <PageError title={`${title} is not available`} />;
+
+  return <RuntimeEditorForm resource={resource} title={title} />;
+}
+
+function RuntimeEditorForm({
+  resource,
+  title,
+}: {
+  resource: TenantAuthoringResource<TenantRuntimeAuthoring>;
+  title: string;
+}) {
+  const localEdit = useRef(false);
+  const wasDirty = useRef(resource.dirty);
+  const [form, setForm] = useState(() =>
+    toRuntimeForm(resource.value as TenantRuntimeAuthoring),
+  );
+  useEffect(() => {
+    if (!resource.dirty && resource.value) {
+      if (!localEdit.current || wasDirty.current)
+        setForm(toRuntimeForm(resource.value as TenantRuntimeAuthoring));
+      localEdit.current = false;
+    }
+    wasDirty.current = resource.dirty;
+  }, [resource.dirty, resource.value]);
+  const update = <K extends keyof RuntimeForm>(
+    field: K,
+    value: RuntimeForm[K],
+  ) => {
+    const next = { ...form, [field]: value };
+    localEdit.current = true;
+    setForm(next);
+    resource.setValue(toRuntimePayload(next));
+  };
+  const toggleLlm = (enabled: boolean) => {
+    const next = {
+      ...form,
+      llmEnabled: enabled,
+      llmState: enabled ? ("value" as const) : ("null" as const),
+      llmReasoningEffortState: enabled
+        ? ("value" as const)
+        : form.llmReasoningEffortState,
+    };
+    localEdit.current = true;
+    setForm(next);
+    resource.setValue(toRuntimePayload(next));
+  };
+  const toggleTts = (enabled: boolean) => {
+    const next = {
+      ...form,
+      ttsEnabled: enabled,
+      ttsState: enabled ? ("value" as const) : ("null" as const),
+    };
+    localEdit.current = true;
+    setForm(next);
+    resource.setValue(toRuntimePayload(next));
+  };
+  const localError = validateRuntimeForm(form);
+  const saveBlocked = Boolean(localError) || !resource.validation.canSave;
+  const reasoningEfforts = Object.values(
+    TenantLLMRuntimeOverrideReasoningEffort,
+  ) as RuntimeReasoningEffort[];
+
+  return (
+    <div className="max-w-4xl">
+      <EditorActions
+        title={title}
+        dirty={resource.dirty}
+        hasDraft={resource.hasDraft}
+        saving={resource.save.isPending}
+        validating={resource.validation.isValidating}
+        saveDisabled={saveBlocked}
+        remoteChanged={resource.remoteChanged}
+        conflict={resource.conflict}
+        onReload={resource.reload}
+        onSave={() => resource.save.mutateAsync().then(() => undefined)}
+      />
+      <AuthoringPlanStatus validation={resource.validation} />
+      <div className="space-y-1">
+        <ToggleSection
+          description="Override Platform LLM defaults for this tenant"
+          disabledSummary="Using Platform defaults"
+          enabled={form.llmEnabled}
+          onEnabledChange={toggleLlm}
+          title="LLM override"
+        >
+          <div className="space-y-4">
+            <Field label="Model" detail="Backend validates model compatibility">
+              <input
+                maxLength={255}
+                value={form.llmModel}
+                onChange={(event) => update("llmModel", event.target.value)}
+              />
+            </Field>
+            <FormGrid>
+              <Field label="Reasoning effort">
+                <select
+                  value={
+                    form.llmReasoningEffortState === "value"
+                      ? form.llmReasoningEffort
+                      : `__${form.llmReasoningEffortState}`
+                  }
+                  onChange={(event) => {
+                    const selected = event.target.value;
+                    const next = {
+                      ...form,
+                      llmReasoningEffort: (selected.startsWith("__")
+                        ? form.llmReasoningEffort
+                        : selected) as RuntimeReasoningEffort,
+                      llmReasoningEffortState: selected.startsWith("__")
+                        ? (selected.slice(2) as "absent" | "null")
+                        : ("value" as const),
+                    };
+                    localEdit.current = true;
+                    setForm(next);
+                    resource.setValue(toRuntimePayload(next));
+                  }}
+                >
+                  <option value="__absent">Omit setting</option>
+                  <option value="__null">Provider default (null)</option>
+                  {reasoningEfforts.map((effort) => (
+                    <option key={effort} value={effort}>
+                      {effort}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field
+                label="Temperature"
+                detail="Optional; leave empty for null/omitted"
+              >
+                <input
+                  max={2}
+                  min={0}
+                  step="any"
+                  type="number"
+                  value={form.llmTemperature}
+                  onChange={(event) => {
+                    const next = {
+                      ...form,
+                      llmTemperature: event.target.value,
+                      llmTemperaturePresent: true,
+                    };
+                    localEdit.current = true;
+                    setForm(next);
+                    resource.setValue(toRuntimePayload(next));
+                  }}
+                />
+              </Field>
+            </FormGrid>
+          </div>
+        </ToggleSection>
+        <ToggleSection
+          defaultExpanded={false}
+          description="Override the Platform voice for this tenant"
+          disabledSummary="Using Platform defaults"
+          enabled={form.ttsEnabled}
+          onEnabledChange={toggleTts}
+          title="TTS override"
+        >
+          <div className="max-w-md">
+            <Field
+              label="Voice ID"
+              detail="Backend validates the configured voice"
+            >
+              <input
+                maxLength={255}
+                value={form.ttsVoiceId}
+                onChange={(event) => update("ttsVoiceId", event.target.value)}
+              />
+            </Field>
+          </div>
+        </ToggleSection>
+      </div>
+      {localError && <PageError compact title={localError} />}
+      {resource.save.isError && (
+        <PageError
+          compact
+          title={authoringErrorTitle(
+            resource.save.error,
+            `${title} change failed`,
+          )}
+        />
+      )}
+    </div>
+  );
+}
+
+function PromptAuthoringEditor({
+  tenantId,
+  title,
+}: {
+  tenantId: string;
+  title: string;
+}) {
+  const resource = useTenantAuthoringResource<TenantPromptAuthoring>({
+    queryKey: ["admin", "tenant-authoring", tenantId, "prompt"],
+    read: async () =>
+      responseData<AuthoringState>(
+        await readPromptAdminV1TenantsTenantIdAuthoringPromptGet(tenantId),
+      ),
+    plan: async (value) =>
+      responseData<AuthoringPlan>(
+        await planPromptAdminV1TenantsTenantIdAuthoringPromptPlanPost(
+          tenantId,
+          value,
+        ),
+      ),
+    save: (value, options) =>
+      savePromptAdminV1TenantsTenantIdAuthoringPromptPut(
+        tenantId,
+        value,
+        options,
+      ),
+    emptyValue: { text: "" },
+  });
+  return (
+    <AuthoringEditorState
+      resource={resource}
+      title={title}
+      format={(value) => value.text ?? ""}
+      parse={(text) => ({ text })}
+      fieldLabel="Prompt"
+      textArea
+    />
+  );
+}
+
+function KnowledgeAuthoringEditor({
+  tenantId,
+  title,
+}: {
+  tenantId: string;
+  title: string;
+}) {
+  const resource = useTenantAuthoringResource<TenantKnowledgeAuthoring>({
+    queryKey: ["admin", "tenant-authoring", tenantId, "knowledge"],
+    read: async () =>
+      responseData<AuthoringState>(
+        await readKnowledgeAdminV1TenantsTenantIdAuthoringKnowledgeGet(
+          tenantId,
+        ),
+      ),
+    plan: async (value) =>
+      responseData<AuthoringPlan>(
+        await planKnowledgeAdminV1TenantsTenantIdAuthoringKnowledgePlanPost(
+          tenantId,
+          value,
+        ),
+      ),
+    save: (value, options) =>
+      saveKnowledgeAdminV1TenantsTenantIdAuthoringKnowledgePut(
+        tenantId,
+        value,
+        options,
+      ),
+    emptyValue: { content: "" },
+  });
+  return (
+    <AuthoringEditorState
+      resource={resource}
+      title={title}
+      format={(value) => value.content ?? ""}
+      parse={(content) => ({ content })}
+      fieldLabel="Knowledge Base"
+      textArea
+    />
+  );
+}
+
+function AuthoringEditorState<T>({
+  resource,
+  title,
+  format,
+  parse,
+  fieldLabel,
+  textArea = false,
+}: {
+  resource: TenantAuthoringResource<T>;
+  title: string;
+  format: (value: T) => string;
+  parse: (text: string) => T;
+  fieldLabel: string;
+  textArea?: boolean;
+}) {
+  if (resource.query.isPending) return <PageLoading />;
+  if (resource.query.isError)
+    return <PageError title={`${title} could not be loaded`} />;
+  if (resource.value === undefined)
+    return <PageError title={`${title} is not available`} />;
+  return (
+    <AuthoringEditor
+      resource={resource}
+      title={title}
+      format={format}
+      parse={parse}
+      fieldLabel={fieldLabel}
+      textArea={textArea}
+    />
+  );
+}
+
+function AuthoringEditor<T>({
+  resource,
+  title,
+  format,
+  parse,
+  fieldLabel,
+  textArea,
+}: {
+  resource: TenantAuthoringResource<T>;
+  title: string;
+  format: (value: T) => string;
+  parse: (text: string) => T;
+  fieldLabel: string;
+  textArea: boolean;
+}) {
+  const canonical = format(resource.value as T);
+  const [text, setText] = useState(canonical);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const localEdit = useRef(false);
+  const wasDirty = useRef(resource.dirty);
+  useEffect(() => {
+    if (!resource.dirty) {
+      if (!localEdit.current || wasDirty.current)
+        setText(format(resource.value as T));
+      localEdit.current = false;
+    }
+    wasDirty.current = resource.dirty;
+  }, [format, resource.dirty, resource.value]);
+  const update = (next: string) => {
+    localEdit.current = true;
+    setText(next);
+    try {
+      resource.setValue(parse(next));
+      setParseError(null);
+    } catch {
+      setParseError(
+        textArea ? "Configuration must be valid JSON." : "Invalid value.",
+      );
+    }
+  };
+  const saveBlocked = Boolean(parseError) || !resource.validation.canSave;
+  return (
+    <div className="max-w-4xl">
+      <EditorActions
+        title={title}
+        dirty={resource.dirty}
+        hasDraft={resource.hasDraft}
+        saving={resource.save.isPending}
+        validating={resource.validation.isValidating}
+        saveDisabled={saveBlocked}
+        remoteChanged={resource.remoteChanged}
+        conflict={resource.conflict}
+        onReload={resource.reload}
+        onSave={() => resource.save.mutateAsync().then(() => undefined)}
+      />
+      <AuthoringPlanStatus validation={resource.validation} />
+      <CodeEditor
+        label={fieldLabel}
+        minHeight={textArea ? 320 : 240}
+        monospace={false}
+        onChange={update}
+        value={text}
+      />
+      {parseError && <PageError compact title={parseError} />}
+      {resource.save.isError && (
+        <PageError
+          compact
+          title={authoringErrorTitle(
+            resource.save.error,
+            `${title} change failed`,
+          )}
+        />
+      )}
+    </div>
+  );
+}
+
 export function TenantComponentOverviewPage() {
-  const { tenantId, tenant } = useCurrentTenant();
+  const { tenantId, tenant, tenantQuery } = useCurrentTenant();
   const query = useQuery({
     queryKey: ["admin", "tenant-components", tenantId],
     queryFn: () =>
       Promise.all(
-        components.map(
+        allComponents.map(
           async ([component]) =>
             [
               component,
@@ -68,8 +545,9 @@ export function TenantComponentOverviewPage() {
   });
   const publish = useMutation({
     mutationFn: async () => {
+      const latest = await query.refetch();
       const drafts =
-        query.data?.flatMap(([component, state]) =>
+        latest.data?.flatMap(([component, state]) =>
           state.draft
             ? [
                 {
@@ -90,161 +568,78 @@ export function TenantComponentOverviewPage() {
     },
     onSuccess: () => query.refetch(),
   });
-  if (query.isPending) return <PageLoading />;
+  if (query.isPending || tenantQuery.isPending) return <PageLoading />;
+  if (tenantQuery.isError)
+    return (
+      <PageError
+        title={apiErrorMessage(
+          tenantQuery.error,
+          "Tenant status could not be loaded",
+        )}
+      />
+    );
   if (query.isError || !tenant)
     return <PageError title="Tenant status could not be loaded" />;
   const states = new Map(query.data);
   const unpublished = query.data.filter(([, state]) => state.draft).length;
   return (
     <>
-      <PageHeader title={tenant.display_name} />
-      <section className="max-w-2xl">
-        <h2 className="mb-4 text-lg font-semibold">Configuration status</h2>
-        <div className="divide-y border-y">
-          {components.map(([component, label]) => (
-            <div
-              className="flex items-center justify-between py-3"
-              key={component}
-            >
-              <span>{label}</span>
-              <StatusBadge
-                status={
-                  states.get(component)?.draft
-                    ? "Saved · Not published"
-                    : "Published"
-                }
-              />
-            </div>
-          ))}
-        </div>
-        <div className="mt-6 flex items-center justify-between gap-4">
-          <p className="text-sm text-muted">
-            {unpublished} unpublished{" "}
-            {unpublished === 1 ? "section" : "sections"}
+      <WorkspaceHeader
+        description="Saved tenant drafts are released together. Unsaved editor changes are never included in Publish Tenant."
+        primaryAction={{
+          label: "Publish Tenant",
+          disabled: !unpublished || publish.isPending,
+          loading: publish.isPending,
+          loadingLabel: "Publishing…",
+          onClick: () => publish.mutate(),
+        }}
+        status={
+          unpublished
+            ? "Saved · Pending publish"
+            : tenant.active_release_id
+              ? "Published"
+              : "Not configured"
+        }
+        title={tenant.display_name}
+      />
+      <section className="space-y-6">
+        <div>
+          <h2 className="text-lg font-semibold">Release status</h2>
+          <p className="mt-1 text-sm text-muted">
+            {tenant.active_release_id
+              ? "Active release published"
+              : "No active release"}
           </p>
-          <Button
-            disabled={!unpublished || publish.isPending}
-            onClick={() => publish.mutate()}
-          >
-            {publish.isPending ? "Publishing..." : "Publish All"}
-          </Button>
+        </div>
+        <div>
+          <h2 className="mb-3 text-lg font-semibold">Configuration</h2>
+          <div className="divide-y border-y">
+            {visibleComponents.map(([component, label]) => (
+              <div
+                className="flex items-center justify-between py-3"
+                key={component}
+              >
+                <span>{label}</span>
+                <ResourceStatus
+                  status={
+                    states.get(component)?.draft
+                      ? "Saved · Pending publish"
+                      : states.get(component)?.active_revision
+                        ? "Published"
+                        : "Not configured"
+                  }
+                />
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-sm text-muted">
+            {unpublished} saved {unpublished === 1 ? "draft" : "drafts"}
+          </p>
         </div>
         {publish.isError && (
           <PageError compact title="Tenant changes could not be published" />
         )}
       </section>
-    </>
-  );
-}
-
-export function TenantComponentEditorPage({
-  component,
-  title,
-}: {
-  component: (typeof components)[number][0];
-  title: string;
-}) {
-  const { tenantId } = useCurrentTenant();
-  const query = useQuery({
-    queryKey: ["admin", "tenant-component", tenantId, component],
-    queryFn: () => componentState(tenantId as string, component),
-    enabled: Boolean(tenantId),
-  });
-  if (query.isPending) return <PageLoading />;
-  if (query.isError || !tenantId)
-    return <PageError title={`${title} could not be loaded`} />;
-  return (
-    <ComponentEditor
-      key={`${tenantId}:${component}:${query.data.draft?.version ?? "active"}`}
-      tenantId={tenantId}
-      component={component}
-      title={title}
-      state={query.data}
-      refetch={() => query.refetch().then(() => undefined)}
-    />
-  );
-}
-
-function ComponentEditor({
-  tenantId,
-  component,
-  title,
-  state,
-  refetch,
-}: {
-  tenantId: string;
-  component: (typeof components)[number][0];
-  title: string;
-  state: ComponentStateResponse;
-  refetch: () => Promise<void>;
-}) {
-  const canonical = JSON.stringify(
-    state.draft?.payload ?? state.active_revision?.payload ?? {},
-    null,
-    2,
-  );
-  const [text, setText] = useState(canonical);
-  const [parseError, setParseError] = useState<string | null>(null);
-  useEffect(() => setText(canonical), [canonical]);
-  const save = useMutation({
-    mutationFn: async () => {
-      let payload: Record<string, unknown>;
-      try {
-        payload = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        setParseError("Configuration must be valid JSON.");
-        return;
-      }
-      setParseError(null);
-      responseData(
-        await saveDraftAdminV1TenantsTenantIdComponentsComponentDraftPut(
-          tenantId,
-          component,
-          { payload },
-          state.draft
-            ? { headers: { "If-Match": `"${state.draft.version}"` } }
-            : undefined,
-        ),
-      );
-      await refetch();
-    },
-  });
-  const publish = useMutation({
-    mutationFn: async () => {
-      if (!state.draft) return;
-      responseData(
-        await publishComponentAdminV1TenantsTenantIdComponentsComponentPublishPost(
-          tenantId,
-          component,
-          { draft_id: state.draft.id, version: state.draft.version },
-        ),
-      );
-      await refetch();
-    },
-  });
-  return (
-    <>
-      <PageHeader title={title} />
-      <div className="max-w-4xl">
-        <EditorActions
-          dirty={text !== canonical}
-          hasDraft={Boolean(state.draft)}
-          saving={save.isPending}
-          publishing={publish.isPending}
-          onSave={() => save.mutateAsync()}
-          onPublish={() => publish.mutateAsync()}
-        />
-        <Field label={`${title} configuration`}>
-          <textarea
-            className="min-h-96 font-mono"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-          />
-        </Field>
-        {(parseError || save.isError || publish.isError) && (
-          <PageError compact title={parseError ?? `${title} change failed`} />
-        )}
-      </div>
     </>
   );
 }
