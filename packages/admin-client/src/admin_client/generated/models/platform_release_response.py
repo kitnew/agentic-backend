@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any, TypeVar
+from uuid import UUID
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
@@ -14,26 +15,26 @@ T = TypeVar("T", bound="PlatformReleaseResponse")
 class PlatformReleaseResponse:
     """
     Attributes:
-        id (str):
+        id (UUID):
         release_number (int):
-        runtime_revision_id (str):
-        system_prompt_revision_id (str):
+        runtime_revision_id (UUID):
+        system_prompt_revision_id (UUID):
     """
 
-    id: str
+    id: UUID
     release_number: int
-    runtime_revision_id: str
-    system_prompt_revision_id: str
+    runtime_revision_id: UUID
+    system_prompt_revision_id: UUID
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        id = self.id
+        id = str(self.id)
 
         release_number = self.release_number
 
-        runtime_revision_id = self.runtime_revision_id
+        runtime_revision_id = str(self.runtime_revision_id)
 
-        system_prompt_revision_id = self.system_prompt_revision_id
+        system_prompt_revision_id = str(self.system_prompt_revision_id)
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
@@ -51,13 +52,13 @@ class PlatformReleaseResponse:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
-        id = d.pop("id")
+        id = UUID(d.pop("id"))
 
         release_number = d.pop("release_number")
 
-        runtime_revision_id = d.pop("runtime_revision_id")
+        runtime_revision_id = UUID(d.pop("runtime_revision_id"))
 
-        system_prompt_revision_id = d.pop("system_prompt_revision_id")
+        system_prompt_revision_id = UUID(d.pop("system_prompt_revision_id"))
 
         platform_release_response = cls(
             id=id,

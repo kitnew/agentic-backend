@@ -8,7 +8,8 @@ import type {
   CreateTenantRequest,
   HTTPValidationError,
   ListTenantsAdminV1TenantsGetParams,
-  TenantResponse
+  TenantResponse,
+  TenantTelephonyStatus
 } from '../models';
 
 
@@ -212,6 +213,55 @@ export const getTenantAdminV1TenantsTenantIdGet = async (tenantId: string, optio
 
   const data: getTenantAdminV1TenantsTenantIdGetResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getTenantAdminV1TenantsTenantIdGetResponse
+}
+
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse200 = {
+  data: TenantTelephonyStatus
+  status: 200
+}
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseSuccess = (tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse200) & {
+  headers: Headers;
+};
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseError = (tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse422) & {
+  headers: Headers;
+};
+
+export type tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse = (tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseSuccess | tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponseError)
+
+export const getTenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetUrl = (tenantId: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/telephony/status`
+}
+
+/**
+ * @summary Tenant Telephony Status
+ */
+export const tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGet = async (tenantId: string, options?: RequestInit): Promise<tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse> => {
+
+  const res = await fetch(getTenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetUrl(tenantId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGetResponse
 }
 
 

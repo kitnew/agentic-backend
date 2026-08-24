@@ -10,7 +10,7 @@ export interface PublishAllRequest {
   comment?: string | null;
   /**
      * @minItems 1
-     * @maxItems 6
+     * @maxItems 7
      */
   drafts: ComponentDraftExpectation[];
 }

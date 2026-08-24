@@ -9,14 +9,14 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from typing_extensions import Self
 
-from ..models.integration_connection_status import IntegrationConnectionStatus
-from ..models.integration_provider import IntegrationProvider
+from ..models.integration_kind import IntegrationKind
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.integration_connection_response_config import (
-        IntegrationConnectionResponseConfig,
+    from ..models.integration_connection_response_configuration import (
+        IntegrationConnectionResponseConfiguration,
     )
+    from ..models.integration_readiness import IntegrationReadiness
 
 
 T = TypeVar("T", bound="IntegrationConnectionResponse")
@@ -26,46 +26,52 @@ T = TypeVar("T", bound="IntegrationConnectionResponse")
 class IntegrationConnectionResponse:
     """
     Attributes:
-        config (IntegrationConnectionResponseConfig):
+        configuration (IntegrationConnectionResponseConfiguration):
         created_at (datetime.datetime):
+        enabled (bool):
         id (UUID):
         key (str):
-        provider (IntegrationProvider):
+        kind (IntegrationKind):
+        readiness (IntegrationReadiness):
         revision (int):
-        status (IntegrationConnectionStatus):
         tenant_id (UUID):
         updated_at (datetime.datetime):
         credential_fingerprint (None | str | Unset):
+        credential_status (None | str | Unset):
         credential_version (int | None | Unset):
     """
 
-    config: IntegrationConnectionResponseConfig
+    configuration: IntegrationConnectionResponseConfiguration
     created_at: datetime.datetime
+    enabled: bool
     id: UUID
     key: str
-    provider: IntegrationProvider
+    kind: IntegrationKind
+    readiness: IntegrationReadiness
     revision: int
-    status: IntegrationConnectionStatus
     tenant_id: UUID
     updated_at: datetime.datetime
     credential_fingerprint: None | str | Unset = UNSET
+    credential_status: None | str | Unset = UNSET
     credential_version: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        config = self.config.to_dict()
+        configuration = self.configuration.to_dict()
 
         created_at = self.created_at.isoformat()
+
+        enabled = self.enabled
 
         id = str(self.id)
 
         key = self.key
 
-        provider = self.provider.value
+        kind = self.kind.value
+
+        readiness = self.readiness.to_dict()
 
         revision = self.revision
-
-        status = self.status.value
 
         tenant_id = str(self.tenant_id)
 
@@ -77,6 +83,12 @@ class IntegrationConnectionResponse:
         else:
             credential_fingerprint = self.credential_fingerprint
 
+        credential_status: None | str | Unset
+        if isinstance(self.credential_status, Unset):
+            credential_status = UNSET
+        else:
+            credential_status = self.credential_status
+
         credential_version: int | None | Unset
         if isinstance(self.credential_version, Unset):
             credential_version = UNSET
@@ -87,19 +99,22 @@ class IntegrationConnectionResponse:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "config": config,
+                "configuration": configuration,
                 "created_at": created_at,
+                "enabled": enabled,
                 "id": id,
                 "key": key,
-                "provider": provider,
+                "kind": kind,
+                "readiness": readiness,
                 "revision": revision,
-                "status": status,
                 "tenant_id": tenant_id,
                 "updated_at": updated_at,
             }
         )
         if credential_fingerprint is not UNSET:
             field_dict["credential_fingerprint"] = credential_fingerprint
+        if credential_status is not UNSET:
+            field_dict["credential_status"] = credential_status
         if credential_version is not UNSET:
             field_dict["credential_version"] = credential_version
 
@@ -107,24 +122,29 @@ class IntegrationConnectionResponse:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.integration_connection_response_config import (
-            IntegrationConnectionResponseConfig,
+        from ..models.integration_connection_response_configuration import (
+            IntegrationConnectionResponseConfiguration,
         )
+        from ..models.integration_readiness import IntegrationReadiness
 
         d = dict(src_dict)
-        config = IntegrationConnectionResponseConfig.from_dict(d.pop("config"))
+        configuration = IntegrationConnectionResponseConfiguration.from_dict(
+            d.pop("configuration")
+        )
 
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
+
+        enabled = d.pop("enabled")
 
         id = UUID(d.pop("id"))
 
         key = d.pop("key")
 
-        provider = IntegrationProvider(d.pop("provider"))
+        kind = IntegrationKind(d.pop("kind"))
+
+        readiness = IntegrationReadiness.from_dict(d.pop("readiness"))
 
         revision = d.pop("revision")
-
-        status = IntegrationConnectionStatus(d.pop("status"))
 
         tenant_id = UUID(d.pop("tenant_id"))
 
@@ -141,6 +161,15 @@ class IntegrationConnectionResponse:
             d.pop("credential_fingerprint", UNSET)
         )
 
+        def _parse_credential_status(data: object) -> None | str | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(None | str | Unset, data)
+
+        credential_status = _parse_credential_status(d.pop("credential_status", UNSET))
+
         def _parse_credential_version(data: object) -> int | None | Unset:
             if data is None:
                 return data
@@ -153,16 +182,18 @@ class IntegrationConnectionResponse:
         )
 
         integration_connection_response = cls(
-            config=config,
+            configuration=configuration,
             created_at=created_at,
+            enabled=enabled,
             id=id,
             key=key,
-            provider=provider,
+            kind=kind,
+            readiness=readiness,
             revision=revision,
-            status=status,
             tenant_id=tenant_id,
             updated_at=updated_at,
             credential_fingerprint=credential_fingerprint,
+            credential_status=credential_status,
             credential_version=credential_version,
         )
 

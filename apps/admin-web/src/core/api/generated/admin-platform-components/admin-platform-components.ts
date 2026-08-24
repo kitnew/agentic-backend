@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  AuthoringPlan,
   DraftResponse,
   HTTPValidationError,
   PlatformPublishRequest,
@@ -62,6 +63,56 @@ export const saveProfilePromptAdminV1PlatformComponentsProfilesProfileDraftPut =
 
   const data: saveProfilePromptAdminV1PlatformComponentsProfilesProfileDraftPutResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as saveProfilePromptAdminV1PlatformComponentsProfilesProfileDraftPutResponse
+}
+
+
+export type planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse200 = {
+  data: AuthoringPlan
+  status: 200
+}
+
+export type planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponseSuccess = (planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse200) & {
+  headers: Headers;
+};
+export type planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponseError = (planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse422) & {
+  headers: Headers;
+};
+
+export type planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse = (planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponseSuccess | planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponseError)
+
+export const getPlanProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostUrl = (profile: string,) => {
+
+
+
+
+  return `/admin/v1/platform/components/profiles/${profile}/plan`
+}
+
+/**
+ * @summary Plan Profile Prompt
+ */
+export const planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPost = async (profile: string,
+    promptDraftWrite: PromptDraftWrite, options?: RequestInit): Promise<planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse> => {
+
+  const res = await fetch(getPlanProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostUrl(profile),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(promptDraftWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as planProfilePromptAdminV1PlatformComponentsProfilesProfilePlanPostResponse
 }
 
 
@@ -163,6 +214,55 @@ export const saveRuntimeAdminV1PlatformComponentsRuntimeDraftPut = async (runtim
 }
 
 
+export type planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse200 = {
+  data: AuthoringPlan
+  status: 200
+}
+
+export type planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponseSuccess = (planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse200) & {
+  headers: Headers;
+};
+export type planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponseError = (planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse422) & {
+  headers: Headers;
+};
+
+export type planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse = (planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponseSuccess | planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponseError)
+
+export const getPlanRuntimeAdminV1PlatformComponentsRuntimePlanPostUrl = () => {
+
+
+
+
+  return `/admin/v1/platform/components/runtime/plan`
+}
+
+/**
+ * @summary Plan Runtime
+ */
+export const planRuntimeAdminV1PlatformComponentsRuntimePlanPost = async (runtimeDraftWrite: RuntimeDraftWrite, options?: RequestInit): Promise<planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse> => {
+
+  const res = await fetch(getPlanRuntimeAdminV1PlatformComponentsRuntimePlanPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runtimeDraftWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as planRuntimeAdminV1PlatformComponentsRuntimePlanPostResponse
+}
+
+
 export type stateAdminV1PlatformComponentsStateGetResponse200 = {
   data: PlatformStateResponse
   status: 200
@@ -251,6 +351,55 @@ export const saveSystemPromptAdminV1PlatformComponentsSystemPromptDraftPut = asy
 
   const data: saveSystemPromptAdminV1PlatformComponentsSystemPromptDraftPutResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as saveSystemPromptAdminV1PlatformComponentsSystemPromptDraftPutResponse
+}
+
+
+export type planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse200 = {
+  data: AuthoringPlan
+  status: 200
+}
+
+export type planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponseSuccess = (planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse200) & {
+  headers: Headers;
+};
+export type planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponseError = (planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse422) & {
+  headers: Headers;
+};
+
+export type planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse = (planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponseSuccess | planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponseError)
+
+export const getPlanSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostUrl = () => {
+
+
+
+
+  return `/admin/v1/platform/components/system-prompt/plan`
+}
+
+/**
+ * @summary Plan System Prompt
+ */
+export const planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPost = async (promptDraftWrite: PromptDraftWrite, options?: RequestInit): Promise<planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse> => {
+
+  const res = await fetch(getPlanSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(promptDraftWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as planSystemPromptAdminV1PlatformComponentsSystemPromptPlanPostResponse
 }
 
 

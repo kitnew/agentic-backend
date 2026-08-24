@@ -5,48 +5,49 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  ConfigureIntegrationConnectionRequest,
   CreateIntegrationConnectionRequest,
   HTTPValidationError,
   IntegrationConnectionResponse,
-  IntegrationTestResponse,
-  SetIntegrationSecretRequest,
-  UpdateIntegrationConnectionRequest
+  IntegrationCredentialWrite,
+  IntegrationPlan,
+  IntegrationValidateResponse
 } from '../models';
 
 
-export type listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse200 = {
+export type listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse200 = {
   data: IntegrationConnectionResponse[]
   status: 200
 }
 
-export type listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse422 = {
+export type listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponseSuccess = (listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse200) & {
+export type listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponseSuccess = (listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse200) & {
   headers: Headers;
 };
-export type listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponseError = (listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse422) & {
+export type listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponseError = (listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse422) & {
   headers: Headers;
 };
 
-export type listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse = (listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponseSuccess | listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponseError)
+export type listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse = (listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponseSuccess | listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponseError)
 
-export const getListConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetUrl = (tenantId: string,) => {
-
-
+export const getListConnectionsAdminV1TenantsTenantIdIntegrationsGetUrl = (tenantId: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations`
 }
 
 /**
  * @summary List Connections
  */
-export const listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGet = async (tenantId: string, options?: RequestInit): Promise<listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse> => {
+export const listConnectionsAdminV1TenantsTenantIdIntegrationsGet = async (tenantId: string, options?: RequestInit): Promise<listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse> => {
 
-  const res = await fetch(getListConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetUrl(tenantId),
+  const res = await fetch(getListConnectionsAdminV1TenantsTenantIdIntegrationsGetUrl(tenantId),
   {
     ...options,
     method: 'GET'
@@ -58,45 +59,45 @@ export const listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGet = as
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listConnectionsAdminV1TenantsTenantIdIntegrationConnectionsGetResponse
+  const data: listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listConnectionsAdminV1TenantsTenantIdIntegrationsGetResponse
 }
 
 
-export type createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse201 = {
+export type createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse201 = {
   data: IntegrationConnectionResponse
   status: 201
 }
 
-export type createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse422 = {
+export type createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponseSuccess = (createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse201) & {
+export type createConnectionAdminV1TenantsTenantIdIntegrationsPostResponseSuccess = (createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse201) & {
   headers: Headers;
 };
-export type createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponseError = (createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse422) & {
+export type createConnectionAdminV1TenantsTenantIdIntegrationsPostResponseError = (createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse422) & {
   headers: Headers;
 };
 
-export type createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse = (createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponseSuccess | createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponseError)
+export type createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse = (createConnectionAdminV1TenantsTenantIdIntegrationsPostResponseSuccess | createConnectionAdminV1TenantsTenantIdIntegrationsPostResponseError)
 
-export const getCreateConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostUrl = (tenantId: string,) => {
-
-
+export const getCreateConnectionAdminV1TenantsTenantIdIntegrationsPostUrl = (tenantId: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations`
 }
 
 /**
  * @summary Create Connection
  */
-export const createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPost = async (tenantId: string,
-    createIntegrationConnectionRequest: CreateIntegrationConnectionRequest, options?: RequestInit): Promise<createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse> => {
+export const createConnectionAdminV1TenantsTenantIdIntegrationsPost = async (tenantId: string,
+    createIntegrationConnectionRequest: CreateIntegrationConnectionRequest, options?: RequestInit): Promise<createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse> => {
 
-  const res = await fetch(getCreateConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostUrl(tenantId),
+  const res = await fetch(getCreateConnectionAdminV1TenantsTenantIdIntegrationsPostUrl(tenantId),
   {
     ...options,
     method: 'POST',
@@ -108,46 +109,46 @@ export const createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPost = 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createConnectionAdminV1TenantsTenantIdIntegrationConnectionsPostResponse
+  const data: createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createConnectionAdminV1TenantsTenantIdIntegrationsPostResponse
 }
 
 
-export type deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse204 = {
+export type deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse204 = {
   data: void
   status: 204
 }
 
-export type deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse422 = {
+export type deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponseSuccess = (deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse204) & {
+export type deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponseSuccess = (deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse204) & {
   headers: Headers;
 };
-export type deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponseError = (deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse422) & {
+export type deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponseError = (deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse422) & {
   headers: Headers;
 };
 
-export type deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse = (deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponseSuccess | deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponseError)
+export type deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse = (deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponseSuccess | deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponseError)
 
-export const getDeleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
+export const getDeleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteUrl = (tenantId: string,
+    key: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}`
 }
 
 /**
  * @summary Delete Connection
  */
-export const deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDelete = async (tenantId: string,
-    connectionId: string, options?: RequestInit): Promise<deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse> => {
+export const deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDelete = async (tenantId: string,
+    key: string, options?: RequestInit): Promise<deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse> => {
 
-  const res = await fetch(getDeleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteUrl(tenantId,connectionId),
+  const res = await fetch(getDeleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteUrl(tenantId,key),
   {
     ...options,
     method: 'DELETE'
@@ -159,98 +160,252 @@ export const deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnect
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDeleteResponse
+  const data: deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteConnectionAdminV1TenantsTenantIdIntegrationsKeyDeleteResponse
 }
 
 
-export type updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse200 = {
+export type getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse200 = {
   data: IntegrationConnectionResponse
   status: 200
 }
 
-export type updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse422 = {
+export type getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponseSuccess = (updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse200) & {
+export type getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponseSuccess = (getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse200) & {
   headers: Headers;
 };
-export type updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponseError = (updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse422) & {
+export type getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponseError = (getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse422) & {
   headers: Headers;
 };
 
-export type updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse = (updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponseSuccess | updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponseError)
+export type getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse = (getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponseSuccess | getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponseError)
 
-export const getUpdateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
+export const getGetConnectionAdminV1TenantsTenantIdIntegrationsKeyGetUrl = (tenantId: string,
+    key: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}`
 }
 
 /**
- * @summary Update Connection
+ * @summary Get Connection
  */
-export const updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatch = async (tenantId: string,
-    connectionId: string,
-    updateIntegrationConnectionRequest: UpdateIntegrationConnectionRequest, options?: RequestInit): Promise<updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse> => {
+export const getConnectionAdminV1TenantsTenantIdIntegrationsKeyGet = async (tenantId: string,
+    key: string, options?: RequestInit): Promise<getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse> => {
 
-  const res = await fetch(getUpdateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchUrl(tenantId,connectionId),
+  const res = await fetch(getGetConnectionAdminV1TenantsTenantIdIntegrationsKeyGetUrl(tenantId,key),
   {
     ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateIntegrationConnectionRequest)
+    method: 'GET'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdPatchResponse
+  const data: getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getConnectionAdminV1TenantsTenantIdIntegrationsKeyGetResponse
 }
 
 
-export type disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse200 = {
+export type configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse200 = {
   data: IntegrationConnectionResponse
   status: 200
 }
 
-export type disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse422 = {
+export type configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponseSuccess = (disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse200) & {
+export type configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponseSuccess = (configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse200) & {
   headers: Headers;
 };
-export type disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponseError = (disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse422) & {
+export type configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponseError = (configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse422) & {
   headers: Headers;
 };
 
-export type disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse = (disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponseSuccess | disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponseError)
+export type configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse = (configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponseSuccess | configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponseError)
 
-export const getDisableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
+export const getConfigureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutUrl = (tenantId: string,
+    key: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}/disable`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}`
+}
+
+/**
+ * @summary Configure Connection
+ */
+export const configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPut = async (tenantId: string,
+    key: string,
+    configureIntegrationConnectionRequest: ConfigureIntegrationConnectionRequest, options?: RequestInit): Promise<configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse> => {
+
+  const res = await fetch(getConfigureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutUrl(tenantId,key),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(configureIntegrationConnectionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as configureConnectionAdminV1TenantsTenantIdIntegrationsKeyPutResponse
+}
+
+
+export type revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse200 = {
+  data: IntegrationConnectionResponse
+  status: 200
+}
+
+export type revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponseSuccess = (revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse200) & {
+  headers: Headers;
+};
+export type revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponseError = (revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse422) & {
+  headers: Headers;
+};
+
+export type revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse = (revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponseSuccess | revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponseError)
+
+export const getRevokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostUrl = (tenantId: string,
+    key: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}/credentials/revoke`
+}
+
+/**
+ * @summary Revoke Credential
+ */
+export const revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePost = async (tenantId: string,
+    key: string, options?: RequestInit): Promise<revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse> => {
+
+  const res = await fetch(getRevokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostUrl(tenantId,key),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revokeCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRevokePostResponse
+}
+
+
+export type rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse200 = {
+  data: IntegrationConnectionResponse
+  status: 200
+}
+
+export type rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponseSuccess = (rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse200) & {
+  headers: Headers;
+};
+export type rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponseError = (rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse422) & {
+  headers: Headers;
+};
+
+export type rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse = (rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponseSuccess | rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponseError)
+
+export const getRotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostUrl = (tenantId: string,
+    key: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}/credentials/rotate`
+}
+
+/**
+ * @summary Rotate Credential
+ */
+export const rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePost = async (tenantId: string,
+    key: string,
+    integrationCredentialWrite: IntegrationCredentialWrite, options?: RequestInit): Promise<rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse> => {
+
+  const res = await fetch(getRotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostUrl(tenantId,key),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(integrationCredentialWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rotateCredentialAdminV1TenantsTenantIdIntegrationsKeyCredentialsRotatePostResponse
+}
+
+
+export type disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse200 = {
+  data: IntegrationConnectionResponse
+  status: 200
+}
+
+export type disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse422 = {
+  data: HTTPValidationError
+  status: 422
+}
+
+export type disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponseSuccess = (disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse200) & {
+  headers: Headers;
+};
+export type disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponseError = (disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse422) & {
+  headers: Headers;
+};
+
+export type disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse = (disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponseSuccess | disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponseError)
+
+export const getDisableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostUrl = (tenantId: string,
+    key: string,) => {
+
+
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}/disable`
 }
 
 /**
  * @summary Disable Connection
  */
-export const disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePost = async (tenantId: string,
-    connectionId: string, options?: RequestInit): Promise<disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse> => {
+export const disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePost = async (tenantId: string,
+    key: string, options?: RequestInit): Promise<disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse> => {
 
-  const res = await fetch(getDisableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostUrl(tenantId,connectionId),
+  const res = await fetch(getDisableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostUrl(tenantId,key),
   {
     ...options,
     method: 'POST'
@@ -262,46 +417,46 @@ export const disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnec
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as disableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdDisablePostResponse
+  const data: disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableConnectionAdminV1TenantsTenantIdIntegrationsKeyDisablePostResponse
 }
 
 
-export type enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse200 = {
+export type enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse200 = {
   data: IntegrationConnectionResponse
   status: 200
 }
 
-export type enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse422 = {
+export type enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponseSuccess = (enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse200) & {
+export type enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponseSuccess = (enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse200) & {
   headers: Headers;
 };
-export type enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponseError = (enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse422) & {
+export type enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponseError = (enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse422) & {
   headers: Headers;
 };
 
-export type enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse = (enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponseSuccess | enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponseError)
+export type enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse = (enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponseSuccess | enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponseError)
 
-export const getEnableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
+export const getEnableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostUrl = (tenantId: string,
+    key: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}/enable`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}/enable`
 }
 
 /**
  * @summary Enable Connection
  */
-export const enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePost = async (tenantId: string,
-    connectionId: string, options?: RequestInit): Promise<enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse> => {
+export const enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePost = async (tenantId: string,
+    key: string, options?: RequestInit): Promise<enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse> => {
 
-  const res = await fetch(getEnableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostUrl(tenantId,connectionId),
+  const res = await fetch(getEnableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostUrl(tenantId,key),
   {
     ...options,
     method: 'POST'
@@ -313,201 +468,98 @@ export const enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnect
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as enableConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdEnablePostResponse
+  const data: enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableConnectionAdminV1TenantsTenantIdIntegrationsKeyEnablePostResponse
 }
 
 
-export type revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse200 = {
-  data: IntegrationConnectionResponse
+export type planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse200 = {
+  data: IntegrationPlan
   status: 200
 }
 
-export type revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse422 = {
+export type planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponseSuccess = (revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse200) & {
+export type planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponseSuccess = (planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse200) & {
   headers: Headers;
 };
-export type revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponseError = (revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse422) & {
+export type planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponseError = (planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse422) & {
   headers: Headers;
 };
 
-export type revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse = (revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponseSuccess | revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponseError)
+export type planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse = (planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponseSuccess | planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponseError)
 
-export const getRevokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
+export const getPlanConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostUrl = (tenantId: string,
+    key: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}/secrets`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}/plan`
 }
 
 /**
- * @summary Revoke Secret
+ * @summary Plan Connection
  */
-export const revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDelete = async (tenantId: string,
-    connectionId: string, options?: RequestInit): Promise<revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse> => {
+export const planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPost = async (tenantId: string,
+    key: string,
+    configureIntegrationConnectionRequest: ConfigureIntegrationConnectionRequest, options?: RequestInit): Promise<planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse> => {
 
-  const res = await fetch(getRevokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteUrl(tenantId,connectionId),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revokeSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsDeleteResponse
-}
-
-
-export type setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse200 = {
-  data: IntegrationConnectionResponse
-  status: 200
-}
-
-export type setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponseSuccess = (setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse200) & {
-  headers: Headers;
-};
-export type setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponseError = (setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse422) & {
-  headers: Headers;
-};
-
-export type setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse = (setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponseSuccess | setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponseError)
-
-export const getSetSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
-
-
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}/secrets`
-}
-
-/**
- * @summary Set Secret
- */
-export const setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPost = async (tenantId: string,
-    connectionId: string,
-    setIntegrationSecretRequest: SetIntegrationSecretRequest, options?: RequestInit): Promise<setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse> => {
-
-  const res = await fetch(getSetSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostUrl(tenantId,connectionId),
+  const res = await fetch(getPlanConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostUrl(tenantId,key),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(setIntegrationSecretRequest)
+    body: JSON.stringify(configureIntegrationConnectionRequest)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as setSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsPostResponse
+  const data: planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as planConnectionAdminV1TenantsTenantIdIntegrationsKeyPlanPostResponse
 }
 
 
-export type rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse200 = {
-  data: IntegrationConnectionResponse
+export type validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse200 = {
+  data: IntegrationValidateResponse
   status: 200
 }
 
-export type rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse422 = {
+export type validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse422 = {
   data: HTTPValidationError
   status: 422
 }
 
-export type rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponseSuccess = (rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse200) & {
+export type validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponseSuccess = (validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse200) & {
   headers: Headers;
 };
-export type rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponseError = (rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse422) & {
+export type validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponseError = (validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse422) & {
   headers: Headers;
 };
 
-export type rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse = (rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponseSuccess | rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponseError)
+export type validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse = (validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponseSuccess | validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponseError)
 
-export const getRotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
+export const getValidateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostUrl = (tenantId: string,
+    key: string,) => {
 
 
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}/secrets/rotate`
+
+
+  return `/admin/v1/tenants/${tenantId}/integrations/${key}/validate`
 }
 
 /**
- * @summary Rotate Secret
+ * @summary Validate Connection
  */
-export const rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePost = async (tenantId: string,
-    connectionId: string,
-    setIntegrationSecretRequest: SetIntegrationSecretRequest, options?: RequestInit): Promise<rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse> => {
+export const validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePost = async (tenantId: string,
+    key: string, options?: RequestInit): Promise<validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse> => {
 
-  const res = await fetch(getRotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostUrl(tenantId,connectionId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(setIntegrationSecretRequest)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as rotateSecretAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdSecretsRotatePostResponse
-}
-
-
-export type testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse200 = {
-  data: IntegrationTestResponse
-  status: 200
-}
-
-export type testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponseSuccess = (testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse200) & {
-  headers: Headers;
-};
-export type testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponseError = (testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse422) & {
-  headers: Headers;
-};
-
-export type testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse = (testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponseSuccess | testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponseError)
-
-export const getTestConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostUrl = (tenantId: string,
-    connectionId: string,) => {
-
-
-
-
-  return `/admin/v1/tenants/${tenantId}/integration-connections/${connectionId}/test`
-}
-
-/**
- * @summary Test Connection
- */
-export const testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPost = async (tenantId: string,
-    connectionId: string, options?: RequestInit): Promise<testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse> => {
-
-  const res = await fetch(getTestConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostUrl(tenantId,connectionId),
+  const res = await fetch(getValidateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostUrl(tenantId,key),
   {
     ...options,
     method: 'POST'
@@ -519,8 +571,8 @@ export const testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectio
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as testConnectionAdminV1TenantsTenantIdIntegrationConnectionsConnectionIdTestPostResponse
+  const data: validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as validateConnectionAdminV1TenantsTenantIdIntegrationsKeyValidatePostResponse
 }
 
 

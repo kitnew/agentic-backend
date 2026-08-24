@@ -1,6 +1,324 @@
 {
   "components": {
     "schemas": {
+      "AgentIdentityConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "display_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "greeting": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Greeting",
+            "type": "string"
+          },
+          "profile": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Profile",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name",
+          "greeting",
+          "profile"
+        ],
+        "title": "AgentIdentityConfig",
+        "type": "object"
+      },
+      "AuthoringChange": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "operation": {
+            "enum": [
+              "add",
+              "remove",
+              "replace"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "operation"
+        ],
+        "title": "AuthoringChange",
+        "type": "object"
+      },
+      "AuthoringDraftMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "updated_at"
+        ],
+        "title": "AuthoringDraftMetadata",
+        "type": "object"
+      },
+      "AuthoringImpact": {
+        "additionalProperties": false,
+        "properties": {
+          "affected_components": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Affected Components",
+            "type": "array"
+          },
+          "new_release_required": {
+            "default": false,
+            "title": "New Release Required",
+            "type": "boolean"
+          },
+          "runtime_bundle_changes": {
+            "default": false,
+            "title": "Runtime Bundle Changes",
+            "type": "boolean"
+          },
+          "telephony_reconciliation_required": {
+            "default": false,
+            "title": "Telephony Reconciliation Required",
+            "type": "boolean"
+          }
+        },
+        "title": "AuthoringImpact",
+        "type": "object"
+      },
+      "AuthoringIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "default": "",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "AuthoringIssue",
+        "type": "object"
+      },
+      "AuthoringPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringIssue"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "impact": {
+            "$ref": "#/components/schemas/AuthoringImpact"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/AuthoringIssue"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "valid"
+        ],
+        "title": "AuthoringPlan",
+        "type": "object"
+      },
+      "AuthoringPublishedMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "revision_id": {
+            "format": "uuid",
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "revision_number": {
+            "title": "Revision Number",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision_id",
+          "revision_number",
+          "published_at"
+        ],
+        "title": "AuthoringPublishedMetadata",
+        "type": "object"
+      },
+      "AuthoringState": {
+        "additionalProperties": false,
+        "properties": {
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthoringDraftMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AuthoringPublishedMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published_value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Published Value"
+          },
+          "source": {
+            "enum": [
+              "draft",
+              "published",
+              "empty"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "AuthoringState",
+        "type": "object"
+      },
+      "BusinessConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "BusinessConfig",
+        "type": "object"
+      },
       "CallChannel": {
         "enum": [
           "sip",
@@ -391,6 +709,102 @@
         "title": "CallSessionStatus",
         "type": "string"
       },
+      "CapabilityDiscoveryResponse": {
+        "properties": {
+          "domain_fields": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogDescriptor"
+            },
+            "title": "Domain Fields",
+            "type": "array"
+          },
+          "mapping_context": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogDescriptor"
+            },
+            "title": "Mapping Context",
+            "type": "array"
+          },
+          "semantics": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilitySemanticDescriptor"
+            },
+            "title": "Semantics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "semantics",
+          "domain_fields",
+          "mapping_context"
+        ],
+        "title": "CapabilityDiscoveryResponse",
+        "type": "object"
+      },
+      "CapabilitySemanticDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "tool_name": {
+            "title": "Tool Name",
+            "type": "string"
+          },
+          "version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "key",
+          "version",
+          "description",
+          "kind",
+          "tool_name"
+        ],
+        "title": "CapabilitySemanticDescriptor",
+        "type": "object"
+      },
+      "CatalogDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "type",
+          "description",
+          "category"
+        ],
+        "title": "CatalogDescriptor",
+        "type": "object"
+      },
       "ComponentDraftExpectation": {
         "additionalProperties": false,
         "properties": {
@@ -615,6 +1029,91 @@
         "title": "ComponentStateResponse",
         "type": "object"
       },
+      "ConfigureIntegrationConnectionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "$ref": "#/components/schemas/HttpConnectionConfiguration"
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IntegrationCredentialWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "configuration"
+        ],
+        "title": "ConfigureIntegrationConnectionRequest",
+        "type": "object"
+      },
+      "ContactConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Address"
+          },
+          "emails": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Emails",
+            "type": "array"
+          },
+          "phones": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Phones",
+            "type": "array"
+          },
+          "website": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Website"
+          }
+        },
+        "title": "ContactConfig",
+        "type": "object"
+      },
+      "ConversationConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "$ref": "#/components/schemas/ConversationScope"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "ConversationConfig",
+        "type": "object"
+      },
       "ConversationMessageResponse": {
         "additionalProperties": false,
         "properties": {
@@ -743,26 +1242,33 @@
         "title": "ConversationResponse",
         "type": "object"
       },
+      "ConversationScope": {
+        "enum": [
+          "property_only"
+        ],
+        "title": "ConversationScope",
+        "type": "string"
+      },
       "CreateIntegrationConnectionRequest": {
         "additionalProperties": false,
         "properties": {
-          "config": {
-            "additionalProperties": true,
-            "title": "Config",
-            "type": "object"
-          },
           "key": {
             "pattern": "^[a-z][a-z0-9_-]{0,63}$",
             "title": "Key",
             "type": "string"
           },
-          "provider": {
-            "$ref": "#/components/schemas/IntegrationProvider"
+          "kind": {
+            "enum": [
+              "http",
+              "google_sheets"
+            ],
+            "title": "Kind",
+            "type": "string"
           }
         },
         "required": [
           "key",
-          "provider"
+          "kind"
         ],
         "title": "CreateIntegrationConnectionRequest",
         "type": "object"
@@ -870,6 +1376,22 @@
         "title": "DraftResponse",
         "type": "object"
       },
+      "ExpressionNode": {
+        "additionalProperties": false,
+        "properties": {
+          "$expr": {
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "$Expr",
+            "type": "string"
+          }
+        },
+        "required": [
+          "$expr"
+        ],
+        "title": "ExpressionNode",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {}
@@ -877,11 +1399,310 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HandoffConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "destinations": {
+            "maxProperties": 20,
+            "patternProperties": {
+              "^[a-z][a-z0-9_]{0,63}$": {
+                "$ref": "#/components/schemas/HandoffDestination"
+              }
+            },
+            "title": "Destinations",
+            "type": "object"
+          }
+        },
+        "title": "HandoffConfig",
+        "type": "object"
+      },
+      "HandoffDestination": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "phone_number": {
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "title": "Phone Number",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "phone_number"
+        ],
+        "title": "HandoffDestination",
+        "type": "object"
+      },
+      "HttpApiKeyHeaderAuthentication": {
+        "additionalProperties": false,
+        "properties": {
+          "header_name": {
+            "pattern": "^[A-Za-z][A-Za-z0-9-]{0,63}$",
+            "title": "Header Name",
+            "type": "string"
+          },
+          "type": {
+            "const": "api_key_header",
+            "default": "api_key_header",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "header_name"
+        ],
+        "title": "HttpApiKeyHeaderAuthentication",
+        "type": "object"
+      },
+      "HttpAuthenticationNone": {
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "const": "none",
+            "default": "none",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "HttpAuthenticationNone",
+        "type": "object"
+      },
+      "HttpConnectionConfiguration": {
+        "additionalProperties": false,
+        "properties": {
+          "authentication": {
+            "discriminator": {
+              "mapping": {
+                "api_key_header": "#/components/schemas/HttpApiKeyHeaderAuthentication",
+                "none": "#/components/schemas/HttpAuthenticationNone"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/HttpAuthenticationNone"
+              },
+              {
+                "$ref": "#/components/schemas/HttpApiKeyHeaderAuthentication"
+              }
+            ],
+            "title": "Authentication"
+          },
+          "endpoint": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "maxProperties": 50,
+            "title": "Headers",
+            "type": "object"
+          },
+          "security": {
+            "$ref": "#/components/schemas/HttpConnectionSecurity"
+          }
+        },
+        "required": [
+          "endpoint",
+          "authentication"
+        ],
+        "title": "HttpConnectionConfiguration",
+        "type": "object"
+      },
+      "HttpConnectionSecurity": {
+        "additionalProperties": false,
+        "properties": {
+          "additional_allowed_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Additional Allowed Hosts",
+            "type": "array"
+          }
+        },
+        "title": "HttpConnectionSecurity",
+        "type": "object"
+      },
+      "HttpOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "connection": {
+            "title": "Connection",
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Headers",
+            "type": "object"
+          },
+          "method": {
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ExpressionNode"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/MappingTemplate"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Query"
+          },
+          "request": {
+            "$ref": "#/components/schemas/HttpRequestSpec"
+          },
+          "response": {
+            "$ref": "#/components/schemas/HttpResponseSpec"
+          },
+          "success_statuses": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Success Statuses"
+          },
+          "timeout_seconds": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 60.0,
+            "title": "Timeout Seconds",
+            "type": "number"
+          },
+          "type": {
+            "const": "http",
+            "default": "http",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "method",
+          "timeout_seconds"
+        ],
+        "title": "HttpOperation",
+        "type": "object"
+      },
+      "HttpRequestSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "codec": {
+            "enum": [
+              "none",
+              "json",
+              "text"
+            ],
+            "title": "Codec",
+            "type": "string"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "pattern": "^[^\\s/]+/[^\\s]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MappingTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "codec"
+        ],
+        "title": "HttpRequestSpec",
+        "type": "object"
+      },
+      "HttpResponseSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "codec": {
+            "enum": [
+              "none",
+              "json",
+              "text"
+            ],
+            "title": "Codec",
+            "type": "string"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MappingTemplate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "codec"
+        ],
+        "title": "HttpResponseSpec",
+        "type": "object"
+      },
       "IntegrationConnectionResponse": {
         "properties": {
-          "config": {
+          "configuration": {
             "additionalProperties": true,
-            "title": "Config",
+            "title": "Configuration",
             "type": "object"
           },
           "created_at": {
@@ -900,6 +1721,17 @@
             ],
             "title": "Credential Fingerprint"
           },
+          "credential_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Status"
+          },
           "credential_version": {
             "anyOf": [
               {
@@ -911,6 +1743,10 @@
             ],
             "title": "Credential Version"
           },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -920,15 +1756,15 @@
             "title": "Key",
             "type": "string"
           },
-          "provider": {
-            "$ref": "#/components/schemas/IntegrationProvider"
+          "kind": {
+            "$ref": "#/components/schemas/IntegrationKind"
+          },
+          "readiness": {
+            "$ref": "#/components/schemas/IntegrationReadiness"
           },
           "revision": {
             "title": "Revision",
             "type": "integer"
-          },
-          "status": {
-            "$ref": "#/components/schemas/IntegrationConnectionStatus"
           },
           "tenant_id": {
             "format": "uuid",
@@ -945,55 +1781,237 @@
           "id",
           "tenant_id",
           "key",
-          "provider",
-          "config",
-          "status",
+          "kind",
+          "configuration",
+          "enabled",
           "revision",
+          "readiness",
           "created_at",
           "updated_at"
         ],
         "title": "IntegrationConnectionResponse",
         "type": "object"
       },
-      "IntegrationConnectionStatus": {
-        "enum": [
-          "active",
-          "disabled",
-          "invalid"
-        ],
-        "title": "IntegrationConnectionStatus",
-        "type": "string"
-      },
-      "IntegrationProvider": {
-        "enum": [
-          "google_sheets",
-          "managed_webhook"
-        ],
-        "title": "IntegrationProvider",
-        "type": "string"
-      },
-      "IntegrationTestResponse": {
+      "IntegrationCredentialWrite": {
+        "additionalProperties": false,
         "properties": {
-          "credential_version": {
-            "title": "Credential Version",
-            "type": "integer"
-          },
-          "integration_id": {
-            "format": "uuid",
-            "title": "Integration Id",
-            "type": "string"
-          },
-          "status": {
-            "title": "Status",
+          "api_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Api Key",
             "type": "string"
           }
         },
         "required": [
-          "integration_id",
-          "status",
-          "credential_version"
+          "api_key"
         ],
-        "title": "IntegrationTestResponse",
+        "title": "IntegrationCredentialWrite",
+        "type": "object"
+      },
+      "IntegrationIssue": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "IntegrationIssue",
+        "type": "object"
+      },
+      "IntegrationKind": {
+        "enum": [
+          "google_sheets",
+          "http"
+        ],
+        "title": "IntegrationKind",
+        "type": "string"
+      },
+      "IntegrationPlan": {
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationPlanChange"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "credential": {
+            "enum": [
+              "rotate",
+              "unchanged"
+            ],
+            "title": "Credential",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "live_apply": {
+            "const": true,
+            "default": true,
+            "title": "Live Apply",
+            "type": "boolean"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          },
+          "would_be_ready": {
+            "title": "Would Be Ready",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "credential",
+          "would_be_ready"
+        ],
+        "title": "IntegrationPlan",
+        "type": "object"
+      },
+      "IntegrationPlanChange": {
+        "properties": {
+          "after": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "operation": {
+            "enum": [
+              "add",
+              "remove",
+              "replace"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "operation"
+        ],
+        "title": "IntegrationPlanChange",
+        "type": "object"
+      },
+      "IntegrationReadiness": {
+        "properties": {
+          "configuration": {
+            "enum": [
+              "valid",
+              "incomplete",
+              "invalid"
+            ],
+            "title": "Configuration",
+            "type": "string"
+          },
+          "credentials": {
+            "enum": [
+              "not_required",
+              "missing",
+              "configured",
+              "revoked"
+            ],
+            "title": "Credentials",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "usable": {
+            "title": "Usable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configuration",
+          "credentials",
+          "ready",
+          "usable"
+        ],
+        "title": "IntegrationReadiness",
+        "type": "object"
+      },
+      "IntegrationValidateResponse": {
+        "properties": {
+          "configuration": {
+            "enum": [
+              "valid",
+              "incomplete",
+              "invalid"
+            ],
+            "title": "Configuration",
+            "type": "string"
+          },
+          "credentials": {
+            "enum": [
+              "not_required",
+              "missing",
+              "configured",
+              "revoked"
+            ],
+            "title": "Credentials",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrationIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "usable": {
+            "title": "Usable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configuration",
+          "credentials",
+          "ready",
+          "usable"
+        ],
+        "title": "IntegrationValidateResponse",
         "type": "object"
       },
       "LLMRuntimeSettings": {
@@ -1080,6 +2098,65 @@
         "title": "LocalVADRuntimeSettings",
         "type": "object"
       },
+      "LocalizationConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "default_locale": {
+            "pattern": "^[a-z]{2,3}(?:-[A-Z]{2})?$",
+            "title": "Default Locale",
+            "type": "string"
+          },
+          "timezone": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "default_locale",
+          "timezone"
+        ],
+        "title": "LocalizationConfig",
+        "type": "object"
+      },
+      "MappingScalar": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "MappingTemplate": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MappingScalar"
+          },
+          {
+            "$ref": "#/components/schemas/ExpressionNode"
+          },
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "items": {},
+            "type": "array"
+          }
+        ]
+      },
       "PlatformDraftState": {
         "properties": {
           "id": {
@@ -1152,6 +2229,7 @@
       "PlatformReleaseResponse": {
         "properties": {
           "id": {
+            "format": "uuid",
             "title": "Id",
             "type": "string"
           },
@@ -1160,10 +2238,12 @@
             "type": "integer"
           },
           "runtime_revision_id": {
+            "format": "uuid",
             "title": "Runtime Revision Id",
             "type": "string"
           },
           "system_prompt_revision_id": {
+            "format": "uuid",
             "title": "System Prompt Revision Id",
             "type": "string"
           }
@@ -1361,6 +2441,92 @@
         "title": "PlatformTelephonyResponse",
         "type": "object"
       },
+      "PostCallActionInput": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "enum": [
+              "transcript",
+              "call_recording",
+              "call_summary"
+            ],
+            "title": "Artifact",
+            "type": "string"
+          },
+          "representation": {
+            "enum": [
+              "raw_json",
+              "plain_text",
+              "original",
+              "base64_text"
+            ],
+            "title": "Representation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact",
+          "representation"
+        ],
+        "title": "PostCallActionInput",
+        "type": "object"
+      },
+      "PostCallArtifactDescriptor": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact": {
+            "enum": [
+              "transcript",
+              "call_recording",
+              "call_summary"
+            ],
+            "title": "Artifact",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "representations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Representations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifact",
+          "representations",
+          "description"
+        ],
+        "title": "PostCallArtifactDescriptor",
+        "type": "object"
+      },
+      "PostCallDiscoveryResponse": {
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/PostCallArtifactDescriptor"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "mapping_context": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogDescriptor"
+            },
+            "title": "Mapping Context",
+            "type": "array"
+          }
+        },
+        "required": [
+          "artifacts",
+          "mapping_context"
+        ],
+        "title": "PostCallDiscoveryResponse",
+        "type": "object"
+      },
       "PromptDraftWrite": {
         "additionalProperties": false,
         "properties": {
@@ -1396,7 +2562,7 @@
             "items": {
               "$ref": "#/components/schemas/ComponentDraftExpectation"
             },
-            "maxItems": 6,
+            "maxItems": 7,
             "minItems": 1,
             "title": "Drafts",
             "type": "array"
@@ -1499,21 +2665,6 @@
         "title": "ServerVADRuntimeSettings",
         "type": "object"
       },
-      "SetIntegrationSecretRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "secret": {
-            "additionalProperties": true,
-            "title": "Secret",
-            "type": "object"
-          }
-        },
-        "required": [
-          "secret"
-        ],
-        "title": "SetIntegrationSecretRequest",
-        "type": "object"
-      },
       "TTSRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
@@ -1541,6 +2692,322 @@
           "voice_id"
         ],
         "title": "TTSRuntimeSettings",
+        "type": "object"
+      },
+      "TelephonyClaimStatus": {
+        "properties": {
+          "phone_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "TelephonyClaimStatus",
+        "type": "object"
+      },
+      "TelephonyDidState": {
+        "properties": {
+          "phone_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          }
+        },
+        "title": "TelephonyDidState",
+        "type": "object"
+      },
+      "TelephonyProvisioningStatusResponse": {
+        "properties": {
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_reconciled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reconciled At"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "TelephonyProvisioningStatusResponse",
+        "type": "object"
+      },
+      "TenantCapabilitiesAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "$ref": "#/components/schemas/TenantCapabilityAuthoring"
+                }
+              ]
+            },
+            "title": "Capabilities",
+            "type": "object"
+          }
+        },
+        "title": "TenantCapabilitiesAuthoring",
+        "type": "object"
+      },
+      "TenantCapabilityAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_input_schema": {
+            "additionalProperties": true,
+            "title": "Agent Input Schema",
+            "type": "object"
+          },
+          "announcement": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ],
+            "minLength": 1,
+            "title": "Announcement"
+          },
+          "bindings": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Bindings",
+            "type": "object"
+          },
+          "business_policy": {
+            "additionalProperties": true,
+            "title": "Business Policy",
+            "type": "object"
+          },
+          "description": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "execution": {
+            "$ref": "#/components/schemas/HttpOperation"
+          },
+          "result_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Schema"
+          }
+        },
+        "required": [
+          "description",
+          "announcement",
+          "agent_input_schema",
+          "execution"
+        ],
+        "title": "TenantCapabilityAuthoring",
+        "type": "object"
+      },
+      "TenantConfigAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "agent": {
+            "$ref": "#/components/schemas/AgentIdentityConfig"
+          },
+          "business": {
+            "$ref": "#/components/schemas/BusinessConfig"
+          },
+          "contact": {
+            "$ref": "#/components/schemas/ContactConfig"
+          },
+          "conversation": {
+            "$ref": "#/components/schemas/ConversationConfig"
+          },
+          "handoff": {
+            "$ref": "#/components/schemas/HandoffConfig"
+          },
+          "localization": {
+            "$ref": "#/components/schemas/LocalizationConfig"
+          }
+        },
+        "required": [
+          "business",
+          "localization",
+          "agent",
+          "conversation"
+        ],
+        "title": "TenantConfigAuthoring",
+        "type": "object"
+      },
+      "TenantKnowledgeAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "default": "",
+            "maxLength": 1000000,
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "title": "TenantKnowledgeAuthoring",
+        "type": "object"
+      },
+      "TenantLLMRuntimeOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "xhigh",
+                  "max"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoning Effort"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temperature"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "title": "TenantLLMRuntimeOverride",
+        "type": "object"
+      },
+      "TenantPostCallActionAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+            "title": "Action Id",
+            "type": "string"
+          },
+          "execution": {
+            "$ref": "#/components/schemas/HttpOperation"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PostCallActionInput"
+            },
+            "maxProperties": 10,
+            "title": "Inputs",
+            "type": "object"
+          }
+        },
+        "required": [
+          "action_id",
+          "execution"
+        ],
+        "title": "TenantPostCallActionAuthoring",
+        "type": "object"
+      },
+      "TenantPostCallAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/TenantPostCallActionAuthoring"
+            },
+            "maxItems": 20,
+            "title": "Actions",
+            "type": "array"
+          }
+        },
+        "title": "TenantPostCallAuthoring",
+        "type": "object"
+      },
+      "TenantPromptAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "default": "",
+            "maxLength": 1000000,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "title": "TenantPromptAuthoring",
         "type": "object"
       },
       "TenantReleaseResponse": {
@@ -1663,6 +3130,33 @@
         "title": "TenantResponse",
         "type": "object"
       },
+      "TenantRuntimeAuthoring": {
+        "additionalProperties": false,
+        "properties": {
+          "llm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantLLMRuntimeOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantTTSRuntimeOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TenantRuntimeAuthoring",
+        "type": "object"
+      },
       "TenantStatus": {
         "enum": [
           "active",
@@ -1671,6 +3165,90 @@
         ],
         "title": "TenantStatus",
         "type": "string"
+      },
+      "TenantTTSRuntimeOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "voice_id": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Voice Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "voice_id"
+        ],
+        "title": "TenantTTSRuntimeOverride",
+        "type": "object"
+      },
+      "TenantTelephonyConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "phone_number": {
+            "anyOf": [
+              {
+                "pattern": "^\\+[1-9]\\d{1,14}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone Number"
+          }
+        },
+        "title": "TenantTelephonyConfig",
+        "type": "object"
+      },
+      "TenantTelephonyStatus": {
+        "properties": {
+          "claim": {
+            "$ref": "#/components/schemas/TelephonyClaimStatus"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TelephonyDidState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provisioning": {
+            "$ref": "#/components/schemas/TelephonyProvisioningStatusResponse"
+          },
+          "publication": {
+            "title": "Publication",
+            "type": "string"
+          },
+          "published": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TelephonyDidState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "draft",
+          "published",
+          "publication",
+          "claim",
+          "provisioning"
+        ],
+        "title": "TenantTelephonyStatus",
+        "type": "object"
       },
       "TurnRuntimeSettings": {
         "additionalProperties": false,
@@ -1699,35 +3277,6 @@
           "max_endpointing_delay_seconds"
         ],
         "title": "TurnRuntimeSettings",
-        "type": "object"
-      },
-      "UpdateIntegrationConnectionRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "config": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Config"
-          },
-          "status": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/IntegrationConnectionStatus"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "title": "UpdateIntegrationConnectionRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -1784,6 +3333,58 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/admin/v1/authoring/discovery/capabilities": {
+      "get": {
+        "operationId": "capabilities_admin_v1_authoring_discovery_capabilities_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Capabilities",
+        "tags": [
+          "admin:authoring-discovery"
+        ]
+      }
+    },
+    "/admin/v1/authoring/discovery/post-call": {
+      "get": {
+        "operationId": "post_call_admin_v1_authoring_discovery_post_call_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostCallDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Post Call",
+        "tags": [
+          "admin:authoring-discovery"
+        ]
+      }
+    },
     "/admin/v1/calls/{call_id}": {
       "get": {
         "operationId": "get_admin_call_admin_v1_calls__call_id__get",
@@ -1953,6 +3554,63 @@
         ]
       }
     },
+    "/admin/v1/platform/components/profiles/{profile}/plan": {
+      "post": {
+        "operationId": "plan_profile_prompt_admin_v1_platform_components_profiles__profile__plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "profile",
+            "required": true,
+            "schema": {
+              "title": "Profile",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptDraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Profile Prompt",
+        "tags": [
+          "admin:platform-components"
+        ]
+      }
+    },
     "/admin/v1/platform/components/publish": {
       "post": {
         "operationId": "publish_admin_v1_platform_components_publish_post",
@@ -2063,6 +3721,52 @@
         ]
       }
     },
+    "/admin/v1/platform/components/runtime/plan": {
+      "post": {
+        "operationId": "plan_runtime_admin_v1_platform_components_runtime_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeDraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Runtime",
+        "tags": [
+          "admin:platform-components"
+        ]
+      }
+    },
     "/admin/v1/platform/components/state": {
       "get": {
         "operationId": "state_admin_v1_platform_components_state_get",
@@ -2148,6 +3852,52 @@
           }
         ],
         "summary": "Save System Prompt",
+        "tags": [
+          "admin:platform-components"
+        ]
+      }
+    },
+    "/admin/v1/platform/components/system-prompt/plan": {
+      "post": {
+        "operationId": "plan_system_prompt_admin_v1_platform_components_system_prompt_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptDraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan System Prompt",
         "tags": [
           "admin:platform-components"
         ]
@@ -2409,6 +4159,1248 @@
         "summary": "Get Tenant",
         "tags": [
           "admin:tenants"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/capabilities": {
+      "get": {
+        "operationId": "read_capabilities_admin_v1_tenants__tenant_id__authoring_capabilities_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Read Capabilities",
+        "tags": [
+          "admin:authoring"
+        ]
+      },
+      "put": {
+        "operationId": "save_capabilities_admin_v1_tenants__tenant_id__authoring_capabilities_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantCapabilitiesAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Save Capabilities",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/capabilities/plan": {
+      "post": {
+        "operationId": "plan_capabilities_admin_v1_tenants__tenant_id__authoring_capabilities_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantCapabilitiesAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Capabilities",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/capabilities/publish": {
+      "post": {
+        "operationId": "publish_capabilities_admin_v1_tenants__tenant_id__authoring_capabilities_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Publish Capabilities",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/config": {
+      "get": {
+        "operationId": "read_config_admin_v1_tenants__tenant_id__authoring_config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Read Config",
+        "tags": [
+          "admin:authoring"
+        ]
+      },
+      "put": {
+        "operationId": "save_config_admin_v1_tenants__tenant_id__authoring_config_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantConfigAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Save Config",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/config/plan": {
+      "post": {
+        "operationId": "plan_config_admin_v1_tenants__tenant_id__authoring_config_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantConfigAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Config",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/knowledge": {
+      "get": {
+        "operationId": "read_knowledge_admin_v1_tenants__tenant_id__authoring_knowledge_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Read Knowledge",
+        "tags": [
+          "admin:authoring"
+        ]
+      },
+      "put": {
+        "operationId": "save_knowledge_admin_v1_tenants__tenant_id__authoring_knowledge_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantKnowledgeAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Save Knowledge",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/knowledge/plan": {
+      "post": {
+        "operationId": "plan_knowledge_admin_v1_tenants__tenant_id__authoring_knowledge_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantKnowledgeAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Knowledge",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/post-call": {
+      "get": {
+        "operationId": "read_post_call_admin_v1_tenants__tenant_id__authoring_post_call_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Read Post Call",
+        "tags": [
+          "admin:authoring"
+        ]
+      },
+      "put": {
+        "operationId": "save_post_call_admin_v1_tenants__tenant_id__authoring_post_call_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPostCallAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Save Post Call",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/post-call/plan": {
+      "post": {
+        "operationId": "plan_post_call_admin_v1_tenants__tenant_id__authoring_post_call_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPostCallAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Post Call",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/post-call/publish": {
+      "post": {
+        "operationId": "publish_post_call_admin_v1_tenants__tenant_id__authoring_post_call_publish_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ComponentPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantReleaseResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Publish Post Call",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/prompt": {
+      "get": {
+        "operationId": "read_prompt_admin_v1_tenants__tenant_id__authoring_prompt_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Read Prompt",
+        "tags": [
+          "admin:authoring"
+        ]
+      },
+      "put": {
+        "operationId": "save_prompt_admin_v1_tenants__tenant_id__authoring_prompt_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPromptAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Save Prompt",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/prompt/plan": {
+      "post": {
+        "operationId": "plan_prompt_admin_v1_tenants__tenant_id__authoring_prompt_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantPromptAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Prompt",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/runtime": {
+      "get": {
+        "operationId": "read_runtime_admin_v1_tenants__tenant_id__authoring_runtime_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Read Runtime",
+        "tags": [
+          "admin:authoring"
+        ]
+      },
+      "put": {
+        "operationId": "save_runtime_admin_v1_tenants__tenant_id__authoring_runtime_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantRuntimeAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringState"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Save Runtime",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/runtime/plan": {
+      "post": {
+        "operationId": "plan_runtime_admin_v1_tenants__tenant_id__authoring_runtime_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantRuntimeAuthoring"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Runtime",
+        "tags": [
+          "admin:authoring"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/authoring/telephony/plan": {
+      "post": {
+        "operationId": "plan_telephony_admin_v1_tenants__tenant_id__authoring_telephony_plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantTelephonyConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthoringPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Plan Telephony",
+        "tags": [
+          "admin:authoring"
         ]
       }
     },
@@ -2790,9 +5782,9 @@
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/integration-connections": {
+    "/admin/v1/tenants/{tenant_id}/integrations": {
       "get": {
-        "operationId": "list_connections_admin_v1_tenants__tenant_id__integration_connections_get",
+        "operationId": "list_connections_admin_v1_tenants__tenant_id__integrations_get",
         "parameters": [
           {
             "in": "path",
@@ -2813,7 +5805,7 @@
                   "items": {
                     "$ref": "#/components/schemas/IntegrationConnectionResponse"
                   },
-                  "title": "Response List Connections Admin V1 Tenants  Tenant Id  Integration Connections Get",
+                  "title": "Response List Connections Admin V1 Tenants  Tenant Id  Integrations Get",
                   "type": "array"
                 }
               }
@@ -2842,7 +5834,7 @@
         ]
       },
       "post": {
-        "operationId": "create_connection_admin_v1_tenants__tenant_id__integration_connections_post",
+        "operationId": "create_connection_admin_v1_tenants__tenant_id__integrations_post",
         "parameters": [
           {
             "in": "path",
@@ -2898,9 +5890,9 @@
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}": {
+    "/admin/v1/tenants/{tenant_id}/integrations/{key}": {
       "delete": {
-        "operationId": "delete_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__delete",
+        "operationId": "delete_connection_admin_v1_tenants__tenant_id__integrations__key__delete",
         "parameters": [
           {
             "in": "path",
@@ -2914,11 +5906,10 @@
           },
           {
             "in": "path",
-            "name": "connection_id",
+            "name": "key",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "title": "Connection Id",
+              "title": "Key",
               "type": "string"
             }
           }
@@ -2948,8 +5939,8 @@
           "admin:integrations"
         ]
       },
-      "patch": {
-        "operationId": "update_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__patch",
+      "get": {
+        "operationId": "get_connection_admin_v1_tenants__tenant_id__integrations__key__get",
         "parameters": [
           {
             "in": "path",
@@ -2963,12 +5954,82 @@
           },
           {
             "in": "path",
-            "name": "connection_id",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Get Connection",
+        "tags": [
+          "admin:integrations"
+        ]
+      },
+      "put": {
+        "operationId": "configure_connection_admin_v1_tenants__tenant_id__integrations__key__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Connection Id",
+              "title": "Tenant Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-Match"
             }
           }
         ],
@@ -2976,7 +6037,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateIntegrationConnectionRequest"
+                "$ref": "#/components/schemas/ConfigureIntegrationConnectionRequest"
               }
             }
           },
@@ -3009,15 +6070,15 @@
             "AdminToken": []
           }
         ],
-        "summary": "Update Connection",
+        "summary": "Configure Connection",
         "tags": [
           "admin:integrations"
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/disable": {
+    "/admin/v1/tenants/{tenant_id}/integrations/{key}/credentials/revoke": {
       "post": {
-        "operationId": "disable_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__disable_post",
+        "operationId": "revoke_credential_admin_v1_tenants__tenant_id__integrations__key__credentials_revoke_post",
         "parameters": [
           {
             "in": "path",
@@ -3031,11 +6092,134 @@
           },
           {
             "in": "path",
-            "name": "connection_id",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Revoke Credential",
+        "tags": [
+          "admin:integrations"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/integrations/{key}/credentials/rotate": {
+      "post": {
+        "operationId": "rotate_credential_admin_v1_tenants__tenant_id__integrations__key__credentials_rotate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
             "required": true,
             "schema": {
               "format": "uuid",
-              "title": "Connection Id",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntegrationCredentialWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "AdminToken": []
+          }
+        ],
+        "summary": "Rotate Credential",
+        "tags": [
+          "admin:integrations"
+        ]
+      }
+    },
+    "/admin/v1/tenants/{tenant_id}/integrations/{key}/disable": {
+      "post": {
+        "operationId": "disable_connection_admin_v1_tenants__tenant_id__integrations__key__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "key",
+            "required": true,
+            "schema": {
+              "title": "Key",
               "type": "string"
             }
           }
@@ -3073,9 +6257,9 @@
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/enable": {
+    "/admin/v1/tenants/{tenant_id}/integrations/{key}/enable": {
       "post": {
-        "operationId": "enable_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__enable_post",
+        "operationId": "enable_connection_admin_v1_tenants__tenant_id__integrations__key__enable_post",
         "parameters": [
           {
             "in": "path",
@@ -3089,11 +6273,10 @@
           },
           {
             "in": "path",
-            "name": "connection_id",
+            "name": "key",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "title": "Connection Id",
+              "title": "Key",
               "type": "string"
             }
           }
@@ -3131,65 +6314,9 @@
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/secrets": {
-      "delete": {
-        "operationId": "revoke_secret_admin_v1_tenants__tenant_id__integration_connections__connection_id__secrets_delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "tenant_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Tenant Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "connection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Connection Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "AdminToken": []
-          }
-        ],
-        "summary": "Revoke Secret",
-        "tags": [
-          "admin:integrations"
-        ]
-      },
+    "/admin/v1/tenants/{tenant_id}/integrations/{key}/plan": {
       "post": {
-        "operationId": "set_secret_admin_v1_tenants__tenant_id__integration_connections__connection_id__secrets_post",
+        "operationId": "plan_connection_admin_v1_tenants__tenant_id__integrations__key__plan_post",
         "parameters": [
           {
             "in": "path",
@@ -3203,11 +6330,10 @@
           },
           {
             "in": "path",
-            "name": "connection_id",
+            "name": "key",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "title": "Connection Id",
+              "title": "Key",
               "type": "string"
             }
           }
@@ -3216,7 +6342,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetIntegrationSecretRequest"
+                "$ref": "#/components/schemas/ConfigureIntegrationConnectionRequest"
               }
             }
           },
@@ -3227,7 +6353,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                  "$ref": "#/components/schemas/IntegrationPlan"
                 }
               }
             },
@@ -3249,15 +6375,15 @@
             "AdminToken": []
           }
         ],
-        "summary": "Set Secret",
+        "summary": "Plan Connection",
         "tags": [
           "admin:integrations"
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/secrets/rotate": {
+    "/admin/v1/tenants/{tenant_id}/integrations/{key}/validate": {
       "post": {
-        "operationId": "rotate_secret_admin_v1_tenants__tenant_id__integration_connections__connection_id__secrets_rotate_post",
+        "operationId": "validate_connection_admin_v1_tenants__tenant_id__integrations__key__validate_post",
         "parameters": [
           {
             "in": "path",
@@ -3271,31 +6397,20 @@
           },
           {
             "in": "path",
-            "name": "connection_id",
+            "name": "key",
             "required": true,
             "schema": {
-              "format": "uuid",
-              "title": "Connection Id",
+              "title": "Key",
               "type": "string"
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetIntegrationSecretRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntegrationConnectionResponse"
+                  "$ref": "#/components/schemas/IntegrationValidateResponse"
                 }
               }
             },
@@ -3317,15 +6432,15 @@
             "AdminToken": []
           }
         ],
-        "summary": "Rotate Secret",
+        "summary": "Validate Connection",
         "tags": [
           "admin:integrations"
         ]
       }
     },
-    "/admin/v1/tenants/{tenant_id}/integration-connections/{connection_id}/test": {
-      "post": {
-        "operationId": "test_connection_admin_v1_tenants__tenant_id__integration_connections__connection_id__test_post",
+    "/admin/v1/tenants/{tenant_id}/telephony/status": {
+      "get": {
+        "operationId": "tenant_telephony_status_admin_v1_tenants__tenant_id__telephony_status_get",
         "parameters": [
           {
             "in": "path",
@@ -3336,16 +6451,6 @@
               "title": "Tenant Id",
               "type": "string"
             }
-          },
-          {
-            "in": "path",
-            "name": "connection_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Connection Id",
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -3353,7 +6458,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntegrationTestResponse"
+                  "$ref": "#/components/schemas/TenantTelephonyStatus"
                 }
               }
             },
@@ -3375,9 +6480,9 @@
             "AdminToken": []
           }
         ],
-        "summary": "Test Connection",
+        "summary": "Tenant Telephony Status",
         "tags": [
-          "admin:integrations"
+          "admin:tenants"
         ]
       }
     },
