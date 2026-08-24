@@ -16,6 +16,13 @@ from backend_core.modules.calls.models import (
 )
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.calls.service import CallSessionService
+from backend_core.modules.conversations.models import Conversation
+from backend_core.modules.conversations.repository import ConversationRepository
+from backend_core.modules.integrations.models import (
+    IntegrationConnection,
+    IntegrationKind,
+)
+from backend_core.modules.integrations.repository import IntegrationConnectionRepository
 from backend_core.modules.tenants.models import Tenant
 from backend_core.modules.tenants.platform_release_repository import (
     PlatformReleaseRepository,
@@ -44,6 +51,17 @@ from backend_core.modules.tenants.release_service import (
 from backend_core.modules.tenants.repository import TenantRepository
 from backend_core.platform.database import Database
 from backend_core.runtime.bundle_store import RuntimeBundleStore
+from backend_core.runtime.capabilities.models import OutboxMessage
+from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
+from backend_core.runtime.capabilities.service import CapabilityInvocationService
+from contracts import (
+    CapabilityInvocationRequest,
+    HttpRequestSpec,
+    HttpResponseSpec,
+    RuntimeCapabilityBinding,
+    RuntimeCapabilityPolicy,
+    RuntimeHttpExecution,
+)
 from contracts.runtime_bundle import (
     RuntimeBundlePayload,
     RuntimeBundleProvenance,
@@ -195,7 +213,9 @@ async def test_platform_release_pins_exact_runtime_and_profile_prompt(
 
 
 def _bundle_factory(
-    tenant_id: UUID, telephony: RuntimeTelephony | None = None
+    tenant_id: UUID,
+    telephony: RuntimeTelephony | None = None,
+    payload: RuntimeBundlePayload | None = None,
 ):
     platform_runtime_revision_id = uuid4()
     system_prompt_revision_id = uuid4()
@@ -204,13 +224,14 @@ def _bundle_factory(
     def build(components: ReleaseComponents):
         return compile_runtime_bundle(
             tenant_id=tenant_id,
-            payload=_runtime_payload(telephony),
+            payload=payload or _runtime_payload(telephony),
             provenance=RuntimeBundleProvenance(
                 runtime_revision_id=components.runtime.id,
                 agent_revision_id=components.agent.id,
                 prompt_revision_id=components.prompt.id,
                 knowledge_revision_id=components.knowledge.id,
                 capabilities_revision_id=components.capabilities.id,
+                post_call_revision_id=components.post_call.id,
                 telephony_revision_id=components.telephony.id,
                 platform_runtime_revision_id=platform_runtime_revision_id,
                 system_prompt_revision_id=system_prompt_revision_id,
@@ -238,11 +259,13 @@ def _initial_payloads() -> dict[TenantComponent, dict[str, object]]:
                 "profile": "hotel_assistant",
             },
             "conversation": {"scope": "property_only"},
+            "handoff": {"destinations": {}},
         },
         TenantComponent.PROMPT: {"text": ""},
         TenantComponent.KNOWLEDGE: {},
-        TenantComponent.CAPABILITIES: {"capabilities": {}, "post_call_actions": []},
-        TenantComponent.TELEPHONY: {"phone_number": None, "handoff": {}},
+        TenantComponent.CAPABILITIES: {"capabilities": {}},
+        TenantComponent.POST_CALL: {"actions": []},
+        TenantComponent.TELEPHONY: {"phone_number": None},
     }
 
 
@@ -267,7 +290,6 @@ async def _publish_ready_tenant(
         payloads = _initial_payloads()
         payloads[TenantComponent.TELEPHONY] = {
             "phone_number": phone_number,
-            "handoff": {},
         }
         expectations = []
         for component, payload in payloads.items():
@@ -286,6 +308,134 @@ async def _publish_ready_tenant(
         state.applied_revision_id = state.desired_revision_id
         state.status = "ready"
         return tenant_id, release.id, release.runtime_bundle_id
+
+
+@pytest.mark.asyncio
+async def test_capability_invocation_preserves_pinned_runtime_bundle_identity(
+    migrated_database_url: str,
+) -> None:
+    database = Database(migrated_database_url)
+    tenant_id = uuid4()
+    connection_id = uuid4()
+    binding = RuntimeCapabilityBinding(
+        semantic_key="reservation.check_availability",
+        semantic_version=1,
+        tool_name="reservation_check_availability",
+        enabled=True,
+        input_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["check_in", "check_out", "room_type", "room_count"],
+            "properties": {
+                "check_in": {"type": "string"},
+                "check_out": {"type": "string"},
+                "room_type": {"type": "integer"},
+                "room_count": {"type": "integer"},
+            },
+        },
+        bindings={
+            "check_in": "stay.check_in",
+            "check_out": "stay.check_out",
+            "room_type": "allocation.room_type",
+            "room_count": "allocation.room_count",
+        },
+        policy=RuntimeCapabilityPolicy(),
+        execution=RuntimeHttpExecution(
+            connection_id=connection_id,
+            method="POST",
+            request=HttpRequestSpec(codec="none"),
+            response=HttpResponseSpec(codec="none"),
+            timeout_seconds=10,
+        ),
+    )
+    payload = _runtime_payload().model_copy(update={"capability_bindings": [binding]})
+    try:
+        async with database.transaction() as session:
+            session.add(
+                Tenant(
+                    id=tenant_id,
+                    slug=f"capability-bundle-{tenant_id.hex[:8]}",
+                    display_name="Capability Bundle Hotel",
+                    business_type="hotel",
+                )
+            )
+            repository = TenantReleaseRepository(session)
+            expectations = []
+            for component, component_payload in _initial_payloads().items():
+                draft = await repository.save_draft(
+                    component=component,
+                    tenant_id=tenant_id,
+                    payload=component_payload,
+                    expected_version=None,
+                )
+                expectations.append(DraftExpectation(component, draft.id, draft.version))
+            release = await TenantReleaseUseCases(repository).publish(
+                tenant_id,
+                expectations,
+                _bundle_factory(tenant_id, payload=payload),
+                publish_all=True,
+            )
+            session.add(
+                IntegrationConnection(
+                    id=connection_id,
+                    tenant_id=tenant_id,
+                    key="check-availability",
+                    kind=IntegrationKind.HTTP,
+                    configuration={},
+                    enabled=True,
+                )
+            )
+            call = CallSession(
+                tenant_id=tenant_id,
+                tenant_release_id=release.id,
+                runtime_bundle_id=release.runtime_bundle_id,
+                channel=CallChannel.WEB,
+                direction=CallDirection.INBOUND,
+                provider="test",
+                provider_call_id=f"capability-bundle-{tenant_id.hex}",
+                room_name="capability-bundle-room",
+                status=CallSessionStatus.CONNECTED,
+                started_at=datetime.now(UTC),
+                connected_at=datetime.now(UTC),
+            )
+            session.add(call)
+            await session.flush()
+            session.add(Conversation(tenant_id=tenant_id, call_session_id=call.id))
+
+        async with database.transaction() as session:
+            service = CapabilityInvocationService(
+                CapabilityInvocationRepository(session),
+                CallSessionRepository(session),
+                ConversationRepository(session),
+                IntegrationConnectionRepository(session),
+                RuntimeBundleStore(session),
+            )
+            invocation, created = await service.invoke(
+                call.id,
+                CapabilityInvocationRequest(
+                    tool_call_id="bundle-identity-tool-call",
+                    capability="reservation_check_availability",
+                    agent_input={
+                        "check_in": "2030-08-10",
+                        "check_out": "2030-08-12",
+            "room_type": 1,
+                        "room_count": 1,
+                    },
+                ),
+            )
+            outbox = await session.scalar(
+                select(OutboxMessage).where(
+                    OutboxMessage.capability_invocation_id == invocation.id
+                )
+            )
+
+        assert created
+        assert invocation.runtime_bundle_id == release.runtime_bundle_id
+        assert invocation.tenant_release_id == release.id
+        assert outbox is not None
+        assert outbox.payload["runtime_bundle_id"] == str(release.runtime_bundle_id)
+    finally:
+        await database.close()
 
 
 @pytest.mark.asyncio
@@ -329,7 +479,7 @@ async def test_component_release_publish_rollback_and_telephony_projection(
             telephony_draft = await repository.save_draft(
                 component=TenantComponent.TELEPHONY,
                 tenant_id=tenant_id,
-                payload={"phone_number": "+421551234567", "handoff": {}},
+                payload={"phone_number": "+421551234567"},
                 expected_version=None,
             )
             release_two = await TenantReleaseUseCases(repository).publish(
@@ -492,7 +642,7 @@ async def test_telephony_publish_race_fails_closed_or_pins_old_inbound_release(
             draft = await repository.save_draft(
                 component=TenantComponent.TELEPHONY,
                 tenant_id=tenant_id,
-                payload={"phone_number": phone_number, "handoff": {}},
+                payload={"phone_number": phone_number},
                 expected_version=None,
             )
             expectation = DraftExpectation(
@@ -582,7 +732,7 @@ async def test_pinned_handoff_fails_closed_when_telephony_changes(
             expectations = []
             for component, payload in _initial_payloads().items():
                 if component is TenantComponent.TELEPHONY:
-                    payload = {"phone_number": phone_number, "handoff": {}}
+                    payload = {"phone_number": phone_number}
                 draft = await repository.save_draft(
                     component=component,
                     tenant_id=tenant_id,
@@ -646,7 +796,7 @@ async def test_pinned_handoff_fails_closed_when_telephony_changes(
             draft = await repository.save_draft(
                 component=TenantComponent.TELEPHONY,
                 tenant_id=tenant_id,
-                payload={"phone_number": phone_number, "handoff": {}},
+                payload={"phone_number": phone_number},
                 expected_version=None,
             )
             next_release = await TenantReleaseUseCases(repository).publish(

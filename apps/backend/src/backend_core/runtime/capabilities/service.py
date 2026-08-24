@@ -14,14 +14,12 @@ from contracts import (
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
     IntegrationJob,
-    ManagedWebhookPostJsonPlan,
-    ManagedWebhookPostJsonResult,
     RuntimeBundlePayload,
     RuntimeCapabilityBinding,
     WorkerResultReport,
 )
 from opentelemetry.trace import Tracer
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from backend_core.modules.calls.models import CallSessionStatus
 from backend_core.modules.calls.repository import CallSessionRepository
@@ -130,7 +128,11 @@ class CapabilityInvocationService:
             )
         validate_agent_input(runtime_profile.input_schema, request.agent_input)
         canonical = validate_business_input(
-            normalize_input(runtime_profile.input_schema, request.agent_input),
+            normalize_input(
+                runtime_profile.input_schema,
+                request.agent_input,
+                runtime_profile.bindings,
+            ),
             payload.timezone,
             required_fields=semantic.required_fields,
         )
@@ -463,7 +465,7 @@ class CapabilityInvocationService:
                 raise CapabilityValidationError(
                     "result_missing", "Successful worker report has no result"
                 )
-            plan = validate_result_for_plan(invocation.execution_plan, report.result)
+            validate_result_for_plan(invocation.execution_plan, report.result)
             try:
                 outcome = project_execution_outcome(report.result)
             except TechnicalResultProjectionError as error:
@@ -472,14 +474,13 @@ class CapabilityInvocationService:
                 ) from error
             invocation.status = CapabilityInvocationStatus.SUCCEEDED
             invocation.technical_result = report.result.model_dump(mode="json")
+            projected_result = semantic_result(
+                invocation.semantic_key, invocation.semantic_version, outcome
+            )
             invocation.semantic_result = (
-                report.result.data
-                if isinstance(plan, ManagedWebhookPostJsonPlan)
-                and plan.response is not None
-                and isinstance(report.result, ManagedWebhookPostJsonResult)
-                else semantic_result(
-                    invocation.semantic_key, invocation.semantic_version, outcome
-                ).model_dump(mode="json")
+                projected_result.model_dump(mode="json")
+                if isinstance(projected_result, BaseModel)
+                else projected_result
             )
         else:
             if report.error is None:

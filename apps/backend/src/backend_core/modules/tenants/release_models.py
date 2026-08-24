@@ -191,6 +191,25 @@ class TenantCapabilitiesRevision(_TenantRevision):
     )
 
 
+class TenantPostCallDraft(_TenantDraft):
+    __tablename__ = "tenant_post_call_drafts"
+    __table_args__ = (
+        ForeignKeyConstraint(("tenant_id",), ("tenants.id",), ondelete="CASCADE"),
+        CheckConstraint("version > 0", name="ck_tenant_post_call_drafts_version_positive"),
+        UniqueConstraint("tenant_id", name="uq_tenant_post_call_drafts_tenant"),
+    )
+
+
+class TenantPostCallRevision(_TenantRevision):
+    __tablename__ = "tenant_post_call_revisions"
+    __table_args__ = (
+        ForeignKeyConstraint(("tenant_id",), ("tenants.id",), ondelete="CASCADE"),
+        UniqueConstraint("tenant_id", "revision_number", name="uq_tenant_post_call_revisions_number"),
+        UniqueConstraint("tenant_id", "id", name="uq_tenant_post_call_revisions_id"),
+        CheckConstraint("revision_number > 0", name="ck_tenant_post_call_revisions_number_positive"),
+    )
+
+
 class TenantTelephonyDraft(_TenantDraft):
     __tablename__ = "tenant_telephony_drafts"
     __table_args__ = (
@@ -277,6 +296,10 @@ class TenantRelease(Base):
             ),
         ),
         ForeignKeyConstraint(
+            ("tenant_id", "post_call_revision_id"),
+            ("tenant_post_call_revisions.tenant_id", "tenant_post_call_revisions.id"),
+        ),
+        ForeignKeyConstraint(
             ("tenant_id", "telephony_revision_id"),
             ("tenant_telephony_revisions.tenant_id", "tenant_telephony_revisions.id"),
         ),
@@ -305,6 +328,7 @@ class TenantRelease(Base):
     prompt_revision_id: Mapped[UUID] = mapped_column(Uuid)
     knowledge_revision_id: Mapped[UUID] = mapped_column(Uuid)
     capabilities_revision_id: Mapped[UUID] = mapped_column(Uuid)
+    post_call_revision_id: Mapped[UUID] = mapped_column(Uuid)
     telephony_revision_id: Mapped[UUID] = mapped_column(Uuid)
     runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
     source_release_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)

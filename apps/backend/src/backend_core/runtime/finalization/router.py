@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from contracts import ManagedWebhookPostJsonPlan, RuntimeIntegrationMaterial
+from contracts import HttpRequestPlanV1, RuntimeIntegrationMaterial
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
@@ -95,7 +95,7 @@ async def finalization_context(
 
 @router.get(
     "/{call_id}/post-call-actions/{action_id}",
-    response_model=ManagedWebhookPostJsonPlan,
+    response_model=HttpRequestPlanV1,
     dependencies=[Depends(require_internal_scope("post-call-action:read"))],
 )
 async def post_call_action(
@@ -104,7 +104,7 @@ async def post_call_action(
     finalization_id: UUID,
     command_id: UUID,
     finalization: Service,
-) -> ManagedWebhookPostJsonPlan:
+) -> HttpRequestPlanV1:
     try:
         return await finalization.action_plan(
             call_id, finalization_id, action_id, command_id
@@ -134,11 +134,9 @@ async def post_call_action_material(
         call = await session.get(CallSession, call_id)
         if call is None:
             raise FinalizationError("call not found")
-        view = await integrations.get(call.tenant_id, plan.integration_id)
-        if view.connection.provider is not IntegrationProvider.MANAGED_WEBHOOK:
+        view = await integrations.get_by_id(call.tenant_id, plan.integration_id)
+        if view.connection.provider is not IntegrationProvider.HTTP:
             raise IntegrationConnectionError("connection_provider_mismatch")
-        if view.credential is None:
-            raise IntegrationConnectionError("credential_not_configured")
         return integrations.material(view.connection, view.credential)
     except FinalizationError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error

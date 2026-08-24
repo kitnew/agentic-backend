@@ -9,20 +9,19 @@ from zoneinfo import ZoneInfo
 
 import jsonata  # type: ignore[import-untyped]
 from contracts import (
+    CANONICAL_FIELDS,
     ExecutionPlan,
     GoogleSheetsAppendExecution,
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsIdempotency,
-    ManagedWebhookCapability,
-    ManagedWebhookExecution,
-    ManagedWebhookPostJsonPlan,
-    ManagedWebhookPostJsonResult,
+    HttpExecution,
+    HttpRequestPlanV1,
     ManagedWebhookResponseConfig,
     ReservationRequestSubmitted,
     RuntimeCapabilityBinding,
     RuntimeCapabilityDefinition,
     RuntimeGoogleSheetsExecution,
-    RuntimeManagedWebhookExecution,
+    RuntimeHttpExecution,
     TechnicalResult,
     TenantCapabilityProfile,
 )
@@ -37,17 +36,8 @@ from jsonschema.exceptions import (  # type: ignore[import-untyped]
 from pydantic import TypeAdapter
 
 from backend_core.runtime.capabilities.execution import ExecutionOutcome
+from backend_core.runtime.capabilities.mapping import evaluate_query, evaluate_template
 
-CANONICAL_FIELDS = {
-    "guest.name": "string",
-    "guest.phone": "string",
-    "guest.email": "string",
-    "stay.check_in": "string",
-    "stay.check_out": "string",
-    "allocation.room_type": "integer",
-    "allocation.room_count": "integer",
-    "notes": "string",
-}
 SEMANTIC_REQUIRED_FIELDS = frozenset({"guest.name", "stay.check_in", "stay.check_out"})
 SEMANTIC_KEY = "reservation.submit_request"
 SEMANTIC_VERSION = 1
@@ -99,6 +89,8 @@ REGISTRY = {
 }
 
 
+CanonicalCapabilityResult = dict[str, object] | str | None
+SemanticResult = ReservationRequestSubmitted | CanonicalCapabilityResult
 SemanticResultMapper = Callable[[ExecutionOutcome], ReservationRequestSubmitted]
 
 
@@ -110,12 +102,46 @@ class CapabilityValidationError(ValueError):
         self.path = path
 
 
+def validate_bindings(
+    schema: dict[str, Any], bindings: dict[str, str], capability: CapabilityDefinition
+) -> None:
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as error:
+        raise CapabilityValidationError("invalid_json_schema", error.message) from error
+    if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
+        raise CapabilityValidationError("invalid_json_schema", "Input schema must be a closed object")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        raise CapabilityValidationError("invalid_json_schema", "Input schema properties are required")
+    mapped: set[str] = set()
+    for name, target in bindings.items():
+        if name not in properties:
+            raise CapabilityValidationError("invalid_binding", "Binding input is not in input_schema", f"bindings.{name}")
+        if not isinstance(target, str) or not re.fullmatch(r"(?:[a-z][a-z0-9_]*\.)*[a-z][a-z0-9_]*", target):
+            raise CapabilityValidationError("invalid_binding", "Binding target is invalid", f"bindings.{name}")
+        if target.startswith("custom."):
+            continue
+        if target not in capability.canonical_fields:
+            raise CapabilityValidationError("unknown_domain_field", "Unknown canonical domain field", f"bindings.{name}")
+        if target in mapped:
+            raise CapabilityValidationError("invalid_binding", "Binding target is duplicated", f"bindings.{name}")
+        expected = capability.canonical_fields[target]
+        actual = properties[name].get("type") if isinstance(properties[name], dict) else None
+        if actual is not None and actual != expected:
+            raise CapabilityValidationError("binding_type_mismatch", "Input type is incompatible with domain field", f"bindings.{name}")
+        mapped.add(target)
+    missing = capability.required_fields - mapped
+    if missing:
+        raise CapabilityValidationError("missing_semantic_field", f"Missing semantic fields: {', '.join(sorted(missing))}")
+
+
 class MappingEngine(Protocol):
     def evaluate(self, expression: str, data: dict[str, Any]) -> dict[str, Any]: ...
 
 
 class JsonataMappingEngine:
-    def evaluate(self, expression: str, data: dict[str, Any]) -> dict[str, Any]:
+    def evaluate(self, expression: str, data: dict[str, Any]) -> object:
         encoded = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         if len(encoded.encode()) > MAX_MAPPING_INPUT_BYTES:
             raise CapabilityValidationError(
@@ -132,12 +158,7 @@ class JsonataMappingEngine:
             raise CapabilityValidationError(
                 "mapping_output_too_large", "Mapping output is too large"
             )
-        decoded = json.loads(output)
-        if not isinstance(decoded, dict):
-            raise CapabilityValidationError(
-                "invalid_mapping_output", "Mapping output must be an object"
-            )
-        return decoded
+        return json.loads(output)
 
 
 def definition(semantic_key: str, semantic_version: int) -> CapabilityDefinition:
@@ -369,7 +390,9 @@ def _set_nested(target: dict[str, Any], dotted: str, value: Any) -> None:
     current[parts[-1]] = value
 
 
-def normalize_input(schema: dict[str, Any], value: dict[str, Any]) -> dict[str, Any]:
+def normalize_input(
+    schema: dict[str, Any], value: dict[str, Any], bindings: dict[str, str] | None = None
+) -> dict[str, Any]:
     normalized: dict[str, Any] = {
         "guest": {"name": None, "phone": None, "email": None},
         "stay": {"check_in": None, "check_out": None},
@@ -380,11 +403,11 @@ def normalize_input(schema: dict[str, Any], value: dict[str, Any]) -> dict[str, 
     properties = schema["properties"]
     for name, item in value.items():
         property_schema = properties[name]
-        canonical = property_schema.get("x-canonical-field")
-        if canonical:
-            _set_nested(normalized, canonical, item)
-        else:
-            normalized["custom"][property_schema["x-custom-field"]] = item
+        target = (bindings or {}).get(name)
+        if target is None:
+            canonical = property_schema.get("x-canonical-field")
+            target = canonical or f"custom.{property_schema.get('x-custom-field', name)}"
+        _set_nested(normalized, target, item)
     return normalized
 
 
@@ -502,7 +525,7 @@ def compile_plan(
     caller_phone: str = "",
     semantic_key: str = SEMANTIC_KEY,
     mapping_engine: MappingEngine | None = None,
-) -> GoogleSheetsAppendValuesPlan | ManagedWebhookPostJsonPlan:
+) -> GoogleSheetsAppendValuesPlan | HttpRequestPlanV1:
     execution = profile.execution
     source = {
         "business": canonical_input,
@@ -515,36 +538,36 @@ def compile_plan(
             "tool_call_id": tool_call_id,
         },
     }
-    mapped = (mapping_engine or JsonataMappingEngine()).evaluate(
-        execution.request_mapping,
-        source,
-    )
-    if isinstance(execution, (ManagedWebhookExecution, RuntimeManagedWebhookExecution)):
-        if execution.response is not None:
-            validate_response_config(execution.response)
-        if semantic_key == AVAILABILITY_SEMANTIC_KEY and execution.response is None:
-            raise CapabilityValidationError(
-                "response_config_required",
-                "Availability capability requires a response configuration",
-                "execution.response",
-            )
-        return ManagedWebhookPostJsonPlan(
-            plan_type=execution.plan_type,
+    if isinstance(execution, (HttpExecution, RuntimeHttpExecution)):
+        payload = None
+        if execution.request.codec != "none":
+            if execution.request.mapping is None:
+                raise CapabilityValidationError("invalid_mapping_output", "HTTP request mapping is required", "execution.request.mapping")
+            payload = evaluate_template(execution.request.mapping, source)
+            if execution.request.codec == "text" and not isinstance(payload, str):
+                raise CapabilityValidationError("invalid_mapping_output", "Text request mapping must evaluate to a string", "execution.request.mapping")
+        path = execution.path
+        if not isinstance(path, str) and path is not None:
+            path = evaluate_template(path, source)
+            if not isinstance(path, str) or "://" in path or "#" in path:
+                raise CapabilityValidationError("invalid_path", "HTTP path must be relative", "execution.path")
+        query = evaluate_query(execution.query, source)
+        return HttpRequestPlanV1(
             integration_id=integration_id,
             operation_id=operation_id,
-            capability=ManagedWebhookCapability(
-                semantic_key=semantic_key,
-                semantic_version=profile.semantic_version,
-            ),
-            payload=mapped,
-            response_contract=(
-                "http_2xx"
-                if execution.response is not None
-                else "managed_webhook_envelope.v1"
-            ),
+            capability={"semantic_key": semantic_key, "semantic_version": profile.semantic_version},
+            method=execution.method,
+            path=path,
+            query=query,
+            headers=execution.headers,
+            request=execution.request,
             response=execution.response,
+            payload=payload,
             timeout_seconds=execution.timeout_seconds,
+            success_statuses=execution.success_statuses,
+            result_schema=execution.result_schema,
         )
+    mapped = (mapping_engine or JsonataMappingEngine()).evaluate(execution.request_mapping, source)
     rows = mapped_rows(mapped)
     if not isinstance(execution, (GoogleSheetsAppendExecution, RuntimeGoogleSheetsExecution)):
         raise CapabilityValidationError("configuration_invalid", "Capability execution is unavailable")
@@ -608,30 +631,25 @@ def validate_result_for_plan(
         raise CapabilityValidationError(
             "result_plan_mismatch", "Worker result does not match execution plan"
         )
-    if isinstance(plan, ManagedWebhookPostJsonPlan) and plan.response is not None:
-        if not isinstance(result, ManagedWebhookPostJsonResult):
-            raise CapabilityValidationError(
-                "result_plan_mismatch", "Worker result does not match execution plan"
-            )
+    if isinstance(plan, HttpRequestPlanV1) and plan.result_schema is not None:
         try:
-            Draft202012Validator(plan.response.output_schema).validate(result.data)
-        except ValidationError as error:
+            Draft202012Validator(plan.result_schema).validate(result.data)
+        except (SchemaError, ValidationError) as error:
             raise CapabilityValidationError(
-                "invalid_semantic_result", "Worker result violates output schema"
+                "invalid_semantic_result", "Result violates result_schema"
             ) from error
     return plan
 
 
 def semantic_result(
     semantic_key: str, semantic_version: int, outcome: ExecutionOutcome
-) -> ReservationRequestSubmitted:
+) -> SemanticResult:
+    # The catalog remains the authority for supported capability identities.
+    definition(semantic_key, semantic_version)
     mapper = SEMANTIC_RESULT_MAPPERS.get((semantic_key, semantic_version))
-    if mapper is None:
-        raise CapabilityValidationError(
-            "unsupported_capability_version",
-            "Capability semantic key or version is unsupported",
-        )
-    return mapper(outcome)
+    if mapper is not None:
+        return mapper(outcome)
+    return outcome.data  # validated provider-neutral canonical result
 
 
 def runtime_definition(

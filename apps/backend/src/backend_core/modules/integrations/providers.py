@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import urlparse
+
+from contracts.integration import HttpConnectionConfiguration
 
 from backend_core.modules.integrations.models import IntegrationProvider
 
@@ -21,22 +22,15 @@ def validate_config(
         if config:
             raise IntegrationProviderError("google_sheets config must be empty")
         return
-    if allow_empty and not config:
+    if provider.value == "http":
+        if allow_empty and not config:
+            return
+        try:
+            HttpConnectionConfiguration.model_validate(config)
+        except ValueError as error:
+            raise IntegrationProviderError("integration_configuration_invalid") from error
         return
-    allowed_hosts = config.get("allowed_hosts")
-    header = config.get("api_key_header", "x-api-key")
-    if set(config) - {"allowed_hosts", "api_key_header"}:
-        raise IntegrationProviderError(
-            "managed_webhook config contains unsupported fields"
-        )
-    if (
-        not isinstance(allowed_hosts, list)
-        or not allowed_hosts
-        or not all(isinstance(host, str) and _hostname(host) for host in allowed_hosts)
-    ):
-        raise IntegrationProviderError("managed_webhook allowed_hosts must be valid")
-    if not isinstance(header, str) or not re.fullmatch(r"[A-Za-z0-9-]{1,64}", header):
-        raise IntegrationProviderError("managed_webhook api_key_header is invalid")
+    raise IntegrationProviderError("unsupported integration kind")
 
 
 def validate_secret(provider: IntegrationProvider, secret: dict[str, object]) -> None:
@@ -54,18 +48,11 @@ def validate_secret(provider: IntegrationProvider, secret: dict[str, object]) ->
         ):
             raise IntegrationProviderError("google_sheets service_account is invalid")
         return
-    url = secret.get("url")
-    api_key = secret.get("api_key", "")
-    parsed = urlparse(url) if isinstance(url, str) else None
-    if (
-        set(secret) - {"url", "api_key"}
-        or not parsed
-        or not parsed.scheme
-        or not parsed.hostname
-    ):
-        raise IntegrationProviderError("managed_webhook requires url")
-    if not isinstance(api_key, str):
-        raise IntegrationProviderError("managed_webhook api_key must be a string")
+    if provider.value == "http":
+        if set(secret) != {"api_key"} or not isinstance(secret["api_key"], str) or not secret["api_key"]:
+            raise IntegrationProviderError("http requires api_key")
+        return
+    raise IntegrationProviderError("unsupported integration kind")
 
 
 def _hostname(value: str) -> bool:

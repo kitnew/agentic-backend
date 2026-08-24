@@ -154,13 +154,14 @@ def _drafts() -> dict[TenantComponent, Draft]:
                 "profile": "hotel_assistant",
             },
             "conversation": {"scope": "property_only"},
+            "handoff": {"destinations": {}},
         },
         TenantComponent.PROMPT: {"text": ""},
         TenantComponent.KNOWLEDGE: {},
-        TenantComponent.CAPABILITIES: {"capabilities": {}, "post_call_actions": []},
+        TenantComponent.CAPABILITIES: {"capabilities": {}},
+        TenantComponent.POST_CALL: {"actions": []},
         TenantComponent.TELEPHONY: {
             "phone_number": None,
-            "handoff": {"destinations": {}},
         },
     }
     return {
@@ -180,6 +181,7 @@ def _bundle_factory(tenant_id: UUID):
                 prompt_revision_id=components.prompt.id,
                 knowledge_revision_id=components.knowledge.id,
                 capabilities_revision_id=components.capabilities.id,
+                post_call_revision_id=components.post_call.id,
                 telephony_revision_id=components.telephony.id,
                 platform_runtime_revision_id=uuid4(),
                 system_prompt_revision_id=uuid4(),

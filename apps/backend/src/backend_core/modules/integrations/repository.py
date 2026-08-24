@@ -8,6 +8,8 @@ from backend_core.modules.integrations.models import (
     IntegrationCredential,
     IntegrationCredentialStatus,
 )
+from backend_core.modules.tenants.release_models import RuntimeBundleRecord
+from backend_core.runtime.capabilities.models import CapabilityInvocation
 
 
 class IntegrationConnectionRepository:
@@ -28,6 +30,43 @@ class IntegrationConnectionRepository:
                 IntegrationConnection.id == connection_id,
             )
         )
+
+    async def get_by_key(
+        self, tenant_id: UUID, key: str
+    ) -> IntegrationConnection | None:
+        return await self._session.scalar(
+            select(IntegrationConnection).where(
+                IntegrationConnection.tenant_id == tenant_id,
+                IntegrationConnection.key == key,
+            )
+        )
+
+    async def get_by_key_for_update(self, tenant_id: UUID, key: str) -> IntegrationConnection | None:
+        return await self._session.scalar(
+            select(IntegrationConnection)
+            .where(IntegrationConnection.tenant_id == tenant_id, IntegrationConnection.key == key)
+            .with_for_update()
+        )
+
+    async def is_referenced(self, integration_id: UUID) -> bool:
+        invocation = await self._session.scalar(
+            select(IntegrationConnection.id)
+            .join(
+                CapabilityInvocation,
+                CapabilityInvocation.execution_plan["integration_id"].astext == str(integration_id),
+            )
+            .where(IntegrationConnection.id == integration_id)
+            .limit(1)
+        )
+        if invocation is not None:
+            return True
+        return await self._session.scalar(
+            select(RuntimeBundleRecord.id).where(
+                RuntimeBundleRecord.provenance.contains(
+                    {"integration_connection_ids": [str(integration_id)]}
+                )
+            ).limit(1)
+        ) is not None
 
     async def get_for_update(
         self, tenant_id: UUID, connection_id: UUID

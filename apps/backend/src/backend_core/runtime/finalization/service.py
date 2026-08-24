@@ -8,10 +8,10 @@ from contracts import (
     CallEventPayload,
     CommandResult,
     ExecutePostCallAction,
+    ExpressionNode,
     GenerateCallSummary,
-    ManagedWebhookBodyBinding,
-    ManagedWebhookCapability,
-    ManagedWebhookPostJsonPlan,
+    HttpBodyBinding,
+    HttpRequestPlanV1,
     MaterializeArtifactRepresentation,
     MessageEnvelope,
     PostCallActionInput,
@@ -33,7 +33,7 @@ from backend_core.modules.integrations.models import (
     IntegrationProvider,
 )
 from backend_core.runtime.bundle_store import RuntimeBundleStore
-from backend_core.runtime.capabilities.domain import JsonataMappingEngine
+from backend_core.runtime.capabilities.mapping import evaluate_query, evaluate_template
 from backend_core.runtime.finalization.models import (
     ArtifactRepresentation,
     CallFinalization,
@@ -194,6 +194,8 @@ class FinalizationService:
                 action_execution.status = WorkStatus.FAILED
                 action_execution.last_error = error
                 action_execution.completed_at = datetime.now(UTC)
+                await self._schedule(finalization, envelope.message_id)
+                return finalization
             if representation is not None:
                 representation.status = WorkStatus.FAILED
                 representation.last_error = error
@@ -258,7 +260,7 @@ class FinalizationService:
         finalization_id: UUID,
         action_id: str,
         command_id: UUID,
-    ) -> ManagedWebhookPostJsonPlan:
+    ) -> HttpRequestPlanV1:
         call = await self._session.get(CallSession, call_id)
         finalization = await self._session.get(CallFinalization, finalization_id)
         execution = await self._session.scalar(
@@ -285,7 +287,7 @@ class FinalizationService:
             connection is None
             or connection.tenant_id != call.tenant_id
             or connection.status is not IntegrationConnectionStatus.ACTIVE
-            or connection.provider is not IntegrationProvider.MANAGED_WEBHOOK
+            or connection.provider is not IntegrationProvider.HTTP
         ):
             raise FinalizationError("post-call connection unavailable")
         inputs: dict[str, object] = {}
@@ -294,26 +296,37 @@ class FinalizationService:
             inputs[name], body_ids = await self._mapping_input(finalization, requested)
             available_bodies.update(body_ids)
         context = await self._mapping_context(call, inputs)
-        payload = JsonataMappingEngine().evaluate(
-            action.execution.request_mapping, context
-        )
-        payload, body_bindings = self._body_bindings(payload)
+        payload = None
+        if action.execution.request.codec != "none":
+            if action.execution.request.mapping is None:
+                raise FinalizationError("HTTP request mapping is required")
+            payload = evaluate_template(action.execution.request.mapping, context)
+            payload, body_bindings = self._body_bindings(payload)
+        else:
+            body_bindings = []
         if (
             not {binding.representation_id for binding in body_bindings}
             <= available_bodies
         ):
             raise FinalizationError("action references an unavailable artifact body")
-        return ManagedWebhookPostJsonPlan(
-            plan_type="managed_webhook.post_json.v1",
+        path = action.execution.path
+        if isinstance(path, ExpressionNode):
+            path = evaluate_template(path, context)
+        query = evaluate_query(action.execution.query, context)
+        return HttpRequestPlanV1(
             integration_id=connection.id,
             operation_id=command_id,
-            capability=ManagedWebhookCapability(
-                semantic_key=action.semantic_key,
-                semantic_version=action.semantic_version,
-            ),
+            method=action.execution.method,
+            path=path,
+            query=query,
+            headers=action.execution.headers,
+            request=action.execution.request,
+            response=action.execution.response,
             payload=payload,
             body_bindings=body_bindings,
             timeout_seconds=action.execution.timeout_seconds,
+            success_statuses=action.execution.success_statuses,
+            result_schema=action.execution.result_schema,
         )
 
     async def materialization_source(
@@ -534,9 +547,14 @@ class FinalizationService:
                 execution.command_id = command.message_id
                 await self._commands.send(command)
         if finalization.summary is not None and all(
-            execution.status is WorkStatus.COMPLETED for execution in executions
+            execution.status in {WorkStatus.COMPLETED, WorkStatus.FAILED}
+            for execution in executions
         ):
-            finalization.status = FinalizationStatus.COMPLETED
+            finalization.status = (
+                FinalizationStatus.FAILED
+                if any(execution.status is WorkStatus.FAILED for execution in executions)
+                else FinalizationStatus.COMPLETED
+            )
             finalization.completed_at = datetime.now(UTC)
 
     async def _materialize(
@@ -703,18 +721,18 @@ class FinalizationService:
     @staticmethod
     def _body_bindings(
         value: object, path: str = ""
-    ) -> tuple[dict[str, object], list[ManagedWebhookBodyBinding]]:
+    ) -> tuple[dict[str, object], list[HttpBodyBinding]]:
         if not isinstance(value, dict):
             raise FinalizationError("post-call mapping must return an object")
 
         def visit(
             item: object, item_path: str
-        ) -> tuple[object, list[ManagedWebhookBodyBinding]]:
+        ) -> tuple[object, list[HttpBodyBinding]]:
             if isinstance(item, dict):
                 if set(item) == {_BODY_REFERENCE_KEY}:
                     try:
                         return None, [
-                            ManagedWebhookBodyBinding(
+                            HttpBodyBinding(
                                 representation_id=UUID(str(item[_BODY_REFERENCE_KEY])),
                                 payload_path=item_path,
                             )
@@ -724,7 +742,7 @@ class FinalizationService:
                             "artifact body reference is invalid"
                         ) from error
                 mapped: dict[str, object] = {}
-                bindings: list[ManagedWebhookBodyBinding] = []
+                bindings: list[HttpBodyBinding] = []
                 for key, child in item.items():
                     escaped = key.replace("~", "~0").replace("/", "~1")
                     mapped[key], child_bindings = visit(child, f"{item_path}/{escaped}")

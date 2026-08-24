@@ -9,7 +9,7 @@ from contracts.runtime_bundle import (
     RuntimeCapabilityPolicy,
     RuntimeGoogleSheetsExecution,
     RuntimeHandoffDestination,
-    RuntimeManagedWebhookExecution,
+    RuntimeHttpExecution,
     RuntimePostCallAction,
     RuntimePostCallInput,
     RuntimeTelephony,
@@ -20,6 +20,7 @@ from contracts.tenant_components import (
     TenantCapabilitiesConfig,
     TenantCapabilityProfile,
     TenantKnowledgeConfig,
+    TenantPostCallConfig,
     TenantPromptConfig,
     TenantTelephonyConfig,
 )
@@ -66,6 +67,8 @@ def compile_tenant_runtime_bundle(
     knowledge: TenantKnowledgeConfig,
     capabilities_revision_id: UUID,
     capabilities: TenantCapabilitiesConfig,
+    post_call_revision_id: UUID,
+    post_call: TenantPostCallConfig,
     telephony_revision_id: UUID,
     telephony: TenantTelephonyConfig,
     platform: PlatformBundleInput,
@@ -75,7 +78,7 @@ def compile_tenant_runtime_bundle(
 
     voice_runtime = _effective_voice_runtime(platform.runtime_policy, runtime, agent)
     bindings = _capability_bindings(capabilities)
-    post_call_actions = _post_call_actions(capabilities)
+    post_call_actions = _post_call_actions(post_call)
     integration_ids = sorted(
         {
             binding.execution.connection_id for binding in bindings
@@ -89,7 +92,7 @@ def compile_tenant_runtime_bundle(
             key: RuntimeHandoffDestination(
                 description=value.description, phone_number=value.phone_number
             )
-            for key, value in telephony.handoff.destinations.items()
+            for key, value in agent.handoff.destinations.items()
         },
     )
     payload = RuntimeBundlePayload(
@@ -117,7 +120,7 @@ def compile_tenant_runtime_bundle(
         telephony=runtime_telephony,
         handoff_destinations={
             key: HandoffDestinationDefinition(description=value.description)
-            for key, value in telephony.handoff.destinations.items()
+            for key, value in agent.handoff.destinations.items()
         },
     )
     return compile_runtime_bundle(
@@ -129,6 +132,7 @@ def compile_tenant_runtime_bundle(
             prompt_revision_id=prompt_revision_id,
             knowledge_revision_id=knowledge_revision_id,
             capabilities_revision_id=capabilities_revision_id,
+            post_call_revision_id=post_call_revision_id,
             telephony_revision_id=telephony_revision_id,
             platform_runtime_revision_id=platform.runtime_revision_id,
             system_prompt_revision_id=platform.system_prompt_revision_id,
@@ -183,11 +187,17 @@ def _capability_bindings(
                 request_mapping=execution.request_mapping,
             )
         else:
-            runtime_execution = RuntimeManagedWebhookExecution(
+            runtime_execution = RuntimeHttpExecution(
                 connection_id=execution.connection_id,
-                request_mapping=execution.request_mapping,
+                method=execution.method,
+                path=execution.path,
+                query=execution.query,
+                headers=execution.headers,
+                request=execution.request,
                 response=execution.response,
                 timeout_seconds=execution.timeout_seconds,
+                success_statuses=execution.success_statuses,
+                result_schema=execution.result_schema,
             )
         bindings.append(
             RuntimeCapabilityBinding(
@@ -196,6 +206,7 @@ def _capability_bindings(
                 tool_name=runtime_definition(semantic_key, profile).tool_name,
                 enabled=True,
                 input_schema=profile.agent_input_schema,
+                bindings=profile.bindings,
                 policy=RuntimeCapabilityPolicy(
                     **profile.business_policy.model_dump(mode="json")
                 ),
@@ -206,7 +217,7 @@ def _capability_bindings(
 
 
 def _post_call_actions(
-    capabilities: TenantCapabilitiesConfig,
+    post_call: TenantPostCallConfig,
 ) -> list[RuntimePostCallAction]:
     return [
         RuntimePostCallAction(
@@ -215,16 +226,18 @@ def _post_call_actions(
                 key: RuntimePostCallInput(**value.model_dump(mode="json"))
                 for key, value in action.inputs.items()
             },
-            semantic_key=action.semantic_key,
-            semantic_version=action.semantic_version,
-            execution=RuntimeManagedWebhookExecution(
+            execution=RuntimeHttpExecution(
                 connection_id=action.execution.connection_id,
-                request_mapping=action.execution.request_mapping,
+                method=action.execution.method,
+                path=action.execution.path,
+                query=action.execution.query,
+                headers=action.execution.headers,
+                request=action.execution.request,
                 response=action.execution.response,
                 timeout_seconds=action.execution.timeout_seconds,
             ),
         )
-        for action in capabilities.post_call_actions
+        for action in post_call.actions
     ]
 
 

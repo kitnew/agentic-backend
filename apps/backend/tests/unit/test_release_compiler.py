@@ -62,6 +62,7 @@ def _provenance() -> RuntimeBundleProvenance:
         prompt_revision_id=uuid4(),
         knowledge_revision_id=uuid4(),
         capabilities_revision_id=uuid4(),
+        post_call_revision_id=uuid4(),
         telephony_revision_id=uuid4(),
         platform_runtime_revision_id=uuid4(),
         system_prompt_revision_id=uuid4(),

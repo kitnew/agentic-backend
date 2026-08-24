@@ -44,6 +44,52 @@ class PlatformReleaseUseCases:
     def __init__(self, repository: PlatformReleaseRepository) -> None:
         self._repository = repository
 
+    async def ensure_initial_drafts(self) -> None:
+        if await self._repository.active_release() is not None:
+            return
+        if await self._repository.runtime_draft() is None:
+            await self.save_runtime(
+                PlatformRuntimePolicy.model_validate(
+                    {
+                        "llm": {
+                            "provider": "azure_openai",
+                            "model": "gpt-4.1",
+                            "temperature": 0.2,
+                        },
+                        "stt": {
+                            "provider": "elevenlabs",
+                            "model": "scribe",
+                            "server_vad": {
+                                "silence_threshold_seconds": 1,
+                                "activity_threshold": 0.5,
+                                "min_speech_ms": 100,
+                                "min_silence_ms": 200,
+                            },
+                        },
+                        "tts": {
+                            "provider": "elevenlabs",
+                            "model": "turbo",
+                            "voice_id": "voice",
+                        },
+                        "local_vad": {
+                            "min_speech_seconds": 0.2,
+                            "min_silence_seconds": 0.4,
+                            "activation_threshold": 0.5,
+                        },
+                        "turn": {
+                            "detection": "stt",
+                            "min_endpointing_delay_seconds": 0.2,
+                            "max_endpointing_delay_seconds": 1,
+                        },
+                    }
+                ),
+                None,
+            )
+        if await self._repository.system_prompt_draft() is None:
+            await self.save_system_prompt(
+                "You are a customer-facing business voice assistant.", None
+            )
+
     async def save_runtime(
         self, policy: PlatformRuntimePolicy, expected_version: int | None
     ) -> PlatformRuntimeDraft:

@@ -1,9 +1,12 @@
 from typing import Annotated, Any
+from uuid import UUID
 
+from contracts.authoring import AuthoringPlan
 from contracts.voice_runtime import PlatformRuntimePolicy
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
+from backend_core.modules.tenants.authoring import semantic_plan
 from backend_core.modules.tenants.platform_release_repository import (
     PlatformReleaseRepository,
 )
@@ -51,10 +54,10 @@ class PlatformPublishRequest(BaseModel):
 class PlatformReleaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: str
+    id: UUID
     release_number: int
-    runtime_revision_id: str
-    system_prompt_revision_id: str
+    runtime_revision_id: UUID
+    system_prompt_revision_id: UUID
 
 
 class PlatformDraftState(BaseModel):
@@ -83,6 +86,28 @@ def _if_match(value: str | None) -> int | None:
 
 def _use_cases(session: DatabaseSession) -> PlatformReleaseUseCases:
     return PlatformReleaseUseCases(PlatformReleaseRepository(session))
+
+
+def _plan(before: object | None, after: object, component: str) -> AuthoringPlan:
+    result = semantic_plan(before, after)
+    return AuthoringPlan.model_validate(
+        {
+            **result,
+            "impact": {
+                "affected_components": [component],
+                "new_release_required": bool(result["changes"]),
+                "runtime_bundle_changes": bool(result["changes"]),
+            },
+        }
+    )
+
+
+def _runtime_payload(data: RuntimeDraftWrite) -> dict[str, Any]:
+    return data.policy.model_dump(mode="json")
+
+
+def _prompt_payload(data: PromptDraftWrite) -> str:
+    return data.text
 
 
 @router.get("/state", response_model=PlatformStateResponse)
@@ -142,6 +167,29 @@ async def state(session: DatabaseSession) -> PlatformStateResponse:
     )
 
 
+@router.post("/runtime/plan", response_model=AuthoringPlan)
+async def plan_runtime(data: RuntimeDraftWrite, session: DatabaseSession) -> AuthoringPlan:
+    draft = await PlatformReleaseRepository(session).runtime_draft()
+    return _plan(None if draft is None else draft.payload, _runtime_payload(data), "runtime")
+
+
+@router.post("/system-prompt/plan", response_model=AuthoringPlan)
+async def plan_system_prompt(data: PromptDraftWrite, session: DatabaseSession) -> AuthoringPlan:
+    draft = await PlatformReleaseRepository(session).system_prompt_draft()
+    return _plan(None if draft is None else draft.text, _prompt_payload(data), "system_prompt")
+
+
+@router.post("/profiles/{profile}/plan", response_model=AuthoringPlan)
+async def plan_profile_prompt(
+    profile: str, data: PromptDraftWrite, session: DatabaseSession
+) -> AuthoringPlan:
+    draft = next(
+        (item for item in await PlatformReleaseRepository(session).profile_drafts() if item.profile == profile),
+        None,
+    )
+    return _plan(None if draft is None else draft.text, _prompt_payload(data), f"profile_prompt:{profile}")
+
+
 @router.put("/runtime/draft", response_model=DraftResponse)
 async def save_runtime(
     data: RuntimeDraftWrite,
@@ -150,7 +198,9 @@ async def save_runtime(
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> DraftResponse:
     try:
-        draft = await _use_cases(session).save_runtime(data.policy, _if_match(if_match))
+        draft = await _use_cases(session).save_runtime(
+            PlatformRuntimePolicy.model_validate(_runtime_payload(data)), _if_match(if_match)
+        )
     except PlatformDraftConflictError as error:
         raise HTTPException(status_code=412, detail="draft version does not match If-Match") from error
     response.headers["ETag"] = f'"{draft.version}"'
@@ -165,7 +215,9 @@ async def save_system_prompt(
     if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> DraftResponse:
     try:
-        draft = await _use_cases(session).save_system_prompt(data.text, _if_match(if_match))
+        draft = await _use_cases(session).save_system_prompt(
+            _prompt_payload(data), _if_match(if_match)
+        )
     except PlatformDraftConflictError as error:
         raise HTTPException(status_code=412, detail="draft version does not match If-Match") from error
     response.headers["ETag"] = f'"{draft.version}"'
@@ -182,7 +234,7 @@ async def save_profile_prompt(
 ) -> DraftResponse:
     try:
         draft = await _use_cases(session).save_profile_prompt(
-            profile, data.text, _if_match(if_match)
+            profile, _prompt_payload(data), _if_match(if_match)
         )
     except PlatformDraftConflictError as error:
         raise HTTPException(status_code=412, detail="draft version does not match If-Match") from error

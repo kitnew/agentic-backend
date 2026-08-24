@@ -50,7 +50,7 @@ class ComponentDraftExpectation(ComponentPublishRequest):
 class PublishAllRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    drafts: list[ComponentDraftExpectation] = Field(min_length=1, max_length=6)
+    drafts: list[ComponentDraftExpectation] = Field(min_length=1, max_length=7)
     comment: str | None = Field(default=None, max_length=4_000)
 
 

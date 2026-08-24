@@ -14,13 +14,17 @@ from backend_core.modules.integrations.models import (
     IntegrationCredentialStatus,
     IntegrationProvider,
 )
-from backend_core.modules.integrations.schemas import UpdateIntegrationConnectionRequest
+from backend_core.modules.integrations.schemas import (
+    ConfigureIntegrationConnectionRequest,
+    IntegrationCredentialWrite,
+    UpdateIntegrationConnectionRequest,
+)
 from backend_core.modules.integrations.service import (
     CapabilityIntegrationResolver,
     IntegrationConnectionError,
     IntegrationConnectionService,
 )
-from contracts import GoogleSheetsAppendValuesPlan
+from contracts import GoogleSheetsAppendValuesPlan, HttpRequestPlanV1
 
 KEY = base64.b64encode(b"0123456789abcdef0123456789abcdef").decode()
 SECRET = {
@@ -59,6 +63,14 @@ class Connections:
             return self.connection
         return None
 
+    async def get_by_key(self, tenant_id: UUID, key: str):
+        if tenant_id == self.connection.tenant_id and key == self.connection.key:
+            return self.connection
+        return None
+
+    async def get_by_key_for_update(self, tenant_id: UUID, key: str):
+        return await self.get_by_key(tenant_id, key)
+
     async def get_for_update(self, tenant_id: UUID, connection_id: UUID):
         return await self.get(tenant_id, connection_id)
 
@@ -94,6 +106,28 @@ def connection() -> IntegrationConnection:
         config={},
         revision=1,
         status=IntegrationConnectionStatus.DISABLED,
+    )
+
+
+def http_connection(
+    *, authentication: str = "none", enabled: bool = True
+) -> IntegrationConnection:
+    auth = {"type": "none"}
+    if authentication == "api_key_header":
+        auth = {"type": authentication, "header_name": "X-API-Key"}
+    return IntegrationConnection(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        key="check-availability",
+        provider=IntegrationProvider.HTTP,
+        config={
+            "endpoint": "https://api.example.com/v1",
+            "headers": {},
+            "authentication": auth,
+            "security": {"additional_allowed_hosts": []},
+        },
+        revision=1,
+        enabled=enabled,
     )
 
 
@@ -147,10 +181,127 @@ async def test_credentials_rotate_atomically_and_revocation_stops_resolution() -
     )
 
     await integrations.revoke_secret(value.tenant_id, value.id)
-    with pytest.raises(IntegrationConnectionError, match="credential_not_configured"):
+    with pytest.raises(IntegrationConnectionError, match="credential_missing"):
         integrations.material(value, second.credential)
     with pytest.raises(IntegrationConnectionError, match="connection_not_found"):
         await integrations.set_secret(uuid4(), value.id, SECRET, rotate=False)
+
+
+def test_http_without_auth_materializes_without_credential() -> None:
+    value = http_connection()
+    integrations, _ = service(value)
+
+    readiness = integrations._readiness(value, None)
+    material = integrations.material(value, None)
+
+    assert readiness.credentials == "not_required"
+    assert readiness.ready is True
+    assert readiness.usable is True
+    assert material.secret is None
+    assert material.credential_version is None
+    assert material.authentication_header is None
+
+
+@pytest.mark.asyncio
+async def test_get_by_id_is_tenant_scoped() -> None:
+    value = http_connection()
+    integrations, _ = service(value)
+
+    view = await integrations.get_by_id(value.tenant_id, value.id)
+    assert view.connection is value
+
+    with pytest.raises(IntegrationConnectionError, match="integration_not_found"):
+        await integrations.get_by_id(uuid4(), value.id)
+
+
+def test_http_authentication_requires_credential() -> None:
+    value = http_connection(authentication="api_key_header")
+    integrations, _ = service(value)
+
+    readiness = integrations._readiness(value, None)
+    assert readiness.credentials == "missing"
+    assert readiness.usable is False
+    with pytest.raises(IntegrationConnectionError, match="credential_missing"):
+        integrations.material(value, None)
+
+
+@pytest.mark.asyncio
+async def test_api_key_configuration_can_save_before_credential() -> None:
+    value = http_connection(authentication="none", enabled=True)
+    integrations, _ = service(value)
+    request = ConfigureIntegrationConnectionRequest(
+        configuration={
+            **value.configuration,
+            "authentication": {"type": "api_key_header", "header_name": "X-API-Key"},
+        }
+    )
+
+    plan = await integrations.plan(value.tenant_id, value.key, request)
+    assert plan.valid is True
+    assert plan.would_be_ready is False
+    assert plan.issues == []
+
+    with_credential = request.model_copy(
+        update={"credential": IntegrationCredentialWrite(api_key="secret")}
+    )
+    supplied_plan = await integrations.plan(value.tenant_id, value.key, with_credential)
+    assert supplied_plan.valid is True
+    assert supplied_plan.would_be_ready is True
+    assert supplied_plan.issues == []
+
+    saved = await integrations.configure(value.tenant_id, value.key, request, 1)
+    assert saved.connection.configuration["authentication"] == {
+        "type": "api_key_header",
+        "header_name": "X-API-Key",
+    }
+    assert saved.readiness.credentials == "missing"
+    with pytest.raises(IntegrationConnectionError, match="credential_missing"):
+        integrations.material(value, None)
+
+
+@pytest.mark.asyncio
+async def test_rotate_creates_first_http_credential_and_enable_remains_fail_closed() -> None:
+    value = http_connection(authentication="api_key_header", enabled=False)
+    integrations, _ = service(value)
+
+    with pytest.raises(IntegrationConnectionError, match="integration_not_ready"):
+        await integrations.set_enabled(value.tenant_id, value.key, True)
+
+    credential = await integrations.rotate(value.tenant_id, value.key, "secret")
+    assert credential.credential is not None
+    assert credential.credential.version == 1
+    assert credential.readiness.credentials == "configured"
+
+    enabled = await integrations.set_enabled(value.tenant_id, value.key, True)
+    assert enabled.connection.enabled is True
+    assert enabled.readiness.usable is True
+
+
+@pytest.mark.asyncio
+async def test_http_authentication_materializes_with_valid_credential() -> None:
+    value = http_connection(authentication="api_key_header")
+    integrations, _ = service(value)
+
+    credential = (
+        await integrations.set_secret(
+            value.tenant_id, value.id, {"api_key": "secret"}, rotate=False
+        )
+    ).credential
+    assert credential is not None
+
+    material = integrations.material(value, credential)
+
+    assert material.secret == {"api_key": "secret"}
+    assert material.credential_version == credential.version
+    assert material.authentication_header == "X-API-Key"
+
+
+def test_disabled_http_connection_does_not_materialize() -> None:
+    value = http_connection(enabled=False)
+    integrations, _ = service(value)
+
+    with pytest.raises(IntegrationConnectionError, match="integration_disabled"):
+        integrations.material(value, None)
 
 
 @pytest.mark.asyncio
@@ -200,3 +351,39 @@ async def test_capability_material_requires_the_pinned_invocation_job_and_tenant
     assert material.integration_id == value.id
     with pytest.raises(IntegrationConnectionError, match="capability_not_found"):
         await resolver.resolve(invocation_id, uuid4())
+
+
+@pytest.mark.asyncio
+async def test_capability_material_resolves_http_without_authentication() -> None:
+    value = http_connection()
+    integrations, connections = service(value)
+    invocation_id = uuid4()
+    job_id = uuid4()
+    plan = HttpRequestPlanV1(
+        integration_id=value.id,
+        operation_id=uuid4(),
+        capability={"semantic_key": "reservation.check_availability", "semantic_version": 1},
+        method="POST",
+        request={"codec": "none"},
+        response={"codec": "none"},
+        timeout_seconds=5,
+    )
+
+    class Invocations:
+        async def get(self, requested: UUID):
+            if requested != invocation_id:
+                return None
+            return SimpleNamespace(
+                job_id=job_id,
+                tenant_id=value.tenant_id,
+                execution_plan=plan.model_dump(mode="json"),
+            )
+
+    material = await CapabilityIntegrationResolver(
+        Invocations(), connections, integrations
+    ).resolve(invocation_id, job_id)
+
+    assert material.provider == "http"
+    assert material.endpoint == "https://api.example.com/v1"
+    assert material.secret is None
+    assert material.credential_version is None

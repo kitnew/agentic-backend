@@ -17,6 +17,8 @@ from backend_core.modules.tenants.release_models import (
     TenantCapabilitiesRevision,
     TenantKnowledgeComponentRevision,
     TenantKnowledgeDraft,
+    TenantPostCallDraft,
+    TenantPostCallRevision,
     TenantPromptComponentRevision,
     TenantPromptDraft,
     TenantRelease,
@@ -34,6 +36,7 @@ class TenantComponent(StrEnum):
     PROMPT = "prompt"
     KNOWLEDGE = "knowledge"
     CAPABILITIES = "capabilities"
+    POST_CALL = "post_call"
     TELEPHONY = "telephony"
 
 
@@ -66,6 +69,7 @@ _DRAFT_MODELS = {
     TenantComponent.PROMPT: TenantPromptDraft,
     TenantComponent.KNOWLEDGE: TenantKnowledgeDraft,
     TenantComponent.CAPABILITIES: TenantCapabilitiesDraft,
+    TenantComponent.POST_CALL: TenantPostCallDraft,
     TenantComponent.TELEPHONY: TenantTelephonyDraft,
 }
 _REVISION_MODELS = {
@@ -74,6 +78,7 @@ _REVISION_MODELS = {
     TenantComponent.PROMPT: TenantPromptComponentRevision,
     TenantComponent.KNOWLEDGE: TenantKnowledgeComponentRevision,
     TenantComponent.CAPABILITIES: TenantCapabilitiesRevision,
+    TenantComponent.POST_CALL: TenantPostCallRevision,
     TenantComponent.TELEPHONY: TenantTelephonyRevision,
 }
 
@@ -199,6 +204,7 @@ class TenantReleaseRepository:
             draft.comment = comment
             draft.version += 1
         await self._session.flush()
+        await self._session.refresh(draft)
         return draft
 
     async def drafts_for_update(

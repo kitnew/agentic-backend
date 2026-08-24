@@ -12,6 +12,7 @@ from backend_core.runtime.capabilities.execution import (
     project_execution_outcome,
 )
 from backend_core.runtime.capabilities.models import CapabilityInvocation
+from backend_core.runtime.capabilities.router import report_result
 from backend_core.runtime.capabilities.service import (
     CapabilityInvocationService,
     invocation_response,
@@ -19,7 +20,7 @@ from backend_core.runtime.capabilities.service import (
 from contracts import (
     CapabilityInvocationStatus,
     GoogleSheetsAppendValuesResult,
-    ManagedWebhookPostJsonResult,
+    HttpRequestResult,
     WorkerError,
     WorkerResultReport,
 )
@@ -40,7 +41,9 @@ class InvocationRepository:
         self.flushed = True
 
 
-def invocation(plan_type: str) -> CapabilityInvocation:
+def invocation(
+    plan_type: str, *, semantic_key: str = "reservation.submit_request"
+) -> CapabilityInvocation:
     now = datetime.now(UTC)
     return CapabilityInvocation(
         id=uuid4(),
@@ -48,7 +51,7 @@ def invocation(plan_type: str) -> CapabilityInvocation:
         call_id=uuid4(),
         conversation_id=uuid4(),
         tool_call_id="tool-call",
-        semantic_key="reservation.submit_request",
+        semantic_key=semantic_key,
         semantic_version=1,
         tenant_release_id=uuid4(),
         runtime_bundle_id=uuid4(),
@@ -75,9 +78,12 @@ def invocation(plan_type: str) -> CapabilityInvocation:
                     "integration_id": str(uuid4()),
                     "operation_id": str(uuid4()),
                     "capability": {
-                        "semantic_key": "reservation.submit_request",
+                        "semantic_key": semantic_key,
                         "semantic_version": 1,
                     },
+                    "method": "POST",
+                    "request": {"codec": "none"},
+                    "response": {"codec": "none"},
                     "payload": {},
                     "timeout_seconds": 10,
                 }
@@ -91,7 +97,7 @@ def invocation(plan_type: str) -> CapabilityInvocation:
 
 def report(
     current: CapabilityInvocation,
-    result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult | None,
+    result: GoogleSheetsAppendValuesResult | HttpRequestResult | None,
     error: WorkerError | None = None,
 ) -> WorkerResultReport:
     now = datetime.now(UTC)
@@ -122,9 +128,9 @@ def report(
             ),
         ),
         (
-            "managed_webhook.post_json.v1",
-            ManagedWebhookPostJsonResult(
-                result_type="managed_webhook.post_json.v1",
+            "http.request.v1",
+            HttpRequestResult(
+                result_type="http.request.v1",
                 status="succeeded",
                 operation_id=uuid4(),
                 reference="accepted-1",
@@ -135,7 +141,7 @@ def report(
 )
 async def test_matching_typed_result_completes_invocation(
     plan_type: str,
-    result: GoogleSheetsAppendValuesResult | ManagedWebhookPostJsonResult,
+    result: GoogleSheetsAppendValuesResult | HttpRequestResult,
 ) -> None:
     current = invocation(plan_type)
     repository = InvocationRepository(current)
@@ -158,20 +164,16 @@ async def test_matching_typed_result_completes_invocation(
 
 
 @pytest.mark.asyncio
-async def test_configured_webhook_result_is_the_validated_agent_result() -> None:
-    current = invocation("managed_webhook.post_json.v1")
+async def test_configured_http_result_is_the_validated_agent_result() -> None:
+    current = invocation(
+        "http.request.v1", semantic_key="reservation.check_availability"
+    )
     current.execution_plan["response"] = {
-        "mode": "json",
-        "mapping": '{"status": response.body.status}',
-        "output_schema": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["status"],
-            "properties": {"status": {"const": "created"}},
-        },
+        "codec": "json",
+        "mapping": {"status": {"$expr": "response.body.status"}},
     }
-    result = ManagedWebhookPostJsonResult(
-        result_type="managed_webhook.post_json.v1",
+    result = HttpRequestResult(
+        result_type="http.request.v1",
         status="succeeded",
         operation_id=uuid4(),
         reference=None,
@@ -182,27 +184,63 @@ async def test_configured_webhook_result_is_the_validated_agent_result() -> None
         InvocationRepository(current), None, None, None, None, None
     )
 
-    completed = await service.record_result(report(current, result))
+    completed = await report_result(report(current, result), service)
 
     assert completed.semantic_result == {"status": "created"}
-    assert invocation_response(completed).semantic_result == {"status": "created"}
+    assert invocation_response(completed).semantic_result == completed.semantic_result
 
 
 @pytest.mark.asyncio
-async def test_backend_rejects_worker_result_that_violates_output_schema() -> None:
-    current = invocation("managed_webhook.post_json.v1")
-    current.execution_plan["response"] = {
-        "mode": "status_only",
-        "success_output": {"status": "submitted"},
-        "output_schema": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["status"],
-            "properties": {"status": {"const": "submitted"}},
-        },
+async def test_check_availability_uses_validated_canonical_result() -> None:
+    current = invocation(
+        "http.request.v1", semantic_key="reservation.check_availability"
+    )
+    current.execution_plan["capability"] = {
+        "semantic_key": "reservation.check_availability",
+        "semantic_version": 1,
     }
-    result = ManagedWebhookPostJsonResult(
-        result_type="managed_webhook.post_json.v1",
+    current.execution_plan["result_schema"] = {
+        "type": "object",
+        "required": ["status", "available_rooms"],
+        "properties": {
+            "status": {"type": "string"},
+            "available_rooms": {"type": "integer"},
+        },
+        "additionalProperties": False,
+    }
+    result = HttpRequestResult(
+        result_type="http.request.v1",
+        status="succeeded",
+        operation_id=uuid4(),
+        reference=None,
+        deduplicated=False,
+        data={"status": "available", "available_rooms": 2},
+    )
+    service = CapabilityInvocationService(
+        InvocationRepository(current), None, None, None, None, None
+    )
+
+    completed = await service.record_result(report(current, result))
+
+    assert completed.status is CapabilityInvocationStatus.SUCCEEDED
+    assert completed.semantic_result == {
+        "status": "available",
+        "available_rooms": 2,
+    }
+    assert invocation_response(completed).semantic_result == completed.semantic_result
+
+
+@pytest.mark.asyncio
+async def test_backend_rejects_http_result_that_violates_result_schema() -> None:
+    current = invocation("http.request.v1")
+    current.execution_plan["result_schema"] = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["status"],
+        "properties": {"status": {"const": "submitted"}},
+    }
+    result = HttpRequestResult(
+        result_type="http.request.v1",
         status="succeeded",
         operation_id=uuid4(),
         reference=None,
@@ -213,7 +251,7 @@ async def test_backend_rejects_worker_result_that_violates_output_schema() -> No
         InvocationRepository(current), None, None, None, None, None
     )
 
-    with pytest.raises(CapabilityValidationError, match="violates output schema"):
+    with pytest.raises(CapabilityValidationError, match="violates result_schema"):
         await service.record_result(report(current, result))
 
 
@@ -228,8 +266,8 @@ def test_technical_results_project_to_provider_neutral_outcomes() -> None:
         )
     )
     webhook = project_execution_outcome(
-        ManagedWebhookPostJsonResult(
-            result_type="managed_webhook.post_json.v1",
+        HttpRequestResult(
+            result_type="http.request.v1",
             status="succeeded",
             operation_id=uuid4(),
             reference=None,
@@ -269,14 +307,37 @@ def test_semantic_mapper_accepts_execution_outcome_only(
     assert result.deduplicated is deduplicated
 
 
+def test_known_capability_without_specialized_mapper_uses_canonical_result() -> None:
+    result = semantic_result(
+        "reservation.check_availability",
+        1,
+        ExecutionOutcome(data={"status": "available", "available_rooms": 2}),
+    )
+
+    assert result == {"status": "available", "available_rooms": 2}
+
+
+@pytest.mark.parametrize(
+    ("semantic_key", "semantic_version"),
+    [("reservation.unknown", 1), ("reservation.check_availability", 2)],
+)
+def test_unknown_or_unsupported_capability_is_rejected(
+    semantic_key: str, semantic_version: int
+) -> None:
+    with pytest.raises(
+        CapabilityValidationError, match="semantic key or version is unsupported"
+    ):
+        semantic_result(semantic_key, semantic_version, ExecutionOutcome(data={}))
+
+
 @pytest.mark.asyncio
 async def test_result_plan_mismatch_and_wrong_job_are_rejected() -> None:
     current = invocation("google_sheets.append_values.v1")
     service = CapabilityInvocationService(
         InvocationRepository(current), None, None, None, None, None
     )
-    webhook = ManagedWebhookPostJsonResult(
-        result_type="managed_webhook.post_json.v1",
+    webhook = HttpRequestResult(
+        result_type="http.request.v1",
         status="succeeded",
         operation_id=uuid4(),
         reference="accepted-1",

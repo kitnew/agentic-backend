@@ -61,3 +61,27 @@ class PlatformTelephonyResponse(BaseModel):
     last_error: str | None
     last_reconciled_at: datetime | None
     diagnostics: dict[str, str | None]
+
+
+class TelephonyDidState(BaseModel):
+    phone_number: str | None = None
+
+
+class TelephonyClaimStatus(BaseModel):
+    state: str
+    phone_number: str | None = None
+
+
+class TelephonyProvisioningStatusResponse(BaseModel):
+    state: str
+    last_error: str | None = None
+    last_reconciled_at: datetime | None = None
+
+
+class TenantTelephonyStatus(BaseModel):
+    tenant_id: UUID
+    draft: TelephonyDidState | None
+    published: TelephonyDidState | None
+    publication: str
+    claim: TelephonyClaimStatus
+    provisioning: TelephonyProvisioningStatusResponse

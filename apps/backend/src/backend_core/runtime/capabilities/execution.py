@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 
 from contracts import (
     GoogleSheetsAppendValuesResult,
-    ManagedWebhookPostJsonResult,
+    HttpRequestResult,
     TechnicalResult,
 )
 
@@ -39,7 +39,7 @@ def project_execution_outcome(result: TechnicalResult) -> ExecutionOutcome:
             reference=result.updated_range,
             deduplicated=result.deduplicated,
         )
-    if isinstance(result, ManagedWebhookPostJsonResult):
+    if isinstance(result, HttpRequestResult):
         return ExecutionOutcome(
             reference=result.reference,
             deduplicated=result.deduplicated,

@@ -5,6 +5,7 @@ from contracts.tenant_components import (
     TenantAgentConfig,
     TenantCapabilitiesConfig,
     TenantKnowledgeConfig,
+    TenantPostCallConfig,
     TenantPromptConfig,
     TenantTelephonyConfig,
 )
@@ -58,6 +59,7 @@ _MODELS: dict[TenantComponent, type[BaseModel]] = {
     TenantComponent.PROMPT: TenantPromptConfig,
     TenantComponent.KNOWLEDGE: TenantKnowledgeConfig,
     TenantComponent.CAPABILITIES: TenantCapabilitiesConfig,
+    TenantComponent.POST_CALL: TenantPostCallConfig,
     TenantComponent.TELEPHONY: TenantTelephonyConfig,
 }
 
@@ -137,6 +139,8 @@ async def _release(
             capabilities=TenantCapabilitiesConfig.model_validate(
                 components.capabilities.payload
             ),
+            post_call_revision_id=components.post_call.id,
+            post_call=TenantPostCallConfig.model_validate(components.post_call.payload),
             telephony_revision_id=components.telephony.id,
             telephony=TenantTelephonyConfig.model_validate(components.telephony.payload),
             platform=platform,

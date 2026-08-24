@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 @dataclass(frozen=True, slots=True)
 class PinnedRuntimeBundle:
+    id: UUID
     payload: dict[str, object]
     provenance: dict[str, object]
 
@@ -24,7 +25,7 @@ class RuntimeBundleStore:
             await self._session.execute(
                 text(
                     """
-                    SELECT b.payload, b.provenance
+                    SELECT b.id, b.payload, b.provenance
                     FROM runtime_bundles AS b
                     JOIN tenant_releases AS r ON r.runtime_bundle_id = b.id
                     WHERE r.tenant_id = :tenant_id AND r.id = :release_id
@@ -34,7 +35,7 @@ class RuntimeBundleStore:
                 {"tenant_id": tenant_id, "release_id": release_id, "bundle_id": bundle_id},
             )
         ).one_or_none()
-        return None if row is None else PinnedRuntimeBundle(row.payload, row.provenance)
+        return None if row is None else PinnedRuntimeBundle(row.id, row.payload, row.provenance)
 
     async def telephony_ready(self, tenant_id: UUID, revision_id: UUID) -> bool:
         row = (

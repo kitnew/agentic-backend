@@ -8,6 +8,7 @@ from contracts.tenant_components import (
     TenantAgentConfig,
     TenantCapabilitiesConfig,
     TenantKnowledgeConfig,
+    TenantPostCallConfig,
     TenantPromptConfig,
     TenantTelephonyConfig,
 )
@@ -77,6 +78,7 @@ class ReleaseComponents:
     prompt: _RevisionReference
     knowledge: _RevisionReference
     capabilities: _RevisionReference
+    post_call: _RevisionReference
     telephony: _RevisionReference
 
     def id_for(self, component: TenantComponent) -> UUID:
@@ -148,6 +150,7 @@ class TenantReleaseUseCases:
             prompt_revision_id=components.prompt.id,
             knowledge_revision_id=components.knowledge.id,
             capabilities_revision_id=components.capabilities.id,
+            post_call_revision_id=components.post_call.id,
             telephony_revision_id=components.telephony.id,
             runtime_bundle_id=bundle.id,
             comment=comment,
@@ -169,6 +172,7 @@ class TenantReleaseUseCases:
             TenantComponent.PROMPT: TenantPromptConfig,
             TenantComponent.KNOWLEDGE: TenantKnowledgeConfig,
             TenantComponent.CAPABILITIES: TenantCapabilitiesConfig,
+            TenantComponent.POST_CALL: TenantPostCallConfig,
             TenantComponent.TELEPHONY: TenantTelephonyConfig,
         }
         for component, draft in drafts.items():
@@ -201,6 +205,7 @@ class TenantReleaseUseCases:
             prompt_revision_id=target.prompt_revision_id,
             knowledge_revision_id=target.knowledge_revision_id,
             capabilities_revision_id=target.capabilities_revision_id,
+            post_call_revision_id=target.post_call_revision_id,
             telephony_revision_id=target.telephony_revision_id,
             runtime_bundle_id=target.runtime_bundle_id,
             source_release_id=target.id,
@@ -240,6 +245,9 @@ class TenantReleaseUseCases:
             capabilities=await revision(
                 TenantComponent.CAPABILITIES, "capabilities_revision_id"
             ),
+            post_call=await revision(
+                TenantComponent.POST_CALL, "post_call_revision_id"
+            ),
             telephony=await revision(
                 TenantComponent.TELEPHONY, "telephony_revision_id"
             ),
@@ -255,6 +263,7 @@ class TenantReleaseUseCases:
             (TenantComponent.PROMPT, provenance.prompt_revision_id),
             (TenantComponent.KNOWLEDGE, provenance.knowledge_revision_id),
             (TenantComponent.CAPABILITIES, provenance.capabilities_revision_id),
+            (TenantComponent.POST_CALL, provenance.post_call_revision_id),
             (TenantComponent.TELEPHONY, provenance.telephony_revision_id),
         ):
             if components.id_for(component) != provenance_id:

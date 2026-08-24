@@ -33,7 +33,10 @@ class TenantRepository:
     async def list(self, *, offset: int, limit: int) -> list[Tenant]:
         return list(
             await self._session.scalars(
-                select(Tenant).order_by(Tenant.created_at, Tenant.id).offset(offset).limit(limit)
+                select(Tenant)
+                .order_by(Tenant.created_at, Tenant.id)
+                .offset(offset)
+                .limit(limit)
             )
         )
 
@@ -58,6 +61,15 @@ class TelephonyRepository:
 
     async def provisioning(self) -> list[TenantTelephonyProvisioning]:
         return list(await self._session.scalars(select(TenantTelephonyProvisioning)))
+
+    async def provisioning_for(
+        self, tenant_id: UUID
+    ) -> TenantTelephonyProvisioning | None:
+        return await self._session.scalar(
+            select(TenantTelephonyProvisioning).where(
+                TenantTelephonyProvisioning.tenant_id == tenant_id
+            )
+        )
 
     async def flush(self) -> None:
         await self._session.flush()

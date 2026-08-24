@@ -1,21 +1,14 @@
 from uuid import UUID
 
-from contracts.tenant_components import (
-    TenantCapabilitiesConfig,
-    TenantKnowledgeConfig,
-    TenantPromptConfig,
-    TenantTelephonyConfig,
-)
-from contracts.voice_runtime import TenantRuntimeOverride
 from sqlalchemy.exc import IntegrityError
 
+from backend_core.modules.tenants.defaults import default_component_payloads
 from backend_core.modules.tenants.errors import (
     TenantNotFoundError,
     TenantSlugConflictError,
 )
 from backend_core.modules.tenants.models import Tenant
 from backend_core.modules.tenants.release_repository import (
-    TenantComponent,
     TenantReleaseRepository,
 )
 from backend_core.modules.tenants.repository import TenantRepository
@@ -34,17 +27,13 @@ class TenantService:
             raise TenantSlugConflictError
         try:
             tenant = await self._repository.add(Tenant(**data.model_dump()))
-            for component, value in {
-                TenantComponent.RUNTIME: TenantRuntimeOverride(),
-                TenantComponent.PROMPT: TenantPromptConfig(),
-                TenantComponent.KNOWLEDGE: TenantKnowledgeConfig(),
-                TenantComponent.CAPABILITIES: TenantCapabilitiesConfig(),
-                TenantComponent.TELEPHONY: TenantTelephonyConfig(),
-            }.items():
+            for component, payload in default_component_payloads(
+                data.display_name, data.business_type
+            ).items():
                 await self._releases.save_draft(
                     component=component,
                     tenant_id=tenant.id,
-                    payload=value.model_dump(mode="json"),
+                    payload=payload,
                     expected_version=None,
                 )
             return tenant
