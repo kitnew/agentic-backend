@@ -25,7 +25,7 @@ async def test_clean_baseline_creates_only_component_release_schema(
             release = await session.scalar(
                 text("SELECT to_regclass('public.tenant_releases')")
             )
-        assert version == "0001_component_release_baseline"
+        assert version == "0002_tenant_draft_backfill"
         assert legacy is None
         assert release == "tenant_releases"
     finally:
