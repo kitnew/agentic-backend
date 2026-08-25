@@ -24,6 +24,12 @@ CANONICAL_FIELD_DESCRIPTIONS = {
     "notes": "Conversation notes",
 }
 
+CANONICAL_FIELD_NORMALIZERS = {
+    "guest.name": "trim",
+    "guest.phone": "e164",
+    "guest.email": "trim",
+}
+
 
 class CatalogDescriptor(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

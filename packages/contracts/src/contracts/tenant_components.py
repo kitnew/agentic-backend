@@ -97,6 +97,16 @@ class CapabilityBusinessPolicy(_ComponentModel):
     availability_proof_ttl_seconds: int | None = Field(default=None, ge=1, le=86400)
 
 
+class CapabilityDateRangeConstraint(_ComponentModel):
+    kind: Literal["date_range"] = "date_range"
+    start: str = Field(pattern=r"^(?:[a-z][a-z0-9_]*\.)*[a-z][a-z0-9_]*$")
+    end: str = Field(pattern=r"^(?:[a-z][a-z0-9_]*\.)*[a-z][a-z0-9_]*$")
+    start_not_in_past: bool = False
+
+
+CapabilityInputConstraint = CapabilityDateRangeConstraint
+
+
 class GoogleSheetsExecutionIdempotency(_ComponentModel):
     lookup_range: str = Field(min_length=1, max_length=255)
     operation_id_column_index: int = Field(ge=0, le=1023)
@@ -170,6 +180,7 @@ class TenantCapabilityProfile(_ComponentModel):
     announcement: str = Field(min_length=1, max_length=1000)
     agent_input_schema: dict[str, Any]
     bindings: dict[str, str] = Field(default_factory=dict)
+    input_constraints: list[CapabilityInputConstraint] = Field(default_factory=list)
     business_policy: CapabilityBusinessPolicy = Field(
         default_factory=CapabilityBusinessPolicy
     )

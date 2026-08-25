@@ -15,14 +15,19 @@ from contracts.tenant_components import HttpExecution, TenantCapabilitiesConfig
 class _Connections:
     async def get_by_key(self, tenant_id: UUID, key: str):
         if key == "check-availability":
-            return type("Connection", (), {"id": UUID("11111111-1111-1111-1111-111111111111")})()
+            return type(
+                "Connection", (), {"id": UUID("11111111-1111-1111-1111-111111111111")}
+            )()
         return None
 
 
-def _value(connection: str = "check-availability") -> TenantCapabilitiesAuthoring:
+def _value(
+    connection: str = "check-availability",
+    semantic_key: str = "tenant.check_reservation",
+) -> TenantCapabilitiesAuthoring:
     return TenantCapabilitiesAuthoring(
         capabilities={
-            "reservation.check_availability": TenantCapabilityAuthoring(
+            semantic_key: TenantCapabilityAuthoring(
                 description="availability",
                 announcement="checking",
                 agent_input_schema={
@@ -46,7 +51,10 @@ def _value(connection: str = "check-availability") -> TenantCapabilitiesAuthorin
                     connection=connection,
                     method="POST",
                     timeout_seconds=10,
-                    request={"codec": "json", "mapping": {"room": {"$expr": "business.room"}}},
+                    request={
+                        "codec": "json",
+                        "mapping": {"room": {"$expr": "business.room"}},
+                    },
                 ),
             )
         }
@@ -58,7 +66,7 @@ async def test_authoring_connection_is_resolved_and_runtime_metadata_is_private(
     result = await translate_capabilities(
         _value(), tenant_id=UUID(int=1), connections=_Connections()
     )
-    execution = result.capabilities["reservation.check_availability"].execution
+    execution = result.capabilities["tenant.check_reservation"].execution
     assert execution.connection_id == UUID("11111111-1111-1111-1111-111111111111")
     assert execution.plan_type == "http.request.v1"
     assert "connection_id" not in _value().model_dump()
@@ -74,9 +82,41 @@ async def test_authoring_missing_connection_is_typed():
     assert error.value.code == "integration_not_found"
 
 
+@pytest.mark.asyncio
+async def test_authoring_rejects_invalid_semantic_key_and_mapping() -> None:
+    with pytest.raises(AuthoringTranslationError) as key_error:
+        await translate_capabilities(
+            _value(semantic_key="tenant:lookup"),
+            tenant_id=UUID(int=1),
+            connections=_Connections(),
+        )
+    assert key_error.value.code == "invalid_semantic_key"
+
+    value = _value()
+    capability = value.capabilities["tenant.check_reservation"]
+    assert isinstance(capability, TenantCapabilityAuthoring)
+    invalid_operation = capability.execution.model_copy(
+        update={
+            "request": capability.execution.request.model_copy(
+                update={"mapping": {"value": {"$expr": "("}}}
+            )
+        }
+    )
+    value.capabilities["tenant.check_reservation"] = capability.model_copy(
+        update={"execution": invalid_operation}
+    )
+    with pytest.raises(AuthoringTranslationError) as mapping_error:
+        await translate_capabilities(
+            value, tenant_id=UUID(int=1), connections=_Connections()
+        )
+    assert mapping_error.value.code == "invalid_mapping_expression"
+
+
 def test_semantic_plan_is_noop_or_reports_replacement():
     assert semantic_plan({"text": "a"}, {"text": "a"})["changes"] == []
-    assert semantic_plan({"text": "a"}, {"text": "b"})["changes"][0]["before"] == {"text": "a"}
+    assert semantic_plan({"text": "a"}, {"text": "b"})["changes"][0]["before"] == {
+        "text": "a"
+    }
 
 
 @pytest.mark.asyncio
@@ -90,7 +130,7 @@ async def test_internal_capability_read_is_translated_to_operator_shape():
 
     payload = TenantCapabilitiesConfig(
         capabilities={
-            "reservation.check_availability": {
+            "tenant.check_reservation": {
                 "enabled": True,
                 "semantic_version": 1,
                 "description": "availability",
@@ -101,7 +141,10 @@ async def test_internal_capability_read_is_translated_to_operator_shape():
                     connection_id=connection_id,
                     method="POST",
                     timeout_seconds=10,
-                    request={"codec": "json", "mapping": {"id": {"$expr": "business.id"}}},
+                    request={
+                        "codec": "json",
+                        "mapping": {"id": {"$expr": "business.id"}},
+                    },
                 ),
             }
         }
@@ -109,8 +152,11 @@ async def test_internal_capability_read_is_translated_to_operator_shape():
     value = await authoring_value(
         "capabilities", payload, tenant_id=UUID(int=1), connections=Connections()
     )
-    execution = value.capabilities["reservation.check_availability"].execution
+    execution = value.capabilities["tenant.check_reservation"].execution
     assert execution.connection == "check-availability"
     assert "connection_id" not in value.model_dump()
     assert "plan_type" not in value.model_dump()
-    assert "semantic_version" not in value.model_dump()["capabilities"]["reservation.check_availability"]
+    assert (
+        "semantic_version"
+        not in value.model_dump()["capabilities"]["tenant.check_reservation"]
+    )

@@ -8,6 +8,7 @@ from contracts.http_operation import HttpOperation
 from contracts.tenant_components import (
     AgentIdentityConfig,
     BusinessConfig,
+    CapabilityInputConstraint,
     ContactConfig,
     ConversationConfig,
     HandoffConfig,
@@ -57,6 +58,7 @@ class TenantCapabilityAuthoring(_AuthoringModel):
     announcement: str | dict[str, str] = Field(min_length=1)
     agent_input_schema: dict[str, Any]
     bindings: dict[str, str] = Field(default_factory=dict)
+    input_constraints: list[CapabilityInputConstraint] = Field(default_factory=list)
     business_policy: dict[str, Any] = Field(default_factory=dict)
     execution: HttpOperation
     result_schema: dict[str, Any] | None = None

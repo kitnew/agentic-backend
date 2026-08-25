@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
+from contracts.capability import RuntimeCapabilityDefinition
 from contracts.runtime_bundle import (
     RuntimeBundle,
     RuntimeBundlePayload,
     RuntimeBundleProvenance,
     RuntimeCapabilityBinding,
+    RuntimeCapabilityInputConstraint,
     RuntimeCapabilityPolicy,
     RuntimeGoogleSheetsExecution,
     RuntimeHandoffDestination,
@@ -32,7 +34,10 @@ from contracts.voice_runtime import (
     model_supports_reasoning,
 )
 
-from backend_core.runtime.capabilities.domain import runtime_definition
+from backend_core.runtime.capabilities.domain import (
+    CapabilityValidationError,
+    resolve_capability,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,12 +82,23 @@ def compile_tenant_runtime_bundle(
     """Pure release compiler: all inputs are sealed values or exact references."""
 
     voice_runtime = _effective_voice_runtime(platform.runtime_policy, runtime, agent)
-    bindings = _capability_bindings(capabilities)
+    resolved_capabilities = [
+        (profile, resolve_capability(key, profile))
+        for key, profile in capabilities.capabilities.items()
+        if isinstance(profile, TenantCapabilityProfile) and profile.enabled
+    ]
+    tool_names = [definition.tool_name for _, definition in resolved_capabilities]
+    duplicates = sorted({name for name in tool_names if tool_names.count(name) > 1})
+    if duplicates:
+        raise CapabilityValidationError(
+            "duplicate_tool_name",
+            f"Capability tool names must be unique: {', '.join(duplicates)}",
+            "capabilities",
+        )
+    bindings = _capability_bindings(resolved_capabilities)
     post_call_actions = _post_call_actions(post_call)
     integration_ids = sorted(
-        {
-            binding.execution.connection_id for binding in bindings
-        }
+        {binding.execution.connection_id for binding in bindings}
         | {action.execution.connection_id for action in post_call_actions},
         key=str,
     )
@@ -110,11 +126,7 @@ def compile_tenant_runtime_bundle(
             knowledge_context=knowledge.inline_context,
             knowledge_base_revision_id=knowledge.knowledge_base_revision_id,
         ),
-        capabilities=[
-            runtime_definition(key, profile)
-            for key, profile in capabilities.capabilities.items()
-            if isinstance(profile, TenantCapabilityProfile) and profile.enabled
-        ],
+        capabilities=[definition for _, definition in resolved_capabilities],
         capability_bindings=bindings,
         post_call_actions=post_call_actions,
         telephony=runtime_telephony,
@@ -168,13 +180,12 @@ def _effective_voice_runtime(
 
 
 def _capability_bindings(
-    capabilities: TenantCapabilitiesConfig,
+    capabilities: list[tuple[TenantCapabilityProfile, RuntimeCapabilityDefinition]],
 ) -> list[RuntimeCapabilityBinding]:
     bindings: list[RuntimeCapabilityBinding] = []
-    for semantic_key, profile in capabilities.capabilities.items():
-        if not isinstance(profile, TenantCapabilityProfile) or not profile.enabled:
-            continue
+    for profile, definition in capabilities:
         execution = profile.execution
+        runtime_execution: RuntimeGoogleSheetsExecution | RuntimeHttpExecution
         if execution.plan_type == "google_sheets.append_values.v1":
             runtime_execution = RuntimeGoogleSheetsExecution(
                 connection_id=execution.connection_id,
@@ -201,12 +212,18 @@ def _capability_bindings(
             )
         bindings.append(
             RuntimeCapabilityBinding(
-                semantic_key=semantic_key,
-                semantic_version=profile.semantic_version,
-                tool_name=runtime_definition(semantic_key, profile).tool_name,
+                semantic_key=definition.semantic_key,
+                semantic_version=definition.semantic_version,
+                tool_name=definition.tool_name,
                 enabled=True,
                 input_schema=profile.agent_input_schema,
                 bindings=profile.bindings,
+                input_constraints=[
+                    RuntimeCapabilityInputConstraint.model_validate(
+                        constraint.model_dump(mode="json")
+                    )
+                    for constraint in profile.input_constraints
+                ],
                 policy=RuntimeCapabilityPolicy(
                     **profile.business_policy.model_dump(mode="json")
                 ),

@@ -42,7 +42,7 @@ class InvocationRepository:
 
 
 def invocation(
-    plan_type: str, *, semantic_key: str = "reservation.submit_request"
+    plan_type: str, *, semantic_key: str = "tenant.request"
 ) -> CapabilityInvocation:
     now = datetime.now(UTC)
     return CapabilityInvocation(
@@ -151,23 +151,15 @@ async def test_matching_typed_result_completes_invocation(
 
     assert completed.status is CapabilityInvocationStatus.SUCCEEDED
     assert completed.technical_result["result_type"] == result.result_type
-    assert completed.semantic_result == {
-        "status": "request_submitted",
-        "request_reference": (
-            result.updated_range
-            if isinstance(result, GoogleSheetsAppendValuesResult)
-            else result.reference
-        ),
-        "deduplicated": result.deduplicated,
-    }
+    assert completed.semantic_result == (
+        {} if isinstance(result, GoogleSheetsAppendValuesResult) else None
+    )
     assert repository.flushed
 
 
 @pytest.mark.asyncio
 async def test_configured_http_result_is_the_validated_agent_result() -> None:
-    current = invocation(
-        "http.request.v1", semantic_key="reservation.check_availability"
-    )
+    current = invocation("http.request.v1", semantic_key="tenant.lookup")
     current.execution_plan["response"] = {
         "codec": "json",
         "mapping": {"status": {"$expr": "response.body.status"}},
@@ -291,43 +283,12 @@ def test_unknown_technical_result_is_rejected() -> None:
         project_execution_outcome(object())  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize(
-    ("reference", "deduplicated"), [("accepted-1", False), (None, True)]
-)
-def test_semantic_mapper_accepts_execution_outcome_only(
-    reference: str | None, deduplicated: bool
-) -> None:
+def test_declarative_capability_uses_provider_data() -> None:
     result = semantic_result(
-        "reservation.submit_request",
-        1,
-        ExecutionOutcome(reference=reference, deduplicated=deduplicated),
-    )
-    assert result.status == "request_submitted"
-    assert result.request_reference == reference
-    assert result.deduplicated is deduplicated
-
-
-def test_known_capability_without_specialized_mapper_uses_canonical_result() -> None:
-    result = semantic_result(
-        "reservation.check_availability",
-        1,
-        ExecutionOutcome(data={"status": "available", "available_rooms": 2}),
+        ExecutionOutcome(data={"status": "available", "available_rooms": 2})
     )
 
     assert result == {"status": "available", "available_rooms": 2}
-
-
-@pytest.mark.parametrize(
-    ("semantic_key", "semantic_version"),
-    [("reservation.unknown", 1), ("reservation.check_availability", 2)],
-)
-def test_unknown_or_unsupported_capability_is_rejected(
-    semantic_key: str, semantic_version: int
-) -> None:
-    with pytest.raises(
-        CapabilityValidationError, match="semantic key or version is unsupported"
-    ):
-        semantic_result(semantic_key, semantic_version, ExecutionOutcome(data={}))
 
 
 @pytest.mark.asyncio

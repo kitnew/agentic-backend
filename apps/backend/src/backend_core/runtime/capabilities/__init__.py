@@ -1,1 +1,1 @@
-"""Code-owned semantic capability execution."""
+"""Declarative capability execution."""

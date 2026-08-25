@@ -97,7 +97,11 @@ def http_error(error: CapabilityValidationError) -> HTTPException:
         if error.code in {"call_not_found", "capability_not_found"}
         else status.HTTP_409_CONFLICT
     )
-    if error.code in {"invalid_agent_input", "business_policy_rejected"}:
+    if error.code in {
+        "invalid_agent_input",
+        "business_policy_rejected",
+        "input_constraint_rejected",
+    }:
         code = status.HTTP_422_UNPROCESSABLE_CONTENT
     return HTTPException(
         code, {"code": error.code, "path": error.path, "message": error.message}

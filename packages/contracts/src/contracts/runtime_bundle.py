@@ -42,6 +42,16 @@ class RuntimeCapabilityPolicy(_RuntimeBundleModel):
     availability_proof_ttl_seconds: int | None = Field(default=None, ge=1, le=86400)
 
 
+class RuntimeCapabilityDateRangeConstraint(_RuntimeBundleModel):
+    kind: Literal["date_range"] = "date_range"
+    start: str = Field(pattern=r"^(?:[a-z][a-z0-9_]*\.)*[a-z][a-z0-9_]*$")
+    end: str = Field(pattern=r"^(?:[a-z][a-z0-9_]*\.)*[a-z][a-z0-9_]*$")
+    start_not_in_past: bool = False
+
+
+RuntimeCapabilityInputConstraint = RuntimeCapabilityDateRangeConstraint
+
+
 class RuntimeGoogleSheetsExecution(_RuntimeBundleModel):
     plan_type: Literal["google_sheets.append_values.v1"] = "google_sheets.append_values.v1"
     mapping_language: Literal["jsonata"] = "jsonata"
@@ -73,12 +83,13 @@ class RuntimeHttpExecution(_RuntimeBundleModel):
 
 
 class RuntimeCapabilityBinding(_RuntimeBundleModel):
-    semantic_key: str = Field(min_length=1, max_length=128)
+    semantic_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
     semantic_version: int = Field(gt=0)
-    tool_name: str = Field(min_length=1, max_length=64)
+    tool_name: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
     enabled: bool
     input_schema: dict[str, object]
     bindings: dict[str, str] = Field(default_factory=dict)
+    input_constraints: list[RuntimeCapabilityInputConstraint] = Field(default_factory=list)
     policy: RuntimeCapabilityPolicy = Field(default_factory=RuntimeCapabilityPolicy)
     execution: RuntimeGoogleSheetsExecution | RuntimeHttpExecution
 

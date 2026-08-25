@@ -31,7 +31,7 @@ class CapabilityInvocationStatus(StrEnum):
 
 
 class RuntimeCapabilityDefinition(_Contract):
-    semantic_key: str
+    semantic_key: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")
     semantic_version: int = Field(gt=0)
     tool_name: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
     description: str = Field(min_length=1, max_length=1000)
@@ -279,12 +279,6 @@ class CapabilityConfirmationResponse(_Contract):
     status: Literal["confirmation_required"] = "confirmation_required"
     summary: dict[str, object]
     expires_at: datetime
-
-
-class ReservationRequestSubmitted(_Contract):
-    status: Literal["request_submitted"] = "request_submitted"
-    request_reference: str | None = Field(default=None, max_length=1024)
-    deduplicated: bool
 
 
 class CapabilityInvocationResponse(_Contract):

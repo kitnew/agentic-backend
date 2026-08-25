@@ -234,9 +234,8 @@ def _write_workspace(workspace: Path, slug: str) -> None:
         yaml.safe_dump(
             {
                 "capabilities": {
-                    "reservation.check_availability": {
+                    "reservation.check_reservation": {
                         "enabled": True,
-                        "semantic_version": 1,
                         "description": "Check room availability.",
                         "announcement": "I will check availability.",
                         "agent_input_schema": schema,
@@ -396,7 +395,7 @@ async def test_control_plane_golden_path(
         capability_draft = _api(client, "GET", f"/admin/v1/tenants/{tenant_id}/components/capabilities").json()["draft"]["payload"]
         post_call_draft = _api(client, "GET", f"/admin/v1/tenants/{tenant_id}/components/post_call").json()["draft"]["payload"]
         connection_id = UUID(integration["id"])
-        assert UUID(capability_draft["capabilities"]["reservation.check_availability"]["execution"]["connection_id"]) == connection_id
+        assert UUID(capability_draft["capabilities"]["reservation.check_reservation"]["execution"]["connection_id"]) == connection_id
         assert UUID(post_call_draft["actions"][0]["execution"]["connection_id"]) == connection_id
         assert "reservation-api" in (tenant_path / "capabilities.yaml").read_text()
         assert "connection_id" not in (tenant_path / "capabilities.yaml").read_text()

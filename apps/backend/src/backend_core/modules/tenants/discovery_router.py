@@ -2,7 +2,6 @@ from contracts import (
     CANONICAL_FIELD_DESCRIPTIONS,
     CANONICAL_FIELDS,
     CapabilityDiscoveryResponse,
-    CapabilitySemanticDescriptor,
     CatalogDescriptor,
     PostCallArtifactDescriptor,
     PostCallDiscoveryResponse,
@@ -10,18 +9,12 @@ from contracts import (
 from fastapi import APIRouter, Depends
 
 from backend_core.platform.auth import require_admin
-from backend_core.runtime.capabilities.domain import REGISTRY
 
 router = APIRouter(
     prefix="/admin/v1/authoring/discovery",
     tags=["admin:authoring-discovery"],
     dependencies=[Depends(require_admin)],
 )
-
-_SEMANTIC_DESCRIPTIONS = {
-    "reservation.submit_request": "Submit a reservation request",
-    "reservation.check_availability": "Check reservation availability",
-}
 
 
 def _domain_fields() -> list[CatalogDescriptor]:
@@ -55,18 +48,8 @@ def _capability_context() -> list[CatalogDescriptor]:
 
 @router.get("/capabilities", response_model=CapabilityDiscoveryResponse)
 async def capabilities() -> CapabilityDiscoveryResponse:
-    semantics = [
-        CapabilitySemanticDescriptor(
-            key=item.semantic_key,
-            version=item.semantic_version,
-            description=_SEMANTIC_DESCRIPTIONS.get(item.semantic_key, item.semantic_key),
-            kind=item.kind,
-            tool_name=item.tool_name,
-        )
-        for item in REGISTRY.values()
-    ]
     return CapabilityDiscoveryResponse(
-        semantics=semantics,
+        semantics=[],
         domain_fields=_domain_fields(),
         mapping_context=_capability_context(),
     )

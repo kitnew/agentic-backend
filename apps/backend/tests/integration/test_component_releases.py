@@ -318,9 +318,9 @@ async def test_capability_invocation_preserves_pinned_runtime_bundle_identity(
     tenant_id = uuid4()
     connection_id = uuid4()
     binding = RuntimeCapabilityBinding(
-        semantic_key="reservation.check_availability",
+        semantic_key="reservation.check_reservation",
         semantic_version=1,
-        tool_name="reservation_check_availability",
+        tool_name="reservation_check_reservation",
         enabled=True,
         input_schema={
             "type": "object",
@@ -414,7 +414,7 @@ async def test_capability_invocation_preserves_pinned_runtime_bundle_identity(
                 call.id,
                 CapabilityInvocationRequest(
                     tool_call_id="bundle-identity-tool-call",
-                    capability="reservation_check_availability",
+                    capability="reservation_check_reservation",
                     agent_input={
                         "check_in": "2030-08-10",
                         "check_out": "2030-08-12",

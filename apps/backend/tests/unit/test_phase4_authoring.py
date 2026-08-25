@@ -7,7 +7,6 @@ from backend_core.modules.tenants.authoring import (
 from backend_core.modules.tenants.discovery_router import capabilities, post_call
 from backend_core.runtime.capabilities.domain import (
     CANONICAL_FIELDS,
-    REGISTRY,
     CapabilityValidationError,
     validate_bindings,
     validate_result_for_plan,
@@ -35,7 +34,9 @@ def _schema() -> dict[str, object]:
     }
 
 
-def test_explicit_binding_accepts_canonical_and_custom_without_schema_extensions() -> None:
+def test_explicit_binding_accepts_canonical_and_custom_without_schema_extensions() -> (
+    None
+):
     validate_bindings(
         _schema(),
         {
@@ -44,10 +45,12 @@ def test_explicit_binding_accepts_canonical_and_custom_without_schema_extensions
             "room_type": "allocation.room_type",
             "room_count": "allocation.room_count",
         },
-        REGISTRY[("reservation.check_availability", 1)],
     )
     validate_bindings(
-        {**_schema(), "properties": {**_schema()["properties"], "ref": {"type": "string"}}},
+        {
+            **_schema(),
+            "properties": {**_schema()["properties"], "ref": {"type": "string"}},
+        },
         {
             "check_in": "stay.check_in",
             "check_out": "stay.check_out",
@@ -55,7 +58,6 @@ def test_explicit_binding_accepts_canonical_and_custom_without_schema_extensions
             "room_count": "allocation.room_count",
             "ref": "custom.reservation_number",
         },
-        REGISTRY[("reservation.check_availability", 1)],
     )
 
 
@@ -69,18 +71,22 @@ def test_explicit_binding_rejects_unknown_field_and_type_mismatch() -> None:
                 "room_type": "allocation.unknown",
                 "room_count": "allocation.room_count",
             },
-            REGISTRY[("reservation.check_availability", 1)],
         )
     with pytest.raises(CapabilityValidationError, match="incompatible"):
         validate_bindings(
-            {**_schema(), "properties": {**_schema()["properties"], "room_count": {"type": "string"}}},
+            {
+                **_schema(),
+                "properties": {
+                    **_schema()["properties"],
+                    "room_count": {"type": "string"},
+                },
+            },
             {
                 "check_in": "stay.check_in",
                 "check_out": "stay.check_out",
                 "room_type": "allocation.room_type",
                 "room_count": "allocation.room_count",
             },
-            REGISTRY[("reservation.check_availability", 1)],
         )
 
 
@@ -89,14 +95,13 @@ async def test_discovery_uses_backend_semantic_and_artifact_sources() -> None:
     capability = await capabilities()
     post_call_response = await post_call()
     assert isinstance(capability, CapabilityDiscoveryResponse)
-    assert any(item.key == "reservation.check_availability" for item in capability.semantics)
+    assert capability.semantics == []
     assert "business.guest.name" in {item.path for item in capability.mapping_context}
     assert {
         item.path.removeprefix("business.")
         for item in capability.mapping_context
         if item.path.startswith("business.") and not item.path.endswith(".*")
     } == set(CANONICAL_FIELDS)
-    assert REGISTRY[("reservation.check_availability", 1)].canonical_fields is SHARED_CANONICAL_FIELDS
     assert CANONICAL_FIELDS is SHARED_CANONICAL_FIELDS
     assert isinstance(post_call_response, PostCallDiscoveryResponse)
     assert {item.artifact for item in post_call_response.artifacts} == {

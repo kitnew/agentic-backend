@@ -1,25 +1,28 @@
 import json
 import re
-from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Protocol
+from hashlib import sha256
+from typing import Any, Protocol, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import jsonata  # type: ignore[import-untyped]
 from contracts import (
+    CANONICAL_FIELD_NORMALIZERS,
     CANONICAL_FIELDS,
+    CapabilityInputConstraint,
     ExecutionPlan,
+    ExpressionNode,
     GoogleSheetsAppendExecution,
     GoogleSheetsAppendValuesPlan,
     GoogleSheetsIdempotency,
     HttpExecution,
     HttpRequestPlanV1,
+    HttpRequestResult,
     ManagedWebhookResponseConfig,
-    ReservationRequestSubmitted,
     RuntimeCapabilityBinding,
     RuntimeCapabilityDefinition,
+    RuntimeCapabilityInputConstraint,
     RuntimeGoogleSheetsExecution,
     RuntimeHttpExecution,
     TechnicalResult,
@@ -38,12 +41,6 @@ from pydantic import TypeAdapter
 from backend_core.runtime.capabilities.execution import ExecutionOutcome
 from backend_core.runtime.capabilities.mapping import evaluate_query, evaluate_template
 
-SEMANTIC_REQUIRED_FIELDS = frozenset({"guest.name", "stay.check_in", "stay.check_out"})
-SEMANTIC_KEY = "reservation.submit_request"
-SEMANTIC_VERSION = 1
-TOOL_NAME = "reservation_submit_request"
-AVAILABILITY_SEMANTIC_KEY = "reservation.check_availability"
-AVAILABILITY_TOOL_NAME = "reservation_check_availability"
 MAX_MAPPING_INPUT_BYTES = 64_000
 MAX_MAPPING_OUTPUT_BYTES = 64_000
 MAPPING_LANGUAGE = "jsonata"
@@ -52,46 +49,7 @@ MAPPING_ENGINE = "jsonata-python"
 MAPPING_ENGINE_VERSION = "0.7.0"
 
 
-@dataclass(frozen=True)
-class CapabilityDefinition:
-    semantic_key: str
-    semantic_version: int
-    kind: str
-    canonical_fields: dict[str, str]
-    required_fields: frozenset[str]
-    tool_name: str
-
-
-REGISTRY = {
-    (SEMANTIC_KEY, SEMANTIC_VERSION): CapabilityDefinition(
-        semantic_key=SEMANTIC_KEY,
-        semantic_version=SEMANTIC_VERSION,
-        kind="command",
-        canonical_fields=CANONICAL_FIELDS,
-        required_fields=SEMANTIC_REQUIRED_FIELDS,
-        tool_name=TOOL_NAME,
-    ),
-    (AVAILABILITY_SEMANTIC_KEY, SEMANTIC_VERSION): CapabilityDefinition(
-        semantic_key=AVAILABILITY_SEMANTIC_KEY,
-        semantic_version=SEMANTIC_VERSION,
-        kind="query",
-        canonical_fields=CANONICAL_FIELDS,
-        required_fields=frozenset(
-            {
-                "stay.check_in",
-                "stay.check_out",
-                "allocation.room_type",
-                "allocation.room_count",
-            }
-        ),
-        tool_name=AVAILABILITY_TOOL_NAME,
-    ),
-}
-
-
 CanonicalCapabilityResult = dict[str, object] | str | None
-SemanticResult = ReservationRequestSubmitted | CanonicalCapabilityResult
-SemanticResultMapper = Callable[[ExecutionOutcome], ReservationRequestSubmitted]
 
 
 class CapabilityValidationError(ValueError):
@@ -102,38 +60,217 @@ class CapabilityValidationError(ValueError):
         self.path = path
 
 
-def validate_bindings(
-    schema: dict[str, Any], bindings: dict[str, str], capability: CapabilityDefinition
-) -> None:
+def validate_bindings(schema: dict[str, Any], bindings: dict[str, str]) -> None:
     try:
         Draft202012Validator.check_schema(schema)
     except SchemaError as error:
         raise CapabilityValidationError("invalid_json_schema", error.message) from error
-    if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
-        raise CapabilityValidationError("invalid_json_schema", "Input schema must be a closed object")
+    _walk_refs(schema)
+    if (
+        schema.get("type") != "object"
+        or schema.get("additionalProperties") is not False
+    ):
+        raise CapabilityValidationError(
+            "invalid_json_schema", "Input schema must be a closed object"
+        )
     properties = schema.get("properties")
     if not isinstance(properties, dict):
-        raise CapabilityValidationError("invalid_json_schema", "Input schema properties are required")
+        raise CapabilityValidationError(
+            "invalid_json_schema", "Input schema properties are required"
+        )
     mapped: set[str] = set()
     for name, target in bindings.items():
         if name not in properties:
-            raise CapabilityValidationError("invalid_binding", "Binding input is not in input_schema", f"bindings.{name}")
-        if not isinstance(target, str) or not re.fullmatch(r"(?:[a-z][a-z0-9_]*\.)*[a-z][a-z0-9_]*", target):
-            raise CapabilityValidationError("invalid_binding", "Binding target is invalid", f"bindings.{name}")
+            raise CapabilityValidationError(
+                "invalid_binding",
+                "Binding input is not in input_schema",
+                f"bindings.{name}",
+            )
+        if not isinstance(target, str) or not re.fullmatch(
+            r"(?:[a-z][a-z0-9_]*\.)*[a-z][a-z0-9_]*", target
+        ):
+            raise CapabilityValidationError(
+                "invalid_binding", "Binding target is invalid", f"bindings.{name}"
+            )
         if target.startswith("custom."):
             continue
-        if target not in capability.canonical_fields:
-            raise CapabilityValidationError("unknown_domain_field", "Unknown canonical domain field", f"bindings.{name}")
+        if target not in CANONICAL_FIELDS:
+            raise CapabilityValidationError(
+                "unknown_domain_field",
+                "Unknown canonical domain field",
+                f"bindings.{name}",
+            )
         if target in mapped:
-            raise CapabilityValidationError("invalid_binding", "Binding target is duplicated", f"bindings.{name}")
-        expected = capability.canonical_fields[target]
-        actual = properties[name].get("type") if isinstance(properties[name], dict) else None
+            raise CapabilityValidationError(
+                "invalid_binding", "Binding target is duplicated", f"bindings.{name}"
+            )
+        expected = CANONICAL_FIELDS[target]
+        actual = (
+            properties[name].get("type") if isinstance(properties[name], dict) else None
+        )
         if actual is not None and actual != expected:
-            raise CapabilityValidationError("binding_type_mismatch", "Input type is incompatible with domain field", f"bindings.{name}")
+            raise CapabilityValidationError(
+                "binding_type_mismatch",
+                "Input type is incompatible with domain field",
+                f"bindings.{name}",
+            )
         mapped.add(target)
-    missing = capability.required_fields - mapped
-    if missing:
-        raise CapabilityValidationError("missing_semantic_field", f"Missing semantic fields: {', '.join(sorted(missing))}")
+
+
+def validate_input_constraints(
+    schema: dict[str, Any],
+    bindings: dict[str, str],
+    constraints: list[CapabilityInputConstraint],
+) -> None:
+    properties = schema["properties"]
+    required = set(schema.get("required", []))
+    bound_inputs = {target: source for source, target in bindings.items()}
+    for index, constraint in enumerate(constraints):
+        if constraint.start == constraint.end:
+            raise CapabilityValidationError(
+                "invalid_input_constraint",
+                "Date range start and end must be different",
+                f"input_constraints.{index}",
+        )
+        for field_name in (constraint.start, constraint.end):
+            if field_name not in CANONICAL_FIELDS:
+                raise CapabilityValidationError(
+                    "invalid_input_constraint",
+                    f"Constraint field must be canonical: {field_name}",
+                    f"input_constraints.{index}",
+                )
+            source = bound_inputs.get(field_name)
+            if source is None:
+                raise CapabilityValidationError(
+                    "invalid_input_constraint",
+                    f"Constraint field is not bound: {field_name}",
+                    f"input_constraints.{index}",
+                )
+            source_schema = properties.get(source)
+            if not isinstance(source_schema, dict) or (
+                source_schema.get("type") != "string"
+                or source_schema.get("format") != "date"
+            ):
+                raise CapabilityValidationError(
+                    "invalid_input_constraint",
+                    f"Constraint field must use a string date schema: {source}",
+                    f"input_constraints.{index}",
+                )
+            if source not in required:
+                raise CapabilityValidationError(
+                    "invalid_input_constraint",
+                    f"Constraint field must be required by schema: {source}",
+                    f"input_constraints.{index}",
+                )
+
+
+def _normalize_canonical_value(target: str, value: Any) -> Any:
+    normalizer = CANONICAL_FIELD_NORMALIZERS.get(target)
+    if normalizer == "trim":
+        return value.strip() if isinstance(value, str) else value
+    if normalizer == "e164" and value is not None:
+        if not isinstance(value, str):
+            raise CapabilityValidationError(
+                "invalid_canonical_field", "Phone number must be a string", target
+            )
+        compact = re.sub(r"[\s()-]", "", value)
+        if compact.startswith("00"):
+            compact = f"+{compact[2:]}"
+        if not re.fullmatch(r"\+[1-9][0-9]{7,14}", compact):
+            raise CapabilityValidationError(
+                "invalid_canonical_field",
+                "Phone number must be international E.164",
+                target,
+            )
+        return compact
+    return value
+
+
+def _tool_name(semantic_key: str) -> str:
+    tool_name = semantic_key.replace(".", "_")
+    if len(tool_name) <= 64:
+        return tool_name
+    return f"{tool_name[:55]}_{sha256(semantic_key.encode()).hexdigest()[:8]}"
+
+
+def _validate_mapping_expressions(profile: TenantCapabilityProfile) -> None:
+    def visit(value: object) -> None:
+        if isinstance(value, ExpressionNode):
+            jsonata.Jsonata(value.expr)
+            return
+        if isinstance(value, dict):
+            if set(value) == {"$expr"}:
+                jsonata.Jsonata(value["$expr"])
+                return
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    execution = profile.execution
+    if isinstance(execution, (HttpExecution, RuntimeHttpExecution)):
+        visit(execution.path)
+        visit(execution.query)
+        visit(execution.request.mapping)
+        visit(execution.response.mapping)
+        if execution.result_schema is not None:
+            try:
+                Draft202012Validator.check_schema(execution.result_schema)
+            except SchemaError as error:
+                raise CapabilityValidationError(
+                    "invalid_result_schema", error.message, "execution.result_schema"
+                ) from error
+    else:
+        jsonata.Jsonata(execution.request_mapping)
+
+
+def resolve_capability(
+    semantic_key: str, profile: TenantCapabilityProfile
+) -> RuntimeCapabilityDefinition:
+    if not re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}", semantic_key):
+        raise CapabilityValidationError(
+            "invalid_semantic_key",
+            "Capability semantic key is invalid",
+            "semantic_key",
+        )
+    if isinstance(profile.semantic_version, bool) or profile.semantic_version < 1:
+        raise CapabilityValidationError(
+            "invalid_semantic_version",
+            "Capability semantic version is invalid",
+            "semantic_version",
+        )
+    if profile.business_policy.requires_availability_proof:
+        raise CapabilityValidationError(
+            "unsupported_business_policy",
+            "Availability proof is not implemented",
+            "business_policy.requires_availability_proof",
+        )
+    validate_bindings(profile.agent_input_schema, profile.bindings)
+    validate_input_constraints(
+        profile.agent_input_schema,
+        profile.bindings,
+        profile.input_constraints,
+    )
+    try:
+        _validate_mapping_expressions(profile)
+    except CapabilityValidationError:
+        raise
+    except Exception as error:
+        raise CapabilityValidationError(
+            "invalid_mapping_expression",
+            "Mapping expression is invalid",
+            "execution",
+        ) from error
+    return RuntimeCapabilityDefinition(
+        semantic_key=semantic_key,
+        semantic_version=profile.semantic_version,
+        tool_name=_tool_name(semantic_key),
+        description=profile.description,
+        announcement=profile.announcement,
+        input_schema=json.loads(json.dumps(profile.agent_input_schema)),
+        requires_confirmation=profile.business_policy.requires_final_confirmation,
+    )
 
 
 class MappingEngine(Protocol):
@@ -161,16 +298,6 @@ class JsonataMappingEngine:
         return json.loads(output)
 
 
-def definition(semantic_key: str, semantic_version: int) -> CapabilityDefinition:
-    found = REGISTRY.get((semantic_key, semantic_version))
-    if found is None:
-        raise CapabilityValidationError(
-            "unsupported_capability_version",
-            "Capability semantic key or version is unsupported",
-        )
-    return found
-
-
 def _walk_refs(value: Any, path: str = "") -> None:
     if isinstance(value, dict):
         for key, item in value.items():
@@ -183,10 +310,7 @@ def _walk_refs(value: Any, path: str = "") -> None:
                     "Only local JSON Schema references are allowed",
                     child_path,
                 )
-            if key.startswith("x-") and key not in {
-                "x-canonical-field",
-                "x-custom-field",
-            }:
+            if key.startswith("x-"):
                 raise CapabilityValidationError(
                     "unsupported_schema_extension",
                     "Unsupported JSON Schema extension",
@@ -196,124 +320,6 @@ def _walk_refs(value: Any, path: str = "") -> None:
     elif isinstance(value, list):
         for index, item in enumerate(value):
             _walk_refs(item, f"{path}.{index}")
-
-
-def _resolve_local_schema(
-    schema: dict[str, Any], property_schema: dict[str, Any]
-) -> dict[str, Any]:
-    ref = property_schema.get("$ref")
-    if ref is None:
-        return property_schema
-    if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
-        raise CapabilityValidationError(
-            "unsupported_local_ref", "Only local $defs references are supported"
-        )
-    target: Any = schema
-    for part in ref[2:].split("/"):
-        if not isinstance(target, dict) or part not in target:
-            raise CapabilityValidationError(
-                "invalid_local_ref", "Local JSON Schema reference was not found"
-            )
-        target = target[part]
-    if not isinstance(target, dict):
-        raise CapabilityValidationError(
-            "invalid_local_ref", "Local JSON Schema reference must target a schema"
-        )
-    return {
-        **target,
-        **{key: value for key, value in property_schema.items() if key != "$ref"},
-    }
-
-
-def validate_agent_schema(
-    schema: dict[str, Any], capability: CapabilityDefinition
-) -> None:
-    try:
-        Draft202012Validator.check_schema(schema)
-    except SchemaError as error:
-        raise CapabilityValidationError("invalid_json_schema", error.message) from error
-    _walk_refs(schema)
-    if schema.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
-        raise CapabilityValidationError(
-            "invalid_json_schema_draft", "Draft 2020-12 is required", "$schema"
-        )
-    if schema.get("type") != "object":
-        raise CapabilityValidationError(
-            "invalid_schema_root", "Schema root type must be object", "type"
-        )
-    if schema.get("additionalProperties") is not False:
-        raise CapabilityValidationError(
-            "additional_properties_not_forbidden",
-            "additionalProperties must be false",
-            "additionalProperties",
-        )
-    properties = schema.get("properties")
-    required = schema.get("required")
-    if not isinstance(properties, dict) or not isinstance(required, list):
-        raise CapabilityValidationError(
-            "invalid_schema_root", "properties and required are required"
-        )
-    mapped: set[str] = set()
-    for name, raw_property in properties.items():
-        if not isinstance(raw_property, dict):
-            raise CapabilityValidationError(
-                "invalid_property_schema",
-                "Property schema must be an object",
-                f"properties.{name}",
-            )
-        canonical = raw_property.get("x-canonical-field")
-        custom = raw_property.get("x-custom-field")
-        if (canonical is None) == (custom is None):
-            raise CapabilityValidationError(
-                "invalid_field_mapping",
-                "Exactly one canonical or custom mapping is required",
-                f"properties.{name}",
-            )
-        effective = _resolve_local_schema(schema, raw_property)
-        if canonical is not None:
-            if canonical not in capability.canonical_fields:
-                raise CapabilityValidationError(
-                    "unknown_canonical_field",
-                    "Unknown canonical field",
-                    f"properties.{name}",
-                )
-            if canonical in mapped:
-                raise CapabilityValidationError(
-                    "duplicate_canonical_field",
-                    "Canonical field is mapped more than once",
-                    f"properties.{name}",
-                )
-            if effective.get("type") != capability.canonical_fields[canonical]:
-                raise CapabilityValidationError(
-                    "canonical_type_mismatch",
-                    "Property type is incompatible with canonical field",
-                    f"properties.{name}.type",
-                )
-            mapped.add(canonical)
-        elif not isinstance(custom, str) or not re.fullmatch(
-            r"[a-z][a-z0-9_]{0,63}", custom
-        ):
-            raise CapabilityValidationError(
-                "invalid_custom_field",
-                "Custom field name is invalid",
-                f"properties.{name}",
-            )
-    missing = capability.required_fields - mapped
-    if missing:
-        raise CapabilityValidationError(
-            "missing_semantic_field",
-            f"Missing semantic fields: {', '.join(sorted(missing))}",
-        )
-    mapped_properties = {
-        name
-        for name, value in properties.items()
-        if isinstance(value, dict)
-        and value.get("x-canonical-field") in capability.required_fields
-    }
-    if not mapped_properties <= set(required):
-        raise CapabilityValidationError(
-            "semantic_field_not_required", "Semantic fields must be required"
-        )
 
 
 def validate_agent_input(schema: dict[str, Any], value: dict[str, Any]) -> None:
@@ -391,7 +397,7 @@ def _set_nested(target: dict[str, Any], dotted: str, value: Any) -> None:
 
 
 def normalize_input(
-    schema: dict[str, Any], value: dict[str, Any], bindings: dict[str, str] | None = None
+    value: dict[str, Any], bindings: dict[str, str] | None = None
 ) -> dict[str, Any]:
     normalized: dict[str, Any] = {
         "guest": {"name": None, "phone": None, "email": None},
@@ -400,96 +406,47 @@ def normalize_input(
         "notes": None,
         "custom": {},
     }
-    properties = schema["properties"]
     for name, item in value.items():
-        property_schema = properties[name]
-        target = (bindings or {}).get(name)
-        if target is None:
-            canonical = property_schema.get("x-canonical-field")
-            target = canonical or f"custom.{property_schema.get('x-custom-field', name)}"
-        _set_nested(normalized, target, item)
+        target = (bindings or {}).get(name, f"custom.{name}")
+        _set_nested(normalized, target, _normalize_canonical_value(target, item))
     return normalized
 
 
-def validate_business_input(
+def enforce_input_constraints(
     value: dict[str, Any],
     timezone: str,
-    *,
-    required_fields: frozenset[str] = SEMANTIC_REQUIRED_FIELDS,
-    today: date | None = None,
-    enforce_not_past: bool = True,
-) -> dict[str, Any]:
-    name = value["guest"]["name"]
-    if "guest.name" in required_fields and (
-        not isinstance(name, str) or not name.strip()
-    ):
-        raise CapabilityValidationError(
-            "business_policy_rejected", "Guest name is required", "guest.name"
-        )
-    if isinstance(name, str):
-        value["guest"]["name"] = name.strip()
-    try:
-        check_in = date.fromisoformat(value["stay"]["check_in"])
-        check_out = date.fromisoformat(value["stay"]["check_out"])
-    except (TypeError, ValueError) as error:
-        raise CapabilityValidationError(
-            "business_policy_rejected", "Stay dates must be valid ISO dates", "stay"
-        ) from error
-    local_today = today or datetime.now(ZoneInfo(timezone)).date()
-    if enforce_not_past and check_in < local_today:
-        raise CapabilityValidationError(
-            "business_policy_rejected",
-            "Check-in cannot be in the past",
-            "stay.check_in",
-        )
-    if check_out <= check_in:
-        raise CapabilityValidationError(
-            "business_policy_rejected",
-            "Check-out must be after check-in",
-            "stay.check_out",
-        )
-    phone = value["guest"].get("phone")
-    if phone is not None:
-        if not isinstance(phone, str):
+    constraints: list[RuntimeCapabilityInputConstraint],
+) -> None:
+    def get_nested(path: str) -> Any:
+        current: Any = value
+        for part in path.split("."):
+            if not isinstance(current, dict):
+                return None
+            current = current.get(part)
+        return current
+
+    for index, constraint in enumerate(constraints):
+        try:
+            start = date.fromisoformat(get_nested(constraint.start))
+            end = date.fromisoformat(get_nested(constraint.end))
+        except (TypeError, ValueError) as error:
             raise CapabilityValidationError(
-                "business_policy_rejected",
-                "Phone number must be a string",
-                "guest.phone",
-            )
-        compact = re.sub(r"[\s()-]", "", phone)
-        if compact.startswith("00"):
-            compact = f"+{compact[2:]}"
-        if not re.fullmatch(r"\+[1-9][0-9]{7,14}", compact):
+                "input_constraint_rejected",
+                "Date range values must be valid ISO dates",
+                f"input_constraints.{index}",
+            ) from error
+        if end <= start:
             raise CapabilityValidationError(
-                "business_policy_rejected",
-                "Phone number must be international E.164",
-                "guest.phone",
+                "input_constraint_rejected",
+                "Check-out must be after check-in",
+                constraint.end,
             )
-        value["guest"]["phone"] = compact
-    email = value["guest"].get("email")
-    if email is not None and (not isinstance(email, str) or not email.strip()):
-        raise CapabilityValidationError(
-            "business_policy_rejected",
-            "Email must be a non-empty string",
-            "guest.email",
-        )
-    if isinstance(email, str):
-        value["guest"]["email"] = email.strip()
-    room_type = value["allocation"].get("room_type")
-    if room_type is not None and (type(room_type) is not int or room_type < 1):
-        raise CapabilityValidationError(
-            "business_policy_rejected",
-            "Room type must be an integer >= 1",
-            "allocation.room_type",
-        )
-    room_count = value["allocation"].get("room_count")
-    if room_count is not None and (type(room_count) is not int or room_count < 1):
-        raise CapabilityValidationError(
-            "business_policy_rejected",
-            "Room count must be an integer >= 1",
-            "allocation.room_count",
-        )
-    return value
+        if constraint.start_not_in_past and start < datetime.now(ZoneInfo(timezone)).date():
+            raise CapabilityValidationError(
+                "input_constraint_rejected",
+                "Check-in cannot be in the past",
+                constraint.start,
+            )
 
 
 def mapped_rows(output: dict[str, Any]) -> list[list[str | int | float | bool | None]]:
@@ -522,8 +479,8 @@ def compile_plan(
     call_id: UUID,
     tool_call_id: str,
     integration_id: UUID,
+    semantic_key: str,
     caller_phone: str = "",
-    semantic_key: str = SEMANTIC_KEY,
     mapping_engine: MappingEngine | None = None,
 ) -> GoogleSheetsAppendValuesPlan | HttpRequestPlanV1:
     execution = profile.execution
@@ -542,20 +499,33 @@ def compile_plan(
         payload = None
         if execution.request.codec != "none":
             if execution.request.mapping is None:
-                raise CapabilityValidationError("invalid_mapping_output", "HTTP request mapping is required", "execution.request.mapping")
+                raise CapabilityValidationError(
+                    "invalid_mapping_output",
+                    "HTTP request mapping is required",
+                    "execution.request.mapping",
+                )
             payload = evaluate_template(execution.request.mapping, source)
             if execution.request.codec == "text" and not isinstance(payload, str):
-                raise CapabilityValidationError("invalid_mapping_output", "Text request mapping must evaluate to a string", "execution.request.mapping")
+                raise CapabilityValidationError(
+                    "invalid_mapping_output",
+                    "Text request mapping must evaluate to a string",
+                    "execution.request.mapping",
+                )
         path = execution.path
         if not isinstance(path, str) and path is not None:
             path = evaluate_template(path, source)
             if not isinstance(path, str) or "://" in path or "#" in path:
-                raise CapabilityValidationError("invalid_path", "HTTP path must be relative", "execution.path")
+                raise CapabilityValidationError(
+                    "invalid_path", "HTTP path must be relative", "execution.path"
+                )
         query = evaluate_query(execution.query, source)
         return HttpRequestPlanV1(
             integration_id=integration_id,
             operation_id=operation_id,
-            capability={"semantic_key": semantic_key, "semantic_version": profile.semantic_version},
+            capability={
+                "semantic_key": semantic_key,
+                "semantic_version": profile.semantic_version,
+            },
             method=execution.method,
             path=path,
             query=query,
@@ -567,10 +537,20 @@ def compile_plan(
             success_statuses=execution.success_statuses,
             result_schema=execution.result_schema,
         )
-    mapped = (mapping_engine or JsonataMappingEngine()).evaluate(execution.request_mapping, source)
+    mapped = (mapping_engine or JsonataMappingEngine()).evaluate(
+        execution.request_mapping, source
+    )
+    if not isinstance(mapped, dict):
+        raise CapabilityValidationError(
+            "invalid_mapping_output", "Mapping output must be an object"
+        )
     rows = mapped_rows(mapped)
-    if not isinstance(execution, (GoogleSheetsAppendExecution, RuntimeGoogleSheetsExecution)):
-        raise CapabilityValidationError("configuration_invalid", "Capability execution is unavailable")
+    if not isinstance(
+        execution, (GoogleSheetsAppendExecution, RuntimeGoogleSheetsExecution)
+    ):
+        raise CapabilityValidationError(
+            "configuration_invalid", "Capability execution is unavailable"
+        )
     index = (
         execution.idempotency.operation_id_column_index
         if isinstance(execution, GoogleSheetsAppendExecution)
@@ -606,18 +586,6 @@ def compile_plan(
     )
 
 
-def _reservation_result(outcome: ExecutionOutcome) -> ReservationRequestSubmitted:
-    return ReservationRequestSubmitted(
-        request_reference=outcome.reference,
-        deduplicated=outcome.deduplicated,
-    )
-
-
-SEMANTIC_RESULT_MAPPERS: dict[tuple[str, int], SemanticResultMapper] = {
-    (SEMANTIC_KEY, SEMANTIC_VERSION): _reservation_result,
-}
-
-
 def validate_result_for_plan(
     execution_plan: dict[str, object], result: TechnicalResult
 ) -> ExecutionPlan:
@@ -632,6 +600,10 @@ def validate_result_for_plan(
             "result_plan_mismatch", "Worker result does not match execution plan"
         )
     if isinstance(plan, HttpRequestPlanV1) and plan.result_schema is not None:
+        if not isinstance(result, HttpRequestResult):
+            raise CapabilityValidationError(
+                "result_plan_mismatch", "Worker result does not match execution plan"
+            )
         try:
             Draft202012Validator(plan.result_schema).validate(result.data)
         except (SchemaError, ValidationError) as error:
@@ -641,47 +613,10 @@ def validate_result_for_plan(
     return plan
 
 
-def semantic_result(
-    semantic_key: str, semantic_version: int, outcome: ExecutionOutcome
-) -> SemanticResult:
-    # The catalog remains the authority for supported capability identities.
-    definition(semantic_key, semantic_version)
-    mapper = SEMANTIC_RESULT_MAPPERS.get((semantic_key, semantic_version))
-    if mapper is not None:
-        return mapper(outcome)
-    return outcome.data  # validated provider-neutral canonical result
-
-
-def runtime_definition(
-    semantic_key: str,
-    profile: TenantCapabilityProfile,
-) -> RuntimeCapabilityDefinition:
-    capability = definition(semantic_key, profile.semantic_version)
-    schema = json.loads(json.dumps(profile.agent_input_schema))
-    for property_schema in schema.get("properties", {}).values():
-        if isinstance(property_schema, dict):
-            canonical_field = property_schema.get("x-canonical-field")
-            if canonical_field == "stay.check_in":
-                property_schema["description"] = (
-                    "Arrival date in ISO 8601 format YYYY-MM-DD. "
-                    "Resolve relative dates using the current local date; "
-                    "never send today, tomorrow, or natural-language dates."
-                )
-            elif canonical_field == "stay.check_out":
-                property_schema["description"] = (
-                    "Departure date in ISO 8601 format YYYY-MM-DD. "
-                    "It must be later than check_in. Resolve relative dates "
-                    "using the current local date; never send today, tomorrow, "
-                    "or natural-language dates."
-                )
-            property_schema.pop("x-canonical-field", None)
-            property_schema.pop("x-custom-field", None)
-    return RuntimeCapabilityDefinition(
-        semantic_key=semantic_key,
-        semantic_version=profile.semantic_version,
-        tool_name=capability.tool_name,
-        description=profile.description,
-        announcement=profile.announcement,
-        input_schema=schema,
-        requires_confirmation=profile.business_policy.requires_final_confirmation,
-    )
+def semantic_result(outcome: ExecutionOutcome) -> CanonicalCapabilityResult:
+    if not isinstance(outcome.data, (dict, str, type(None))):
+        raise CapabilityValidationError(
+            "invalid_semantic_result",
+            "Capability result must be an object, string, or null",
+        )
+    return cast(CanonicalCapabilityResult, outcome.data)

@@ -1,6 +1,5 @@
 from uuid import UUID
 
-import jsonata  # type: ignore[import-untyped]
 from contracts.authoring import (
     TenantCapabilitiesAuthoring,
     TenantCapabilityAuthoring,
@@ -11,7 +10,7 @@ from contracts.authoring import (
     TenantPromptAuthoring,
     TenantRuntimeAuthoring,
 )
-from contracts.http_operation import ExpressionNode, HttpOperation
+from contracts.http_operation import HttpOperation
 from contracts.tenant_components import (
     HttpExecution,
     PostCallAction,
@@ -19,13 +18,11 @@ from contracts.tenant_components import (
     TenantCapabilityProfile,
     TenantPostCallConfig,
 )
-from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from backend_core.modules.integrations.repository import IntegrationConnectionRepository
 from backend_core.runtime.capabilities.domain import (
     CapabilityValidationError,
-    definition,
-    validate_bindings,
+    resolve_capability,
 )
 
 
@@ -77,7 +74,11 @@ async def integration_readiness_warnings(
     return warnings
 
 
-async def _http_execution(operation, tenant_id: UUID, connections: IntegrationConnectionRepository) -> HttpExecution:
+async def _http_execution(
+    operation: HttpOperation,
+    tenant_id: UUID,
+    connections: IntegrationConnectionRepository,
+) -> HttpExecution:
     connection_id = await _connection_id(connections, tenant_id, operation.connection, "/execution/connection")
     return HttpExecution(
         connection_id=connection_id,
@@ -103,31 +104,31 @@ async def translate_capabilities(
         if isinstance(profile, bool):
             capabilities[key] = profile
             continue
-        try:
-            semantic = definition(key, 1)
-            validate_bindings(profile.agent_input_schema, profile.bindings, semantic)
-            _validate_operation_mappings(profile.execution)
-            if profile.result_schema is not None:
-                Draft202012Validator.check_schema(profile.result_schema)
-        except CapabilityValidationError as error:
-            raise AuthoringTranslationError(error.code, error.path, error.message) from error
-        except Exception as error:
-            raise AuthoringTranslationError("invalid_mapping_expression", "execution", "Mapping expression is invalid") from error
         announcement = profile.announcement
         if isinstance(announcement, dict):
             announcement = announcement.get("before", "")
-        capabilities[key] = TenantCapabilityProfile(
-            enabled=profile.enabled,
-            semantic_version=semantic.semantic_version,
-            description=profile.description,
-            announcement=announcement,
-            agent_input_schema=profile.agent_input_schema,
-            bindings=profile.bindings,
-            business_policy=profile.business_policy,
-            execution=(await _http_execution(profile.execution, tenant_id, connections)).model_copy(
-                update={"result_schema": profile.result_schema}
-            ),
+        capability = TenantCapabilityProfile.model_validate(
+            {
+                "enabled": profile.enabled,
+                "semantic_version": 1,
+                "description": profile.description,
+                "announcement": announcement,
+                "agent_input_schema": profile.agent_input_schema,
+                "bindings": profile.bindings,
+                "input_constraints": profile.input_constraints,
+                "business_policy": profile.business_policy,
+                "execution": (
+                    await _http_execution(profile.execution, tenant_id, connections)
+                ).model_copy(update={"result_schema": profile.result_schema}),
+            }
         )
+        try:
+            resolve_capability(key, capability)
+        except CapabilityValidationError as error:
+            raise AuthoringTranslationError(
+                error.code, error.path, error.message
+            ) from error
+        capabilities[key] = capability
     return TenantCapabilitiesConfig(capabilities=capabilities)
 
 
@@ -216,6 +217,7 @@ async def _capabilities_authoring(
             announcement=profile.announcement,
             agent_input_schema=profile.agent_input_schema,
             bindings=profile.bindings,
+            input_constraints=profile.input_constraints,
             business_policy=profile.business_policy.model_dump(mode="json"),
             execution=_operator_operation(
                 execution,
@@ -246,24 +248,3 @@ async def _post_call_authoring(
             )
         )
     return TenantPostCallAuthoring(actions=actions)
-
-
-def _validate_operation_mappings(operation) -> None:
-    def visit(value: object) -> None:
-        if isinstance(value, ExpressionNode):
-            jsonata.Jsonata(value.expr)
-            return
-        if isinstance(value, dict):
-            if set(value) == {"$expr"}:
-                jsonata.Jsonata(value["$expr"])
-                return
-            for item in value.values():
-                visit(item)
-        elif isinstance(value, list):
-            for item in value:
-                visit(item)
-
-    visit(operation.path)
-    visit(operation.query)
-    visit(operation.request.mapping)
-    visit(operation.response.mapping)
