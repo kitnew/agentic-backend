@@ -27,3 +27,7 @@ def test_staging_and_production_add_only_internal_sip_topology() -> None:
         assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID" not in env
         assert "LIVEKIT_SIP_OUTBOUND_TRUNK_ID" not in DEPLOY
         assert "SIP_PROVIDER_ADDRESS=" in env
+        assert "SIP_PROVIDER_USERNAME=" in env
+        assert "SIP_PROVIDER_PASSWORD=" in env
+    assert "SIP_PROVIDER_USERNAME: ${SIP_PROVIDER_USERNAME:?set SIP_PROVIDER_USERNAME}" in DEPLOY
+    assert "SIP_PROVIDER_PASSWORD: ${SIP_PROVIDER_PASSWORD:?set SIP_PROVIDER_PASSWORD}" in DEPLOY

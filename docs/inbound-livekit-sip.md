@@ -42,7 +42,7 @@ Open **Platform → Telephony** and use **Repair**. Backend creates or updates o
 
 ## Remaining provider-side prerequisite
 
-The control plane does not purchase numbers or configure Telnyx FQDN connections. In Telnyx, an operator must still purchase/select the number, point it at the deployed LiveKit SIP endpoint, enable outbound calling for the provider credentials, and use E.164 formats.
+The control plane does not purchase numbers or configure Telnyx connections. The outbound Telnyx connection uses credential authentication, so keep the username and password in the deployment env file. Inbound routing uses the Telnyx Primary FQDN and the deployed LiveKit SIP endpoint. The operator must still purchase/select the number, enable outbound calling, and use E.164 formats.
 
 After that provider-side prerequisite, tenant onboarding is entirely **Tenant → Telephony**.
 
