@@ -20,9 +20,6 @@ conversation:
   scope: property_only
 handoff:
   destinations:
-    nikita:
-      description: bruhbruh
-      phone_number: '+421944015686'
     reception:
       description: Reservations, check-in, payments and general reception requests
       phone_number: '+421900000001'

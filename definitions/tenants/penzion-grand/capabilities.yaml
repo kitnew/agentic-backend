@@ -2,7 +2,7 @@ capabilities:
   reservation.check_availability:
     enabled: true
     description: Check room availability
-    announcement: I will check availability.
+    announcement: Teraz overim dostupnosť.
     agent_input_schema:
       type: object
       required:
