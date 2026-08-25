@@ -3,30 +3,12 @@ from logging.config import fileConfig
 from os import environ
 
 from alembic import context
-from backend_core.modules.calls.models import CallSession  # noqa: F401
-from backend_core.modules.conversations.models import (  # noqa: F401
-    Conversation,
-    ConversationMessage,
-)
-from backend_core.modules.integrations.models import IntegrationConnection  # noqa: F401
-from backend_core.modules.tenants.models import PlatformTelephony, Tenant  # noqa: F401
-from backend_core.modules.tenants.platform_release_models import (  # noqa: F401
-    PlatformRelease,
-)
-from backend_core.modules.tenants.release_models import TenantRelease  # noqa: F401
 from backend_core.platform.database.metadata import Base
-from backend_core.runtime.capabilities.models import (  # noqa: F401
-    CapabilityInvocation,
-    OutboxMessage,
-)
-from backend_core.runtime.finalization.models import (  # noqa: F401
-    ArtifactRepresentation,
-    CallFinalization,
-    CallRecording,
-    PostCallActionExecution,
-)
+from backend_core.platform.database.model_registry import load_models
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
+
+load_models()
 
 config = context.config
 if config.config_file_name:

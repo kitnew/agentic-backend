@@ -109,7 +109,7 @@ docker compose --env-file infrastructure/compose/.env.production \
 
 Future deployment tooling must run migrations deliberately, not from Backend startup: bring up PostgreSQL, then run the migration container with the configured `DATABASE_URL`, then start the remaining services. `scripts/ops.sh` is the canonical implementation.
 
-Validate each environment with `config`, `config --services`, and `./scripts/ops.sh <env> validate`. Secret contents are never printed.
+Validate each environment with `config`, `config --services`, and `./scripts/ops.sh <env> validate`. The default `ops.sh config` output is non-secret; full resolved Compose output requires the explicit `--show-secrets` flag.
 
 ## Operations CLI
 
@@ -119,14 +119,22 @@ Use `./scripts/ops.sh <staging|production> <command>`. It is the only wrapper ar
 ./scripts/ops.sh staging validate
 ./scripts/ops.sh staging deploy
 ./scripts/ops.sh production update
+./scripts/ops.sh production db-init
+./scripts/ops.sh production db-reset --yes
+./scripts/ops.sh production doctor
+./scripts/ops.sh production release
 ./scripts/ops.sh production status
 ./scripts/ops.sh production logs backend --follow
 ./scripts/ops.sh production backup
 ./scripts/ops.sh production restore /var/backups/agentic-backend/production/postgres/<timestamp>.dump
 ```
 
-`deploy` validates, builds repository images, starts only PostgreSQL with Compose health waiting, runs `alembic ... upgrade head`, then starts the full stack with `--wait --remove-orphans`. `update` adds Compose image pulling before the same build/migrate/start sequence. Migration is never part of Backend startup.
+`deploy` validates, builds repository images, prepares the database, starts optional observability services without making them deployment gates, waits for the required runtime stack, and runs operator health checks. `update` adds Compose image pulling before the same build/database/start/health sequence. With an empty `apps/backend/migrations/versions/`, database preparation bootstraps an empty database from Backend SQLAlchemy metadata; it does not replace Alembic when revisions exist. Migration is never part of Backend startup.
 
 `BACKUP_DIR` is required and must be an absolute path outside this repository. Backup files are private custom-format PostgreSQL archives at `<BACKUP_DIR>/<environment>/postgres/<UTC timestamp>.dump`; temporary files are validated then atomically published. Restore validates the archive, stops Backend before the Worker and Voice Agent, keeps PostgreSQL running, then uses `pg_restore --clean --if-exists`. No normal application writer runs during the destructive restore. On success, the CLI runs `alembic upgrade head` and starts the full stack with Compose health waiting. If archive validation, restore, or migration fails, writers remain stopped and the operator must resolve the failure before starting traffic. Production requires typing `production` or passing `--yes`. Restore never downgrades Alembic or rolls back application images—database restore and application rollback are separate operations.
+
+`db-init` creates the application database if necessary and explicitly runs the Backend-owned SQLAlchemy bootstrap. `db-reset` stops database clients, drops and recreates only the application database, then runs `db-init`; production requires typing `production` or passing `--yes`. Neither command deletes PostgreSQL, Redis, MinIO, Grafana, or other volumes. `doctor` checks Docker/Compose, service processes, existing health endpoints, PostgreSQL schema, and production observability/voice services. `release` requires a clean Git tree, performs `git fetch --prune` and `git pull --ff-only`, then runs `update`. `config` prints a non-secret service/volume summary by default; full resolved Compose output requires `--show-secrets`.
+
+Doctor classifies PostgreSQL, schema, Redis, MinIO, Backend, Worker, Voice Agent, Admin Web, LiveKit, LiveKit Egress, LiveKit SIP, and Caddy as required runtime checks. Prometheus, Tempo, the OpenTelemetry Collector, and Grafana are optional observability checks: failures are reported as warnings and do not fail `doctor`, `update`, or `release` when the required checks pass.
 
 `stop` is `docker compose stop`, never `down -v`: persistent volumes remain intact. The CLI does not implement MinIO off-host backup, rollback, CI/CD, SSH deployment, Docker Secrets, DNS, firewall, or certificate management.

@@ -5,6 +5,21 @@ ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 COMPOSE_DIR="$ROOT/infrastructure/compose"
 BASE_COMPOSE="$COMPOSE_DIR/docker-compose.yml"
 DEPLOY_COMPOSE="$COMPOSE_DIR/docker-compose.deploy.yml"
+REQUIRED_STACK_SERVICES=(
+  postgres
+  redis
+  backend
+  voice-agent
+  job-worker
+  admin-web
+  livekit
+  livekit-egress
+  livekit-sip
+  minio
+  minio-init
+  caddy
+)
+OPTIONAL_STACK_SERVICES=(prometheus tempo otel-collector grafana)
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -12,19 +27,37 @@ die() {
 }
 
 usage() {
+  local exit_code="${1:-2}"
   cat >&2 <<'EOF'
-Usage: ./scripts/ops.sh <staging|production> <command> [arguments]
+Usage: ./scripts/ops.sh <staging|production> <command> [options]
 
 Commands:
-  validate | config | pull | build | migrate | deploy | update | status | stop | backup
-  logs <service> [--follow]
-  restart <service>
-  restore <backup-file> [--yes]
+  validate
+  config [--show-secrets]
+  pull
+  build
+  migrate
+  db-init
+  db-reset [--yes]
+  deploy
+  update
+  release
+  doctor
+  status
+  logs SERVICE [--follow]
+  restart SERVICE
+  stop
+  backup
+  restore FILE [--yes]
 EOF
-  exit "${1:-2}"
+  exit "$exit_code"
 }
 
+if [[ $# -eq 1 && ("$1" == "--help" || "$1" == "-h") ]]; then
+  usage 0
+fi
 [[ $# -ge 2 ]] || usage
+
 ENVIRONMENT="$1"
 COMMAND="$2"
 shift 2
@@ -33,6 +66,10 @@ case "$ENVIRONMENT" in
   staging | production) ENV_FILE="$COMPOSE_DIR/.env.$ENVIRONMENT" ;;
   *) die "environment must be staging or production" ;;
 esac
+
+if [[ "$COMMAND" == "--help" || "$COMMAND" == "-h" ]]; then
+  usage 0
+fi
 
 [[ -f "$ENV_FILE" ]] || die "environment file is missing: $ENV_FILE"
 command -v docker >/dev/null || die "docker is required"
@@ -52,8 +89,79 @@ validate() {
   compose run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 }
 
+config() {
+  local show_secrets=false
+  if [[ $# -gt 1 ]]; then
+    usage
+  elif [[ $# -eq 1 ]]; then
+    [[ "$1" == "--show-secrets" ]] || usage
+    show_secrets=true
+  fi
+
+  check_compose
+  if [[ "$show_secrets" == true ]]; then
+    printf 'WARNING: resolved Compose output may contain secrets.\n' >&2
+    compose config
+    return
+  fi
+
+  printf 'Compose configuration: valid\n'
+  printf 'Environment: %s\n' "$ENVIRONMENT"
+  printf 'Services:\n'
+  compose config --services
+  printf 'Volumes:\n'
+  compose config --volumes
+}
+
 ensure_postgres() {
   compose up -d --wait --wait-timeout 180 postgres
+}
+
+postgres_database_name() {
+  compose exec -T postgres sh -ec 'printf "%s\n" "$POSTGRES_DB"' | tr -d '\r\n'
+}
+
+safe_database_identifier() {
+  [[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]
+}
+
+database_exists() {
+  local database_name="$1"
+  compose exec -T postgres sh -ec \
+    "psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d postgres -Atqc \"SELECT 1 FROM pg_database WHERE datname = '$database_name'\"" \
+    | grep -Fxq 1
+}
+
+ensure_database() {
+  local database_name
+  database_name="$(postgres_database_name)"
+  safe_database_identifier "$database_name" || die "unsafe PostgreSQL database name: $database_name"
+  if database_exists "$database_name"; then
+    return
+  fi
+
+  printf 'Creating PostgreSQL database: %s\n' "$database_name"
+  compose exec -T postgres sh -ec 'createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+}
+
+database_table_count() {
+  compose exec -T postgres sh -ec '
+    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc \
+      "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = '\''public'\'' AND tablename <> '\''alembic_version'\''"
+  ' | tr -d '\r\n'
+}
+
+database_has_application_tables() {
+  local count
+  count="$(database_table_count)"
+  [[ "$count" =~ ^[0-9]+$ ]] || die "could not read PostgreSQL table count"
+  (( count > 0 ))
+}
+
+has_alembic_revisions() {
+  local versions="$ROOT/apps/backend/migrations/versions"
+  [[ -d "$versions" ]] || return 1
+  find "$versions" -maxdepth 1 -type f -name '*.py' -print -quit | grep -q .
 }
 
 run_migration() {
@@ -62,14 +170,82 @@ run_migration() {
   '
 }
 
-migrate() {
+run_schema_bootstrap() {
+  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
+    exec python -m backend_core.platform.database.bootstrap
+  '
+}
+
+run_schema_check() {
+  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
+    exec python -m backend_core.platform.database.bootstrap --check
+  '
+}
+
+database_init() {
   check_compose
   ensure_postgres
-  run_migration
+  ensure_database
+  printf 'Bootstrapping SQLAlchemy metadata; this is not an Alembic upgrade.\n'
+  run_schema_bootstrap
+}
+
+database_prepare() {
+  ensure_postgres
+  ensure_database
+  if has_alembic_revisions; then
+    printf 'Applying Alembic revisions.\n'
+    run_migration
+  elif database_has_application_tables; then
+    printf 'No Alembic revisions found; checking the existing SQLAlchemy schema.\n'
+    run_schema_check
+  else
+    printf 'No Alembic revisions or application tables found; bootstrapping schema.\n'
+    run_schema_bootstrap
+  fi
+}
+
+database_reset() {
+  local assume_yes=false
+  if [[ $# -gt 1 ]]; then
+    usage
+  elif [[ $# -eq 1 ]]; then
+    [[ "$1" == "--yes" ]] || usage
+    assume_yes=true
+  fi
+
+  check_compose
+  ensure_postgres
+
+  local database_name
+  database_name="$(postgres_database_name)"
+  safe_database_identifier "$database_name" || die "unsafe PostgreSQL database name: $database_name"
+  ensure_database
+
+  if [[ "$ENVIRONMENT" == production && "$assume_yes" != true ]]; then
+    [[ -t 0 ]] || die "production db-reset requires interactive confirmation or --yes"
+    printf 'WARNING: this permanently deletes PostgreSQL database "%s"\n' "$database_name" >&2
+    printf 'Environment: %s\n' "$ENVIRONMENT" >&2
+    printf 'Type "production" to continue: ' >&2
+    local confirmation
+    read -r confirmation
+    [[ "$confirmation" == "production" ]] || die "production db-reset cancelled"
+  fi
+
+  printf 'Stopping services that may use PostgreSQL.\n'
+  compose stop backend job-worker voice-agent
+  printf 'Dropping PostgreSQL database: %s\n' "$database_name"
+  compose exec -T postgres sh -ec \
+    "psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d postgres -c 'DROP DATABASE \"$database_name\" WITH (FORCE);'"
+  compose exec -T postgres sh -ec 'createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+  database_init
 }
 
 verify_stack() {
-  compose up -d --wait --wait-timeout 180 --remove-orphans
+  if ! compose up -d --remove-orphans "${OPTIONAL_STACK_SERVICES[@]}"; then
+    printf 'warning: optional observability services could not be started; continuing.\n' >&2
+  fi
+  compose up -d --wait --wait-timeout 180 --remove-orphans "${REQUIRED_STACK_SERVICES[@]}"
   compose ps
 }
 
@@ -159,14 +335,190 @@ restore() {
   verify_stack
 }
 
+service_running() {
+  if compose ps --status running --services | grep -Fqx -- "$1"; then
+    return 0
+  fi
+  return 1
+}
+
+postgres_doctor() {
+  service_running postgres || return 1
+  compose exec -T postgres sh -ec 'pg_isready -U "$POSTGRES_USER" -d postgres' >/dev/null 2>&1 || return 1
+  local database_name
+  database_name="$(postgres_database_name)"
+  safe_database_identifier "$database_name" || return 1
+  database_exists "$database_name"
+}
+
+redis_doctor() {
+  service_running redis || return 1
+  compose exec -T redis redis-cli ping 2>/dev/null | grep -Fxq PONG
+}
+
+backend_health_doctor() {
+  service_running backend || return 1
+  compose exec -T backend python -c \
+    "from urllib.request import urlopen; raise SystemExit(urlopen('http://127.0.0.1:8000/health', timeout=3).status != 200)" \
+    >/dev/null 2>&1
+}
+
+backend_ready_doctor() {
+  service_running backend || return 1
+  compose exec -T backend python -c \
+    "from urllib.request import urlopen; raise SystemExit(urlopen('http://127.0.0.1:8000/ready', timeout=3).status != 200)" \
+    >/dev/null 2>&1
+}
+
+schema_doctor() {
+  service_running backend || return 1
+  compose exec -T backend sh -ec \
+    'exec python -m backend_core.platform.database.bootstrap --check' >/dev/null 2>&1
+}
+
+minio_doctor() {
+  service_running minio || return 1
+  compose exec -T minio curl -fsS http://localhost:9000/minio/health/ready >/dev/null 2>&1
+}
+
+grafana_doctor() {
+  service_running grafana || return 1
+  compose exec -T grafana wget -q -O /dev/null http://localhost:3000/api/health >/dev/null 2>&1
+}
+
+livekit_doctor() {
+  service_running livekit || return 1
+  compose exec -T livekit wget -q -O /dev/null http://localhost:7880/ >/dev/null 2>&1
+}
+
+egress_doctor() {
+  service_running livekit-egress || return 1
+  compose exec -T livekit-egress curl -fsS http://localhost:8080/ >/dev/null 2>&1
+}
+
+sip_doctor() {
+  service_running livekit-sip || return 1
+  compose exec -T livekit-sip wget -q -O /dev/null http://localhost:8080/ >/dev/null 2>&1
+}
+
+caddy_doctor() {
+  service_running caddy || return 1
+  compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1
+}
+
+doctor_check() {
+  local requirement="$1" label="$2"
+  shift 2
+  if "$@" >/dev/null 2>&1; then
+    printf '[OK] %s\n' "$label"
+  elif [[ "$requirement" == required ]]; then
+    printf '[FAIL] %s [REQUIRED]\n' "$label"
+    DOCTOR_REQUIRED_FAILED=1
+  else
+    printf '[WARN] %s [OPTIONAL]\n' "$label"
+    DOCTOR_OPTIONAL_FAILED=1
+  fi
+}
+
+doctor() {
+  DOCTOR_REQUIRED_FAILED=0
+  DOCTOR_OPTIONAL_FAILED=0
+  printf '%s doctor\n\n' "$ENVIRONMENT"
+
+  if docker info >/dev/null 2>&1; then
+    printf '[OK] Docker daemon\n'
+  else
+    printf '[FAIL] Docker daemon\n'
+    printf '\nResult: unhealthy\n'
+    return 1
+  fi
+
+  if compose config --quiet >/dev/null 2>&1; then
+    printf '[OK] Compose configuration\n'
+  else
+    printf '[FAIL] Compose configuration\n'
+    printf '\nResult: unhealthy\n'
+    return 1
+  fi
+
+  doctor_check required "PostgreSQL" postgres_doctor
+  doctor_check required "PostgreSQL schema" schema_doctor
+  doctor_check required "Redis" redis_doctor
+  doctor_check required "MinIO" minio_doctor
+  doctor_check required "Backend container" service_running backend
+  doctor_check required "Backend health endpoint" backend_health_doctor
+  doctor_check required "Backend readiness endpoint" backend_ready_doctor
+  doctor_check required "Worker" service_running job-worker
+  doctor_check required "Voice agent" service_running voice-agent
+  doctor_check required "Admin Web" service_running admin-web
+  doctor_check required "LiveKit" livekit_doctor
+  doctor_check required "LiveKit Egress" egress_doctor
+  doctor_check required "LiveKit SIP" sip_doctor
+  doctor_check optional "Prometheus" service_running prometheus
+  doctor_check optional "Tempo" service_running tempo
+  doctor_check optional "OTel collector" service_running otel-collector
+  doctor_check optional "Grafana" grafana_doctor
+  doctor_check required "Caddy" caddy_doctor
+
+  if (( DOCTOR_REQUIRED_FAILED == 0 )); then
+    if (( DOCTOR_OPTIONAL_FAILED > 0 )); then
+      printf '\nResult: healthy (optional checks degraded)\n'
+      return 0
+    fi
+    printf '\nResult: healthy\n'
+    return 0
+  fi
+  printf '\nResult: unhealthy\n'
+  return 1
+}
+
+git_branch() {
+  git -C "$ROOT" symbolic-ref --short -q HEAD 2>/dev/null || printf '(detached)\n'
+}
+
+git_commit() {
+  git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || printf 'unknown\n'
+}
+
+status() {
+  check_compose
+  printf 'Environment: %s\n' "$ENVIRONMENT"
+  printf 'Git branch: %s\n' "$(git_branch)"
+  printf 'Git commit: %s\n' "$(git_commit)"
+  if [[ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]]; then
+    printf 'Working tree: dirty\n\n'
+  else
+    printf 'Working tree: clean\n\n'
+  fi
+  compose ps
+}
+
+release() {
+  [[ $# -eq 0 ]] || usage
+  check_compose
+  local top_level
+  top_level="$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/null)" || die "not a Git worktree: $ROOT"
+  [[ "$top_level" == "$ROOT" ]] || die "Git worktree root mismatch: $top_level"
+  if [[ -n "$(git -C "$ROOT" status --porcelain)" ]]; then
+    printf 'error: release requires a clean Git working tree\n' >&2
+    git -C "$ROOT" status --short >&2
+    exit 1
+  fi
+
+  printf 'Fetching Git updates.\n'
+  git -C "$ROOT" fetch --prune || die "git fetch failed"
+  printf 'Updating checkout with git pull --ff-only.\n'
+  git -C "$ROOT" pull --ff-only || die "git pull --ff-only failed; checkout was not rewritten"
+  exec "$ROOT/scripts/ops.sh" "$ENVIRONMENT" update
+}
+
 case "$COMMAND" in
   validate)
     [[ $# -eq 0 ]] || usage
     validate
     ;;
   config)
-    [[ $# -eq 0 ]] || usage
-    compose config
+    config "$@"
     ;;
   pull)
     [[ $# -eq 0 ]] || usage
@@ -180,34 +532,52 @@ case "$COMMAND" in
     ;;
   migrate)
     [[ $# -eq 0 ]] || usage
-    migrate
+    check_compose
+    ensure_postgres
+    ensure_database
+    run_migration
+    ;;
+  db-init)
+    [[ $# -eq 0 ]] || usage
+    database_init
+    ;;
+  db-reset)
+    database_reset "$@"
     ;;
   deploy)
     [[ $# -eq 0 ]] || usage
     validate
     compose build
-    migrate
+    database_prepare
     verify_stack
+    doctor
     ;;
   update)
     [[ $# -eq 0 ]] || usage
     validate
     compose pull
     compose build
-    migrate
+    database_prepare
     verify_stack
+    doctor
+    ;;
+  release)
+    release "$@"
+    ;;
+  doctor)
+    [[ $# -eq 0 ]] || usage
+    doctor
     ;;
   status)
     [[ $# -eq 0 ]] || usage
-    check_compose
-    compose ps
+    status
     ;;
   logs)
     [[ $# -ge 1 && $# -le 2 ]] || usage
     service="$1"
     require_service "$service"
     if [[ $# -eq 2 ]]; then
-      [[ "$2" == --follow ]] || usage
+      [[ "$2" == "--follow" ]] || usage
       compose logs --tail=200 --follow "$service"
     else
       compose logs --tail=200 "$service"

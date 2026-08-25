@@ -38,6 +38,8 @@ def test_deployment_keeps_caddy_edge_and_persistent_state() -> None:
     assert "reverse_proxy backend:8000" in CADDY
     assert "reverse_proxy grafana:3000" in CADDY
     assert "reverse_proxy livekit:7880" in CADDY
+    caddy_block = DEPLOY.split("  caddy:", 1)[1].split("networks:", 1)[0]
+    assert "      grafana:" not in caddy_block
     assert "stream_close_delay 5m" in CADDY
     assert "request>headers delete" in CADDY
     assert "request>uri delete" in CADDY

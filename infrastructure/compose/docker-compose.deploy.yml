@@ -321,8 +321,6 @@ services:
         condition: service_started
       livekit:
         condition: service_healthy
-      grafana:
-        condition: service_healthy
     logging: *service-logging
     networks: [edge]
 
