@@ -171,7 +171,7 @@ run_migration() {
 }
 
 run_schema_bootstrap() {
-  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
+  compose run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec '
     exec python -m backend_core.platform.database.bootstrap
   '
 }

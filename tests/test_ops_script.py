@@ -129,6 +129,7 @@ def test_db_init_starts_postgres_and_runs_backend_bootstrap(tmp_path: Path) -> N
     postgres = commands.index("up -d --wait --wait-timeout 180 postgres")
     bootstrap = commands.index("python -m backend_core.platform.database.bootstrap")
     assert postgres < bootstrap
+    assert "run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec" in commands
 
 
 def test_update_bootstraps_empty_database_and_ignores_optional_checks(tmp_path: Path) -> None:
