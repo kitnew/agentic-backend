@@ -26,6 +26,8 @@ SERVICE_SCOPES = {
             "conversation-message:append",
             "capability-invocation:create",
             "capability-invocation:read",
+            "capability-confirmation:create",
+            "capability-confirmation:confirm",
         }
     ),
     JOB_WORKER: frozenset(
