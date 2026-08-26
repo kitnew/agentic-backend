@@ -15,7 +15,10 @@ from backend_core.modules.calls.models import (
     CallSessionStatus,
 )
 from backend_core.modules.calls.repository import CallSessionRepository
-from backend_core.modules.calls.service import CallSessionService
+from backend_core.modules.calls.service import (
+    MANUAL_TEST_CALLER_PHONE,
+    CallSessionService,
+)
 from backend_core.modules.conversations.models import Conversation
 from backend_core.modules.conversations.repository import ConversationRepository
 from backend_core.modules.integrations.models import (
@@ -615,6 +618,7 @@ async def test_publish_and_web_call_creation_pin_one_atomic_release(
 
         _, (call, created) = await asyncio.gather(publish(), create_call())
         assert created
+        assert call.caller_phone_e164 == MANUAL_TEST_CALLER_PHONE
         assert call.tenant_release_id is not None
         assert call.runtime_bundle_id is not None
 

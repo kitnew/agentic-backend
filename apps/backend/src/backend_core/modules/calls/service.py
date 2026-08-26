@@ -57,6 +57,7 @@ from backend_core.platform.livekit import LiveKitAdapter
 from backend_core.runtime.bundle_store import RuntimeBundleStore
 
 logger = logging.getLogger(__name__)
+MANUAL_TEST_CALLER_PHONE = "+15555550100"
 
 
 class CallSessionService:
@@ -358,6 +359,7 @@ class CallSessionService:
             direction=CallDirection.INBOUND,
             provider="livekit",
             provider_call_id=provider_call_id,
+            caller_phone_e164=MANUAL_TEST_CALLER_PHONE,
             room_name=room_name,
             admin_idempotency_key=idempotency_key,
             admin_request_fingerprint=request_fingerprint,
