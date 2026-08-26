@@ -173,7 +173,7 @@ capabilities:
       end: stay.check_out
       start_not_in_past: true
     business_policy:
-      requires_final_confirmation: true
+      requires_final_confirmation: false
       requires_availability_proof: false
       requires_caller_phone: true
       availability_proof_ttl_seconds: 10
@@ -248,7 +248,7 @@ capabilities:
       end: stay.check_out
       start_not_in_past: true
     business_policy:
-      requires_final_confirmation: true
+      requires_final_confirmation: false
       requires_availability_proof: false
       requires_caller_phone: true
       availability_proof_ttl_seconds: 10
@@ -323,7 +323,7 @@ capabilities:
       end: stay.check_out
       start_not_in_past: true
     business_policy:
-      requires_final_confirmation: true
+      requires_final_confirmation: false
       requires_availability_proof: false
       requires_caller_phone: true
       availability_proof_ttl_seconds: 10

@@ -522,6 +522,51 @@ async def test_availability_capability_records_success_without_arguments() -> No
 
 
 @pytest.mark.asyncio
+async def test_capability_with_empty_success_result_returns_submitted() -> None:
+    recorded: list[dict[str, object]] = []
+
+    class Backend:
+        async def invoke_capability(self, call_id, request):
+            return object()
+
+        async def wait_for_capability(self, call_id, invocation):
+            return SimpleNamespace(
+                status=CapabilityInvocationStatus.SUCCEEDED,
+                semantic_result=None,
+            )
+
+    class Session:
+        async def say(self, text, **kwargs):
+            return None
+
+    definition = RuntimeCapabilityDefinition(
+        semantic_key="reservation.create_request",
+        semantic_version=1,
+        tool_name="reservation_create_request",
+        description="Submit a reservation request.",
+        announcement="I will submit your reservation request.",
+        input_schema={"type": "object"},
+    )
+    tool = capability_tool(
+        definition,
+        Backend(),
+        uuid4(),
+        lambda **values: recorded.append(values),
+    )
+
+    result = await tool._func(  # type: ignore[attr-defined]
+        SimpleNamespace(
+            session=Session(), function_call=SimpleNamespace(call_id="tool-call")
+        ),
+        {},
+    )
+
+    assert result == {"status": "submitted"}
+    assert recorded[0]["status"] == "ok"
+    assert recorded[0]["error_type"] is None
+
+
+@pytest.mark.asyncio
 async def test_end_call_callback_records_native_tool_execution() -> None:
     recorded: list[dict[str, object]] = []
     end_call = build_agent_tools(

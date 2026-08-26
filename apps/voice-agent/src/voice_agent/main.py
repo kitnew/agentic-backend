@@ -335,9 +335,12 @@ def capability_tool(
             if executed:
                 invocation = await backend.wait_for_capability(call_id, invocation)
                 if invocation.status is CapabilityInvocationStatus.SUCCEEDED:
-                    assert invocation.semantic_result is not None
                     status = "ok"
-                    result = invocation.semantic_result
+                    result = (
+                        invocation.semantic_result
+                        if invocation.semantic_result is not None
+                        else {"status": "submitted"}
+                    )
                 else:
                     result = {
                         "status": "request_submission_failed",
