@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from livekit import agents
 from livekit.agents.telemetry import tracer as livekit_tracer
 from livekit.agents.types import USERDATA_TTS_STARTED_TIME
 from livekit.agents.voice.agent import ModelSettings
+from livekit.agents.voice.agent_activity import AgentActivity
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -25,6 +27,7 @@ from voice_agent.observability import (
     LatencyInstrumentedAgent,
     LiveKitPrivacySpanProcessor,
     VoiceMetrics,
+    _install_eot_hooks,
     configure_voice_telemetry,
     current_voice_telemetry,
     setup_voice_telemetry,
@@ -347,6 +350,131 @@ def test_pipeline_latency_phases_are_correlated_without_identifier_attributes() 
         for point in points[name]
     )
     provider.shutdown()
+
+
+def test_eot_decomposition_correlates_ordered_events_once_without_labels() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    metrics = VoiceMetrics(provider.get_meter("voice-agent"))
+
+    metrics.record_local_vad_end(10.0)
+    metrics.record_stt_final_received(10.4)
+    metrics.record_stt_final_received(10.4)
+    metrics.record_stt_eos_received(10.5)
+    metrics.record_stt_eos_received(10.5)
+    metrics.record_livekit_turn_committed(10.6)
+    metrics.record_on_user_turn_completed_started(10.7)
+    metrics.record_llm_request_started("private-speech-id", 10.8)
+    provider.force_flush()
+
+    points = _metric_points(reader)
+    expected = {
+        "voice.turn.eot.local_vad_to_stt_final": 0.4,
+        "voice.turn.eot.stt_final_to_stt_eos": 0.1,
+        "voice.turn.eot.stt_eos_to_turn_commit": 0.1,
+        "voice.turn.eot.turn_commit_to_user_completed": 0.1,
+        "voice.turn.eot.turn_commit_to_llm_request": 0.2,
+        "voice.turn.eot.local_vad_to_turn_commit": 0.6,
+    }
+    for name, total in expected.items():
+        assert points[name][0].count == 1
+        assert points[name][0].sum == pytest.approx(total)
+        assert not points[name][0].attributes
+        assert points[name][0].explicit_bounds == VOICE_FAST_BUCKETS
+    provider.shutdown()
+
+
+def test_eot_decomposition_skips_partial_and_precommit_llm_and_stays_bounded() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    metrics = VoiceMetrics(provider.get_meter("voice-agent"))
+
+    metrics.record_local_vad_end(1.0)
+    metrics.record_stt_final_received(1.1)
+    metrics.record_llm_request_started("preemptive", 1.2)
+    metrics.record_stt_eos_received(1.3)
+    metrics.record_livekit_turn_committed(1.4)
+    metrics.record_on_user_turn_completed_started(1.5)
+    metrics.record_llm_request_started("replacement", 1.6)
+    for index in range(200):
+        base = float(index + 2)
+        metrics.record_local_vad_end(base)
+        metrics.record_livekit_turn_committed(base + 0.1)
+
+    provider.force_flush()
+    points = _metric_points(reader)
+    assert points["voice.turn.eot.turn_commit_to_llm_request"][0].count == 1
+    assert points["voice.turn.eot.turn_commit_to_llm_request"][0].sum == pytest.approx(
+        0.2
+    )
+    assert points["voice.turn.eot.turn_commit_to_user_completed"][0].count == 1
+    assert len(metrics._eot_turns) == 128
+    assert all(
+        not point.attributes
+        for point in points["voice.turn.eot.local_vad_to_turn_commit"]
+    )
+    provider.shutdown()
+
+
+def test_private_livekit_eot_hook_contract_forwards_events_and_commit_result() -> None:
+    assert tuple(inspect.signature(AgentActivity.on_end_of_speech).parameters) == (
+        "self",
+        "ev",
+    )
+    assert tuple(inspect.signature(AgentActivity.on_final_transcript).parameters) == (
+        "self",
+        "ev",
+        "speaking",
+    )
+    assert tuple(inspect.signature(AgentActivity.on_end_of_turn).parameters) == (
+        "self",
+        "info",
+    )
+    calls: list[tuple[str, object]] = []
+
+    class Activity:
+        def on_end_of_speech(self, event: object | None) -> None:
+            calls.append(("end", event))
+
+        def on_final_transcript(
+            self, event: object, *, speaking: bool | None = None
+        ) -> None:
+            calls.append(("final", (event, speaking)))
+
+        def on_end_of_turn(self, info: object) -> bool:
+            calls.append(("commit", info))
+            return bool(info)
+
+    metric_calls: list[str] = []
+    metrics = SimpleNamespace(
+        record_local_vad_end=lambda _: metric_calls.append("local_vad_end"),
+        record_stt_final_received=lambda _: metric_calls.append("stt_final"),
+        record_stt_eos_received=lambda _: metric_calls.append("stt_eos"),
+        record_livekit_turn_committed=lambda _: metric_calls.append("commit"),
+    )
+    activity = Activity()
+    _install_eot_hooks(SimpleNamespace(_activity=activity), metrics)  # type: ignore[arg-type]
+
+    vad_event = object()
+    transcript_event = object()
+    activity.on_end_of_speech(vad_event)
+    activity.on_end_of_speech(None)
+    activity.on_final_transcript(transcript_event, speaking=True)
+    assert activity.on_end_of_turn(False) is False
+    assert activity.on_end_of_turn(True) is True
+
+    assert metric_calls == ["local_vad_end", "stt_eos", "stt_final", "commit"]
+    assert calls == [
+        ("end", vad_event),
+        ("end", None),
+        ("final", (transcript_event, True)),
+        ("commit", False),
+        ("commit", True),
+    ]
 
 
 @pytest.mark.asyncio

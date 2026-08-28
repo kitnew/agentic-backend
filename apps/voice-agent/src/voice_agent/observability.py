@@ -9,7 +9,7 @@ import math
 import os
 import time
 from collections.abc import AsyncGenerator, AsyncIterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -37,6 +37,17 @@ _MAX_PIPELINE_TRACKERS = 128
 class _PipelineLatency:
     llm_request_started: float
     llm_first_nonempty_text: float | None = None
+
+
+@dataclass(slots=True)
+class _EotTurn:
+    local_vad_end: float | None = None
+    stt_final_received: float | None = None
+    stt_eos_received: float | None = None
+    livekit_turn_committed: float | None = None
+    on_user_turn_completed_started: float | None = None
+    llm_request_started: float | None = None
+    observed: set[str] = field(default_factory=set)
 
 
 class LiveKitPrivacySpanProcessor(SpanProcessor):
@@ -108,6 +119,24 @@ class VoiceMetrics:
         self._turn_e2e_latency = self._meter.create_histogram(
             "voice.turn.e2e_latency", unit="s"
         )
+        self._eot_local_vad_to_stt_final = self._meter.create_histogram(
+            "voice.turn.eot.local_vad_to_stt_final", unit="s"
+        )
+        self._eot_stt_final_to_stt_eos = self._meter.create_histogram(
+            "voice.turn.eot.stt_final_to_stt_eos", unit="s"
+        )
+        self._eot_stt_eos_to_turn_commit = self._meter.create_histogram(
+            "voice.turn.eot.stt_eos_to_turn_commit", unit="s"
+        )
+        self._eot_turn_commit_to_user_completed = self._meter.create_histogram(
+            "voice.turn.eot.turn_commit_to_user_completed", unit="s"
+        )
+        self._eot_turn_commit_to_llm_request = self._meter.create_histogram(
+            "voice.turn.eot.turn_commit_to_llm_request", unit="s"
+        )
+        self._eot_local_vad_to_turn_commit = self._meter.create_histogram(
+            "voice.turn.eot.local_vad_to_turn_commit", unit="s"
+        )
         self._llm_requests = self._meter.create_counter("voice.llm.requests")
         self._llm_duration = self._meter.create_histogram(
             "voice.llm.duration", unit="s"
@@ -161,6 +190,104 @@ class VoiceMetrics:
             "capability.execution.duration", unit="s"
         )
         self._pipeline_latency: dict[str, _PipelineLatency] = {}
+        self._eot_turns: list[_EotTurn] = []
+
+    def attach_eot_decomposition(self, session: agents.AgentSession) -> None:
+        _install_eot_hooks(session, self)
+
+    def record_local_vad_end(self, timestamp: float) -> None:
+        turn = self._active_eot_turn()
+        turn.local_vad_end = timestamp
+        self._observe_eot(turn)
+
+    def record_stt_final_received(self, timestamp: float) -> None:
+        turn = self._active_eot_turn()
+        if turn.stt_eos_received is None:
+            turn.stt_final_received = timestamp
+        self._observe_eot(turn)
+
+    def record_stt_eos_received(self, timestamp: float) -> None:
+        turn = self._active_eot_turn()
+        if turn.stt_eos_received is None:
+            turn.stt_eos_received = timestamp
+        self._observe_eot(turn)
+
+    def record_livekit_turn_committed(self, timestamp: float) -> None:
+        turn = self._active_eot_turn()
+        if turn.livekit_turn_committed is None:
+            turn.livekit_turn_committed = timestamp
+        self._observe_eot(turn)
+
+    def record_on_user_turn_completed_started(self, timestamp: float) -> None:
+        turn = next(
+            (
+                item
+                for item in self._eot_turns
+                if item.livekit_turn_committed is not None
+                and item.on_user_turn_completed_started is None
+            ),
+            None,
+        )
+        if turn is not None:
+            turn.on_user_turn_completed_started = timestamp
+            self._observe_eot(turn)
+
+    def _active_eot_turn(self) -> _EotTurn:
+        if self._eot_turns and self._eot_turns[-1].livekit_turn_committed is None:
+            return self._eot_turns[-1]
+        if len(self._eot_turns) >= _MAX_PIPELINE_TRACKERS:
+            self._eot_turns.pop(0)
+        turn = _EotTurn()
+        self._eot_turns.append(turn)
+        return turn
+
+    def _observe_eot(self, turn: _EotTurn) -> None:
+        for name, instrument, start, end in (
+            (
+                "local_vad_to_stt_final",
+                self._eot_local_vad_to_stt_final,
+                turn.local_vad_end,
+                turn.stt_final_received,
+            ),
+            (
+                "stt_final_to_stt_eos",
+                self._eot_stt_final_to_stt_eos,
+                turn.stt_final_received,
+                turn.stt_eos_received,
+            ),
+            (
+                "stt_eos_to_turn_commit",
+                self._eot_stt_eos_to_turn_commit,
+                turn.stt_eos_received,
+                turn.livekit_turn_committed,
+            ),
+            (
+                "turn_commit_to_user_completed",
+                self._eot_turn_commit_to_user_completed,
+                turn.livekit_turn_committed,
+                turn.on_user_turn_completed_started,
+            ),
+            (
+                "turn_commit_to_llm_request",
+                self._eot_turn_commit_to_llm_request,
+                turn.livekit_turn_committed,
+                turn.llm_request_started,
+            ),
+            (
+                "local_vad_to_turn_commit",
+                self._eot_local_vad_to_turn_commit,
+                turn.local_vad_end,
+                turn.livekit_turn_committed,
+            ),
+        ):
+            if (
+                name not in turn.observed
+                and start is not None
+                and end is not None
+                and end >= start
+            ):
+                self._record(instrument, end - start, {})
+                turn.observed.add(name)
 
     def attach_speculative_generation(self, session: agents.AgentSession) -> None:
         awaiting_speculative_speech = False
@@ -367,6 +494,28 @@ class VoiceMetrics:
                 )
 
     def record_llm_request_started(self, speech_id: str, timestamp: float) -> None:
+        turn = (
+            self._eot_turns[-1]
+            if self._eot_turns
+            and self._eot_turns[-1].livekit_turn_committed is None
+            and self._eot_turns[-1].llm_request_started is None
+            else next(
+                (
+                    item
+                    for item in self._eot_turns
+                    if item.livekit_turn_committed is not None
+                    and item.on_user_turn_completed_started is not None
+                    and (
+                        item.llm_request_started is None
+                        or item.llm_request_started < item.livekit_turn_committed
+                    )
+                ),
+                None,
+            )
+        )
+        if turn is not None:
+            turn.llm_request_started = timestamp
+            self._observe_eot(turn)
         if speech_id in self._pipeline_latency:
             return
         if len(self._pipeline_latency) >= _MAX_PIPELINE_TRACKERS:
@@ -513,6 +662,15 @@ class LatencyInstrumentedAgent(agents.Agent):
         super().__init__(**kwargs)
         self._voice_metrics = metrics
 
+    async def on_user_turn_completed(
+        self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
+    ) -> None:
+        if self._voice_metrics is not None:
+            self._voice_metrics.record_on_user_turn_completed_started(
+                time.perf_counter()
+            )
+        await super().on_user_turn_completed(turn_ctx, new_message)
+
     async def llm_node(
         self,
         chat_ctx: llm.ChatContext,
@@ -582,6 +740,44 @@ def _current_speech_id() -> str | None:
     # Reuse the pinned SDK's own context used to attach speech_id to LLM/TTS metrics.
     speech = _SpeechHandleContextVar.get(None)
     return speech.id if speech is not None else None
+
+
+def _install_eot_hooks(session: agents.AgentSession, metrics: VoiceMetrics) -> None:
+    """Attach to the pinned 1.6.7 recognition boundary missing from public events."""
+    activity = getattr(session, "_activity", None)
+    required = ("on_end_of_speech", "on_final_transcript", "on_end_of_turn")
+    if activity is None or not all(
+        callable(getattr(activity, name, None)) for name in required
+    ):
+        raise RuntimeError("LiveKit 1.6.7 recognition hooks are unavailable")
+
+    on_end_of_speech = activity.on_end_of_speech
+    on_final_transcript = activity.on_final_transcript
+    on_end_of_turn = activity.on_end_of_turn
+
+    def instrumented_end_of_speech(event: object | None) -> None:
+        timestamp = time.perf_counter()
+        if event is None:
+            metrics.record_stt_eos_received(timestamp)
+        else:
+            metrics.record_local_vad_end(timestamp)
+        on_end_of_speech(event)
+
+    def instrumented_final_transcript(
+        event: object, *, speaking: bool | None = None
+    ) -> None:
+        metrics.record_stt_final_received(time.perf_counter())
+        on_final_transcript(event, speaking=speaking)
+
+    def instrumented_end_of_turn(info: object) -> bool:
+        committed = on_end_of_turn(info)
+        if committed:
+            metrics.record_livekit_turn_committed(time.perf_counter())
+        return committed
+
+    activity.on_end_of_speech = instrumented_end_of_speech
+    activity.on_final_transcript = instrumented_final_transcript
+    activity.on_end_of_turn = instrumented_end_of_turn
 
 
 @dataclass(slots=True)

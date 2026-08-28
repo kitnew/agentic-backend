@@ -538,6 +538,7 @@ async def run_job(
             ),
         )
         if telemetry is not None:
+            telemetry.metrics.attach_eot_decomposition(session)
             telemetry.set_session_correlation(call_id)
         observe = getattr(backend, "observe", None)
         if observe is not None:
