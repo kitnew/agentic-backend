@@ -212,4 +212,3 @@ Pre detailné turistické tipy odporučiť kontaktovať recepciu.
 Hodnotenie možné na Google alebo Booking.com. Penzión nemá profil na sociálnych sieťach. Pochvaly/sťažnosti po pobyte: recepcia (osobne, telefonicky, emailom).
 
 ---
-

@@ -19,6 +19,11 @@ definitions/
     └── knowledge/knowledge.md
 ```
 
+`tenant.yaml` is the local projection of the tenant Agent component and is the
+place for handoff destinations. Tenant Telephony is a remote-only component;
+its `phone_number` is managed with `agentctl did` and is not added to the
+workspace tree.
+
 ## Workspace lifecycle
 
 ```bash
@@ -52,11 +57,11 @@ The normal onboarding cycle is:
 ```text
 agentctl tenant create hotel --display-name "Hotel" --business-type hotel
 → agentctl pull tenant hotel
-→ edit definitions/tenants/hotel/
+→ edit handoff in definitions/tenants/hotel/tenant.yaml
 → agentctl status tenant hotel
 → agentctl plan tenant hotel
 → agentctl push tenant hotel
-→ configure integrations / DID as needed
+→ agentctl did assign hotel +421551234567
 → agentctl publish tenant hotel
 ```
 
@@ -78,8 +83,9 @@ agentctl did show hotel
 ```
 
 Integration and DID commands have live/operational lifecycles and are not part
-of local workspace synchronization. They are included in Tenant Publish All
-when the tenant is published.
+of local workspace synchronization. DID changes are saved as a remote
+Telephony draft and included in Tenant Publish All when the tenant is
+published. Handoff remains in the local Agent projection (`tenant.yaml`).
 
 Platform `system-prompt`, `runtime`, and `profile` commands remain read-only
 inspection paths for active values, revisions, and profile listings. Workspace

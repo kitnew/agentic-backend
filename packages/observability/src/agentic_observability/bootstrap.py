@@ -56,10 +56,16 @@ def _histogram_views() -> tuple[View, ...]:
         "voice.turn.end_of_turn_delay",
         "voice.turn.on_user_turn_completed_delay",
         "voice.turn.llm_ttft",
+        "voice.turn.llm_usable_ttft",
+        "voice.turn.llm_to_tts_dispatch_latency",
         "voice.turn.tts_ttfb",
+        "voice.turn.tts_effective_first_audio_latency",
+        "voice.turn.playback_latency",
         "voice.stt.duration",
         "voice.llm.ttft",
         "voice.tts.ttfb",
+        "voice.tts.connection.acquire_time",
+        "voice.speculative_generation.lead_time",
     }
     duration = {
         "call.duration",

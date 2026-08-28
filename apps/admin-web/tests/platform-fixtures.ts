@@ -10,6 +10,12 @@ export const runtimePolicy: PlatformRuntimePolicy = {
   stt: {
     provider: "elevenlabs",
     model: "scribe",
+    interim_preflight: {
+      enabled: false,
+      min_transcript_chars: 20,
+      min_growth_chars: 12,
+      max_generations_per_turn: 2,
+    },
     server_vad: {
       silence_threshold_seconds: 0.8,
       activity_threshold: 0.5,
@@ -27,5 +33,10 @@ export const runtimePolicy: PlatformRuntimePolicy = {
     min_endpointing_delay_seconds: 0.4,
     max_endpointing_delay_seconds: 2,
   },
-  tts: { provider: "elevenlabs", model: "flash", voice_id: "voice-1" },
+  tts: {
+    provider: "elevenlabs",
+    model: "flash",
+    voice_id: "voice-1",
+    min_sentence_chars: 20,
+  },
 };

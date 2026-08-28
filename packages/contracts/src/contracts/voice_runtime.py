@@ -46,9 +46,7 @@ class LLMRuntimeSettings(_RuntimeModel):
 
     @model_validator(mode="after")
     def provider_parameters_are_compatible(self) -> LLMRuntimeSettings:
-        validate_llm_behavior(
-            self.model, self.temperature, self.reasoning_effort
-        )
+        validate_llm_behavior(self.model, self.temperature, self.reasoning_effort)
         return self
 
 
@@ -59,16 +57,27 @@ class ServerVADRuntimeSettings(_RuntimeModel):
     min_silence_ms: int = Field(gt=0, le=60_000)
 
 
+class InterimPreflightRuntimeSettings(_RuntimeModel):
+    enabled: bool = False
+    min_transcript_chars: int = Field(default=20, ge=3, le=500)
+    min_growth_chars: int = Field(default=12, ge=1, le=500)
+    max_generations_per_turn: int = Field(default=2, ge=1, le=5)
+
+
 class STTRuntimeSettings(_RuntimeModel):
     provider: Literal["elevenlabs"]
     model: Identifier
     server_vad: ServerVADRuntimeSettings
+    interim_preflight: InterimPreflightRuntimeSettings = Field(
+        default_factory=InterimPreflightRuntimeSettings
+    )
 
 
 class TTSRuntimeSettings(_RuntimeModel):
     provider: Literal["elevenlabs"]
     model: Identifier
     voice_id: Identifier
+    min_sentence_chars: int = Field(default=20, ge=3, le=200)
 
 
 class LocalVADRuntimeSettings(_RuntimeModel):
@@ -111,9 +120,7 @@ class TenantLLMRuntimeOverride(_RuntimeModel):
 
     @model_validator(mode="after")
     def provider_parameters_are_compatible(self) -> TenantLLMRuntimeOverride:
-        validate_llm_behavior(
-            self.model, self.temperature, self.reasoning_effort
-        )
+        validate_llm_behavior(self.model, self.temperature, self.reasoning_effort)
         return self
 
 

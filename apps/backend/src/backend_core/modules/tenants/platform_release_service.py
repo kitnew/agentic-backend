@@ -59,6 +59,12 @@ class PlatformReleaseUseCases:
                         "stt": {
                             "provider": "elevenlabs",
                             "model": "scribe",
+                            "interim_preflight": {
+                                "enabled": False,
+                                "min_transcript_chars": 20,
+                                "min_growth_chars": 12,
+                                "max_generations_per_turn": 2,
+                            },
                             "server_vad": {
                                 "silence_threshold_seconds": 1,
                                 "activity_threshold": 0.5,
@@ -70,6 +76,7 @@ class PlatformReleaseUseCases:
                             "provider": "elevenlabs",
                             "model": "turbo",
                             "voice_id": "voice",
+                            "min_sentence_chars": 20,
                         },
                         "local_vad": {
                             "min_speech_seconds": 0.2,
@@ -228,7 +235,9 @@ class PlatformReleaseUseCases:
     ) -> PlatformRuntimeComponentRevision:
         if draft is None:
             assert active is not None
-            revision = await self._repository.runtime_revision(active.runtime_revision_id)
+            revision = await self._repository.runtime_revision(
+                active.runtime_revision_id
+            )
             assert revision is not None
             return revision
         revision = PlatformRuntimeComponentRevision(

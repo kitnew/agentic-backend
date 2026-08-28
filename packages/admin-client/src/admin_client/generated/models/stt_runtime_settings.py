@@ -12,7 +12,12 @@ from typing import (
 from attrs import define as _attrs_define
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 if TYPE_CHECKING:
+    from ..models.interim_preflight_runtime_settings import (
+        InterimPreflightRuntimeSettings,
+    )
     from ..models.server_vad_runtime_settings import ServerVADRuntimeSettings
 
 
@@ -26,11 +31,13 @@ class STTRuntimeSettings:
         model (str):
         provider (Literal['elevenlabs']):
         server_vad (ServerVADRuntimeSettings):
+        interim_preflight (InterimPreflightRuntimeSettings | Unset):
     """
 
     model: str
     provider: Literal["elevenlabs"]
     server_vad: ServerVADRuntimeSettings
+    interim_preflight: InterimPreflightRuntimeSettings | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         model = self.model
@@ -38,6 +45,10 @@ class STTRuntimeSettings:
         provider = self.provider
 
         server_vad = self.server_vad.to_dict()
+
+        interim_preflight: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.interim_preflight, Unset):
+            interim_preflight = self.interim_preflight.to_dict()
 
         field_dict: dict[str, Any] = {}
 
@@ -48,11 +59,16 @@ class STTRuntimeSettings:
                 "server_vad": server_vad,
             }
         )
+        if interim_preflight is not UNSET:
+            field_dict["interim_preflight"] = interim_preflight
 
         return field_dict
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
+        from ..models.interim_preflight_runtime_settings import (
+            InterimPreflightRuntimeSettings,
+        )
         from ..models.server_vad_runtime_settings import ServerVADRuntimeSettings
 
         d = dict(src_dict)
@@ -66,10 +82,20 @@ class STTRuntimeSettings:
 
         server_vad = ServerVADRuntimeSettings.from_dict(d.pop("server_vad"))
 
+        _interim_preflight = d.pop("interim_preflight", UNSET)
+        interim_preflight: InterimPreflightRuntimeSettings | Unset
+        if isinstance(_interim_preflight, Unset):
+            interim_preflight = UNSET
+        else:
+            interim_preflight = InterimPreflightRuntimeSettings.from_dict(
+                _interim_preflight
+            )
+
         stt_runtime_settings = cls(
             model=model,
             provider=provider,
             server_vad=server_vad,
+            interim_preflight=interim_preflight,
         )
 
         return stt_runtime_settings

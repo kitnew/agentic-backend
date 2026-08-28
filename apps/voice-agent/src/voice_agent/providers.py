@@ -2,12 +2,14 @@ import httpx
 from contracts import EffectiveVoiceRuntime
 from contracts.voice_runtime import model_supports_reasoning
 from livekit import agents
-from livekit.agents import inference
+from livekit.agents import inference, tokenize
+from livekit.agents import stt as livekit_stt
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import elevenlabs, openai
 
 from voice_agent.observability import VoiceMetrics
 from voice_agent.settings import VoiceAgentSettings
+from voice_agent.stt_preflight import InterimPreflightSTT
 
 
 def provider_languages(locale: str) -> tuple[str, str]:
@@ -53,7 +55,7 @@ def create_agent_session(
         timeout=settings.provider_timeout_seconds,
         max_retry=settings.provider_retry_limit,
     )
-    stt = elevenlabs.STT(
+    stt: livekit_stt.STT = elevenlabs.STT(
         api_key=settings.elevenlabs_api_key.get_secret_value(),
         model=runtime.stt.model,
         language_code=stt_language,
@@ -64,6 +66,14 @@ def create_agent_session(
             "min_silence_duration_ms": runtime.stt.server_vad.min_silence_ms,
         },
     )
+    preflight = runtime.stt.interim_preflight
+    if preflight.enabled:
+        stt = InterimPreflightSTT(
+            stt,
+            min_transcript_chars=preflight.min_transcript_chars,
+            min_growth_chars=preflight.min_growth_chars,
+            max_generations_per_turn=preflight.max_generations_per_turn,
+        )
     vad = inference.VAD(
         min_speech_duration=runtime.local_vad.min_speech_seconds,
         min_silence_duration=runtime.local_vad.min_silence_seconds,
@@ -85,6 +95,9 @@ def create_agent_session(
         model=runtime.tts.model,
         voice_id=runtime.tts.voice_id,
         language=tts_language,
+        word_tokenizer=tokenize.blingfire.SentenceTokenizer(
+            min_sentence_len=runtime.tts.min_sentence_chars
+        ),
     )
     if metrics is not None:
         for component, name in ((stt, "stt"), (llm_provider, "llm"), (tts, "tts")):

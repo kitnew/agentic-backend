@@ -392,6 +392,27 @@ function RuntimeEditor({
             <Field label="Model">
               <input {...field("sttModel")} />
             </Field>
+            <Field label="Interim preflight generation">
+              <select {...field("interimPreflightEnabled")}>
+                <option value="disabled">Disabled</option>
+                <option value="enabled">Enabled</option>
+              </select>
+            </Field>
+            <NumberField
+              label="Preflight minimum transcript characters"
+              input={field("interimPreflightMinChars")}
+              step="1"
+            />
+            <NumberField
+              label="Preflight minimum growth characters"
+              input={field("interimPreflightMinGrowth")}
+              step="1"
+            />
+            <NumberField
+              label="Maximum speculative generations per turn"
+              input={field("interimPreflightMaxGenerations")}
+              step="1"
+            />
           </FormGrid>
         </FormSection>
         <FormSection
@@ -464,6 +485,11 @@ function RuntimeEditor({
             <Field label="Voice ID">
               <input {...field("voiceId")} />
             </Field>
+            <NumberField
+              label="Minimum sentence characters"
+              input={field("ttsMinSentenceChars")}
+              step="1"
+            />
           </FormGrid>
         </FormSection>
       </div>

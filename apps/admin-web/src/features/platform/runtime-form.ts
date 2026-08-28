@@ -12,6 +12,10 @@ export type PlatformRuntimeForm = {
   temperatureMode: OptionalMode;
   temperature: string;
   sttModel: string;
+  interimPreflightEnabled: "enabled" | "disabled";
+  interimPreflightMinChars: string;
+  interimPreflightMinGrowth: string;
+  interimPreflightMaxGenerations: string;
   serverSilenceThreshold: string;
   serverActivityThreshold: string;
   serverMinSpeech: string;
@@ -23,6 +27,7 @@ export type PlatformRuntimeForm = {
   endpointingMaxDelay: string;
   ttsModel: string;
   voiceId: string;
+  ttsMinSentenceChars: string;
 };
 
 const optionalMode = (value: unknown): OptionalMode =>
@@ -38,6 +43,18 @@ export function toPlatformRuntimeForm(
     temperatureMode: optionalMode(policy.llm.temperature),
     temperature: policy.llm.temperature?.toString() ?? "",
     sttModel: policy.stt.model,
+    interimPreflightEnabled: policy.stt.interim_preflight?.enabled
+      ? "enabled"
+      : "disabled",
+    interimPreflightMinChars: (
+      policy.stt.interim_preflight?.min_transcript_chars ?? 20
+    ).toString(),
+    interimPreflightMinGrowth: (
+      policy.stt.interim_preflight?.min_growth_chars ?? 12
+    ).toString(),
+    interimPreflightMaxGenerations: (
+      policy.stt.interim_preflight?.max_generations_per_turn ?? 2
+    ).toString(),
     serverSilenceThreshold:
       policy.stt.server_vad.silence_threshold_seconds.toString(),
     serverActivityThreshold:
@@ -51,6 +68,7 @@ export function toPlatformRuntimeForm(
     endpointingMaxDelay: policy.turn.max_endpointing_delay_seconds.toString(),
     ttsModel: policy.tts.model,
     voiceId: policy.tts.voice_id,
+    ttsMinSentenceChars: (policy.tts.min_sentence_chars ?? 20).toString(),
   };
 }
 
@@ -92,6 +110,21 @@ export function toPlatformRuntimePolicy(
     stt: {
       provider: "elevenlabs",
       model: required(form.sttModel, "STT model"),
+      interim_preflight: {
+        enabled: form.interimPreflightEnabled === "enabled",
+        min_transcript_chars: integer(
+          form.interimPreflightMinChars,
+          "Interim preflight minimum transcript characters",
+        ),
+        min_growth_chars: integer(
+          form.interimPreflightMinGrowth,
+          "Interim preflight minimum growth characters",
+        ),
+        max_generations_per_turn: integer(
+          form.interimPreflightMaxGenerations,
+          "Interim preflight maximum generations",
+        ),
+      },
       server_vad: {
         silence_threshold_seconds: number(
           form.serverSilenceThreshold,
@@ -131,6 +164,10 @@ export function toPlatformRuntimePolicy(
       provider: "elevenlabs",
       model: required(form.ttsModel, "TTS model"),
       voice_id: required(form.voiceId, "Voice ID"),
+      min_sentence_chars: integer(
+        form.ttsMinSentenceChars,
+        "TTS minimum sentence characters",
+      ),
     },
   };
 }

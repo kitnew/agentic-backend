@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 import math
 import os
-from collections.abc import Mapping
+import time
+from collections.abc import AsyncGenerator, AsyncIterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -14,8 +17,12 @@ from agentic_observability.attributes import metric_attributes
 from agentic_observability.bootstrap import TelemetryProviders, bootstrap
 from agentic_observability.config import TelemetryConfig
 from agentic_observability.logging import install_trace_context_filter
-from livekit import agents
+from livekit import agents, rtc
+from livekit.agents import llm
 from livekit.agents.telemetry import set_tracer_provider
+from livekit.agents.types import USERDATA_TTS_STARTED_TIME, FlushSentinel
+from livekit.agents.voice.agent import ModelSettings
+from livekit.agents.voice.agent_activity import _SpeechHandleContextVar
 from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
@@ -23,6 +30,13 @@ from opentelemetry.sdk.util import BoundedList
 from opentelemetry.trace import Status
 
 _runtime: VoiceTelemetryRuntime | None = None
+_MAX_PIPELINE_TRACKERS = 128
+
+
+@dataclass(slots=True)
+class _PipelineLatency:
+    llm_request_started: float
+    llm_first_nonempty_text: float | None = None
 
 
 class LiveKitPrivacySpanProcessor(SpanProcessor):
@@ -76,8 +90,20 @@ class VoiceMetrics:
         self._turn_llm_ttft = self._meter.create_histogram(
             "voice.turn.llm_ttft", unit="s"
         )
+        self._turn_llm_usable_ttft = self._meter.create_histogram(
+            "voice.turn.llm_usable_ttft", unit="s"
+        )
+        self._turn_llm_to_tts_dispatch_latency = self._meter.create_histogram(
+            "voice.turn.llm_to_tts_dispatch_latency", unit="s"
+        )
         self._turn_tts_ttfb = self._meter.create_histogram(
             "voice.turn.tts_ttfb", unit="s"
+        )
+        self._turn_tts_effective_first_audio_latency = self._meter.create_histogram(
+            "voice.turn.tts_effective_first_audio_latency", unit="s"
+        )
+        self._turn_playback_latency = self._meter.create_histogram(
+            "voice.turn.playback_latency", unit="s"
         )
         self._turn_e2e_latency = self._meter.create_histogram(
             "voice.turn.e2e_latency", unit="s"
@@ -108,6 +134,24 @@ class VoiceMetrics:
             "voice.tts.audio_duration", unit="s"
         )
         self._tts_characters = self._meter.create_counter("voice.tts.characters")
+        self._tts_connection_acquire_time = self._meter.create_histogram(
+            "voice.tts.connection.acquire_time", unit="s"
+        )
+        self._tts_connection_requests = self._meter.create_counter(
+            "voice.tts.connection.requests", unit="{request}"
+        )
+        self._speculative_started = self._meter.create_counter(
+            "voice.speculative_generation.started", unit="{generation}"
+        )
+        self._speculative_reused = self._meter.create_counter(
+            "voice.speculative_generation.reused", unit="{generation}"
+        )
+        self._speculative_cancelled = self._meter.create_counter(
+            "voice.speculative_generation.cancelled", unit="{generation}"
+        )
+        self._speculative_lead_time = self._meter.create_histogram(
+            "voice.speculative_generation.lead_time", unit="s"
+        )
         self._errors = self._meter.create_counter("voice.component.errors")
         self._capability_executions = self._meter.create_counter(
             "capability.executions"
@@ -116,6 +160,101 @@ class VoiceMetrics:
         self._capability_duration = self._meter.create_histogram(
             "capability.execution.duration", unit="s"
         )
+        self._pipeline_latency: dict[str, _PipelineLatency] = {}
+
+    def attach_speculative_generation(self, session: agents.AgentSession) -> None:
+        awaiting_speculative_speech = False
+        active_speculation: dict[str, Any] | None = None
+        last_interim_text: str | None = None
+
+        def clear_pending() -> None:
+            nonlocal awaiting_speculative_speech
+            awaiting_speculative_speech = False
+
+        def on_transcript(event: object) -> None:
+            nonlocal awaiting_speculative_speech, last_interim_text
+            if getattr(event, "is_final", True):
+                value = getattr(event, "transcript", None)
+                if (
+                    active_speculation is not None
+                    and not active_speculation["resolved"]
+                ):
+                    active_speculation["final_seen"] = True
+                    active_speculation["final_text"] = (
+                        value if isinstance(value, str) else None
+                    )
+                return
+            value = getattr(event, "transcript", None)
+            last_interim_text = value if isinstance(value, str) else None
+            awaiting_speculative_speech = True
+            asyncio.get_running_loop().call_soon(clear_pending)
+
+        def on_speech_created(event: object) -> None:
+            nonlocal awaiting_speculative_speech, active_speculation
+            if not awaiting_speculative_speech:
+                return
+            if getattr(event, "source", None) != "generate_reply":
+                return
+            awaiting_speculative_speech = False
+            handle = getattr(event, "speech_handle", None)
+            scheduled_fut = getattr(handle, "_scheduled_fut", None)
+            if handle is None or not isinstance(scheduled_fut, asyncio.Future):
+                return
+
+            if active_speculation is not None and not active_speculation["resolved"]:
+                active_speculation["reason"] = "superseded_interim"
+
+            started_at = time.perf_counter()
+            resolved = False
+            observation: dict[str, Any] = {
+                "resolved": False,
+                "reason": None,
+                "candidate": last_interim_text,
+                "final_seen": False,
+                "final_text": None,
+            }
+            active_speculation = observation
+            self._add(self._speculative_started, 1, {})
+
+            def on_scheduled(_: asyncio.Future[None]) -> None:
+                nonlocal resolved
+                if resolved or not handle.scheduled:
+                    return
+                resolved = True
+                observation["resolved"] = True
+                self._add(self._speculative_reused, 1, {})
+                self._record(
+                    self._speculative_lead_time,
+                    time.perf_counter() - started_at,
+                    {},
+                )
+
+            def on_done(_: object) -> None:
+                nonlocal resolved
+                if resolved or handle.scheduled:
+                    return
+                resolved = True
+                reason = observation["reason"]
+                if reason is None and observation["final_seen"]:
+                    candidate = observation["candidate"]
+                    final_text = observation["final_text"]
+                    reason = (
+                        "final_transcript_mismatch"
+                        if isinstance(candidate, str)
+                        and isinstance(final_text, str)
+                        and candidate != final_text
+                        else "context_tools_or_tool_choice_mismatch"
+                    )
+                if reason is None:
+                    reason = "interrupted_or_shutdown"
+                observation["resolved"] = True
+                self._add(self._speculative_cancelled, 1, {"reason": reason})
+
+            scheduled_fut.add_done_callback(on_scheduled)
+            handle.add_done_callback(on_done)
+
+        session.on("user_input_transcribed", on_transcript)
+        session.on("speech_created", on_speech_created)
 
     def record_turn(self, item: object) -> None:
         values = getattr(item, "metrics", None)
@@ -150,6 +289,11 @@ class VoiceMetrics:
             self._turn_e2e_latency,
             values.get("e2e_latency"),
             _turn_attrs(values, "llm_metadata"),
+        )
+        self._record(
+            self._turn_playback_latency,
+            values.get("playback_latency"),
+            _turn_attrs(values, "tts_metadata"),
         )
 
     def record_component_metric(self, metric: object) -> None:
@@ -209,6 +353,63 @@ class VoiceMetrics:
                 getattr(metric, "characters_count", 0),
                 attributes,
             )
+            self._record(
+                self._tts_connection_acquire_time,
+                getattr(metric, "acquire_time", None),
+                attributes,
+            )
+            connection_reused = getattr(metric, "connection_reused", None)
+            if isinstance(connection_reused, bool):
+                self._add(
+                    self._tts_connection_requests,
+                    1,
+                    {**attributes, "outcome": "reused" if connection_reused else "new"},
+                )
+
+    def record_llm_request_started(self, speech_id: str, timestamp: float) -> None:
+        if speech_id in self._pipeline_latency:
+            return
+        if len(self._pipeline_latency) >= _MAX_PIPELINE_TRACKERS:
+            self._pipeline_latency.pop(next(iter(self._pipeline_latency)))
+        self._pipeline_latency[speech_id] = _PipelineLatency(timestamp)
+
+    def record_llm_first_nonempty_text(self, speech_id: str, timestamp: float) -> None:
+        timing = self._pipeline_latency.get(speech_id)
+        if timing is not None and timing.llm_first_nonempty_text is None:
+            timing.llm_first_nonempty_text = timestamp
+
+    def record_tts_first_audio(
+        self,
+        speech_id: str,
+        *,
+        tts_first_text_sent: float,
+        tts_first_audio: float,
+    ) -> None:
+        timing = self._pipeline_latency.pop(speech_id, None)
+        if timing is None or timing.llm_first_nonempty_text is None:
+            return
+        if not (
+            timing.llm_request_started
+            <= timing.llm_first_nonempty_text
+            <= tts_first_text_sent
+            <= tts_first_audio
+        ):
+            return
+        self._record(
+            self._turn_llm_usable_ttft,
+            timing.llm_first_nonempty_text - timing.llm_request_started,
+            {},
+        )
+        self._record(
+            self._turn_llm_to_tts_dispatch_latency,
+            tts_first_text_sent - timing.llm_first_nonempty_text,
+            {},
+        )
+        self._record(
+            self._turn_tts_effective_first_audio_latency,
+            tts_first_audio - tts_first_text_sent,
+            {},
+        )
 
     def record_component_error(self, component: str, error: object) -> None:
         self._add(
@@ -304,6 +505,83 @@ def _turn_attrs(values: Mapping[str, object], metadata_name: str) -> dict[str, s
         if isinstance(value, str) and value:
             attributes[target] = value
     return attributes
+
+
+class LatencyInstrumentedAgent(agents.Agent):
+    def __init__(self, *, metrics: VoiceMetrics | None, **kwargs: Any) -> None:
+        kwargs.setdefault("id", "default_agent")
+        super().__init__(**kwargs)
+        self._voice_metrics = metrics
+
+    async def llm_node(
+        self,
+        chat_ctx: llm.ChatContext,
+        tools: list[llm.Tool],
+        model_settings: ModelSettings,
+    ) -> AsyncGenerator[llm.ChatChunk | str | FlushSentinel]:
+        speech_id = _current_speech_id()
+        if self._voice_metrics is not None and speech_id is not None:
+            self._voice_metrics.record_llm_request_started(
+                speech_id, time.perf_counter()
+            )
+        raw_output = super().llm_node(chat_ctx, tools, model_settings)
+        if inspect.isawaitable(raw_output):
+            output = await raw_output
+        else:
+            output = raw_output
+        if not isinstance(output, AsyncIterable):
+            return
+        async for chunk in output:
+            delta = getattr(chunk, "delta", None)
+            content = (
+                chunk if isinstance(chunk, str) else getattr(delta, "content", None)
+            )
+            if (
+                self._voice_metrics is not None
+                and speech_id is not None
+                and isinstance(content, str)
+                and content.strip()
+            ):
+                self._voice_metrics.record_llm_first_nonempty_text(
+                    speech_id, time.perf_counter()
+                )
+            yield chunk
+
+    async def tts_node(
+        self,
+        text: AsyncIterable[str],
+        model_settings: ModelSettings,
+    ) -> AsyncGenerator[rtc.AudioFrame]:
+        speech_id = _current_speech_id()
+        first_audio = True
+        raw_output = super().tts_node(text, model_settings)
+        if inspect.isawaitable(raw_output):
+            output = await raw_output
+        else:
+            output = raw_output
+        if not isinstance(output, AsyncIterable):
+            return
+        async for frame in output:
+            if (
+                self._voice_metrics is not None
+                and speech_id is not None
+                and first_audio
+            ):
+                first_audio = False
+                tts_first_text_sent = frame.userdata.get(USERDATA_TTS_STARTED_TIME)
+                if isinstance(tts_first_text_sent, int | float):
+                    self._voice_metrics.record_tts_first_audio(
+                        speech_id,
+                        tts_first_text_sent=float(tts_first_text_sent),
+                        tts_first_audio=time.perf_counter(),
+                    )
+            yield frame
+
+
+def _current_speech_id() -> str | None:
+    # Reuse the pinned SDK's own context used to attach speech_id to LLM/TTS metrics.
+    speech = _SpeechHandleContextVar.get(None)
+    return speech.id if speech is not None else None
 
 
 @dataclass(slots=True)

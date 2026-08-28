@@ -81,6 +81,7 @@ export * from './integrationReadinessCredentials';
 export * from './integrationValidateResponse';
 export * from './integrationValidateResponseConfiguration';
 export * from './integrationValidateResponseCredentials';
+export * from './interimPreflightRuntimeSettings';
 export * from './listTenantsAdminV1TenantsGetParams';
 export * from './lLMRuntimeSettings';
 export * from './lLMRuntimeSettingsReasoningEffort';

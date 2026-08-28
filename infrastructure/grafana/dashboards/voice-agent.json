@@ -1,28 +1,874 @@
 {
   "uid": "voice-agent",
   "title": "Voice Agent",
-  "tags": ["agentic-backend", "voice"],
+  "tags": [
+    "agentic-backend",
+    "voice"
+  ],
   "schemaVersion": 41,
   "version": 1,
   "refresh": "30s",
-  "time": {"from": "now-6h", "to": "now"},
-  "templating": {"list": [
-    {"name": "environment", "label": "Environment", "type": "query", "datasource": {"uid": "prometheus", "type": "prometheus"}, "query": "label_values(voice_llm_requests_total, deployment_environment_name)", "includeAll": true, "allValue": ".+", "multi": true, "current": {"text": "All", "value": "$__all"}},
-    {"name": "service", "label": "Service", "type": "query", "datasource": {"uid": "prometheus", "type": "prometheus"}, "query": "label_values(voice_llm_requests_total{deployment_environment_name=~\"$environment\"}, service_name)", "includeAll": true, "allValue": ".+", "multi": true, "current": {"text": "All", "value": "$__all"}}
-  ]},
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "environment",
+        "label": "Environment",
+        "type": "query",
+        "datasource": {
+          "uid": "prometheus",
+          "type": "prometheus"
+        },
+        "query": "label_values(voice_llm_requests_total, deployment_environment_name)",
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "uid": "prometheus",
+          "type": "prometheus"
+        },
+        "query": "label_values(voice_llm_requests_total{deployment_environment_name=~\"$environment\"}, service_name)",
+        "includeAll": true,
+        "allValue": ".+",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        }
+      }
+    ]
+  },
   "panels": [
-    {"id": 1, "type": "stat", "title": "Turn E2E latency p50", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}},
-    {"id": 2, "type": "stat", "title": "Turn E2E latency p95", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}},
-    {"id": 3, "type": "stat", "title": "LLM TTFT p95", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}},
-    {"id": 4, "type": "stat", "title": "TTS TTFB p95", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_tts_ttfb_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}},
-    {"id": 5, "type": "timeseries", "title": "Voice pipeline latency p50", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_transcription_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "STT transcription"}, {"refId": "B", "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_end_of_turn_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "end of turn"}, {"refId": "C", "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_on_user_turn_completed_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "turn completed"}, {"refId": "D", "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_llm_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "LLM TTFT"}, {"refId": "E", "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_tts_ttfb_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "TTS TTFB"}, {"refId": "F", "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "E2E"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 0, "y": 4, "w": 12, "h": 8}},
-    {"id": 6, "type": "timeseries", "title": "Voice pipeline latency p95", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_transcription_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "STT transcription"}, {"refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_end_of_turn_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "end of turn"}, {"refId": "C", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_on_user_turn_completed_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "turn completed"}, {"refId": "D", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "LLM TTFT"}, {"refId": "E", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_tts_ttfb_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "TTS TTFB"}, {"refId": "F", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "E2E"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 12, "y": 4, "w": 12, "h": 8}},
-    {"id": 7, "type": "timeseries", "title": "LLM requests and errors", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "sum by (voice_provider, voice_model) (rate(voice_llm_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "requests {{voice_provider}}/{{voice_model}}"}, {"refId": "B", "expr": "sum(rate(voice_component_errors_total{voice_component=\"llm\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "errors"}], "fieldConfig": {"defaults": {"unit": "ops"}}, "gridPos": {"x": 0, "y": 12, "w": 8, "h": 8}},
-    {"id": 8, "type": "timeseries", "title": "LLM token rate and cached-input ratio", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "sum(rate(voice_llm_input_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "input tokens/s"}, {"refId": "B", "expr": "sum(rate(voice_llm_output_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "output tokens/s"}, {"refId": "C", "expr": "sum(rate(voice_llm_input_cached_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])) / clamp_min(sum(rate(voice_llm_input_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])), 0.000001)", "legendFormat": "cached input ratio"}], "fieldConfig": {"defaults": {"unit": "short"}, "overrides": [{"matcher": {"id": "byName", "options": "cached input ratio"}, "properties": [{"id": "unit", "value": "percentunit"}]}]}, "gridPos": {"x": 8, "y": 12, "w": 8, "h": 8}},
-    {"id": 9, "type": "timeseries", "title": "LLM duration p95", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_llm_duration_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "LLM duration"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 16, "y": 12, "w": 8, "h": 8}},
-    {"id": 10, "type": "timeseries", "title": "STT and TTS request health", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "sum(rate(voice_stt_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "STT requests/s"}, {"refId": "B", "expr": "sum(rate(voice_tts_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "TTS requests/s"}, {"refId": "C", "expr": "sum(rate(voice_component_errors_total{voice_component=~\"stt|tts\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "STT/TTS errors/s"}], "fieldConfig": {"defaults": {"unit": "ops"}}, "gridPos": {"x": 0, "y": 20, "w": 8, "h": 8}},
-    {"id": 11, "type": "timeseries", "title": "STT/TTS workload", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "sum(rate(voice_stt_audio_duration_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "STT audio seconds/s"}, {"refId": "B", "expr": "sum(rate(voice_tts_audio_duration_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "TTS audio seconds/s"}, {"refId": "C", "expr": "sum(rate(voice_tts_characters_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))", "legendFormat": "TTS characters/s"}], "fieldConfig": {"defaults": {"unit": "short"}}, "gridPos": {"x": 8, "y": 20, "w": 8, "h": 8}},
-    {"id": 12, "type": "timeseries", "title": "STT and TTS latency p95", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_stt_duration_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "STT duration"}, {"refId": "B", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_tts_ttfb_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "TTS TTFB"}, {"refId": "C", "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_tts_duration_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))", "legendFormat": "TTS duration"}], "fieldConfig": {"defaults": {"unit": "s"}}, "gridPos": {"x": 16, "y": 20, "w": 8, "h": 8}},
-    {"id": 13, "type": "timeseries", "title": "Voice latency observations in range", "datasource": {"uid": "prometheus", "type": "prometheus"}, "targets": [{"refId": "A", "expr": "sum(increase(voice_turn_e2e_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))", "legendFormat": "E2E"}, {"refId": "B", "expr": "sum(increase(voice_turn_llm_ttft_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))", "legendFormat": "LLM TTFT"}, {"refId": "C", "expr": "sum(increase(voice_turn_tts_ttfb_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))", "legendFormat": "TTS TTFB"}, {"refId": "D", "expr": "sum(increase(voice_llm_duration_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))", "legendFormat": "LLM duration"}, {"refId": "E", "expr": "sum(increase(voice_tts_duration_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))", "legendFormat": "TTS duration"}], "fieldConfig": {"defaults": {"unit": "short"}}, "gridPos": {"x": 0, "y": 28, "w": 24, "h": 6}}
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Turn E2E latency p50",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Turn E2E latency p95",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Usable LLM TTFT p95",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_usable_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Effective TTS first audio p95",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_tts_effective_first_audio_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Voice pipeline decomposition p50",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_end_of_turn_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "end of turn"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_llm_usable_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "usable LLM TTFT"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_llm_to_tts_dispatch_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "LLM to TTS dispatch"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_tts_effective_first_audio_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "TTS effective first audio"
+        },
+        {
+          "refId": "E",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_playback_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "playback"
+        },
+        {
+          "refId": "F",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "E2E reference"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Voice pipeline decomposition p95",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_end_of_turn_delay_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "end of turn"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_usable_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "usable LLM TTFT"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_to_tts_dispatch_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "LLM to TTS dispatch"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_tts_effective_first_audio_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "TTS effective first audio"
+        },
+        {
+          "refId": "E",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_playback_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "playback"
+        },
+        {
+          "refId": "F",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_e2e_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "E2E reference"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Raw vs usable LLM TTFT",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_llm_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "raw p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "raw p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_llm_usable_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "usable p50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_usable_ttft_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "usable p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "LLM to TTS dispatch latency",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_llm_to_tts_dispatch_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_llm_to_tts_dispatch_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "TTS startup latency p95",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_tts_ttfb_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "provider TTS TTFB"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_tts_effective_first_audio_latency_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "effective first audio"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_tts_connection_acquire_time_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "connection acquire"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 12,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Speculative generation activity",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(max_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "started"
+        },
+        {
+          "refId": "B",
+          "expr": "(sum(max_over_time(voice_speculative_generation_reused_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_reused_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "reused"
+        },
+        {
+          "refId": "C",
+          "expr": "(sum(max_over_time(voice_speculative_generation_cancelled_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_cancelled_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "cancelled"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Speculative generation outcome ratios",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "((sum(max_over_time(voice_speculative_generation_reused_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_reused_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)) / clamp_min(((sum(max_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)), 0.000001)",
+          "legendFormat": "reuse ratio"
+        },
+        {
+          "refId": "B",
+          "expr": "((sum(max_over_time(voice_speculative_generation_cancelled_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_cancelled_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)) / clamp_min(((sum(max_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)), 0.000001)",
+          "legendFormat": "cancellation ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        }
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Speculative lead time",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_speculative_generation_lead_time_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_speculative_generation_lead_time_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 20,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "LLM requests and errors",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (voice_provider, voice_model) (rate(voice_llm_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "requests {{voice_provider}}/{{voice_model}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(voice_component_errors_total{voice_component=\"llm\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 6,
+        "h": 8
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "LLM token rate and cached-input ratio",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(voice_llm_input_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "input tokens/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(voice_llm_output_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "output tokens/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(voice_llm_input_cached_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])) / clamp_min(sum(rate(voice_llm_input_tokens_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])), 0.000001)",
+          "legendFormat": "cached input ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "cached input ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 28,
+        "w": 6,
+        "h": 8
+      }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Speculative attempts vs E2E observations",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(max_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_started_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "started",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "(sum(max_over_time(voice_turn_e2e_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_turn_e2e_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "audible turns",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 28,
+        "w": 6,
+        "h": 8
+      }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Observations in selected range",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(max_over_time(voice_turn_e2e_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_turn_e2e_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "E2E",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "(sum(max_over_time(voice_turn_llm_usable_ttft_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_turn_llm_usable_ttft_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "usable TTFT",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "(sum(max_over_time(voice_turn_llm_to_tts_dispatch_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_turn_llm_to_tts_dispatch_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "LLM to TTS",
+          "instant": true
+        },
+        {
+          "refId": "D",
+          "expr": "(sum(max_over_time(voice_turn_tts_effective_first_audio_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_turn_tts_effective_first_audio_latency_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "TTS first audio",
+          "instant": true
+        },
+        {
+          "refId": "E",
+          "expr": "(sum(max_over_time(voice_speculative_generation_lead_time_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum(min_over_time(voice_speculative_generation_lead_time_seconds_count{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "spec lead time",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 28,
+        "w": 6,
+        "h": 8
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "TTS connection outcomes",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(voice_tts_connection_requests_total{outcome=\"new\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "new"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(voice_tts_connection_requests_total{outcome=\"reused\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "reused"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(voice_tts_connection_requests_total{outcome=\"reused\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])) / clamp_min(sum(rate(voice_tts_connection_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])), 0.000001)",
+          "legendFormat": "reuse ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "reuse ratio"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "max",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "STT/TTS workload",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(voice_stt_audio_duration_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "STT audio seconds/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(voice_tts_audio_duration_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "TTS audio seconds/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(voice_tts_characters_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "TTS characters/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 36,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "STT and TTS provider latency p95",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_stt_duration_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "STT duration"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_tts_ttfb_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "TTS TTFB"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_tts_duration_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "TTS duration"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 36,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "STT and TTS request health",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(voice_stt_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "STT requests/s"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(voice_tts_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "TTS requests/s"
+        },
+        {
+          "refId": "C",
+          "expr": "sum(rate(voice_component_errors_total{voice_component=~\"stt|tts\", service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval]))",
+          "legendFormat": "STT/TTS errors/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "LLM duration p95",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_llm_duration_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "LLM duration"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 44,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Speculative cancellation reasons",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum by (reason) (max_over_time(voice_speculative_generation_cancelled_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) - sum by (reason) (min_over_time(voice_speculative_generation_cancelled_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range]))) or vector(0)",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 12,
+        "h": 8
+      }
+    }
   ]
 }

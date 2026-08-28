@@ -38,6 +38,7 @@ from voice_agent.providers import (
     provider_languages,
 )
 from voice_agent.settings import VoiceAgentSettings
+from voice_agent.stt_preflight import InterimPreflightSTT
 
 
 def settings(**overrides: object) -> VoiceAgentSettings:
@@ -91,6 +92,12 @@ def runtime_settings(**overrides: object) -> EffectiveVoiceRuntime:
         "stt": {
             "provider": "elevenlabs",
             "model": "scribe_v2_realtime",
+            "interim_preflight": {
+                "enabled": False,
+                "min_transcript_chars": 20,
+                "min_growth_chars": 12,
+                "max_generations_per_turn": 2,
+            },
             "server_vad": {
                 "silence_threshold_seconds": 0.35,
                 "activity_threshold": 0.35,
@@ -102,6 +109,7 @@ def runtime_settings(**overrides: object) -> EffectiveVoiceRuntime:
             "provider": "elevenlabs",
             "model": "eleven_flash_v2_5",
             "voice_id": "voice-id",
+            "min_sentence_chars": 20,
         },
         "local_vad": {
             "min_speech_seconds": 0.05,
@@ -630,12 +638,13 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
     )
     try:
         assert isinstance(session.stt, elevenlabs.STT)
+        provider_stt = session.stt
         assert isinstance(session.llm, openai.LLM)
         assert isinstance(session.tts, elevenlabs.TTS)
-        assert session.stt._opts.model_id == "scribe_v2_realtime"
-        assert str(session.stt._opts.language_code) == "sk"
-        assert session.stt._opts.server_vad["vad_silence_threshold_secs"] == 0.35
-        assert session.stt._opts.server_vad["min_silence_duration_ms"] == 350
+        assert provider_stt._opts.model_id == "scribe_v2_realtime"
+        assert str(provider_stt._opts.language_code) == "sk"
+        assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.35
+        assert provider_stt._opts.server_vad["min_silence_duration_ms"] == 350
         assert session.vad is not None
         assert session.vad.model == "silero"
         assert session.vad._opts.min_speech_duration == 0.05
@@ -661,6 +670,7 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert session.tts._opts.model == "eleven_flash_v2_5"
         assert session.tts._opts.voice_id == "voice-id"
         assert str(session.tts._opts.language) == "sk"
+        assert session.tts._opts.word_tokenizer._config.min_sentence_len == 20
         assert session._tools == []
         assert session.conn_options.stt_conn_options.timeout == 10.0
         assert session.conn_options.stt_conn_options.max_retry == 3
@@ -668,11 +678,51 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert session.conn_options.llm_conn_options.max_retry == 3
         assert session.conn_options.tts_conn_options.timeout == 10.0
         assert session.conn_options.tts_conn_options.max_retry == 3
-        assert session.stt._opts.api_key == "eleven-key"
+        assert provider_stt._opts.api_key == "eleven-key"
         assert session.tts._opts.api_key == "eleven-key"
         assert provider_languages("sk-SK") == ("slk", "sk")
         with pytest.raises(ValueError):
             provider_languages("en-US")
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_factory_passes_low_latency_tts_and_stt_candidates() -> None:
+    runtime = runtime_settings(
+        stt={
+            "provider": "elevenlabs",
+            "model": "scribe_v2_realtime",
+            "interim_preflight": {
+                "enabled": True,
+                "min_transcript_chars": 20,
+                "min_growth_chars": 12,
+                "max_generations_per_turn": 2,
+            },
+            "server_vad": {
+                "silence_threshold_seconds": 0.25,
+                "activity_threshold": 0.35,
+                "min_speech_ms": 100,
+                "min_silence_ms": 250,
+            },
+        },
+        tts={
+            "provider": "elevenlabs",
+            "model": "eleven_flash_v2_5",
+            "voice_id": "voice-id",
+            "min_sentence_chars": 12,
+        },
+    )
+    session = create_agent_session(settings(), runtime, "voice-agent-prompt:test")
+    try:
+        assert isinstance(session.stt, InterimPreflightSTT)
+        provider_stt = session.stt.wrapped_stt
+        assert isinstance(provider_stt, elevenlabs.STT)
+        assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.25
+        assert provider_stt._opts.server_vad["min_silence_duration_ms"] == 250
+        assert session.tts._opts.word_tokenizer._config.min_sentence_len == 12
     finally:
         await session.stt.aclose()
         await session.llm.aclose()

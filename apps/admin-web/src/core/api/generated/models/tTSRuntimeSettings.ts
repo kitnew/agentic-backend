@@ -7,6 +7,11 @@
 
 export interface TTSRuntimeSettings {
   /**
+     * @minimum 3
+     * @maximum 200
+     */
+  min_sentence_chars?: number;
+  /**
      * @minLength 1
      * @maxLength 255
      */

@@ -40,6 +40,7 @@ METRIC_ATTRIBUTE_ALLOWLIST = frozenset(
         "capability.version",
         "artifact.type",
         "status",
+        "reason",
         "outcome",
         "error.type",
         "voice.component",

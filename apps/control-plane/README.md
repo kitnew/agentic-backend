@@ -41,9 +41,15 @@ uv run agentctl tenant create hotel --display-name "Hotel" --business-type hotel
 uv run agentctl integration list hotel
 uv run agentctl integration show hotel check-availability
 uv run agentctl did show hotel
+uv run agentctl did assign hotel +421551234567
+uv run agentctl did remove hotel
 ```
 
 Integration and DID are live operational facades, not local workspace
-resources. Platform inspection commands (`system-prompt`, `runtime`, and
-`profile`) remain available for read-only active-value/revision inspection;
-workspace mutation uses only the five lifecycle commands above.
+resources. DID mutation plans and saves a remote Telephony draft; it is
+activated by `publish`, not by `did assign` or `did remove`. Handoff is authored
+in `definitions/tenants/<slug>/tenant.yaml` as part of the Agent component; it
+has no separate Telephony CLI command. Platform inspection commands
+(`system-prompt`, `runtime`, and `profile`) remain available for read-only
+active-value/revision inspection; workspace mutation uses the five lifecycle
+commands above.

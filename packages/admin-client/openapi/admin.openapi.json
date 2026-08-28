@@ -2014,6 +2014,39 @@
         "title": "IntegrationValidateResponse",
         "type": "object"
       },
+      "InterimPreflightRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "max_generations_per_turn": {
+            "default": 2,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Max Generations Per Turn",
+            "type": "integer"
+          },
+          "min_growth_chars": {
+            "default": 12,
+            "maximum": 500.0,
+            "minimum": 1.0,
+            "title": "Min Growth Chars",
+            "type": "integer"
+          },
+          "min_transcript_chars": {
+            "default": 20,
+            "maximum": 500.0,
+            "minimum": 3.0,
+            "title": "Min Transcript Chars",
+            "type": "integer"
+          }
+        },
+        "title": "InterimPreflightRuntimeSettings",
+        "type": "object"
+      },
       "LLMRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
@@ -2605,6 +2638,9 @@
       "STTRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
+          "interim_preflight": {
+            "$ref": "#/components/schemas/InterimPreflightRuntimeSettings"
+          },
           "model": {
             "maxLength": 255,
             "minLength": 1,
@@ -2668,6 +2704,13 @@
       "TTSRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
+          "min_sentence_chars": {
+            "default": 20,
+            "maximum": 200.0,
+            "minimum": 3.0,
+            "title": "Min Sentence Chars",
+            "type": "integer"
+          },
           "model": {
             "maxLength": 255,
             "minLength": 1,

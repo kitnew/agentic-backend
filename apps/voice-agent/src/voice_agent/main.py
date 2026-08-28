@@ -27,6 +27,7 @@ from voice_agent.backend import BackendClient, CallFinalizer
 from voice_agent.calculator import calculator_tool
 from voice_agent.event_delivery import ConversationPersistence
 from voice_agent.observability import (
+    LatencyInstrumentedAgent,
     current_voice_telemetry,
     record_capability_execution,
     setup_voice_telemetry,
@@ -504,6 +505,7 @@ async def run_job(
         session.on("close", on_close)
         session.on("conversation_item_added", persistence.on_conversation_item_added)
         if telemetry is not None:
+            telemetry.metrics.attach_speculative_generation(session)
             session.on(
                 "conversation_item_added",
                 lambda event: telemetry.metrics.record_turn(
@@ -521,7 +523,8 @@ async def run_job(
                 "logs": False,
                 "transcript": False,
             },
-            agent=agents.Agent(
+            agent=LatencyInstrumentedAgent(
+                metrics=telemetry.metrics if telemetry is not None else None,
                 instructions=assemble_instructions(context),
                 tools=build_agent_tools(
                     context,

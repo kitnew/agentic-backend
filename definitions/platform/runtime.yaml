@@ -10,11 +10,17 @@ stt:
     min_speech_ms: 100
     min_silence_ms: 350
     activity_threshold: 0.35
-    silence_threshold_seconds: 0.35
+    silence_threshold_seconds: 0.3
+  interim_preflight:
+    enabled: true
+    min_growth_chars: 12
+    min_transcript_chars: 20
+    max_generations_per_turn: 2
 tts:
   model: eleven_flash_v2_5
   provider: elevenlabs
   voice_id: 9Nd358gE1qQp0pDh8FgP
+  min_sentence_chars: 20
 turn:
   detection: stt
   max_endpointing_delay_seconds: 0.7

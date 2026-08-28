@@ -86,6 +86,7 @@ from .integration_validate_response_configuration import (
 from .integration_validate_response_credentials import (
     IntegrationValidateResponseCredentials,
 )
+from .interim_preflight_runtime_settings import InterimPreflightRuntimeSettings
 from .llm_runtime_settings import LLMRuntimeSettings
 from .llm_runtime_settings_reasoning_effort_type_0 import (
     LLMRuntimeSettingsReasoningEffortType0,
@@ -249,6 +250,7 @@ __all__ = (
     "IntegrationValidateResponse",
     "IntegrationValidateResponseConfiguration",
     "IntegrationValidateResponseCredentials",
+    "InterimPreflightRuntimeSettings",
     "LLMRuntimeSettings",
     "LLMRuntimeSettingsReasoningEffortType0",
     "LocalVADRuntimeSettings",

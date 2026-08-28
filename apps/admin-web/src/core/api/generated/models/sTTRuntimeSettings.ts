@@ -4,9 +4,11 @@
  * Agent Platform Admin API
  * OpenAPI spec version: 0.1.0
  */
+import type { InterimPreflightRuntimeSettings } from './interimPreflightRuntimeSettings';
 import type { ServerVADRuntimeSettings } from './serverVADRuntimeSettings';
 
 export interface STTRuntimeSettings {
+  interim_preflight?: InterimPreflightRuntimeSettings;
   /**
      * @minLength 1
      * @maxLength 255

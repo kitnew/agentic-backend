@@ -15,6 +15,12 @@ def policy() -> dict[str, object]:
         "stt": {
             "provider": "elevenlabs",
             "model": "scribe_v2_realtime",
+            "interim_preflight": {
+                "enabled": False,
+                "min_transcript_chars": 20,
+                "min_growth_chars": 12,
+                "max_generations_per_turn": 2,
+            },
             "server_vad": {
                 "silence_threshold_seconds": 0.35,
                 "activity_threshold": 0.35,
@@ -26,6 +32,7 @@ def policy() -> dict[str, object]:
             "provider": "elevenlabs",
             "model": "eleven_flash_v2_5",
             "voice_id": "voice-a",
+            "min_sentence_chars": 20,
         },
         "local_vad": {
             "min_speech_seconds": 0.05,
@@ -44,6 +51,50 @@ def test_valid_complete_platform_runtime_policy() -> None:
     runtime = PlatformRuntimePolicy.model_validate(policy())
     assert (
         PlatformRuntimePolicy.model_validate_json(runtime.model_dump_json()) == runtime
+    )
+
+
+def test_latency_settings_serialize_validate_and_preserve_defaults() -> None:
+    payload = policy()
+    del payload["tts"]["min_sentence_chars"]  # type: ignore[index]
+    runtime = PlatformRuntimePolicy.model_validate(payload)
+    assert runtime.tts.min_sentence_chars == 20
+    assert (
+        PlatformRuntimePolicy.model_validate_json(
+            runtime.model_dump_json()
+        ).tts.min_sentence_chars
+        == 20
+    )
+
+    payload = policy()
+    payload["tts"]["min_sentence_chars"] = 12  # type: ignore[index]
+    payload["stt"]["server_vad"] = {  # type: ignore[index]
+        "silence_threshold_seconds": 0.25,
+        "activity_threshold": 0.35,
+        "min_speech_ms": 100,
+        "min_silence_ms": 250,
+    }
+    candidate = PlatformRuntimePolicy.model_validate(payload)
+    assert candidate.tts.min_sentence_chars == 12
+    assert candidate.stt.server_vad.silence_threshold_seconds == 0.25
+    assert candidate.stt.server_vad.min_silence_ms == 250
+
+
+def test_interim_preflight_defaults_and_validation() -> None:
+    payload = policy()
+    del payload["stt"]["interim_preflight"]  # type: ignore[index]
+    runtime = PlatformRuntimePolicy.model_validate(payload)
+    assert runtime.stt.interim_preflight.model_dump() == {
+        "enabled": False,
+        "min_transcript_chars": 20,
+        "min_growth_chars": 12,
+        "max_generations_per_turn": 2,
+    }
+    assert (
+        PlatformRuntimePolicy.model_validate_json(
+            runtime.model_dump_json()
+        ).stt.interim_preflight
+        == runtime.stt.interim_preflight
     )
 
 
@@ -85,10 +136,15 @@ def test_reasoning_and_temperature_are_model_compatible() -> None:
         (("llm", "provider"), "openai"),
         (("llm", "model"), ""),
         (("tts", "voice_id"), ""),
+        (("tts", "min_sentence_chars"), 2),
+        (("tts", "min_sentence_chars"), 201),
         (("local_vad", "activation_threshold"), 1.1),
         (("turn", "min_endpointing_delay_seconds"), 0.8),
         (("llm", "temperature"), math.nan),
         (("stt", "server_vad", "silence_threshold_seconds"), math.inf),
+        (("stt", "interim_preflight", "min_transcript_chars"), 2),
+        (("stt", "interim_preflight", "min_growth_chars"), 0),
+        (("stt", "interim_preflight", "max_generations_per_turn"), 6),
     ],
 )
 def test_invalid_platform_runtime_policy(path: tuple[str, ...], value: object) -> None:

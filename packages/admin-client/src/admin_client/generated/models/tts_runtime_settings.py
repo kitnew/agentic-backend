@@ -11,6 +11,8 @@ from typing import (
 from attrs import define as _attrs_define
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 T = TypeVar("T", bound="TTSRuntimeSettings")
 
 
@@ -21,11 +23,13 @@ class TTSRuntimeSettings:
         model (str):
         provider (Literal['elevenlabs']):
         voice_id (str):
+        min_sentence_chars (int | Unset):  Default: 20.
     """
 
     model: str
     provider: Literal["elevenlabs"]
     voice_id: str
+    min_sentence_chars: int | Unset = 20
 
     def to_dict(self) -> dict[str, Any]:
         model = self.model
@@ -33,6 +37,8 @@ class TTSRuntimeSettings:
         provider = self.provider
 
         voice_id = self.voice_id
+
+        min_sentence_chars = self.min_sentence_chars
 
         field_dict: dict[str, Any] = {}
 
@@ -43,6 +49,8 @@ class TTSRuntimeSettings:
                 "voice_id": voice_id,
             }
         )
+        if min_sentence_chars is not UNSET:
+            field_dict["min_sentence_chars"] = min_sentence_chars
 
         return field_dict
 
@@ -59,10 +67,13 @@ class TTSRuntimeSettings:
 
         voice_id = d.pop("voice_id")
 
+        min_sentence_chars = d.pop("min_sentence_chars", UNSET)
+
         tts_runtime_settings = cls(
             model=model,
             provider=provider,
             voice_id=voice_id,
+            min_sentence_chars=min_sentence_chars,
         )
 
         return tts_runtime_settings

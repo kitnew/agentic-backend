@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -9,7 +10,10 @@ from agentic_observability.bootstrap import (
     TelemetryProviders,
 )
 from agentic_observability.config import TelemetryConfig
+from livekit import agents
 from livekit.agents.telemetry import tracer as livekit_tracer
+from livekit.agents.types import USERDATA_TTS_STARTED_TIME
+from livekit.agents.voice.agent import ModelSettings
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -18,6 +22,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import Status, StatusCode
 from voice_agent.observability import (
+    LatencyInstrumentedAgent,
     LiveKitPrivacySpanProcessor,
     VoiceMetrics,
     configure_voice_telemetry,
@@ -175,6 +180,7 @@ def test_livekit_metrics_use_component_values_once_without_session_identifiers()
                 "llm_node_ttft": 0.5,
                 "tts_node_ttfb": 0.6,
                 "e2e_latency": 0.7,
+                "playback_latency": 0.08,
                 "llm_metadata": {"model_provider": "azure", "model_name": "gpt"},
                 "tts_metadata": {"model_provider": "elevenlabs", "model_name": "flash"},
             }
@@ -211,6 +217,8 @@ def test_livekit_metrics_use_component_values_once_without_session_identifiers()
             ttfb=0.3,
             audio_duration=1.5,
             characters_count=12,
+            acquire_time=0.04,
+            connection_reused=True,
         )
     )
     metrics.record_component_error("tts", RuntimeError("provider failed"))
@@ -229,6 +237,10 @@ def test_livekit_metrics_use_component_values_once_without_session_identifiers()
     assert "voice.stt.duration" not in points
     assert points["voice.stt.audio_duration"][0].value == 2
     assert points["voice.tts.characters"][0].value == 12
+    assert points["voice.turn.playback_latency"][0].sum == 0.08
+    assert points["voice.tts.connection.acquire_time"][0].sum == 0.04
+    assert points["voice.tts.connection.requests"][0].value == 1
+    assert points["voice.tts.connection.requests"][0].attributes["outcome"] == "reused"
     assert points["voice.component.errors"][0].value == 1
     assert all(
         not {"call.id", "conversation.id", "room.id", "participant.id"}
@@ -302,6 +314,232 @@ def test_default_buckets_explain_250_and_475_but_voice_views_do_not() -> None:
         _prom_histogram_quantile(0.95, point.explicit_bounds, point.bucket_counts)
         != 4.75
     )
+    provider.shutdown()
+
+
+def test_pipeline_latency_phases_are_correlated_without_identifier_attributes() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    metrics = VoiceMetrics(provider.get_meter("voice-agent"))
+
+    metrics.record_llm_request_started("speech-private", 10.0)
+    metrics.record_llm_first_nonempty_text("speech-private", 11.2)
+    metrics.record_tts_first_audio(
+        "speech-private", tts_first_text_sent=11.5, tts_first_audio=11.7
+    )
+    provider.force_flush()
+
+    points = _metric_points(reader)
+    assert points["voice.turn.llm_usable_ttft"][0].sum == pytest.approx(1.2)
+    assert points["voice.turn.llm_to_tts_dispatch_latency"][0].sum == pytest.approx(0.3)
+    assert points["voice.turn.tts_effective_first_audio_latency"][
+        0
+    ].sum == pytest.approx(0.2)
+    assert all(
+        not point.attributes
+        for name in (
+            "voice.turn.llm_usable_ttft",
+            "voice.turn.llm_to_tts_dispatch_latency",
+            "voice.turn.tts_effective_first_audio_latency",
+        )
+        for point in points[name]
+    )
+    provider.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_agent_node_hooks_capture_usable_text_and_provider_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[tuple[object, ...]] = []
+    metrics = SimpleNamespace(
+        record_llm_request_started=lambda *args: events.append(("llm_started", *args)),
+        record_llm_first_nonempty_text=lambda *args: events.append(("llm_text", *args)),
+        record_tts_first_audio=lambda speech_id, **kwargs: events.append(
+            ("tts_audio", speech_id, kwargs)
+        ),
+    )
+
+    async def fake_llm_node(*_args: object, **_kwargs: object):
+        yield " "
+        yield "Dobrý deň"
+
+    async def fake_tts_node(*_args: object, **_kwargs: object):
+        yield SimpleNamespace(userdata={USERDATA_TTS_STARTED_TIME: 11.5})
+
+    async def text_input():
+        yield "Dobrý deň"
+
+    clock = iter((10.0, 11.0, 11.7))
+    monkeypatch.setattr(agents.Agent, "llm_node", fake_llm_node)
+    monkeypatch.setattr(agents.Agent, "tts_node", fake_tts_node)
+    monkeypatch.setattr(
+        "voice_agent.observability._current_speech_id", lambda: "speech-1"
+    )
+    monkeypatch.setattr(
+        "voice_agent.observability.time.perf_counter", lambda: next(clock)
+    )
+    agent = LatencyInstrumentedAgent(metrics=metrics, instructions="test")  # type: ignore[arg-type]
+
+    assert [
+        chunk
+        async for chunk in agent.llm_node(None, [], ModelSettings())  # type: ignore[arg-type]
+    ] == [" ", "Dobrý deň"]
+    assert (
+        len([frame async for frame in agent.tts_node(text_input(), ModelSettings())])
+        == 1
+    )
+    assert events == [
+        ("llm_started", "speech-1", 10.0),
+        ("llm_text", "speech-1", 11.0),
+        (
+            "tts_audio",
+            "speech-1",
+            {"tts_first_text_sent": 11.5, "tts_first_audio": 11.7},
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_speculative_generation_metrics_follow_actual_handle_lifecycle() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    metrics = VoiceMetrics(provider.get_meter("voice-agent"))
+
+    class Session:
+        def __init__(self) -> None:
+            self.callbacks: dict[str, object] = {}
+
+        def on(self, name: str, callback: object) -> None:
+            self.callbacks[name] = callback
+
+        def emit(self, name: str, event: object) -> None:
+            self.callbacks[name](event)  # type: ignore[operator]
+
+    class Handle:
+        def __init__(self) -> None:
+            self._scheduled_fut: asyncio.Future[None] = asyncio.Future()
+            self._done_callbacks: list[object] = []
+
+        @property
+        def scheduled(self) -> bool:
+            return self._scheduled_fut.done()
+
+        def add_done_callback(self, callback: object) -> None:
+            self._done_callbacks.append(callback)
+
+        def finish(self) -> None:
+            for callback in self._done_callbacks:
+                callback(self)  # type: ignore[operator]
+
+    session = Session()
+    metrics.attach_speculative_generation(session)  # type: ignore[arg-type]
+
+    reused = Handle()
+    session.emit(
+        "user_input_transcribed",
+        SimpleNamespace(is_final=False, transcript="draft"),
+    )
+    session.emit(
+        "speech_created",
+        SimpleNamespace(source="generate_reply", speech_handle=reused),
+    )
+    reused._scheduled_fut.set_result(None)
+    await asyncio.sleep(0)
+
+    cancelled = Handle()
+    session.emit(
+        "user_input_transcribed",
+        SimpleNamespace(is_final=False, transcript="draft"),
+    )
+    session.emit(
+        "speech_created",
+        SimpleNamespace(source="generate_reply", speech_handle=cancelled),
+    )
+    session.emit(
+        "user_input_transcribed",
+        SimpleNamespace(is_final=True, transcript="different"),
+    )
+    cancelled.finish()
+    provider.force_flush()
+
+    points = _metric_points(reader)
+    assert points["voice.speculative_generation.started"][0].value == 2
+    assert points["voice.speculative_generation.reused"][0].value == 1
+    assert points["voice.speculative_generation.cancelled"][0].value == 1
+    assert points["voice.speculative_generation.lead_time"][0].count == 1
+    assert not points["voice.speculative_generation.started"][0].attributes
+    assert not points["voice.speculative_generation.reused"][0].attributes
+    assert points["voice.speculative_generation.cancelled"][0].attributes == {
+        "reason": "final_transcript_mismatch"
+    }
+    assert not points["voice.speculative_generation.lead_time"][0].attributes
+    provider.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_speculative_cancellation_reason_is_superseded_interim() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(
+        views=list(DEFAULT_HISTOGRAM_VIEWS), metric_readers=[reader]
+    )
+    metrics = VoiceMetrics(provider.get_meter("voice-agent"))
+
+    class Session:
+        def __init__(self) -> None:
+            self.callbacks: dict[str, object] = {}
+
+        def on(self, name: str, callback: object) -> None:
+            self.callbacks[name] = callback
+
+        def emit(self, name: str, event: object) -> None:
+            self.callbacks[name](event)  # type: ignore[operator]
+
+    class Handle:
+        def __init__(self) -> None:
+            self._scheduled_fut: asyncio.Future[None] = asyncio.Future()
+            self._done_callbacks: list[object] = []
+
+        @property
+        def scheduled(self) -> bool:
+            return self._scheduled_fut.done()
+
+        def add_done_callback(self, callback: object) -> None:
+            self._done_callbacks.append(callback)
+
+        def finish(self) -> None:
+            for callback in self._done_callbacks:
+                callback(self)  # type: ignore[operator]
+
+    session = Session()
+    metrics.attach_speculative_generation(session)  # type: ignore[arg-type]
+    first, second = Handle(), Handle()
+    session.emit(
+        "user_input_transcribed",
+        SimpleNamespace(is_final=False, transcript="first"),
+    )
+    session.emit(
+        "speech_created",
+        SimpleNamespace(source="generate_reply", speech_handle=first),
+    )
+    session.emit(
+        "user_input_transcribed",
+        SimpleNamespace(is_final=False, transcript="second"),
+    )
+    session.emit(
+        "speech_created",
+        SimpleNamespace(source="generate_reply", speech_handle=second),
+    )
+    first.finish()
+    provider.force_flush()
+    points = _metric_points(reader)
+    assert points["voice.speculative_generation.cancelled"][0].attributes == {
+        "reason": "superseded_interim"
+    }
     provider.shutdown()
 
 
