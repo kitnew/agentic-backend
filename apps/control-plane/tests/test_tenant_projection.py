@@ -57,7 +57,11 @@ def test_agent_and_runtime_yaml_round_trip_without_legacy_sections(tmp_path: Pat
         "contact": {"address": None, "phones": [], "emails": [], "website": None},
         "handoff": {"destinations": {}},
     }
-    runtime_value = {"llm": None, "tts": None}
+    runtime_value = {
+        "llm": None,
+        "stt": {"keyterms": ["Penzión Grand", "Kováčska"]},
+        "tts": None,
+    }
     for resource_id, candidate in ((agent, agent_value), (runtime, runtime_value)):
         files = dump(tmp_path, resource_id, candidate)
         text = "\n".join(files.values())

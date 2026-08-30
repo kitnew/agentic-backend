@@ -2,5 +2,10 @@ llm:
   model: gpt-5.6-terra
   temperature: null
   reasoning_effort: none
+stt:
+  keyterms:
+  - Kováčska
+  - Penzión Grand
+  - volské oko
 tts:
   voice_id: 9Nd358gE1qQp0pDh8FgP

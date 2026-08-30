@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from ..models.interim_preflight_runtime_settings import (
         InterimPreflightRuntimeSettings,
     )
+    from ..models.local_vad_commit_runtime_settings import LocalVADCommitRuntimeSettings
     from ..models.server_vad_runtime_settings import ServerVADRuntimeSettings
 
 
@@ -32,12 +33,14 @@ class STTRuntimeSettings:
         provider (Literal['elevenlabs']):
         server_vad (ServerVADRuntimeSettings):
         interim_preflight (InterimPreflightRuntimeSettings | Unset):
+        local_vad_commit (LocalVADCommitRuntimeSettings | Unset):
     """
 
     model: str
     provider: Literal["elevenlabs"]
     server_vad: ServerVADRuntimeSettings
     interim_preflight: InterimPreflightRuntimeSettings | Unset = UNSET
+    local_vad_commit: LocalVADCommitRuntimeSettings | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         model = self.model
@@ -50,6 +53,10 @@ class STTRuntimeSettings:
         if not isinstance(self.interim_preflight, Unset):
             interim_preflight = self.interim_preflight.to_dict()
 
+        local_vad_commit: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.local_vad_commit, Unset):
+            local_vad_commit = self.local_vad_commit.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -61,6 +68,8 @@ class STTRuntimeSettings:
         )
         if interim_preflight is not UNSET:
             field_dict["interim_preflight"] = interim_preflight
+        if local_vad_commit is not UNSET:
+            field_dict["local_vad_commit"] = local_vad_commit
 
         return field_dict
 
@@ -68,6 +77,9 @@ class STTRuntimeSettings:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.interim_preflight_runtime_settings import (
             InterimPreflightRuntimeSettings,
+        )
+        from ..models.local_vad_commit_runtime_settings import (
+            LocalVADCommitRuntimeSettings,
         )
         from ..models.server_vad_runtime_settings import ServerVADRuntimeSettings
 
@@ -91,11 +103,21 @@ class STTRuntimeSettings:
                 _interim_preflight
             )
 
+        _local_vad_commit = d.pop("local_vad_commit", UNSET)
+        local_vad_commit: LocalVADCommitRuntimeSettings | Unset
+        if isinstance(_local_vad_commit, Unset):
+            local_vad_commit = UNSET
+        else:
+            local_vad_commit = LocalVADCommitRuntimeSettings.from_dict(
+                _local_vad_commit
+            )
+
         stt_runtime_settings = cls(
             model=model,
             provider=provider,
             server_vad=server_vad,
             interim_preflight=interim_preflight,
+            local_vad_commit=local_vad_commit,
         )
 
         return stt_runtime_settings

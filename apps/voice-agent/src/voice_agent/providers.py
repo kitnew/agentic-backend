@@ -4,11 +4,14 @@ from contracts.voice_runtime import model_supports_reasoning
 from livekit import agents
 from livekit.agents import inference, tokenize
 from livekit.agents import stt as livekit_stt
+from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import elevenlabs, openai
+from livekit.plugins.elevenlabs.stt import VADOptions
 
 from voice_agent.observability import VoiceMetrics
 from voice_agent.settings import VoiceAgentSettings
+from voice_agent.stt_endpointing import LocalVadCommitController, LocalVadCommitSTT
 from voice_agent.stt_preflight import InterimPreflightSTT
 
 
@@ -55,17 +58,29 @@ def create_agent_session(
         timeout=settings.provider_timeout_seconds,
         max_retry=settings.provider_retry_limit,
     )
-    stt: livekit_stt.STT = elevenlabs.STT(
-        api_key=settings.elevenlabs_api_key.get_secret_value(),
-        model=runtime.stt.model,
-        language_code=stt_language,
-        server_vad={
+    server_vad: NotGivenOr[VADOptions] = NOT_GIVEN
+    keyterms: NotGivenOr[list[str]] = (
+        runtime.stt.keyterms if runtime.stt.keyterms else NOT_GIVEN
+    )
+    if not runtime.stt.local_vad_commit.enabled:
+        server_vad = {
             "vad_silence_threshold_secs": runtime.stt.server_vad.silence_threshold_seconds,
             "vad_threshold": runtime.stt.server_vad.activity_threshold,
             "min_speech_duration_ms": runtime.stt.server_vad.min_speech_ms,
             "min_silence_duration_ms": runtime.stt.server_vad.min_silence_ms,
-        },
+        }
+    provider_stt = elevenlabs.STT(
+        api_key=settings.elevenlabs_api_key.get_secret_value(),
+        model=runtime.stt.model,
+        language_code=stt_language,
+        keyterms=keyterms,
+        server_vad=server_vad,
     )
+    stt: livekit_stt.STT = provider_stt
+    commit_controller: LocalVadCommitController | None = None
+    if runtime.stt.local_vad_commit.enabled:
+        commit_controller = LocalVadCommitController(metrics)
+        stt = LocalVadCommitSTT(provider_stt, commit_controller)
     preflight = runtime.stt.interim_preflight
     if preflight.enabled:
         stt = InterimPreflightSTT(
@@ -88,7 +103,7 @@ def create_agent_session(
         prompt_cache_key=prompt_cache_key,
         timeout=httpx.Timeout(settings.provider_timeout_seconds),
         max_completion_tokens=256,
-        **llm_behavior_options(runtime),
+        **llm_behavior_options(runtime),  # type: ignore[arg-type]
     )
     tts = elevenlabs.TTS(
         api_key=settings.elevenlabs_api_key.get_secret_value(),
@@ -108,7 +123,7 @@ def create_agent_session(
                     component_name, error
                 ),
             )
-    return agents.AgentSession(
+    session: agents.AgentSession = agents.AgentSession(
         stt=stt,
         vad=vad,
         turn_handling={
@@ -132,3 +147,6 @@ def create_agent_session(
             tts_conn_options=connect_options,
         ),
     )
+    if commit_controller is not None:
+        commit_controller.attach(session)
+    return session

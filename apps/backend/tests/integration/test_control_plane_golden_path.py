@@ -183,6 +183,7 @@ def _write_workspace(workspace: Path, slug: str) -> None:
                     "temperature": 0.2,
                     "reasoning_effort": None,
                 },
+                "stt": {"keyterms": ["Penzión Grand", "Kováčska"]},
                 "tts": None,
             },
             sort_keys=False,
@@ -428,6 +429,10 @@ async def test_control_plane_golden_path(
                     UUID(tenant_id), release.id, release.runtime_bundle_id
                 )
                 assert bundle is not None
+                assert bundle.payload["voice_runtime"]["stt"]["keyterms"] == [
+                    "Kováčska",
+                    "Penzión Grand",
+                ]
                 assert bundle.payload["capability_bindings"]
                 assert bundle.payload["post_call_actions"]
                 assert str(connection_id) in str(bundle.payload)

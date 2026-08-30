@@ -6,6 +6,7 @@ import type {
 import {
   toRuntimeForm,
   toRuntimePayload,
+  validateKeyterm,
   validateRuntimeForm,
 } from "../src/features/tenants/runtime-mappings";
 
@@ -33,6 +34,27 @@ describe("runtime authoring mappings", () => {
     ).toEqual({
       llm: { model: "gpt-4o" },
     });
+  });
+
+  it("round-trips and validates STT keyterms", () => {
+    const value = {
+      stt: { keyterms: ["Penzión Grand", "Kováčska", "volské oko"] },
+    };
+    expect(toRuntimePayload(toRuntimeForm(value))).toEqual(value);
+    expect(validateRuntimeForm(toRuntimeForm(value))).toBeNull();
+    expect(validateKeyterm([{ id: "1", value: " " }], 0)).toContain("empty");
+    expect(
+      validateKeyterm(
+        [
+          { id: "1", value: "term" },
+          { id: "2", value: " term " },
+        ],
+        1,
+      ),
+    ).toContain("unique");
+    expect(validateKeyterm([{ id: "1", value: "x".repeat(21) }], 0)).toContain(
+      "20",
+    );
   });
 
   it.each(["none", "low", "medium", "high", "xhigh", "max"])(

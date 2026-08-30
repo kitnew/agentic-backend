@@ -70,6 +70,17 @@ ETags, connection UUIDs, runtime plan metadata, credential material, or
 provider implementation details. Prompt files contain text only. Knowledge is
 human-authored content, not database artifact metadata.
 
+Tenant STT keyterms live in `runtime.yaml` and are validated by Backend before
+save or publish (at most 50 unique terms, 20 characters each):
+
+```yaml
+stt:
+  keyterms:
+    - Penzión Grand
+    - Kováčska
+    - volské oko
+```
+
 ## Tenant identity and operational facades
 
 ```bash

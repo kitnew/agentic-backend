@@ -91,6 +91,7 @@ from .llm_runtime_settings import LLMRuntimeSettings
 from .llm_runtime_settings_reasoning_effort_type_0 import (
     LLMRuntimeSettingsReasoningEffortType0,
 )
+from .local_vad_commit_runtime_settings import LocalVADCommitRuntimeSettings
 from .local_vad_runtime_settings import LocalVADRuntimeSettings
 from .localization_config import LocalizationConfig
 from .mapping_template_type_2 import MappingTemplateType2
@@ -165,6 +166,7 @@ from .tenant_release_response import TenantReleaseResponse
 from .tenant_response import TenantResponse
 from .tenant_runtime_authoring import TenantRuntimeAuthoring
 from .tenant_status import TenantStatus
+from .tenant_stt_runtime_override import TenantSTTRuntimeOverride
 from .tenant_telephony_config import TenantTelephonyConfig
 from .tenant_telephony_status import TenantTelephonyStatus
 from .tenant_tts_runtime_override import TenantTTSRuntimeOverride
@@ -253,6 +255,7 @@ __all__ = (
     "InterimPreflightRuntimeSettings",
     "LLMRuntimeSettings",
     "LLMRuntimeSettingsReasoningEffortType0",
+    "LocalVADCommitRuntimeSettings",
     "LocalVADRuntimeSettings",
     "LocalizationConfig",
     "MappingTemplateType2",
@@ -303,6 +306,7 @@ __all__ = (
     "TenantReleaseResponse",
     "TenantResponse",
     "TenantRuntimeAuthoring",
+    "TenantSTTRuntimeOverride",
     "TenantStatus",
     "TenantTTSRuntimeOverride",
     "TenantTelephonyConfig",

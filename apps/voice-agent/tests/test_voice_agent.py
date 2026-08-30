@@ -1,5 +1,7 @@
 import asyncio
+import inspect
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import jwt
@@ -14,6 +16,7 @@ from contracts import (
 )
 from livekit import agents, rtc
 from livekit.agents.beta.tools import EndCallTool
+from livekit.agents.utils import is_given
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
 from voice_agent.backend import BackendClient
@@ -38,6 +41,7 @@ from voice_agent.providers import (
     provider_languages,
 )
 from voice_agent.settings import VoiceAgentSettings
+from voice_agent.stt_endpointing import LocalVadCommitSTT
 from voice_agent.stt_preflight import InterimPreflightSTT
 
 
@@ -146,6 +150,42 @@ def test_llm_behavior_options_follow_runtime_model() -> None:
         }
     )
     assert llm_behavior_options(classic) == {"temperature": 0}
+
+
+def test_elevenlabs_public_stt_api_exposes_realtime_keyterms() -> None:
+    assert "keyterms" in inspect.signature(elevenlabs.STT).parameters
+
+
+@pytest.mark.asyncio
+async def test_elevenlabs_realtime_connection_serializes_keyterms() -> None:
+    class Session:
+        closed = False
+
+        def __init__(self) -> None:
+            self.url = ""
+
+        async def ws_connect(self, url: str, **_: object) -> object:
+            self.url = url
+            return object()
+
+    http_session = Session()
+    provider = elevenlabs.STT(
+        api_key="eleven-key",
+        http_session=http_session,  # type: ignore[arg-type]
+        keyterms=["Penzión Grand", "Kováčska"],
+        language_code="slk",
+        model="scribe_v2_realtime",
+    )
+    stream = provider.stream()
+    try:
+        await stream._connect_ws()  # type: ignore[attr-defined]
+        assert parse_qs(urlsplit(http_session.url).query)["keyterms"] == [
+            "Penzión Grand",
+            "Kováčska",
+        ]
+    finally:
+        await stream.aclose()
+        await provider.aclose()
 
 
 @pytest.mark.parametrize(
@@ -642,6 +682,7 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert isinstance(session.llm, openai.LLM)
         assert isinstance(session.tts, elevenlabs.TTS)
         assert provider_stt._opts.model_id == "scribe_v2_realtime"
+        assert not is_given(provider_stt._opts.keyterms)
         assert str(provider_stt._opts.language_code) == "sk"
         assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.35
         assert provider_stt._opts.server_vad["min_silence_duration_ms"] == 350
@@ -683,6 +724,56 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert provider_languages("sk-SK") == ("slk", "sk")
         with pytest.raises(ValueError):
             provider_languages("en-US")
+    finally:
+        await session.stt.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_factory_enables_manual_scribe_commit_without_changing_turn_mode() -> (
+    None
+):
+    payload = runtime_settings().model_dump()
+    payload["stt"]["local_vad_commit"]["enabled"] = True  # type: ignore[index]
+    session = create_agent_session(
+        settings(),
+        EffectiveVoiceRuntime.model_validate(payload),
+        "voice-agent-prompt:test",
+    )
+    try:
+        assert isinstance(session.stt, LocalVadCommitSTT)
+        provider_stt = session.stt.wrapped_stt
+        assert isinstance(provider_stt, elevenlabs.STT)
+        assert not is_given(provider_stt._opts.server_vad)
+        assert session.turn_detection == "stt"
+        assert isinstance(session.llm, openai.LLM)
+        assert isinstance(session.tts, elevenlabs.TTS)
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_factory_passes_tenant_keyterms_to_elevenlabs() -> None:
+    session = create_agent_session(
+        settings(),
+        runtime_settings(
+            stt={
+                "provider": "elevenlabs",
+                "model": "scribe_v2_realtime",
+                "keyterms": ["Kováčska", "Penzión Grand"],
+                "server_vad": {
+                    "silence_threshold_seconds": 0.35,
+                    "activity_threshold": 0.35,
+                    "min_speech_ms": 100,
+                    "min_silence_ms": 350,
+                },
+            }
+        ),
+        "voice-agent-prompt:test",
+    )
+    try:
+        assert session.stt._opts.keyterms == ["Kováčska", "Penzión Grand"]
     finally:
         await session.stt.aclose()
         await session.llm.aclose()
