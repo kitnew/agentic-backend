@@ -5,10 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { InterimPreflightRuntimeSettings } from './interimPreflightRuntimeSettings';
+import type { LocalVADCommitRuntimeSettings } from './localVADCommitRuntimeSettings';
 import type { ServerVADRuntimeSettings } from './serverVADRuntimeSettings';
 
 export interface STTRuntimeSettings {
   interim_preflight?: InterimPreflightRuntimeSettings;
+  local_vad_commit?: LocalVADCommitRuntimeSettings;
   /**
      * @minLength 1
      * @maxLength 255

@@ -166,6 +166,7 @@ from .tenant_release_response import TenantReleaseResponse
 from .tenant_response import TenantResponse
 from .tenant_runtime_authoring import TenantRuntimeAuthoring
 from .tenant_status import TenantStatus
+from .tenant_stt_runtime_override import TenantSTTRuntimeOverride
 from .tenant_telephony_config import TenantTelephonyConfig
 from .tenant_telephony_status import TenantTelephonyStatus
 from .tenant_tts_runtime_override import TenantTTSRuntimeOverride
@@ -305,6 +306,7 @@ __all__ = (
     "TenantReleaseResponse",
     "TenantResponse",
     "TenantRuntimeAuthoring",
+    "TenantSTTRuntimeOverride",
     "TenantStatus",
     "TenantTTSRuntimeOverride",
     "TenantTelephonyConfig",

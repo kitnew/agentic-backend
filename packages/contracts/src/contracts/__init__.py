@@ -121,6 +121,7 @@ from contracts.voice import (
     VoiceCallObservation,
 )
 from contracts.voice_runtime import (
+    EffectiveSTTRuntimeSettings,
     EffectiveVoiceRuntime,
     LLMRuntimeSettings,
     LocalVADCommitRuntimeSettings,
@@ -130,6 +131,7 @@ from contracts.voice_runtime import (
     STTRuntimeSettings,
     TenantLLMRuntimeOverride,
     TenantRuntimeOverride,
+    TenantSTTRuntimeOverride,
     TenantTTSRuntimeOverride,
     TTSRuntimeSettings,
     TurnRuntimeSettings,
@@ -163,6 +165,7 @@ __all__ = [
     "ConversationPersistenceStatus",
     "ConversationResponse",
     "ConversationScope",
+    "EffectiveSTTRuntimeSettings",
     "EffectiveVoiceRuntime",
     "ExecutePostCallAction",
     "ExecutionPlan",
@@ -239,6 +242,7 @@ __all__ = [
     "TenantLLMRuntimeOverride",
     "TenantPromptConfig",
     "TenantRuntimeOverride",
+    "TenantSTTRuntimeOverride",
     "TenantTTSRuntimeOverride",
     "TenantTelephonyConfig",
     "TraceContext",

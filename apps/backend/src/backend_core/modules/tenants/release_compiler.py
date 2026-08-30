@@ -174,6 +174,7 @@ def _effective_voice_runtime(
             payload["llm"]["reasoning_effort"] = "none"
     if override.tts is not None:
         payload["tts"]["voice_id"] = override.tts.voice_id
+    payload["stt"]["keyterms"] = override.stt.keyterms if override.stt else []
     return EffectiveVoiceRuntime.model_validate(
         {"locale": agent.localization.default_locale, **payload}
     )

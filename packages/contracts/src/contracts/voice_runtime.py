@@ -1,6 +1,14 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 
 
 class _RuntimeModel(BaseModel):
@@ -14,6 +22,7 @@ class _RuntimeModel(BaseModel):
 Identifier = Annotated[str, Field(min_length=1, max_length=255)]
 Threshold = Annotated[FiniteFloat, Field(ge=0, le=1)]
 ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+STTKeyterm = Annotated[StrictStr, Field(min_length=1, max_length=20)]
 
 
 def model_supports_reasoning(model: str) -> bool:
@@ -73,11 +82,26 @@ class STTRuntimeSettings(_RuntimeModel):
     model: Identifier
     server_vad: ServerVADRuntimeSettings
     local_vad_commit: LocalVADCommitRuntimeSettings = Field(
-        default_factory=LocalVADCommitRuntimeSettings
+        default_factory=lambda: LocalVADCommitRuntimeSettings(enabled=True)
     )
     interim_preflight: InterimPreflightRuntimeSettings = Field(
         default_factory=InterimPreflightRuntimeSettings
     )
+
+
+def _canonicalize_keyterms(value: list[str]) -> list[str]:
+    if len(value) != len(set(value)):
+        raise ValueError("STT keyterms must be unique")
+    return sorted(value)
+
+
+class EffectiveSTTRuntimeSettings(STTRuntimeSettings):
+    local_vad_commit: LocalVADCommitRuntimeSettings = Field(
+        default_factory=LocalVADCommitRuntimeSettings
+    )
+    keyterms: list[STTKeyterm] = Field(default_factory=list, max_length=50)
+
+    _canonical_keyterms = field_validator("keyterms")(_canonicalize_keyterms)
 
 
 class TTSRuntimeSettings(_RuntimeModel):
@@ -131,13 +155,30 @@ class TenantLLMRuntimeOverride(_RuntimeModel):
         return self
 
 
+class TenantSTTRuntimeOverride(_RuntimeModel):
+    keyterms: list[STTKeyterm] = Field(default_factory=list, max_length=50)
+
+    _canonical_keyterms = field_validator("keyterms")(_canonicalize_keyterms)
+
+
 class TenantRuntimeOverride(_RuntimeModel):
     llm: TenantLLMRuntimeOverride | None = None
+    stt: TenantSTTRuntimeOverride | None = None
     tts: TenantTTSRuntimeOverride | None = None
 
 
 class EffectiveVoiceRuntime(PlatformRuntimePolicy):
+    stt: EffectiveSTTRuntimeSettings
     locale: Annotated[
         str,
         Field(min_length=1, max_length=35, pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$"),
     ]
+
+    @field_validator("stt", mode="before")
+    @classmethod
+    def accept_legacy_stt_settings(cls, value: object) -> object:
+        return (
+            value.model_dump(mode="json")
+            if isinstance(value, STTRuntimeSettings)
+            else value
+        )

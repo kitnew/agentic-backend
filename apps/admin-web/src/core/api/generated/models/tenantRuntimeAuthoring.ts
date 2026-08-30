@@ -5,9 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TenantLLMRuntimeOverride } from './tenantLLMRuntimeOverride';
+import type { TenantSTTRuntimeOverride } from './tenantSTTRuntimeOverride';
 import type { TenantTTSRuntimeOverride } from './tenantTTSRuntimeOverride';
 
 export interface TenantRuntimeAuthoring {
   llm?: TenantLLMRuntimeOverride | null;
+  stt?: TenantSTTRuntimeOverride | null;
   tts?: TenantTTSRuntimeOverride | null;
 }

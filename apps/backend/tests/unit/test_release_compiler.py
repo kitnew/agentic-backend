@@ -106,18 +106,21 @@ def _platform() -> PlatformBundleInput:
         system_prompt_revision_id=uuid4(),
         profile_prompt_revision_id=uuid4(),
         runtime_policy=PlatformRuntimePolicy.model_validate(
-            effective.model_dump(exclude={"locale"})
+            effective.model_dump(exclude={"locale": True, "stt": {"keyterms"}})
         ),
         system_prompt="System",
         profile_prompt="Profile",
     )
 
 
-def _compile_tenant(capabilities: TenantCapabilitiesConfig):
+def _compile_tenant(
+    capabilities: TenantCapabilitiesConfig,
+    runtime: TenantRuntimeOverride | None = None,
+):
     return compile_tenant_runtime_bundle(
         tenant_id=uuid4(),
         runtime_revision_id=uuid4(),
-        runtime=TenantRuntimeOverride(),
+        runtime=runtime or TenantRuntimeOverride(),
         agent_revision_id=uuid4(),
         agent=TenantAgentConfig.model_validate(
             {
@@ -165,6 +168,32 @@ def test_compiler_is_deterministic_without_release_identity() -> None:
 
     assert first.bundle.content_hash == second.bundle.content_hash
     assert first.bundle.id != second.bundle.id
+
+
+def test_tenant_keyterms_are_sealed_canonically() -> None:
+    first = _compile_tenant(
+        TenantCapabilitiesConfig(),
+        TenantRuntimeOverride.model_validate(
+            {"stt": {"keyterms": [" volské oko ", "Penzión Grand"]}}
+        ),
+    )
+    second = _compile_tenant(
+        TenantCapabilitiesConfig(),
+        TenantRuntimeOverride.model_validate(
+            {"stt": {"keyterms": ["Penzión Grand", "volské oko"]}}
+        ),
+    )
+
+    assert first.bundle.payload.voice_runtime.stt.keyterms == [
+        "Penzión Grand",
+        "volské oko",
+    ]
+    assert first.bundle.payload.voice_runtime.stt.local_vad_commit.enabled is True
+    assert first.bundle.payload == second.bundle.payload
+    assert (
+        first.bundle.payload.model_dump_json()
+        == second.bundle.payload.model_dump_json()
+    )
 
 
 def test_tenant_compiler_seals_arbitrary_capability_metadata() -> None:

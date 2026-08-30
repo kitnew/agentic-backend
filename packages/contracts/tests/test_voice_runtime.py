@@ -1,7 +1,11 @@
 import math
 
 import pytest
-from contracts import PlatformRuntimePolicy, TenantRuntimeOverride
+from contracts import (
+    EffectiveVoiceRuntime,
+    PlatformRuntimePolicy,
+    TenantRuntimeOverride,
+)
 from pydantic import ValidationError
 
 
@@ -98,17 +102,55 @@ def test_interim_preflight_defaults_and_validation() -> None:
     )
 
 
-def test_local_vad_commit_defaults_off_and_serializes_explicit_enablement() -> None:
+def test_platform_local_vad_commit_defaults_on_and_effective_legacy_payload_stays_off() -> (
+    None
+):
     baseline = PlatformRuntimePolicy.model_validate(policy())
-    assert baseline.stt.local_vad_commit.enabled is False
+    assert baseline.stt.local_vad_commit.enabled is True
 
     payload = policy()
-    payload["stt"]["local_vad_commit"] = {"enabled": True}  # type: ignore[index]
-    enabled = PlatformRuntimePolicy.model_validate(payload)
-    assert enabled.stt.local_vad_commit.enabled is True
+    payload["stt"]["local_vad_commit"] = {"enabled": False}  # type: ignore[index]
+    disabled = PlatformRuntimePolicy.model_validate(payload)
+    assert disabled.stt.local_vad_commit.enabled is False
     assert (
-        PlatformRuntimePolicy.model_validate_json(enabled.model_dump_json()) == enabled
+        PlatformRuntimePolicy.model_validate_json(disabled.model_dump_json())
+        == disabled
     )
+
+    effective_payload = {"locale": "en", **policy()}
+    legacy = EffectiveVoiceRuntime.model_validate(effective_payload)
+    assert legacy.stt.local_vad_commit.enabled is False
+    assert legacy.stt.keyterms == []
+
+
+def test_tenant_stt_keyterms_are_canonical_and_unicode_safe() -> None:
+    assert (
+        TenantRuntimeOverride.model_validate({"stt": {"keyterms": []}}).stt.keyterms
+        == []
+    )  # type: ignore[union-attr]
+    runtime = TenantRuntimeOverride.model_validate(
+        {"stt": {"keyterms": ["  volské oko ", "Kováčska", "Penzión Grand"]}}
+    )
+    assert runtime.stt is not None
+    assert runtime.stt.keyterms == ["Kováčska", "Penzión Grand", "volské oko"]
+    assert (
+        TenantRuntimeOverride.model_validate_json(runtime.model_dump_json()) == runtime
+    )
+
+
+@pytest.mark.parametrize(
+    "keyterms",
+    [
+        ["   "],
+        ["dup", " dup "],
+        [str(index) for index in range(51)],
+        ["x" * 21],
+        [1],
+    ],
+)
+def test_invalid_tenant_stt_keyterms(keyterms: object) -> None:
+    with pytest.raises(ValidationError):
+        TenantRuntimeOverride.model_validate({"stt": {"keyterms": keyterms}})
 
 
 def test_reasoning_and_temperature_are_model_compatible() -> None:

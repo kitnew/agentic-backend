@@ -8,6 +8,8 @@ export type RuntimeReasoningEffort = Exclude<
   null
 >;
 
+export type RuntimeKeyterm = { id: string; value: string };
+
 export type RuntimeForm = {
   llmEnabled: boolean;
   llmState: "absent" | "null" | "value";
@@ -16,6 +18,8 @@ export type RuntimeForm = {
   llmReasoningEffortState: "absent" | "null" | "value";
   llmTemperature: string;
   llmTemperaturePresent: boolean;
+  sttState: "absent" | "null" | "value";
+  sttKeyterms: RuntimeKeyterm[];
   ttsEnabled: boolean;
   ttsState: "absent" | "null" | "value";
   ttsVoiceId: string;
@@ -26,6 +30,8 @@ export function toRuntimeForm(value: TenantRuntimeAuthoring): RuntimeForm {
     value.llm === undefined ? "absent" : value.llm === null ? "null" : "value";
   const ttsState =
     value.tts === undefined ? "absent" : value.tts === null ? "null" : "value";
+  const sttState =
+    value.stt === undefined ? "absent" : value.stt === null ? "null" : "value";
   const llm =
     value.llm && typeof value.llm === "object" ? value.llm : undefined;
   const reasoningPresent = llm && Object.hasOwn(llm, "reasoning_effort");
@@ -47,6 +53,14 @@ export function toRuntimeForm(value: TenantRuntimeAuthoring): RuntimeForm {
         ? ""
         : String(llm.temperature),
     llmTemperaturePresent: llm ? Object.hasOwn(llm, "temperature") : false,
+    sttState,
+    sttKeyterms:
+      value.stt && typeof value.stt === "object"
+        ? (value.stt.keyterms ?? []).map((term) => ({
+            id: crypto.randomUUID(),
+            value: term,
+          }))
+        : [],
     ttsEnabled: ttsState === "value",
     ttsState,
     ttsVoiceId:
@@ -72,6 +86,12 @@ export function toRuntimePayload(form: RuntimeForm): TenantRuntimeAuthoring {
     payload.llm = llm;
   } else if (form.llmState === "null") payload.llm = null;
 
+  if (form.sttState === "value")
+    payload.stt = {
+      keyterms: form.sttKeyterms.map((term) => term.value.trim()),
+    };
+  else if (form.sttState === "null") payload.stt = null;
+
   if (form.ttsEnabled) payload.tts = { voice_id: form.ttsVoiceId.trim() };
   else if (form.ttsState === "null") payload.tts = null;
 
@@ -90,11 +110,29 @@ export function validateRuntimeForm(form: RuntimeForm): string | null {
         return "Temperature must be a number between 0 and 2.";
     }
   }
+  if (form.sttKeyterms.length > 50)
+    return "STT keyterms are limited to 50 terms.";
+  for (let index = 0; index < form.sttKeyterms.length; index += 1) {
+    const error = validateKeyterm(form.sttKeyterms, index);
+    if (error) return error;
+  }
   if (form.ttsEnabled) {
     const voiceId = form.ttsVoiceId.trim();
     if (!voiceId)
       return "Voice ID is required when the TTS override is enabled.";
     if (voiceId.length > 255) return "Voice ID must be at most 255 characters.";
   }
+  return null;
+}
+
+export function validateKeyterm(
+  keyterms: RuntimeKeyterm[],
+  index: number,
+): string | null {
+  const term = keyterms[index]?.value.trim() ?? "";
+  if (!term) return "Keyterms cannot be empty.";
+  if (term.length > 20) return "Each keyterm must be at most 20 characters.";
+  if (keyterms.findIndex((value) => value.value.trim() === term) !== index)
+    return "Keyterms must be unique.";
   return null;
 }

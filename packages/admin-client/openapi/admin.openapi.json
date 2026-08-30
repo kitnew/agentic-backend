@@ -3201,6 +3201,16 @@
               }
             ]
           },
+          "stt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TenantSTTRuntimeOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "tts": {
             "anyOf": [
               {
@@ -3213,6 +3223,23 @@
           }
         },
         "title": "TenantRuntimeAuthoring",
+        "type": "object"
+      },
+      "TenantSTTRuntimeOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "keyterms": {
+            "items": {
+              "maxLength": 20,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Keyterms",
+            "type": "array"
+          }
+        },
+        "title": "TenantSTTRuntimeOverride",
         "type": "object"
       },
       "TenantStatus": {

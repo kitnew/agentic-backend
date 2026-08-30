@@ -183,6 +183,7 @@ describe("tenant authoring validation lifecycle", () => {
           reasoning_effort: "none",
         },
         tts: { voice_id: "9Nd358gE1q0p0pDh8FgP" },
+        stt: { keyterms: ["Penzión Grand"] },
       },
       save,
     );
@@ -196,6 +197,9 @@ describe("tenant authoring validation lifecycle", () => {
     expect(screen.getByLabelText(/Reasoning effort/)).toHaveValue("none");
     expect(screen.getByLabelText(/Temperature/)).toHaveValue(null);
     expect(screen.getAllByRole("checkbox")[1]).toBeChecked();
+    expect(screen.getByLabelText("Keyterm 1")).toHaveValue("Penzión Grand");
+    await user.click(screen.getByRole("button", { name: "Add term" }));
+    await user.type(screen.getByLabelText("Keyterm 2"), " Kováčska ");
     await user.click(screen.getByRole("button", { name: /TTS override/ }));
     expect(screen.getByLabelText(/Voice ID/)).toHaveValue(
       "9Nd358gE1q0p0pDh8FgP",
@@ -221,6 +225,7 @@ describe("tenant authoring validation lifecycle", () => {
         reasoning_effort: "high",
         temperature: 0.5,
       },
+      stt: { keyterms: ["Penzión Grand", "Kováčska"] },
       tts: { voice_id: "9Nd358gE1q0p0pDh8FgP" },
     });
   });

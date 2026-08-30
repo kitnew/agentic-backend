@@ -59,6 +59,9 @@ def create_agent_session(
         max_retry=settings.provider_retry_limit,
     )
     server_vad: NotGivenOr[VADOptions] = NOT_GIVEN
+    keyterms: NotGivenOr[list[str]] = (
+        runtime.stt.keyterms if runtime.stt.keyterms else NOT_GIVEN
+    )
     if not runtime.stt.local_vad_commit.enabled:
         server_vad = {
             "vad_silence_threshold_secs": runtime.stt.server_vad.silence_threshold_seconds,
@@ -70,6 +73,7 @@ def create_agent_session(
         api_key=settings.elevenlabs_api_key.get_secret_value(),
         model=runtime.stt.model,
         language_code=stt_language,
+        keyterms=keyterms,
         server_vad=server_vad,
     )
     stt: livekit_stt.STT = provider_stt

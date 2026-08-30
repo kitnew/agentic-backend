@@ -47,9 +47,11 @@ import {
 } from "../../core/ui/foundation";
 import {
   type RuntimeForm,
+  type RuntimeKeyterm,
   type RuntimeReasoningEffort,
   toRuntimeForm,
   toRuntimePayload,
+  validateKeyterm,
   validateRuntimeForm,
 } from "./runtime-mappings";
 
@@ -205,6 +207,12 @@ function RuntimeEditorForm({
     setForm(next);
     resource.setValue(toRuntimePayload(next));
   };
+  const updateKeyterms = (sttKeyterms: RuntimeKeyterm[]) => {
+    const next = { ...form, sttKeyterms, sttState: "value" as const };
+    localEdit.current = true;
+    setForm(next);
+    resource.setValue(toRuntimePayload(next));
+  };
   const localError = validateRuntimeForm(form);
   const saveBlocked = Boolean(localError) || !resource.validation.canSave;
   const reasoningEfforts = Object.values(
@@ -300,6 +308,73 @@ function RuntimeEditorForm({
             </FormGrid>
           </div>
         </ToggleSection>
+        <section className="rounded-lg border border-slate-200 p-4">
+          <div className="mb-3 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="font-medium text-slate-950">STT keyterms</h3>
+              <p className="text-sm text-slate-600">
+                Up to 50 terms, 20 characters each.
+              </p>
+            </div>
+            <button
+              disabled={form.sttKeyterms.length >= 50}
+              onClick={() =>
+                updateKeyterms([
+                  ...form.sttKeyterms,
+                  { id: crypto.randomUUID(), value: "" },
+                ])
+              }
+              type="button"
+            >
+              Add term
+            </button>
+          </div>
+          <div className="space-y-3">
+            {form.sttKeyterms.map((term, index) => {
+              const error = validateKeyterm(form.sttKeyterms, index);
+              return (
+                <div key={term.id}>
+                  <div className="flex gap-2">
+                    <input
+                      aria-invalid={Boolean(error)}
+                      aria-label={`Keyterm ${index + 1}`}
+                      maxLength={20}
+                      value={term.value}
+                      onChange={(event) =>
+                        updateKeyterms(
+                          form.sttKeyterms.map((value, itemIndex) =>
+                            itemIndex === index
+                              ? { ...value, value: event.target.value }
+                              : value,
+                          ),
+                        )
+                      }
+                    />
+                    <button
+                      aria-label={`Remove keyterm ${index + 1}`}
+                      onClick={() =>
+                        updateKeyterms(
+                          form.sttKeyterms.filter(
+                            (_, itemIndex) => itemIndex !== index,
+                          ),
+                        )
+                      }
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  {error && (
+                    <p className="mt-1 text-sm text-red-700">{error}</p>
+                  )}
+                </div>
+              );
+            })}
+            {form.sttKeyterms.length === 0 && (
+              <p className="text-sm text-slate-500">No tenant keyterms.</p>
+            )}
+          </div>
+        </section>
         <ToggleSection
           defaultExpanded={false}
           description="Override the Platform voice for this tenant"
