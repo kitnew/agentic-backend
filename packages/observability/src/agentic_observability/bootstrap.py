@@ -62,6 +62,8 @@ def _histogram_views() -> tuple[View, ...]:
         "voice.turn.tts_effective_first_audio_latency",
         "voice.turn.playback_latency",
         "voice.turn.eot.local_vad_to_stt_final",
+        "voice.turn.eot.local_vad_commit_to_stt_final",
+        "voice.turn.eot.local_vad_commit_to_stt_eos",
         "voice.turn.eot.stt_final_to_stt_eos",
         "voice.turn.eot.stt_eos_to_turn_commit",
         "voice.turn.eot.turn_commit_to_user_completed",

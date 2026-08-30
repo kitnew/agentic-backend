@@ -1,5 +1,7 @@
 import asyncio
 import inspect
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -360,6 +362,9 @@ def test_eot_decomposition_correlates_ordered_events_once_without_labels() -> No
     metrics = VoiceMetrics(provider.get_meter("voice-agent"))
 
     metrics.record_local_vad_end(10.0)
+    metrics.record_local_vad_commit_requested(10.1)
+    metrics.record_local_vad_commit_failure()
+    metrics.record_local_vad_commit_duplicate()
     metrics.record_stt_final_received(10.4)
     metrics.record_stt_final_received(10.4)
     metrics.record_stt_eos_received(10.5)
@@ -372,6 +377,8 @@ def test_eot_decomposition_correlates_ordered_events_once_without_labels() -> No
     points = _metric_points(reader)
     expected = {
         "voice.turn.eot.local_vad_to_stt_final": 0.4,
+        "voice.turn.eot.local_vad_commit_to_stt_final": 0.3,
+        "voice.turn.eot.local_vad_commit_to_stt_eos": 0.4,
         "voice.turn.eot.stt_final_to_stt_eos": 0.1,
         "voice.turn.eot.stt_eos_to_turn_commit": 0.1,
         "voice.turn.eot.turn_commit_to_user_completed": 0.1,
@@ -383,7 +390,31 @@ def test_eot_decomposition_correlates_ordered_events_once_without_labels() -> No
         assert points[name][0].sum == pytest.approx(total)
         assert not points[name][0].attributes
         assert points[name][0].explicit_bounds == VOICE_FAST_BUCKETS
+    for name in (
+        "voice.stt.local_vad_commit.requests",
+        "voice.stt.local_vad_commit.failures",
+        "voice.stt.local_vad_commit.duplicates_ignored",
+    ):
+        assert points[name][0].value == 1
+        assert not points[name][0].attributes
     provider.shutdown()
+
+
+def test_manual_commit_dashboard_keeps_percentiles_aggregated_by_bucket() -> None:
+    dashboard = json.loads(
+        (
+            Path(__file__).parents[3]
+            / "infrastructure/grafana/dashboards/voice-agent.json"
+        ).read_text()
+    )
+    panels = {panel["title"]: panel for panel in dashboard["panels"]}
+    for title in ("Current EoT comparison", "Manual-commit EoT comparison"):
+        expressions = [target["expr"] for target in panels[title]["targets"]]
+        assert all("histogram_quantile" in expression for expression in expressions)
+        assert all("sum by (le)" in expression for expression in expressions)
+        assert all(
+            "sum(histogram_quantile" not in expression for expression in expressions
+        )
 
 
 def test_eot_decomposition_skips_partial_and_precommit_llm_and_stays_bounded() -> None:

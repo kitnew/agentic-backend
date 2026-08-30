@@ -1011,6 +1011,131 @@
         "w": 8,
         "h": 8
       }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Current EoT comparison",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_eot_local_vad_to_stt_final_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "VAD to final p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_eot_local_vad_to_stt_final_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "VAD to final p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_eot_local_vad_to_turn_commit_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "VAD to turn commit p50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_eot_local_vad_to_turn_commit_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "VAD to turn commit p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 68,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Manual-commit EoT comparison",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_eot_local_vad_commit_to_stt_final_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "commit to final p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_eot_local_vad_commit_to_stt_final_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "commit to final p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(voice_turn_eot_local_vad_commit_to_stt_eos_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "commit to EOS p50"
+        },
+        {
+          "refId": "D",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(voice_turn_eot_local_vad_commit_to_stt_eos_seconds_bucket{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__rate_interval])))",
+          "legendFormat": "commit to EOS p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 68,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 28,
+      "type": "stat",
+      "title": "Local VAD commit requests",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_stt_local_vad_commit_requests_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) or vector(0)",
+          "legendFormat": "requests",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(voice_stt_local_vad_commit_failures_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) or vector(0)",
+          "legendFormat": "failures",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "sum(increase(voice_stt_local_vad_commit_duplicates_ignored_total{service_name=~\"$service\", deployment_environment_name=~\"$environment\"}[$__range])) or vector(0)",
+          "legendFormat": "duplicates ignored",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 68,
+        "w": 8,
+        "h": 8
+      }
     }
   ]
 }

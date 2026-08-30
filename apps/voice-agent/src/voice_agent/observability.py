@@ -42,6 +42,7 @@ class _PipelineLatency:
 @dataclass(slots=True)
 class _EotTurn:
     local_vad_end: float | None = None
+    local_vad_commit_requested: float | None = None
     stt_final_received: float | None = None
     stt_eos_received: float | None = None
     livekit_turn_committed: float | None = None
@@ -122,6 +123,12 @@ class VoiceMetrics:
         self._eot_local_vad_to_stt_final = self._meter.create_histogram(
             "voice.turn.eot.local_vad_to_stt_final", unit="s"
         )
+        self._eot_local_vad_commit_to_stt_final = self._meter.create_histogram(
+            "voice.turn.eot.local_vad_commit_to_stt_final", unit="s"
+        )
+        self._eot_local_vad_commit_to_stt_eos = self._meter.create_histogram(
+            "voice.turn.eot.local_vad_commit_to_stt_eos", unit="s"
+        )
         self._eot_stt_final_to_stt_eos = self._meter.create_histogram(
             "voice.turn.eot.stt_final_to_stt_eos", unit="s"
         )
@@ -148,6 +155,15 @@ class VoiceMetrics:
         )
         self._llm_output_tokens = self._meter.create_counter("voice.llm.output_tokens")
         self._stt_requests = self._meter.create_counter("voice.stt.requests")
+        self._stt_local_vad_commit_requests = self._meter.create_counter(
+            "voice.stt.local_vad_commit.requests"
+        )
+        self._stt_local_vad_commit_failures = self._meter.create_counter(
+            "voice.stt.local_vad_commit.failures"
+        )
+        self._stt_local_vad_commit_duplicates = self._meter.create_counter(
+            "voice.stt.local_vad_commit.duplicates_ignored"
+        )
         self._stt_duration = self._meter.create_histogram(
             "voice.stt.duration", unit="s"
         )
@@ -200,6 +216,18 @@ class VoiceMetrics:
         turn.local_vad_end = timestamp
         self._observe_eot(turn)
 
+    def record_local_vad_commit_requested(self, timestamp: float) -> None:
+        turn = self._active_eot_turn()
+        turn.local_vad_commit_requested = timestamp
+        self._add(self._stt_local_vad_commit_requests, 1, {})
+        self._observe_eot(turn)
+
+    def record_local_vad_commit_failure(self, count: int = 1) -> None:
+        self._add(self._stt_local_vad_commit_failures, count, {})
+
+    def record_local_vad_commit_duplicate(self) -> None:
+        self._add(self._stt_local_vad_commit_duplicates, 1, {})
+
     def record_stt_final_received(self, timestamp: float) -> None:
         turn = self._active_eot_turn()
         if turn.stt_eos_received is None:
@@ -248,6 +276,18 @@ class VoiceMetrics:
                 self._eot_local_vad_to_stt_final,
                 turn.local_vad_end,
                 turn.stt_final_received,
+            ),
+            (
+                "local_vad_commit_to_stt_final",
+                self._eot_local_vad_commit_to_stt_final,
+                turn.local_vad_commit_requested,
+                turn.stt_final_received,
+            ),
+            (
+                "local_vad_commit_to_stt_eos",
+                self._eot_local_vad_commit_to_stt_eos,
+                turn.local_vad_commit_requested,
+                turn.stt_eos_received,
             ),
             (
                 "stt_final_to_stt_eos",

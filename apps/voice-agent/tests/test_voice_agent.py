@@ -14,6 +14,7 @@ from contracts import (
 )
 from livekit import agents, rtc
 from livekit.agents.beta.tools import EndCallTool
+from livekit.agents.utils import is_given
 from livekit.plugins import elevenlabs, openai
 from pydantic import ValidationError
 from voice_agent.backend import BackendClient
@@ -38,6 +39,7 @@ from voice_agent.providers import (
     provider_languages,
 )
 from voice_agent.settings import VoiceAgentSettings
+from voice_agent.stt_endpointing import LocalVadCommitSTT
 from voice_agent.stt_preflight import InterimPreflightSTT
 
 
@@ -683,6 +685,29 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert provider_languages("sk-SK") == ("slk", "sk")
         with pytest.raises(ValueError):
             provider_languages("en-US")
+    finally:
+        await session.stt.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_factory_enables_manual_scribe_commit_without_changing_turn_mode() -> (
+    None
+):
+    payload = runtime_settings().model_dump()
+    payload["stt"]["local_vad_commit"]["enabled"] = True  # type: ignore[index]
+    session = create_agent_session(
+        settings(),
+        EffectiveVoiceRuntime.model_validate(payload),
+        "voice-agent-prompt:test",
+    )
+    try:
+        assert isinstance(session.stt, LocalVadCommitSTT)
+        provider_stt = session.stt.wrapped_stt
+        assert isinstance(provider_stt, elevenlabs.STT)
+        assert not is_given(provider_stt._opts.server_vad)
+        assert session.turn_detection == "stt"
+        assert isinstance(session.llm, openai.LLM)
+        assert isinstance(session.tts, elevenlabs.TTS)
     finally:
         await session.stt.aclose()
         await session.llm.aclose()

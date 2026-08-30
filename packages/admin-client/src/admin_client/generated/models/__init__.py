@@ -91,6 +91,7 @@ from .llm_runtime_settings import LLMRuntimeSettings
 from .llm_runtime_settings_reasoning_effort_type_0 import (
     LLMRuntimeSettingsReasoningEffortType0,
 )
+from .local_vad_commit_runtime_settings import LocalVADCommitRuntimeSettings
 from .local_vad_runtime_settings import LocalVADRuntimeSettings
 from .localization_config import LocalizationConfig
 from .mapping_template_type_2 import MappingTemplateType2
@@ -253,6 +254,7 @@ __all__ = (
     "InterimPreflightRuntimeSettings",
     "LLMRuntimeSettings",
     "LLMRuntimeSettingsReasoningEffortType0",
+    "LocalVADCommitRuntimeSettings",
     "LocalVADRuntimeSettings",
     "LocalizationConfig",
     "MappingTemplateType2",

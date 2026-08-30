@@ -64,10 +64,17 @@ class InterimPreflightRuntimeSettings(_RuntimeModel):
     max_generations_per_turn: int = Field(default=2, ge=1, le=5)
 
 
+class LocalVADCommitRuntimeSettings(_RuntimeModel):
+    enabled: bool = False
+
+
 class STTRuntimeSettings(_RuntimeModel):
     provider: Literal["elevenlabs"]
     model: Identifier
     server_vad: ServerVADRuntimeSettings
+    local_vad_commit: LocalVADCommitRuntimeSettings = Field(
+        default_factory=LocalVADCommitRuntimeSettings
+    )
     interim_preflight: InterimPreflightRuntimeSettings = Field(
         default_factory=InterimPreflightRuntimeSettings
     )

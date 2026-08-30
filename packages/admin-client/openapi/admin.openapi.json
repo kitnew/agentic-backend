@@ -2101,6 +2101,18 @@
         "title": "LLMRuntimeSettings",
         "type": "object"
       },
+      "LocalVADCommitRuntimeSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "title": "LocalVADCommitRuntimeSettings",
+        "type": "object"
+      },
       "LocalVADRuntimeSettings": {
         "additionalProperties": false,
         "properties": {
@@ -2640,6 +2652,9 @@
         "properties": {
           "interim_preflight": {
             "$ref": "#/components/schemas/InterimPreflightRuntimeSettings"
+          },
+          "local_vad_commit": {
+            "$ref": "#/components/schemas/LocalVADCommitRuntimeSettings"
           },
           "model": {
             "maxLength": 255,

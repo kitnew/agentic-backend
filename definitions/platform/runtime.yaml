@@ -10,9 +10,11 @@ stt:
     min_speech_ms: 100
     min_silence_ms: 350
     activity_threshold: 0.35
-    silence_threshold_seconds: 0.3
-  interim_preflight:
+    silence_threshold_seconds: 0.35
+  local_vad_commit:
     enabled: true
+  interim_preflight:
+    enabled: false
     min_growth_chars: 12
     min_transcript_chars: 20
     max_generations_per_turn: 2

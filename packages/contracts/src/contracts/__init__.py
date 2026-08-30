@@ -123,6 +123,7 @@ from contracts.voice import (
 from contracts.voice_runtime import (
     EffectiveVoiceRuntime,
     LLMRuntimeSettings,
+    LocalVADCommitRuntimeSettings,
     LocalVADRuntimeSettings,
     PlatformRuntimePolicy,
     ServerVADRuntimeSettings,
@@ -194,6 +195,7 @@ __all__ = [
     "JsonScalar",
     "LLMRuntimeSettings",
     "LiveKitJobMetadata",
+    "LocalVADCommitRuntimeSettings",
     "LocalVADRuntimeSettings",
     "ManagedWebhookBodyBinding",
     "ManagedWebhookCapability",

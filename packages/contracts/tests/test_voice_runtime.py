@@ -98,6 +98,19 @@ def test_interim_preflight_defaults_and_validation() -> None:
     )
 
 
+def test_local_vad_commit_defaults_off_and_serializes_explicit_enablement() -> None:
+    baseline = PlatformRuntimePolicy.model_validate(policy())
+    assert baseline.stt.local_vad_commit.enabled is False
+
+    payload = policy()
+    payload["stt"]["local_vad_commit"] = {"enabled": True}  # type: ignore[index]
+    enabled = PlatformRuntimePolicy.model_validate(payload)
+    assert enabled.stt.local_vad_commit.enabled is True
+    assert (
+        PlatformRuntimePolicy.model_validate_json(enabled.model_dump_json()) == enabled
+    )
+
+
 def test_reasoning_and_temperature_are_model_compatible() -> None:
     payload = policy()
     payload["llm"] = {
