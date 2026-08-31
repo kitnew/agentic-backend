@@ -271,6 +271,7 @@ services:
           address: "127.0.0.1:6379"
         sip_port: ${LIVEKIT_SIP_PORT:-5060}
         rtp_port: "${LIVEKIT_SIP_RTP_PORT:-10000-20000}"
+        use_external_ip: true
         health_port: ${LIVEKIT_SIP_HEALTH_PORT:-8080}
         logging:
           level: info
