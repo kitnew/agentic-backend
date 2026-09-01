@@ -16,12 +16,18 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from control_plane.domain.components import ComponentAddress, ComponentDefinition
+from control_plane.domain.components import (
+    ComponentAddress,
+    ComponentDefinition,
+    ComponentKind,
+    PlatformScope,
+)
 from control_plane.domain.components.errors import (
     ActiveRevisionConflict,
     ComponentNotFound,
     DraftNotFound,
     DraftVersionConflict,
+    InvalidComponentValue,
     RevisionNotFound,
     UnpublishedDraftConflict,
     UnsupportedSchemaVersion,
@@ -34,12 +40,18 @@ from control_plane.domain.managed_resources import (
     ModelDeploymentRef,
     ProviderConnectionRef,
 )
+from control_plane.domain.runtime_components import (
+    CascadeExecutionDefaults,
+    ProviderVADCommitPolicy,
+    STTDefaults,
+)
 
 from .models import ConfigurationComponent as ComponentRow
 from .models import ConfigurationComponentDraft as DraftRow
 from .models import ConfigurationComponentRevision as RevisionRow
 from .models import ModelDeployment as ModelDeploymentRow
 from .models import OutboxMessage
+from .models import ProviderConnection as ProviderConnectionRow
 
 
 class SqlAlchemyComponentRepository:
@@ -147,7 +159,7 @@ class SqlAlchemyComponentRepository:
             if draft.version != expected_draft_version:
                 raise DraftVersionConflict("draft version changed")
             typed = self._validate(draft.schema_version, draft.value, definition)
-            await self._validate_deployment(session, typed, definition)
+            await self._validate_activation(session, typed, definition)
             current_number = await session.scalar(
                 select(func.coalesce(func.max(RevisionRow.revision_number), 0)).where(
                     RevisionRow.component_id == component.id
@@ -199,7 +211,7 @@ class SqlAlchemyComponentRepository:
             if target is None:
                 raise RevisionNotFound(str(revision_number))
             typed = self._validate(target.schema_version, target.value, definition)
-            await self._validate_deployment(session, typed, definition)
+            await self._validate_activation(session, typed, definition)
             current_number = await session.scalar(
                 select(func.max(RevisionRow.revision_number)).where(
                     RevisionRow.component_id == component.id
@@ -301,6 +313,39 @@ class SqlAlchemyComponentRepository:
             row.updated_by,
         )
         definition.validate_deployment(value, deployment)
+
+    async def _validate_activation(
+        self, session: AsyncSession, value: Any, definition: ComponentDefinition[Any]
+    ) -> None:
+        await self._validate_deployment(session, value, definition)
+        if not isinstance(value, CascadeExecutionDefaults) or not isinstance(
+            value.stt_commit, ProviderVADCommitPolicy
+        ):
+            return
+
+        address = ComponentAddress(
+            ComponentKind("runtime.stt.defaults"), PlatformScope()
+        )
+        component = await session.scalar(self._component(address).with_for_update())
+        if component is None or component.active_revision_id is None:
+            raise InvalidComponentValue(
+                "provider_vad requires active runtime.stt.defaults"
+            )
+        revision = await session.get(RevisionRow, component.active_revision_id)
+        assert revision is not None
+        stt = STTDefaults.model_validate(revision.value)
+        deployment = await session.get(ModelDeploymentRow, stt.deployment_ref)
+        if deployment is None:
+            raise ManagedResourceNotFound("referenced model deployment not found")
+        if deployment.deployment_kind != DeploymentKind.STT.value:
+            raise InvalidComponentValue(
+                "runtime.stt.defaults deployment must have deployment_kind=stt"
+            )
+        connection = await session.get(ProviderConnectionRow, deployment.connection_id)
+        if connection is None or connection.provider_kind != "elevenlabs":
+            raise InvalidComponentValue(
+                "selected STT deployment does not support provider_vad"
+            )
 
     async def _component_id(
         self, session: AsyncSession, address: ComponentAddress

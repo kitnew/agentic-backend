@@ -1,12 +1,11 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from contracts.voice_runtime import (
     Identifier,
     ReasoningEffort,
-    ServerVADRuntimeSettings,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from control_plane.domain.components import (
     ComponentDefinition,
@@ -30,7 +29,70 @@ class LLMDefaults(_RuntimeComponent):
 
 class STTDefaults(_RuntimeComponent):
     deployment_ref: UUID
-    server_vad: ServerVADRuntimeSettings
+
+
+Seconds = Annotated[float, Field(gt=0, le=60)]
+Threshold = Annotated[float, Field(ge=0, le=1)]
+
+
+class SpeechActivityPolicy(_RuntimeComponent):
+    min_speech_seconds: Seconds
+    min_silence_seconds: Seconds
+    activation_threshold: Threshold
+
+
+class LocalVADCommitPolicy(_RuntimeComponent):
+    strategy: Literal["local_vad"]
+
+
+class ProviderVADTuning(_RuntimeComponent):
+    threshold: Threshold
+    silence_threshold_seconds: Seconds
+    min_speech_ms: int = Field(gt=0, le=60_000)
+    min_silence_ms: int = Field(gt=0, le=60_000)
+
+
+class ProviderVADCommitPolicy(_RuntimeComponent):
+    strategy: Literal["provider_vad"]
+    provider_vad: ProviderVADTuning
+
+
+STTCommitPolicy = Annotated[
+    LocalVADCommitPolicy | ProviderVADCommitPolicy,
+    Field(discriminator="strategy"),
+]
+
+
+class EndpointingPolicy(_RuntimeComponent):
+    min_delay_seconds: Seconds
+    max_delay_seconds: Seconds
+
+    @model_validator(mode="after")
+    def delays_are_ordered(self) -> EndpointingPolicy:
+        if self.min_delay_seconds > self.max_delay_seconds:
+            raise ValueError("min_delay_seconds must not exceed max_delay_seconds")
+        return self
+
+
+class InterruptionPolicy(_RuntimeComponent):
+    enabled: bool
+    min_duration_seconds: Annotated[float, Field(ge=0, le=60)]
+    min_words: int = Field(ge=0)
+    false_interruption_timeout_seconds: Annotated[float, Field(ge=0, le=60)]
+    resume_after_false_interruption: bool
+
+
+class ResponseSchedulingPolicy(_RuntimeComponent):
+    preemptive_generation: bool
+    preemptive_tts: bool
+
+
+class CascadeExecutionDefaults(_RuntimeComponent):
+    speech_activity: SpeechActivityPolicy
+    stt_commit: STTCommitPolicy
+    endpointing: EndpointingPolicy
+    interruption: InterruptionPolicy
+    response_scheduling: ResponseSchedulingPolicy
 
 
 class TTSDefaults(_RuntimeComponent):
@@ -83,4 +145,10 @@ def register_runtime_components(registry: object) -> None:
     registry.register(ComponentDefinition(
         ComponentKind("runtime.tts.defaults"), TTSDefaults, platform, 1,
         lambda value: value.deployment_ref, _validate_tts,
+    ))
+    registry.register(ComponentDefinition(
+        ComponentKind("runtime.cascade.execution.defaults"),
+        CascadeExecutionDefaults,
+        platform,
+        1,
     ))

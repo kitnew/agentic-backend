@@ -23,6 +23,7 @@ from control_plane.infrastructure.persistence.managed_resources import (
 from control_plane.infrastructure.persistence.models import (
     ConfigurationComponentRevision,
     OutboxMessage,
+    ProviderConnection,
 )
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
@@ -64,6 +65,31 @@ async def deployment(
     return await resources.create_deployment(
         key, connection.ref, kind, config, True, "test", capabilities
     )
+
+
+def cascade_policy(strategy: str) -> dict[str, object]:
+    stt_commit: dict[str, object] = {"strategy": strategy}
+    if strategy == "provider_vad":
+        stt_commit["provider_vad"] = {
+            "threshold": 0.5, "silence_threshold_seconds": 0.35,
+            "min_speech_ms": 100, "min_silence_ms": 350,
+        }
+    return {
+        "speech_activity": {
+            "min_speech_seconds": 0.05, "min_silence_seconds": 0.25,
+            "activation_threshold": 0.5,
+        },
+        "stt_commit": stt_commit,
+        "endpointing": {"min_delay_seconds": 0.1, "max_delay_seconds": 0.7},
+        "interruption": {
+            "enabled": True, "min_duration_seconds": 0.5, "min_words": 0,
+            "false_interruption_timeout_seconds": 2.0,
+            "resume_after_false_interruption": True,
+        },
+        "response_scheduling": {
+            "preemptive_generation": True, "preemptive_tts": True,
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -140,6 +166,69 @@ async def test_runtime_rollback_revalidates_current_deployment(
         with pytest.raises(InvalidComponentValue, match="reasoning_effort"):
             await components.rollback(address, first.revision_number, "test")
         assert (await components.get_active(address)).revision_id == second.revision_id
+        async with database.sessions() as session:
+            assert await session.scalar(select(func.count()).select_from(ConfigurationComponentRevision)) == revisions
+            assert await session.scalar(select(func.count()).select_from(OutboxMessage)) == events
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_cascade_provider_vad_revalidates_current_stt_atomically(
+    migrated_database_url: str,
+) -> None:
+    database = Database(migrated_database_url)
+    components, resources = services(database)
+    stt_address = ComponentAddress(ComponentKind("runtime.stt.defaults"), PlatformScope())
+    cascade_address = ComponentAddress(
+        ComponentKind("runtime.cascade.execution.defaults"), PlatformScope()
+    )
+    try:
+        stt = await deployment(resources, DeploymentKind.STT, "cascade-scribe")
+        stt_draft = await components.save_draft(
+            stt_address, {"deployment_ref": str(stt.ref.value)},
+            1, None, None, "test",
+        )
+        await components.publish_draft(stt_address, stt_draft.version, "test")
+        provider_draft = await components.save_draft(
+            cascade_address, cascade_policy("provider_vad"),
+            1, None, None, "test",
+        )
+        provider_revision = await components.publish_draft(
+            cascade_address, provider_draft.version, "test"
+        )
+
+        async with database.sessions.begin() as session:
+            connection = await session.get(ProviderConnection, stt.connection_ref.value)
+            assert connection is not None
+            connection.provider_kind = "unsupported_stt"
+
+        local_draft = await components.save_draft(
+            cascade_address, cascade_policy("local_vad"),
+            1, None, provider_revision.revision_id, "test",
+        )
+        local_revision = await components.publish_draft(
+            cascade_address, local_draft.version, "test"
+        )
+        failed_draft = await components.save_draft(
+            cascade_address, cascade_policy("provider_vad"),
+            1, None, local_revision.revision_id, "test",
+        )
+        async with database.sessions() as session:
+            revisions = await session.scalar(select(func.count()).select_from(ConfigurationComponentRevision))
+            events = await session.scalar(select(func.count()).select_from(OutboxMessage))
+
+        with pytest.raises(InvalidComponentValue, match="does not support"):
+            await components.publish_draft(cascade_address, failed_draft.version, "test")
+        assert (await components.get_active(cascade_address)).revision_id == local_revision.revision_id
+        async with database.sessions() as session:
+            assert await session.scalar(select(func.count()).select_from(ConfigurationComponentRevision)) == revisions
+            assert await session.scalar(select(func.count()).select_from(OutboxMessage)) == events
+
+        await components.discard_draft(cascade_address, failed_draft.version)
+        with pytest.raises(InvalidComponentValue, match="does not support"):
+            await components.rollback(cascade_address, provider_revision.revision_number, "test")
+        assert (await components.get_active(cascade_address)).revision_id == local_revision.revision_id
         async with database.sessions() as session:
             assert await session.scalar(select(func.count()).select_from(ConfigurationComponentRevision)) == revisions
             assert await session.scalar(select(func.count()).select_from(OutboxMessage)) == events
