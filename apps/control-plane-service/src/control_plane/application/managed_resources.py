@@ -11,6 +11,8 @@ from control_plane.domain.managed_resources import (
     ModelDeploymentRef,
     ProviderConnection,
     ProviderConnectionRef,
+    RealtimeCapabilities,
+    STTCapabilities,
 )
 from control_plane.domain.providers import ProviderRegistry
 
@@ -62,6 +64,8 @@ class ManagedResourceRepository(Protocol):
         enabled: bool,
         actor: str,
         llm_capabilities: LLMCapabilities | None = None,
+        realtime_capabilities: RealtimeCapabilities | None = None,
+        stt_capabilities: STTCapabilities | None = None,
     ) -> ModelDeployment: ...
     async def update_deployment(
         self,
@@ -71,6 +75,8 @@ class ManagedResourceRepository(Protocol):
         expected_generation: int,
         actor: str,
         llm_capabilities: LLMCapabilities | None = None,
+        realtime_capabilities: RealtimeCapabilities | None = None,
+        stt_capabilities: STTCapabilities | None = None,
     ) -> ModelDeployment: ...
     async def set_deployment_enabled(
         self, ref: ModelDeploymentRef, enabled: bool, expected_generation: int, actor: str
@@ -159,14 +165,19 @@ class ManagedResourceService:
         enabled: bool,
         actor: str,
         llm_capabilities: LLMCapabilities | None = None,
+        realtime_capabilities: RealtimeCapabilities | None = None,
+        stt_capabilities: STTCapabilities | None = None,
     ) -> ModelDeployment:
         connection = await self._repository.get_connection(connection_ref)
         validated = self._registry.resolve(
             connection.provider_kind
         ).validate_deployment(kind, config)
-        self._validate_llm_capabilities(kind, llm_capabilities)
+        self._validate_capabilities(
+            kind, llm_capabilities, realtime_capabilities, stt_capabilities
+        )
         return await self._repository.create_deployment(
-            key, connection_ref, kind, validated, enabled, actor, llm_capabilities
+            key, connection_ref, kind, validated, enabled, actor, llm_capabilities,
+            realtime_capabilities, stt_capabilities,
         )
 
     async def update_deployment(
@@ -177,24 +188,46 @@ class ManagedResourceService:
         expected_generation: int,
         actor: str,
         llm_capabilities: LLMCapabilities | None = None,
+        realtime_capabilities: RealtimeCapabilities | None = None,
+        stt_capabilities: STTCapabilities | None = None,
     ) -> ModelDeployment:
         current = await self._repository.get_deployment(ref)
         connection = await self._repository.get_connection(connection_ref)
         validated = self._registry.resolve(
             connection.provider_kind
         ).validate_deployment(current.deployment_kind, config)
-        self._validate_llm_capabilities(current.deployment_kind, llm_capabilities)
+        self._validate_capabilities(
+            current.deployment_kind,
+            llm_capabilities,
+            realtime_capabilities,
+            stt_capabilities,
+        )
         return await self._repository.update_deployment(
-            ref, connection_ref, validated, expected_generation, actor, llm_capabilities
+            ref, connection_ref, validated, expected_generation, actor, llm_capabilities,
+            realtime_capabilities, stt_capabilities,
         )
 
     @staticmethod
-    def _validate_llm_capabilities(
-        kind: DeploymentKind, capabilities: LLMCapabilities | None
+    def _validate_capabilities(
+        kind: DeploymentKind,
+        llm: LLMCapabilities | None,
+        realtime: RealtimeCapabilities | None,
+        stt: STTCapabilities | None,
     ) -> None:
-        if (kind is DeploymentKind.LLM) != (capabilities is not None):
+        expected = {
+            DeploymentKind.LLM: llm,
+            DeploymentKind.REALTIME: realtime,
+            DeploymentKind.STT: stt,
+        }
+        supplied = sum(value is not None for value in (llm, realtime, stt))
+        valid = (
+            expected[kind] is not None and supplied == 1
+            if kind in expected
+            else supplied == 0
+        )
+        if not valid:
             raise InvalidManagedResource(
-                "llm capabilities are required only for llm deployments"
+                f"capabilities do not match deployment_kind={kind.value}"
             )
 
     async def set_deployment_enabled(

@@ -38,6 +38,8 @@ from control_plane.domain.managed_resources import (
     ModelDeploymentRef,
     ProviderConnection,
     ProviderConnectionRef,
+    RealtimeCapabilities,
+    STTCapabilities,
 )
 from control_plane.runtime.lifecycle import ServiceLifecycle
 
@@ -102,12 +104,24 @@ class LLMCapabilitiesWrite(BaseModel):
     supports_reasoning_effort: bool
 
 
+class RealtimeCapabilitiesWrite(BaseModel):
+    supports_server_vad: bool
+    supports_semantic_vad: bool
+
+
+class STTCapabilitiesWrite(BaseModel):
+    supports_cascade: bool
+    supports_realtime_input_transcription: bool
+
+
 class ModelDeploymentCreate(BaseModel):
     key: str = Field(min_length=1, max_length=255)
     connection_ref: UUID
     deployment_kind: DeploymentKind
     deployment_config: dict[str, object]
     llm_capabilities: LLMCapabilitiesWrite | None = None
+    realtime_capabilities: RealtimeCapabilitiesWrite | None = None
+    stt_capabilities: STTCapabilitiesWrite | None = None
     enabled: bool = False
     actor: str = Field(min_length=1, max_length=255)
 
@@ -118,6 +132,8 @@ class ModelDeploymentUpdate(BaseModel):
     connection_ref: UUID
     deployment_config: dict[str, object]
     llm_capabilities: LLMCapabilitiesWrite | None = None
+    realtime_capabilities: RealtimeCapabilitiesWrite | None = None
+    stt_capabilities: STTCapabilitiesWrite | None = None
     expected_generation: int = Field(ge=1)
     actor: str = Field(min_length=1, max_length=255)
 
@@ -340,6 +356,20 @@ def _deployment_response(value: ModelDeployment) -> dict[str, object]:
             if value.llm_capabilities
             else None
         ),
+        "realtime_capabilities": (
+            {
+                "supports_server_vad": value.realtime_capabilities.supports_server_vad,
+                "supports_semantic_vad": value.realtime_capabilities.supports_semantic_vad,
+            }
+            if value.realtime_capabilities else None
+        ),
+        "stt_capabilities": (
+            {
+                "supports_cascade": value.stt_capabilities.supports_cascade,
+                "supports_realtime_input_transcription": value.stt_capabilities.supports_realtime_input_transcription,
+            }
+            if value.stt_capabilities else None
+        ),
         "enabled": value.enabled,
         "generation": value.generation,
         "created_at": value.created_at,
@@ -462,6 +492,10 @@ def _managed_resource_router() -> APIRouter:
             body.actor,
             LLMCapabilities(**body.llm_capabilities.model_dump())
             if body.llm_capabilities else None,
+            RealtimeCapabilities(**body.realtime_capabilities.model_dump())
+            if body.realtime_capabilities else None,
+            STTCapabilities(**body.stt_capabilities.model_dump())
+            if body.stt_capabilities else None,
         )
         return jsonable_encoder(_deployment_response(value))
 
@@ -477,6 +511,10 @@ def _managed_resource_router() -> APIRouter:
             body.actor,
             LLMCapabilities(**body.llm_capabilities.model_dump())
             if body.llm_capabilities else None,
+            RealtimeCapabilities(**body.realtime_capabilities.model_dump())
+            if body.realtime_capabilities else None,
+            STTCapabilities(**body.stt_capabilities.model_dump())
+            if body.stt_capabilities else None,
         )
         return jsonable_encoder(_deployment_response(value))
 

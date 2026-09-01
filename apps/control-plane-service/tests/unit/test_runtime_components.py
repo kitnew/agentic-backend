@@ -7,6 +7,7 @@ from control_plane.domain.components import (
     ComponentKind,
     ComponentRegistry,
     PlatformScope,
+    ProfileScope,
     TenantScope,
 )
 from control_plane.domain.components.errors import (
@@ -19,15 +20,19 @@ from control_plane.domain.managed_resources import (
     ModelDeployment,
     ModelDeploymentRef,
     ProviderConnectionRef,
+    RealtimeCapabilities,
+    STTCapabilities,
 )
 from control_plane.domain.runtime_components import register_runtime_components
 
 
-def deployment(kind: DeploymentKind, capabilities: LLMCapabilities | None = None) -> ModelDeployment:
+def deployment(kind: DeploymentKind, capabilities: LLMCapabilities | None = None,
+               realtime: RealtimeCapabilities | None = None,
+               stt: STTCapabilities | None = None) -> ModelDeployment:
     now = datetime.now(UTC)
     return ModelDeployment(
         ModelDeploymentRef(uuid4()), "test", ProviderConnectionRef(uuid4()), kind,
-        {}, capabilities, True, 1, now, "test", now, "test"
+        {}, capabilities, realtime, stt, True, 1, now, "test", now, "test"
     )
 
 
@@ -70,8 +75,14 @@ def test_runtime_registry_registers_only_platform_defaults() -> None:
     assert registry.resolve(ComponentAddress(ComponentKind("runtime.tts.defaults"), PlatformScope()))
     cascade = ComponentKind("runtime.cascade.execution.defaults")
     assert registry.resolve(ComponentAddress(cascade, PlatformScope()))
+    realtime = ComponentKind("runtime.realtime.execution.defaults")
+    assert registry.resolve(ComponentAddress(realtime, PlatformScope()))
     with pytest.raises(ScopeNotAllowed):
         registry.resolve(ComponentAddress(cascade, TenantScope("tenant")))
+    with pytest.raises(ScopeNotAllowed):
+        registry.resolve(ComponentAddress(realtime, TenantScope("tenant")))
+    with pytest.raises(ScopeNotAllowed):
+        registry.resolve(ComponentAddress(realtime, ProfileScope("profile")))
 
 
 def test_llm_capabilities_and_runtime_ranges() -> None:
@@ -93,7 +104,9 @@ def test_stt_defaults_contains_only_deployment_ref() -> None:
     deployment_ref = uuid4()
     value = stt.deserialize({"deployment_ref": str(deployment_ref)})
     assert stt.serialize(value) == {"deployment_ref": str(deployment_ref)}
-    stt.validate_deployment(value, deployment(DeploymentKind.STT))
+    stt.validate_deployment(value, deployment(DeploymentKind.STT, stt=STTCapabilities(True, False)))
+    with pytest.raises(InvalidComponentValue, match="cascade STT"):
+        stt.validate_deployment(value, deployment(DeploymentKind.STT, stt=STTCapabilities(False, True)))
     with pytest.raises(InvalidComponentValue, match="deployment_kind"):
         stt.validate_deployment(value, deployment(DeploymentKind.TTS))
     with pytest.raises(InvalidComponentValue):
@@ -152,3 +165,48 @@ def test_tts_shape_rejects_deferred_fields() -> None:
     tts.validate_deployment(value, deployment(DeploymentKind.TTS))
     with pytest.raises(InvalidComponentValue, match="deployment_kind"):
         tts.validate_deployment(value, deployment(DeploymentKind.STT))
+
+
+def realtime_policy(strategy: str = "server_vad") -> dict[str, object]:
+    turn_completion = ({"strategy": strategy, "activation_threshold": 0.5,
+                        "silence_duration_ms": 200}
+                       if strategy == "server_vad"
+                       else {"strategy": strategy, "eagerness": "auto"})
+    return {
+        "deployment_ref": str(uuid4()),
+        "input_transcription": {"deployment_ref": str(uuid4())},
+        "default_voice": "marin",
+        "turn_completion": turn_completion,
+        "interruption": {"enabled": True},
+    }
+
+
+def test_realtime_turn_completion_is_structurally_discriminated() -> None:
+    realtime = definition("runtime.realtime.execution.defaults")
+    assert realtime.deserialize(realtime_policy()).turn_completion.strategy == "server_vad"
+    assert realtime.deserialize(realtime_policy("semantic_vad")).turn_completion.strategy == "semantic_vad"
+    for strategy, inactive_field in (("server_vad", "eagerness"),
+                                     ("semantic_vad", "activation_threshold")):
+        payload = realtime_policy(strategy)
+        turn_completion = payload["turn_completion"]
+        assert isinstance(turn_completion, dict)
+        turn_completion[inactive_field] = "high" if inactive_field == "eagerness" else 0.5
+        with pytest.raises(InvalidComponentValue):
+            realtime.deserialize(payload)
+
+
+@pytest.mark.parametrize(("strategy", "field", "value"), [
+    ("server_vad", "activation_threshold", -0.1),
+    ("server_vad", "activation_threshold", 1.1),
+    ("server_vad", "silence_duration_ms", 0),
+    ("semantic_vad", "eagerness", "immediate"),
+])
+def test_realtime_turn_completion_rejects_invalid_values(
+    strategy: str, field: str, value: object
+) -> None:
+    payload = realtime_policy(strategy)
+    turn_completion = payload["turn_completion"]
+    assert isinstance(turn_completion, dict)
+    turn_completion[field] = value
+    with pytest.raises(InvalidComponentValue):
+        definition("runtime.realtime.execution.defaults").deserialize(payload)

@@ -68,6 +68,9 @@ def test_provider_registry_validates_current_provider_shapes() -> None:
     assert azure.validate_deployment(
         DeploymentKind.REALTIME, {"deployment_name": "realtime-prod"}
     ) == {"deployment_name": "realtime-prod"}
+    assert azure.validate_deployment(
+        DeploymentKind.STT, {"deployment_name": "whisper-prod"}
+    ) == {"deployment_name": "whisper-prod"}
     assert elevenlabs.validate_connection({}) == {}
     assert elevenlabs.validate_deployment(
         DeploymentKind.STT, {"model_id": "scribe_v2_realtime"}

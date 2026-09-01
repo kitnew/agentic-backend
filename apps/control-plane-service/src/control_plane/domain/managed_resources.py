@@ -39,6 +39,18 @@ class LLMCapabilities:
 
 
 @dataclass(frozen=True, slots=True)
+class RealtimeCapabilities:
+    supports_server_vad: bool
+    supports_semantic_vad: bool
+
+
+@dataclass(frozen=True, slots=True)
+class STTCapabilities:
+    supports_cascade: bool
+    supports_realtime_input_transcription: bool
+
+
+@dataclass(frozen=True, slots=True)
 class Credential:
     ref: CredentialRef
     name: str
@@ -85,6 +97,8 @@ class ModelDeployment:
     deployment_kind: DeploymentKind
     deployment_config: dict[str, Any]
     llm_capabilities: LLMCapabilities | None
+    realtime_capabilities: RealtimeCapabilities | None
+    stt_capabilities: STTCapabilities | None
     enabled: bool
     generation: int
     created_at: datetime

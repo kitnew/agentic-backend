@@ -245,6 +245,8 @@ class ModelDeployment(Base):
     deployment_kind: Mapped[str] = mapped_column(String(32))
     deployment_config: Mapped[dict[str, Any]] = mapped_column(JSONB)
     llm_capabilities: Mapped[dict[str, bool] | None] = mapped_column(JSONB)
+    realtime_capabilities: Mapped[dict[str, bool] | None] = mapped_column(JSONB)
+    stt_capabilities: Mapped[dict[str, bool] | None] = mapped_column(JSONB)
     enabled: Mapped[bool]
     generation: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(

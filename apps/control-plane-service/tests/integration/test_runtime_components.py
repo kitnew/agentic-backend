@@ -2,6 +2,7 @@ import base64
 from uuid import uuid4
 
 import pytest
+from contracts import COMPONENT_PUBLISHED_EVENT_TYPE, ConfigurationComponentPublishedV1
 from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.components import (
@@ -12,7 +13,12 @@ from control_plane.domain.components import (
 )
 from control_plane.domain.components.errors import InvalidComponentValue
 from control_plane.domain.managed_resource_errors import ManagedResourceNotFound
-from control_plane.domain.managed_resources import DeploymentKind, LLMCapabilities
+from control_plane.domain.managed_resources import (
+    DeploymentKind,
+    LLMCapabilities,
+    RealtimeCapabilities,
+    STTCapabilities,
+)
 from control_plane.domain.providers import default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.infrastructure.encryption import CredentialCipher
@@ -51,19 +57,22 @@ async def deployment(
     capabilities: LLMCapabilities | None = None,
 ):
     credential = await resources.create_credential(f"{key}-credential", "secret", "test")
-    if kind is DeploymentKind.LLM:
+    if kind in {DeploymentKind.LLM, DeploymentKind.REALTIME}:
         connection = await resources.create_connection(
             f"{key}-connection", "azure_openai", credential.ref,
             {"endpoint": "https://example.openai.azure.com"}, True, "test"
         )
-        config = {"deployment_name": key, "model": key, "api_version": "2025-01-01-preview"}
+        config = ({"deployment_name": key, "model": key, "api_version": "2025-01-01-preview"}
+                  if kind is DeploymentKind.LLM else {"deployment_name": key})
     else:
         connection = await resources.create_connection(
             f"{key}-connection", "elevenlabs", credential.ref, {}, True, "test"
         )
         config = {"model_id": key}
     return await resources.create_deployment(
-        key, connection.ref, kind, config, True, "test", capabilities
+        key, connection.ref, kind, config, True, "test", capabilities,
+        RealtimeCapabilities(True, True) if kind is DeploymentKind.REALTIME else None,
+        STTCapabilities(True, False) if kind is DeploymentKind.STT else None,
     )
 
 
@@ -89,6 +98,20 @@ def cascade_policy(strategy: str) -> dict[str, object]:
         "response_scheduling": {
             "preemptive_generation": True, "preemptive_tts": True,
         },
+    }
+
+
+def realtime_policy(realtime_ref, transcription_ref, strategy: str = "server_vad") -> dict[str, object]:
+    turn_completion = ({"strategy": strategy, "activation_threshold": 0.5,
+                        "silence_duration_ms": 200}
+                       if strategy == "server_vad"
+                       else {"strategy": strategy, "eagerness": "auto"})
+    return {
+        "deployment_ref": str(realtime_ref),
+        "input_transcription": {"deployment_ref": str(transcription_ref)},
+        "default_voice": "marin",
+        "turn_completion": turn_completion,
+        "interruption": {"enabled": True},
     }
 
 
@@ -232,5 +255,139 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
         async with database.sessions() as session:
             assert await session.scalar(select(func.count()).select_from(ConfigurationComponentRevision)) == revisions
             assert await session.scalar(select(func.count()).select_from(OutboxMessage)) == events
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_realtime_activation_validation_and_lifecycle_are_atomic(
+    migrated_database_url: str,
+) -> None:
+    database = Database(migrated_database_url)
+    components, resources = services(database)
+    address = ComponentAddress(ComponentKind("runtime.realtime.execution.defaults"), PlatformScope())
+    try:
+        credential = await resources.create_credential("realtime", "secret", "test")
+        first = await resources.create_connection(
+            "azure-realtime", "azure_openai", credential.ref,
+            {"endpoint": "https://first.openai.azure.com"}, True, "test",
+        )
+        second = await resources.create_connection(
+            "azure-realtime-other", "azure_openai", credential.ref,
+            {"endpoint": "https://second.openai.azure.com"}, True, "test",
+        )
+
+        async def realtime(key: str, capabilities: RealtimeCapabilities, enabled: bool = True):
+            return await resources.create_deployment(
+                key, first.ref, DeploymentKind.REALTIME, {"deployment_name": key},
+                enabled, "test", realtime_capabilities=capabilities,
+            )
+
+        async def transcription(key: str, capabilities: STTCapabilities,
+                                enabled: bool = True, other: bool = False):
+            return await resources.create_deployment(
+                key, second.ref if other else first.ref, DeploymentKind.STT,
+                {"deployment_name": key}, enabled, "test", stt_capabilities=capabilities,
+            )
+
+        model = await realtime("realtime-good", RealtimeCapabilities(True, True))
+        no_server = await realtime("realtime-no-server", RealtimeCapabilities(False, True))
+        no_semantic = await realtime("realtime-no-semantic", RealtimeCapabilities(True, False))
+        disabled_model = await realtime("realtime-disabled", RealtimeCapabilities(True, True), False)
+        transcript = await transcription("transcription-good", STTCapabilities(False, True))
+        cascade_only = await transcription("transcription-cascade", STTCapabilities(True, False))
+        disabled_transcript = await transcription(
+            "transcription-disabled", STTCapabilities(False, True), False
+        )
+        different_connection = await transcription(
+            "transcription-other", STTCapabilities(False, True), other=True
+        )
+
+        draft_version = None
+        active_revision_id = None
+
+        async def rejected(value: dict[str, object], match: str) -> None:
+            nonlocal draft_version
+            draft = await components.save_draft(
+                address, value, 1, draft_version, active_revision_id, "test"
+            )
+            draft_version = draft.version
+            async with database.sessions() as session:
+                revision_count = await session.scalar(
+                    select(func.count()).select_from(ConfigurationComponentRevision)
+                )
+                event_count = await session.scalar(select(func.count()).select_from(OutboxMessage))
+            with pytest.raises((InvalidComponentValue, ManagedResourceNotFound), match=match):
+                await components.publish_draft(address, draft.version, "test")
+            async with database.sessions() as session:
+                assert await session.scalar(
+                    select(func.count()).select_from(ConfigurationComponentRevision)
+                ) == revision_count
+                assert await session.scalar(select(func.count()).select_from(OutboxMessage)) == event_count
+
+        cases = [
+            (realtime_policy(uuid4(), transcript.ref.value), "realtime deployment not found"),
+            (realtime_policy(transcript.ref.value, transcript.ref.value), "deployment_kind=realtime"),
+            (realtime_policy(model.ref.value, uuid4()), "transcription deployment not found"),
+            (realtime_policy(model.ref.value, model.ref.value), "deployment_kind=stt"),
+            (realtime_policy(model.ref.value, cascade_only.ref.value), "realtime input transcription"),
+            (realtime_policy(disabled_model.ref.value, transcript.ref.value), "realtime deployment is disabled"),
+            (realtime_policy(model.ref.value, disabled_transcript.ref.value), "transcription deployment is disabled"),
+            (realtime_policy(model.ref.value, different_connection.ref.value), "same provider connection"),
+            (realtime_policy(no_server.ref.value, transcript.ref.value), "does not support server_vad"),
+        ]
+        for value, match in cases:
+            await rejected(value, match)
+
+        draft = await components.save_draft(
+            address, realtime_policy(model.ref.value, transcript.ref.value),
+            1, draft_version, None, "test",
+        )
+        server_revision = await components.publish_draft(address, draft.version, "test")
+        active_revision_id, draft_version = server_revision.revision_id, None
+        await rejected(
+            realtime_policy(no_semantic.ref.value, transcript.ref.value, "semantic_vad"),
+            "does not support semantic_vad",
+        )
+        draft = await components.save_draft(
+            address, realtime_policy(model.ref.value, transcript.ref.value, "semantic_vad"),
+            1, draft_version, active_revision_id, "test",
+        )
+        semantic_revision = await components.publish_draft(address, draft.version, "test")
+        draft = await components.save_draft(
+            address, realtime_policy(model.ref.value, transcript.ref.value),
+            1, None, semantic_revision.revision_id, "test",
+        )
+        current = await components.publish_draft(address, draft.version, "test")
+
+        async with database.sessions() as session:
+            events = (await session.scalars(
+                select(OutboxMessage).where(OutboxMessage.component_id.is_not(None))
+            )).all()
+        assert len(events) == 3
+        assert all(event.event_type == COMPONENT_PUBLISHED_EVENT_TYPE for event in events)
+        assert all(
+            ConfigurationComponentPublishedV1.model_validate(event.payload).payload.component_kind
+            == "runtime.realtime.execution.defaults"
+            for event in events
+        )
+
+        await resources.update_deployment(
+            model.ref, model.connection_ref, model.deployment_config, model.generation, "test",
+            realtime_capabilities=RealtimeCapabilities(True, False),
+        )
+        async with database.sessions() as session:
+            revision_count = await session.scalar(
+                select(func.count()).select_from(ConfigurationComponentRevision)
+            )
+            event_count = await session.scalar(select(func.count()).select_from(OutboxMessage))
+        with pytest.raises(InvalidComponentValue, match="semantic_vad"):
+            await components.rollback(address, semantic_revision.revision_number, "test")
+        assert (await components.get_active(address)).revision_id == current.revision_id
+        async with database.sessions() as session:
+            assert await session.scalar(
+                select(func.count()).select_from(ConfigurationComponentRevision)
+            ) == revision_count
+            assert await session.scalar(select(func.count()).select_from(OutboxMessage)) == event_count
     finally:
         await database.close()

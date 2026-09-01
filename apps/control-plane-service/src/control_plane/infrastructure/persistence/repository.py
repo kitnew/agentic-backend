@@ -39,10 +39,14 @@ from control_plane.domain.managed_resources import (
     ModelDeployment,
     ModelDeploymentRef,
     ProviderConnectionRef,
+    RealtimeCapabilities,
+    STTCapabilities,
 )
 from control_plane.domain.runtime_components import (
     CascadeExecutionDefaults,
     ProviderVADCommitPolicy,
+    RealtimeExecutionDefaults,
+    ServerVADTurnCompletion,
     STTDefaults,
 )
 
@@ -305,6 +309,9 @@ class SqlAlchemyComponentRepository:
             DeploymentKind(row.deployment_kind),
             dict(row.deployment_config),
             LLMCapabilities(**row.llm_capabilities) if row.llm_capabilities else None,
+            RealtimeCapabilities(**row.realtime_capabilities)
+            if row.realtime_capabilities else None,
+            STTCapabilities(**row.stt_capabilities) if row.stt_capabilities else None,
             row.enabled,
             row.generation,
             row.created_at,
@@ -318,6 +325,9 @@ class SqlAlchemyComponentRepository:
         self, session: AsyncSession, value: Any, definition: ComponentDefinition[Any]
     ) -> None:
         await self._validate_deployment(session, value, definition)
+        if isinstance(value, RealtimeExecutionDefaults):
+            await self._validate_realtime_activation(session, value)
+            return
         if not isinstance(value, CascadeExecutionDefaults) or not isinstance(
             value.stt_commit, ProviderVADCommitPolicy
         ):
@@ -345,6 +355,66 @@ class SqlAlchemyComponentRepository:
         if connection is None or connection.provider_kind != "elevenlabs":
             raise InvalidComponentValue(
                 "selected STT deployment does not support provider_vad"
+            )
+
+    async def _validate_realtime_activation(
+        self, session: AsyncSession, value: RealtimeExecutionDefaults
+    ) -> None:
+        realtime = await session.get(ModelDeploymentRow, value.deployment_ref)
+        if realtime is None:
+            raise ManagedResourceNotFound("referenced realtime deployment not found")
+        transcription = await session.get(
+            ModelDeploymentRow, value.input_transcription.deployment_ref
+        )
+        if transcription is None:
+            raise ManagedResourceNotFound("referenced transcription deployment not found")
+        if realtime.deployment_kind != DeploymentKind.REALTIME.value:
+            raise InvalidComponentValue(
+                "realtime deployment must have deployment_kind=realtime"
+            )
+        if transcription.deployment_kind != DeploymentKind.STT.value:
+            raise InvalidComponentValue(
+                "input transcription deployment must have deployment_kind=stt"
+            )
+        if not realtime.enabled:
+            raise InvalidComponentValue("realtime deployment is disabled")
+        if not transcription.enabled:
+            raise InvalidComponentValue("input transcription deployment is disabled")
+
+        capabilities = (
+            RealtimeCapabilities(**realtime.realtime_capabilities)
+            if realtime.realtime_capabilities else None
+        )
+        if capabilities is None:
+            raise InvalidComponentValue("realtime deployment has no capabilities")
+        if isinstance(value.turn_completion, ServerVADTurnCompletion):
+            supported, strategy = capabilities.supports_server_vad, "server_vad"
+        else:
+            supported, strategy = capabilities.supports_semantic_vad, "semantic_vad"
+        if not supported:
+            raise InvalidComponentValue(f"realtime deployment does not support {strategy}")
+
+        transcription_capabilities = (
+            STTCapabilities(**transcription.stt_capabilities)
+            if transcription.stt_capabilities else None
+        )
+        if (
+            transcription_capabilities is None
+            or not transcription_capabilities.supports_realtime_input_transcription
+        ):
+            raise InvalidComponentValue(
+                "STT deployment does not support realtime input transcription usage"
+            )
+
+        connection = await session.get(ProviderConnectionRow, realtime.connection_id)
+        if connection is None:
+            raise ManagedResourceNotFound("realtime provider connection not found")
+        if (
+            connection.provider_kind == "azure_openai"
+            and realtime.connection_id != transcription.connection_id
+        ):
+            raise InvalidComponentValue(
+                "Azure realtime and input transcription deployments must use the same provider connection"
             )
 
     async def _component_id(

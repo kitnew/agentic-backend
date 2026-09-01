@@ -30,6 +30,8 @@ from control_plane.domain.managed_resources import (
     ModelDeploymentRef,
     ProviderConnection,
     ProviderConnectionRef,
+    RealtimeCapabilities,
+    STTCapabilities,
 )
 from control_plane.infrastructure.encryption import CredentialCipher
 
@@ -315,6 +317,8 @@ class SqlAlchemyManagedResourceRepository:
         enabled: bool,
         actor: str,
         llm_capabilities: LLMCapabilities | None = None,
+        realtime_capabilities: RealtimeCapabilities | None = None,
+        stt_capabilities: STTCapabilities | None = None,
     ) -> ModelDeployment:
         async with self._transaction() as session:
             connection = await self._connection_row(session, connection_ref, lock=True)
@@ -328,6 +332,16 @@ class SqlAlchemyManagedResourceRepository:
                     {"supports_temperature": llm_capabilities.supports_temperature,
                      "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort}
                     if llm_capabilities else None
+                ),
+                realtime_capabilities=(
+                    {"supports_server_vad": realtime_capabilities.supports_server_vad,
+                     "supports_semantic_vad": realtime_capabilities.supports_semantic_vad}
+                    if realtime_capabilities else None
+                ),
+                stt_capabilities=(
+                    {"supports_cascade": stt_capabilities.supports_cascade,
+                     "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription}
+                    if stt_capabilities else None
                 ),
                 enabled=enabled,
                 generation=1,
@@ -351,6 +365,8 @@ class SqlAlchemyManagedResourceRepository:
         expected_generation: int,
         actor: str,
         llm_capabilities: LLMCapabilities | None = None,
+        realtime_capabilities: RealtimeCapabilities | None = None,
+        stt_capabilities: STTCapabilities | None = None,
     ) -> ModelDeployment:
         async with self._transaction() as session:
             row = await self._deployment_row(session, deployment_ref, lock=True)
@@ -363,6 +379,16 @@ class SqlAlchemyManagedResourceRepository:
                 {"supports_temperature": llm_capabilities.supports_temperature,
                  "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort}
                 if llm_capabilities else None
+            )
+            row.realtime_capabilities = (
+                {"supports_server_vad": realtime_capabilities.supports_server_vad,
+                 "supports_semantic_vad": realtime_capabilities.supports_semantic_vad}
+                if realtime_capabilities else None
+            )
+            row.stt_capabilities = (
+                {"supports_cascade": stt_capabilities.supports_cascade,
+                 "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription}
+                if stt_capabilities else None
             )
             row.generation += 1
             row.updated_at = func.now()
@@ -564,6 +590,8 @@ class SqlAlchemyManagedResourceRepository:
                 if row.llm_capabilities is not None
                 else None
             ),
+            RealtimeCapabilities(**row.realtime_capabilities) if row.realtime_capabilities else None,
+            STTCapabilities(**row.stt_capabilities) if row.stt_capabilities else None,
             row.enabled,
             row.generation,
             row.created_at,

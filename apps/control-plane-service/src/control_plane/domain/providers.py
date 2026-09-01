@@ -28,6 +28,10 @@ class AzureOpenAIRealtimeDeploymentConfig(ProviderConfig):
     deployment_name: str = Field(min_length=1)
 
 
+class AzureOpenAISTTDeploymentConfig(ProviderConfig):
+    deployment_name: str = Field(min_length=1)
+
+
 class ElevenLabsSTTDeploymentConfig(ProviderConfig):
     model_id: str = Field(min_length=1)
 
@@ -90,6 +94,7 @@ def default_provider_registry() -> ProviderRegistry:
             {
                 DeploymentKind.LLM: AzureOpenAILLMDeploymentConfig,
                 DeploymentKind.REALTIME: AzureOpenAIRealtimeDeploymentConfig,
+                DeploymentKind.STT: AzureOpenAISTTDeploymentConfig,
             },
         )
     )

@@ -217,6 +217,8 @@ def upgrade() -> None:
         sa.Column("deployment_kind", sa.String(32), nullable=False),
         sa.Column("deployment_config", postgresql.JSONB(), nullable=False),
         sa.Column("llm_capabilities", postgresql.JSONB()),
+        sa.Column("realtime_capabilities", postgresql.JSONB()),
+        sa.Column("stt_capabilities", postgresql.JSONB()),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),

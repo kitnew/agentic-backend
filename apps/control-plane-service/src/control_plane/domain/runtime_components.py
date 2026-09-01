@@ -95,6 +95,39 @@ class CascadeExecutionDefaults(_RuntimeComponent):
     response_scheduling: ResponseSchedulingPolicy
 
 
+class RealtimeInputTranscription(_RuntimeComponent):
+    deployment_ref: UUID
+
+
+class ServerVADTurnCompletion(_RuntimeComponent):
+    strategy: Literal["server_vad"]
+    activation_threshold: Threshold = 0.5
+    silence_duration_ms: int = Field(default=200, gt=0)
+
+
+class SemanticVADTurnCompletion(_RuntimeComponent):
+    strategy: Literal["semantic_vad"]
+    eagerness: Literal["auto", "low", "medium", "high"] = "auto"
+
+
+RealtimeTurnCompletion = Annotated[
+    ServerVADTurnCompletion | SemanticVADTurnCompletion,
+    Field(discriminator="strategy"),
+]
+
+
+class RealtimeInterruptionPolicy(_RuntimeComponent):
+    enabled: bool = True
+
+
+class RealtimeExecutionDefaults(_RuntimeComponent):
+    deployment_ref: UUID
+    input_transcription: RealtimeInputTranscription
+    default_voice: str = Field(default="marin", min_length=1)
+    turn_completion: RealtimeTurnCompletion
+    interruption: RealtimeInterruptionPolicy
+
+
 class TTSDefaults(_RuntimeComponent):
     deployment_ref: UUID
     default_voice_id: Identifier
@@ -122,7 +155,12 @@ def _validate_llm(config: LLMDefaults, value: object) -> None:
 
 
 def _validate_stt(config: STTDefaults, value: object) -> None:
-    _deployment(value, DeploymentKind.STT)
+    deployment = _deployment(value, DeploymentKind.STT)
+    if (
+        deployment.stt_capabilities is None
+        or not deployment.stt_capabilities.supports_cascade
+    ):
+        raise InvalidComponentValue("deployment does not support cascade STT usage")
 
 
 def _validate_tts(config: TTSDefaults, value: object) -> None:
@@ -149,6 +187,12 @@ def register_runtime_components(registry: object) -> None:
     registry.register(ComponentDefinition(
         ComponentKind("runtime.cascade.execution.defaults"),
         CascadeExecutionDefaults,
+        platform,
+        1,
+    ))
+    registry.register(ComponentDefinition(
+        ComponentKind("runtime.realtime.execution.defaults"),
+        RealtimeExecutionDefaults,
         platform,
         1,
     ))

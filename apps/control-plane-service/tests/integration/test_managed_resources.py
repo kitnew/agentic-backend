@@ -17,6 +17,7 @@ from control_plane.domain.managed_resources import (
     DeploymentKind,
     ModelDeployment,
     ProviderConnection,
+    STTCapabilities,
 )
 from control_plane.domain.providers import default_provider_registry
 from control_plane.infrastructure.encryption import CredentialCipher
@@ -171,6 +172,7 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
             {"model_id": "scribe_v2_realtime"},
             True,
             "alice",
+            stt_capabilities=STTCapabilities(True, False),
         )
 
         deployment_updates = await asyncio.gather(
@@ -180,6 +182,7 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
                 {"model_id": "scribe_v2_realtime"},
                 1,
                 "bob",
+                stt_capabilities=STTCapabilities(True, False),
             ),
             service.update_deployment(
                 deployment.ref,
@@ -187,6 +190,7 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
                 {"model_id": "scribe_v2_realtime"},
                 1,
                 "carol",
+                stt_capabilities=STTCapabilities(True, False),
             ),
             return_exceptions=True,
         )
