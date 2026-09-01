@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from control_plane import SERVICE_NAME
 from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
+from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
@@ -41,6 +42,7 @@ from control_plane.domain.managed_resources import (
     RealtimeCapabilities,
     STTCapabilities,
 )
+from control_plane.domain.runtime_resolution import RuntimeResolutionError
 from control_plane.runtime.lifecycle import ServiceLifecycle
 
 
@@ -142,11 +144,13 @@ def create_http_app(
     lifecycle: ServiceLifecycle,
     components: ComponentService | None = None,
     managed_resources: ManagedResourceService | None = None,
+    runtime_resolver: RuntimeResolver | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.lifecycle = lifecycle
     app.state.components = components
     app.state.managed_resources = managed_resources
+    app.state.runtime_resolver = runtime_resolver
 
     @app.exception_handler(ComponentError)
     async def component_error(_request: Request, exc: ComponentError) -> JSONResponse:
@@ -176,6 +180,24 @@ def create_http_app(
         return JSONResponse(
             status_code=code,
             content={"detail": {"code": exc.code, "message": str(exc)}},
+        )
+
+    @app.exception_handler(RuntimeResolutionError)
+    async def runtime_resolution_error(
+        _request: Request, exc: RuntimeResolutionError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content=jsonable_encoder(
+                {
+                    "detail": {
+                        "code": "runtime_resolution_failed",
+                        "reason": exc.reason,
+                        "details": exc.details,
+                        "attempts": exc.attempts,
+                    }
+                }
+            ),
         )
 
     @app.get("/health")
@@ -211,6 +233,13 @@ def create_http_app(
             app.include_router(_component_router(), prefix=prefix)
     if managed_resources is not None:
         app.include_router(_managed_resource_router(), prefix="/v1/managed-resources")
+    if runtime_resolver is not None:
+
+        @app.get("/v1/runtime/resolve/tenant/{tenant_id}")
+        async def resolve_runtime(request: Request, tenant_id: str) -> Any:
+            resolver: RuntimeResolver = request.app.state.runtime_resolver
+            return jsonable_encoder(await resolver.resolve_runtime(tenant_id))
+
     return app
 
 

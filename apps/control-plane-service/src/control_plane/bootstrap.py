@@ -12,6 +12,7 @@ from control_plane import SERVICE_NAME
 from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
+from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.components import ComponentRegistry
 from control_plane.domain.providers import ProviderRegistry, default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
@@ -23,6 +24,9 @@ from control_plane.infrastructure.persistence.managed_resources import (
 )
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
+)
+from control_plane.infrastructure.persistence.runtime_resolution import (
+    SqlAlchemyRuntimeResolutionReader,
 )
 from control_plane.interfaces.http import create_http_app
 from control_plane.runtime import ServiceLifecycle
@@ -73,10 +77,20 @@ def create_app(
         if isinstance(database, Database)
         else None
     )
+    runtime_resolver = (
+        RuntimeResolver(
+            registry,
+            provider_registry,
+            SqlAlchemyRuntimeResolutionReader(database.sessions),
+        )
+        if isinstance(database, Database)
+        else None
+    )
     app = create_http_app(
         ServiceLifecycle(database, nats, relay, telemetry),
         components,
         managed_resources,
+        runtime_resolver,
     )
     app.state.settings = settings
     app.state.database = database
