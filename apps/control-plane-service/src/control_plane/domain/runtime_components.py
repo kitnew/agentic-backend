@@ -4,8 +4,9 @@ from uuid import UUID
 from contracts.voice_runtime import (
     Identifier,
     ReasoningEffort,
+    TenantSTTRuntimeOverride,
 )
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from control_plane.domain.components import (
     ComponentDefinition,
@@ -134,6 +135,38 @@ class TTSDefaults(_RuntimeComponent):
     min_sentence_chars: int = Field(ge=3, le=200)
 
 
+ArchitectureKind = Literal["cascade", "realtime"]
+
+
+class ArchitecturePolicy(_RuntimeComponent):
+    """Ordered architecture allowlist; earlier entries have higher priority."""
+
+    architectures: list[ArchitectureKind] = Field(min_length=1, max_length=2)
+
+    @field_validator("architectures")
+    @classmethod
+    def architectures_are_unique(
+        cls, architectures: list[ArchitectureKind]
+    ) -> list[ArchitectureKind]:
+        if len(architectures) != len(set(architectures)):
+            raise ValueError("architectures must be unique")
+        return architectures
+
+
+class VoiceOverrides(_RuntimeComponent):
+    cascade: Identifier | None = None
+    realtime: Identifier | None = None
+
+
+class SpeechOverrides(_RuntimeComponent):
+    language: Annotated[
+        str,
+        Field(min_length=1, max_length=35, pattern=r"^[a-z]{2,3}(?:-[A-Z]{2})?$"),
+    ]
+    stt: TenantSTTRuntimeOverride = Field(default_factory=TenantSTTRuntimeOverride)
+    voices: VoiceOverrides = Field(default_factory=VoiceOverrides)
+
+
 def _deployment(value: object, expected: DeploymentKind) -> ModelDeployment:
     assert isinstance(value, ModelDeployment)
     if value.deployment_kind is not expected:
@@ -195,4 +228,11 @@ def register_runtime_components(registry: object) -> None:
         RealtimeExecutionDefaults,
         platform,
         1,
+    ))
+    tenant = frozenset({ScopeType.TENANT})
+    registry.register(ComponentDefinition(
+        ComponentKind("runtime.architecture.policy"), ArchitecturePolicy, tenant, 1,
+    ))
+    registry.register(ComponentDefinition(
+        ComponentKind("runtime.speech.overrides"), SpeechOverrides, tenant, 1,
     ))

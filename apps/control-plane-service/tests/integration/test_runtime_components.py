@@ -10,6 +10,7 @@ from control_plane.domain.components import (
     ComponentKind,
     ComponentRegistry,
     PlatformScope,
+    TenantScope,
 )
 from control_plane.domain.components.errors import InvalidComponentValue
 from control_plane.domain.managed_resource_errors import ManagedResourceNotFound
@@ -152,6 +153,117 @@ async def test_runtime_publication_validates_resources_atomically(
         )
         with pytest.raises(InvalidComponentValue, match="temperature"):
             await components.publish_draft(address, draft.version, "test")
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_tenant_runtime_components_publish_and_rollback_independently(
+    migrated_database_url: str,
+) -> None:
+    database = Database(migrated_database_url)
+    components, _ = services(database)
+    architecture = ComponentAddress(
+        ComponentKind("runtime.architecture.policy"), TenantScope("tenant-runtime")
+    )
+    speech = ComponentAddress(
+        ComponentKind("runtime.speech.overrides"), TenantScope("tenant-runtime")
+    )
+    try:
+        architecture_draft = await components.save_draft(
+            architecture,
+            {"architectures": ["realtime", "cascade"]},
+            1,
+            None,
+            None,
+            "test",
+        )
+        architecture_first = await components.publish_draft(
+            architecture, architecture_draft.version, "test"
+        )
+
+        speech_draft = await components.save_draft(
+            speech,
+            {
+                "language": "sk",
+                "stt": {"keyterms": ["Penzión Grand"]},
+                "voices": {"cascade": None, "realtime": "marin"},
+            },
+            1,
+            None,
+            None,
+            "test",
+        )
+        speech_first = await components.publish_draft(
+            speech, speech_draft.version, "test"
+        )
+        assert (await components.get_active(architecture)).revision_id == (
+            architecture_first.revision_id
+        )
+        assert len(await components.list_revisions(architecture)) == 1
+
+        architecture_draft = await components.save_draft(
+            architecture,
+            {"architectures": ["cascade"]},
+            1,
+            None,
+            architecture_first.revision_id,
+            "test",
+        )
+        await components.publish_draft(
+            architecture, architecture_draft.version, "test"
+        )
+        assert (await components.get_active(speech)).revision_id == (
+            speech_first.revision_id
+        )
+        assert len(await components.list_revisions(speech)) == 1
+
+        restored = await components.rollback(
+            architecture, architecture_first.revision_number, "test"
+        )
+        assert restored.value.architectures == ["realtime", "cascade"]
+        assert (await components.get_active(speech)).revision_id == (
+            speech_first.revision_id
+        )
+
+        async with database.sessions() as session:
+            events = (await session.scalars(select(OutboxMessage))).all()
+            revisions = await session.scalar(
+                select(func.count()).select_from(ConfigurationComponentRevision)
+            )
+        published = [
+            ConfigurationComponentPublishedV1.model_validate(event.payload)
+            for event in events
+        ]
+        assert all(event.event_type == COMPONENT_PUBLISHED_EVENT_TYPE for event in events)
+        assert [
+            event.payload.component_kind
+            for event in published
+        ].count("runtime.architecture.policy") == 3
+        assert [
+            event.payload.component_kind
+            for event in published
+        ].count("runtime.speech.overrides") == 1
+
+        with pytest.raises(InvalidComponentValue):
+            await components.save_draft(
+                ComponentAddress(
+                    ComponentKind("runtime.architecture.policy"),
+                    TenantScope("invalid-runtime"),
+                ),
+                {"architectures": []},
+                1,
+                None,
+                None,
+                "test",
+            )
+        async with database.sessions() as session:
+            assert await session.scalar(
+                select(func.count()).select_from(ConfigurationComponentRevision)
+            ) == revisions
+            assert await session.scalar(
+                select(func.count()).select_from(OutboxMessage)
+            ) == len(events)
     finally:
         await database.close()
 

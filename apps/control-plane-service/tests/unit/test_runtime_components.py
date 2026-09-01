@@ -42,6 +42,14 @@ def definition(kind: str):
     return registry.resolve(ComponentAddress(ComponentKind(kind), PlatformScope()))
 
 
+def tenant_definition(kind: str):
+    registry = ComponentRegistry()
+    register_runtime_components(registry)
+    return registry.resolve(
+        ComponentAddress(ComponentKind(kind), TenantScope("tenant"))
+    )
+
+
 def cascade_policy(strategy: str = "local_vad") -> dict[str, object]:
     stt_commit: dict[str, object] = {"strategy": strategy}
     if strategy == "provider_vad":
@@ -83,6 +91,100 @@ def test_runtime_registry_registers_only_platform_defaults() -> None:
         registry.resolve(ComponentAddress(realtime, TenantScope("tenant")))
     with pytest.raises(ScopeNotAllowed):
         registry.resolve(ComponentAddress(realtime, ProfileScope("profile")))
+
+    for kind in ("runtime.architecture.policy", "runtime.speech.overrides"):
+        tenant_kind = ComponentKind(kind)
+        assert registry.resolve(
+            ComponentAddress(tenant_kind, TenantScope("tenant"))
+        )
+        with pytest.raises(ScopeNotAllowed):
+            registry.resolve(ComponentAddress(tenant_kind, PlatformScope()))
+        with pytest.raises(ScopeNotAllowed):
+            registry.resolve(ComponentAddress(tenant_kind, ProfileScope("profile")))
+
+
+@pytest.mark.parametrize(
+    "architectures",
+    [["cascade"], ["realtime"], ["realtime", "cascade"]],
+)
+def test_architecture_policy_is_ordered_allowlist(
+    architectures: list[str],
+) -> None:
+    policy = tenant_definition("runtime.architecture.policy")
+    value = policy.deserialize({"architectures": architectures})
+    assert policy.serialize(value) == {"architectures": architectures}
+
+
+@pytest.mark.parametrize(
+    "architectures",
+    [[], ["cascade", "cascade"], ["realtime", "realtime"], ["automatic"]],
+)
+def test_architecture_policy_rejects_invalid_allowlists(
+    architectures: list[str],
+) -> None:
+    with pytest.raises(InvalidComponentValue):
+        tenant_definition("runtime.architecture.policy").deserialize(
+            {"architectures": architectures}
+        )
+
+
+def test_speech_overrides_round_trip_semantic_values() -> None:
+    speech = tenant_definition("runtime.speech.overrides")
+    value = speech.deserialize(
+        {
+            "language": "sk-SK",
+            "stt": {
+                "keyterms": ["  volské oko ", "Kováčska", "Penzión Grand"],
+            },
+            "voices": {"cascade": "voice-a", "realtime": "marin"},
+        }
+    )
+    assert speech.serialize(value) == {
+        "language": "sk-SK",
+        "stt": {"keyterms": ["Kováčska", "Penzión Grand", "volské oko"]},
+        "voices": {"cascade": "voice-a", "realtime": "marin"},
+    }
+
+
+def test_speech_overrides_accepts_default_hints_and_platform_default_voices() -> None:
+    speech = tenant_definition("runtime.speech.overrides")
+    assert speech.serialize(speech.deserialize({"language": "sk"})) == {
+        "language": "sk",
+        "stt": {"keyterms": []},
+        "voices": {"cascade": None, "realtime": None},
+    }
+
+
+@pytest.mark.parametrize(
+    ("architecture", "voice"),
+    [("cascade", "voice-a"), ("realtime", "marin")],
+)
+def test_speech_overrides_accepts_each_optional_voice(
+    architecture: str, voice: str
+) -> None:
+    speech = tenant_definition("runtime.speech.overrides")
+    value = speech.deserialize(
+        {"language": "sk", "voices": {architecture: voice}}
+    )
+    assert getattr(value.voices, architecture) == voice
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"language": "SK"},
+        {"language": "sk", "stt": {"keyterms": ["same", "same"]}},
+        {"language": "sk", "stt": {"keyterms": ["x" * 21]}},
+        {"language": "sk", "stt": {"keyterms": [str(i) for i in range(51)]}},
+        {"language": "sk", "voices": {"cascade": ""}},
+        {"language": "sk", "voices": {"realtime": "   "}},
+    ],
+)
+def test_speech_overrides_rejects_invalid_semantic_values(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(InvalidComponentValue):
+        tenant_definition("runtime.speech.overrides").deserialize(payload)
 
 
 def test_llm_capabilities_and_runtime_ranges() -> None:

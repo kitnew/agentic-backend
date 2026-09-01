@@ -32,6 +32,14 @@ the resolved connection/deployment generations. Credential authorization stays
 live: a later credential revocation always denies use, including from a prior
 snapshot.
 
+Tenant runtime intent is split into independent versioned components.
+`runtime.architecture.policy` is an ordered allowlist: a future planner may
+select only a listed architecture and must treat earlier entries as higher
+priority; heuristics must not override either constraint.
+`runtime.speech.overrides` stores architecture-neutral language and STT hints
+plus optional cascade and realtime voice-namespace overrides. Neither component
+resolves providers or deployments at publication time.
+
 When Control Plane persistence is introduced, choose either a dedicated
 `control_plane` schema on this PostgreSQL server or a dedicated application
 database. Do not create shared Backend/Control Plane table ownership.
