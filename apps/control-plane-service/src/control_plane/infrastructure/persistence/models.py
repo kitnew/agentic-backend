@@ -259,6 +259,29 @@ class ModelDeployment(Base):
     updated_by: Mapped[str] = mapped_column(String(255))
 
 
+class RuntimeExecutionSnapshot(Base):
+    __tablename__ = "runtime_execution_snapshots"
+    __table_args__ = (
+        CheckConstraint(
+            "schema_version = 1", name="ck_runtime_execution_snapshot_schema_version"
+        ),
+        CheckConstraint(
+            "architecture IN ('cascade', 'realtime')",
+            name="ck_runtime_execution_snapshot_architecture",
+        ),
+        Index("ix_runtime_execution_snapshot_tenant_created", "tenant_id", "created_at"),
+        {"schema": SCHEMA},
+    )
+
+    snapshot_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(255))
+    schema_version: Mapped[int] = mapped_column(Integer)
+    architecture: Mapped[str] = mapped_column(String(16))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class OutboxMessage(Base):
     __tablename__ = "outbox_messages"
     __table_args__ = (

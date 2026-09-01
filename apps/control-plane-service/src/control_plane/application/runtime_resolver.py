@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Any, NoReturn, Protocol, cast
 from uuid import UUID
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
@@ -85,6 +87,10 @@ class RuntimeResolutionState:
 class RuntimeResolutionReader(Protocol):
     async def load(self, tenant_id: str) -> RuntimeResolutionState: ...
 
+    async def load_in_session(
+        self, session: AsyncSession, tenant_id: str
+    ) -> RuntimeResolutionState: ...
+
 
 class _CandidateRejected(Exception):
     def __init__(
@@ -107,6 +113,11 @@ class RuntimeResolver:
 
     async def resolve_runtime(self, tenant_id: str) -> RuntimeResolution:
         state = await self._reader.load(tenant_id)
+        return self.resolve_state(tenant_id, state)
+
+    def resolve_state(
+        self, tenant_id: str, state: RuntimeResolutionState
+    ) -> RuntimeResolution:
         policy = self._required_tenant(
             state, tenant_id, "runtime.architecture.policy", ArchitecturePolicy
         )

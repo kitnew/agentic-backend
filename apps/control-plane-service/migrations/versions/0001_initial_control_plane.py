@@ -228,9 +228,25 @@ def upgrade() -> None:
         sa.CheckConstraint("generation >= 1", name="ck_model_deployment_generation"),
         schema=SCHEMA,
     )
+    op.create_table(
+        "runtime_execution_snapshots",
+        sa.Column("snapshot_id", sa.Uuid(), primary_key=True),
+        sa.Column("tenant_id", sa.String(255), nullable=False),
+        sa.Column("schema_version", sa.Integer(), nullable=False),
+        sa.Column("architecture", sa.String(16), nullable=False),
+        sa.Column("payload", postgresql.JSONB(), nullable=False),
+        sa.Column("content_hash", sa.String(64), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint("schema_version = 1", name="ck_runtime_execution_snapshot_schema_version"),
+        sa.CheckConstraint("architecture IN ('cascade', 'realtime')", name="ck_runtime_execution_snapshot_architecture"),
+        schema=SCHEMA,
+    )
+    op.create_index("ix_runtime_execution_snapshot_tenant_created", "runtime_execution_snapshots", ["tenant_id", "created_at"], schema=SCHEMA)
 
 
 def downgrade() -> None:
+    op.drop_index("ix_runtime_execution_snapshot_tenant_created", table_name="runtime_execution_snapshots", schema=SCHEMA)
+    op.drop_table("runtime_execution_snapshots", schema=SCHEMA)
     op.drop_table("model_deployments", schema=SCHEMA)
     op.drop_table("provider_connections", schema=SCHEMA)
     op.drop_constraint("fk_credential_active_version", "credentials", schema=SCHEMA, type_="foreignkey")

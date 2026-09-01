@@ -31,6 +31,11 @@ from control_plane.domain.managed_resources import (
 )
 from control_plane.domain.providers import default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
+from control_plane.domain.runtime_execution_snapshot import (
+    content_hash,
+    snapshot_from_payload,
+    snapshot_payload,
+)
 from control_plane.domain.runtime_resolution import (
     ResolutionFailureReason,
     ResolvedCascadeRuntime,
@@ -357,6 +362,18 @@ async def test_absent_architecture_is_never_a_fallback() -> None:
         await resolver(replace(value, deployments=deployments)).resolve_runtime(TENANT)
 
     assert [attempt.architecture for attempt in captured.value.attempts] == ["realtime"]
+
+
+@pytest.mark.asyncio
+async def test_execution_snapshot_payload_round_trips_and_is_secret_free() -> None:
+    resolution = await resolver(state(["cascade"])).resolve_runtime(TENANT)
+    payload = snapshot_payload(TENANT, resolution)
+    restored = snapshot_from_payload(UUID(int=999), NOW, payload, content_hash(payload))
+
+    assert restored.runtime == resolution.selected
+    assert restored.resolution == resolution
+    assert all(field not in str(payload).lower() for field in ("ciphertext", "nonce", "key_id", "secret_envelope"))
+    assert content_hash(payload) == content_hash(snapshot_payload(TENANT, resolution))
 
 
 @pytest.mark.asyncio

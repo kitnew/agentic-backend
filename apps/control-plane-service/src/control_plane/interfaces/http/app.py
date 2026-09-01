@@ -9,6 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from control_plane import SERVICE_NAME
 from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
+from control_plane.application.runtime_materialization import (
+    RuntimeMaterializationService,
+)
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.components import (
     ComponentAddress,
@@ -145,12 +148,14 @@ def create_http_app(
     components: ComponentService | None = None,
     managed_resources: ManagedResourceService | None = None,
     runtime_resolver: RuntimeResolver | None = None,
+    runtime_materialization: RuntimeMaterializationService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.lifecycle = lifecycle
     app.state.components = components
     app.state.managed_resources = managed_resources
     app.state.runtime_resolver = runtime_resolver
+    app.state.runtime_materialization = runtime_materialization
 
     @app.exception_handler(ComponentError)
     async def component_error(_request: Request, exc: ComponentError) -> JSONResponse:
@@ -239,6 +244,23 @@ def create_http_app(
         async def resolve_runtime(request: Request, tenant_id: str) -> Any:
             resolver: RuntimeResolver = request.app.state.runtime_resolver
             return jsonable_encoder(await resolver.resolve_runtime(tenant_id))
+    if runtime_materialization is not None:
+
+        @app.post(
+            "/v1/runtime/materialize/tenant/{tenant_id}",
+            status_code=status.HTTP_201_CREATED,
+        )
+        async def materialize_runtime(request: Request, tenant_id: str) -> Any:
+            service: RuntimeMaterializationService = request.app.state.runtime_materialization
+            return jsonable_encoder(await service.materialize_runtime(tenant_id))
+
+        @app.get("/v1/runtime/execution-snapshots/{snapshot_id}")
+        async def get_runtime_snapshot(request: Request, snapshot_id: UUID) -> Any:
+            service: RuntimeMaterializationService = request.app.state.runtime_materialization
+            snapshot = await service.get_snapshot(snapshot_id)
+            if snapshot is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            return jsonable_encoder(snapshot)
 
     return app
 

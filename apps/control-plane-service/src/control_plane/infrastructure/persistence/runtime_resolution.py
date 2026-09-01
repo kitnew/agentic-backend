@@ -58,6 +58,11 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
             await session.execute(
                 text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             )
+            return await self.load_in_session(session, tenant_id)
+
+    async def load_in_session(
+        self, session: AsyncSession, tenant_id: str
+    ) -> RuntimeResolutionState:
             components = await self._components(session, tenant_id)
             deployment_ids = self._deployment_ids(components.values())
             deployments = (
