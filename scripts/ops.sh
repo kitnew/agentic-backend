@@ -8,7 +8,9 @@ DEPLOY_COMPOSE="$COMPOSE_DIR/docker-compose.deploy.yml"
 REQUIRED_STACK_SERVICES=(
   postgres
   redis
+  nats
   backend
+  control-plane-service
   voice-agent
   job-worker
   admin-web
@@ -233,7 +235,7 @@ database_reset() {
   fi
 
   printf 'Stopping services that may use PostgreSQL.\n'
-  compose stop backend job-worker voice-agent
+  compose stop backend control-plane-service job-worker voice-agent
   printf 'Dropping PostgreSQL database: %s\n' "$database_name"
   compose exec -T postgres sh -ec \
     "psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d postgres -c 'DROP DATABASE \"$database_name\" WITH (FORCE);'"
@@ -328,7 +330,7 @@ restore() {
   check_compose
   ensure_postgres
   compose exec -T postgres sh -ec 'exec pg_restore --list -' <"$backup_file" >/dev/null
-  compose stop backend
+  compose stop backend control-plane-service
   compose stop job-worker voice-agent
   compose exec -T postgres sh -ec 'exec pg_restore --clean --if-exists --exit-on-error --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB" -' <"$backup_file"
   run_migration
@@ -356,6 +358,11 @@ redis_doctor() {
   compose exec -T redis redis-cli ping 2>/dev/null | grep -Fxq PONG
 }
 
+nats_doctor() {
+  service_running nats || return 1
+  compose exec -T nats wget -q -O /dev/null http://localhost:8222/healthz >/dev/null 2>&1
+}
+
 backend_health_doctor() {
   service_running backend || return 1
   compose exec -T backend python -c \
@@ -366,6 +373,20 @@ backend_health_doctor() {
 backend_ready_doctor() {
   service_running backend || return 1
   compose exec -T backend python -c \
+    "from urllib.request import urlopen; raise SystemExit(urlopen('http://127.0.0.1:8000/ready', timeout=3).status != 200)" \
+    >/dev/null 2>&1
+}
+
+control_plane_health_doctor() {
+  service_running control-plane-service || return 1
+  compose exec -T control-plane-service python -c \
+    "from urllib.request import urlopen; raise SystemExit(urlopen('http://127.0.0.1:8000/health', timeout=3).status != 200)" \
+    >/dev/null 2>&1
+}
+
+control_plane_ready_doctor() {
+  service_running control-plane-service || return 1
+  compose exec -T control-plane-service python -c \
     "from urllib.request import urlopen; raise SystemExit(urlopen('http://127.0.0.1:8000/ready', timeout=3).status != 200)" \
     >/dev/null 2>&1
 }
@@ -444,10 +465,14 @@ doctor() {
   doctor_check required "PostgreSQL" postgres_doctor
   doctor_check required "PostgreSQL schema" schema_doctor
   doctor_check required "Redis" redis_doctor
+  doctor_check required "NATS" nats_doctor
   doctor_check required "MinIO" minio_doctor
   doctor_check required "Backend container" service_running backend
   doctor_check required "Backend health endpoint" backend_health_doctor
   doctor_check required "Backend readiness endpoint" backend_ready_doctor
+  doctor_check required "Control Plane container" service_running control-plane-service
+  doctor_check required "Control Plane health endpoint" control_plane_health_doctor
+  doctor_check required "Control Plane readiness endpoint" control_plane_ready_doctor
   doctor_check required "Worker" service_running job-worker
   doctor_check required "Voice agent" service_running voice-agent
   doctor_check required "Admin Web" service_running admin-web

@@ -9,7 +9,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1
 
 COPY pyproject.toml uv.lock ./
+COPY apps/agentctl/pyproject.toml apps/agentctl/pyproject.toml
 COPY apps/backend/pyproject.toml apps/backend/pyproject.toml
+COPY apps/control-plane-service/pyproject.toml apps/control-plane-service/pyproject.toml
 COPY apps/job-worker/pyproject.toml apps/job-worker/pyproject.toml
 COPY apps/voice-agent/pyproject.toml apps/voice-agent/pyproject.toml
 COPY packages/contracts/pyproject.toml packages/contracts/pyproject.toml

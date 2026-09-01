@@ -18,16 +18,15 @@ COPY packages/contracts/pyproject.toml packages/contracts/pyproject.toml
 COPY packages/observability/pyproject.toml packages/observability/pyproject.toml
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --package backend-core --no-install-workspace
+    uv sync --frozen --no-dev --package control-plane-service --no-install-workspace
 
-COPY apps/backend apps/backend
-COPY packages/contracts packages/contracts
+COPY apps/control-plane-service apps/control-plane-service
 COPY packages/observability packages/observability
 
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --package backend-core
+    uv sync --frozen --no-dev --package control-plane-service
 
 RUN useradd --create-home --uid 10001 app
 USER app
 
-CMD ["uvicorn", "backend_core.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["control-plane-service"]

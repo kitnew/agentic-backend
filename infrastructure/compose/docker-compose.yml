@@ -26,6 +26,18 @@ services:
       retries: 10
     networks: [application]
 
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [application]
+
   backend:
     build:
       context: ../..
@@ -71,6 +83,31 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8000/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [application]
+
+  control-plane-service:
+    build:
+      context: ../..
+      dockerfile: apps/control-plane-service/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/backend
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_SERVICE_NAME: control-plane-service
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_PROPAGATORS: ${OTEL_PROPAGATORS:-tracecontext}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8000/ready', timeout=2)"]
@@ -173,3 +210,4 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  nats-data:

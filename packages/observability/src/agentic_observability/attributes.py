@@ -3,7 +3,9 @@
 from collections.abc import Mapping
 
 SERVICE_NAMESPACE = "agentic-backend"
-SERVICE_NAMES = frozenset({"backend-core", "job-worker", "voice-agent"})
+SERVICE_NAMES = frozenset(
+    {"backend-core", "control-plane-service", "job-worker", "voice-agent"}
+)
 REQUIRED_RESOURCE_ATTRIBUTES = frozenset(
     {"service.version", "deployment.environment.name", "vcs.ref.head.revision"}
 )

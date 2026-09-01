@@ -10,10 +10,11 @@ resolution-markers = [
 members = [
     "admin-client",
     "agent-platform-workspace",
+    "agentctl",
     "agentic-observability",
     "backend-core",
     "contracts",
-    "control-plane",
+    "control-plane-service",
     "job-worker",
     "voice-agent",
 ]
@@ -40,7 +41,8 @@ name = "agent-platform-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "control-plane" },
+    { name = "agentctl" },
+    { name = "control-plane-service" },
 ]
 
 [package.dev-dependencies]
@@ -53,7 +55,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "control-plane", editable = "apps/control-plane" }]
+requires-dist = [
+    { name = "agentctl", editable = "apps/agentctl" },
+    { name = "control-plane-service", editable = "apps/control-plane-service" },
+]
 
 [package.metadata.requires-dev]
 dev = [
@@ -62,6 +67,23 @@ dev = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "ruff", specifier = ">=0.16.0" },
+]
+
+[[package]]
+name = "agentctl"
+version = "0.1.0"
+source = { editable = "apps/agentctl" }
+dependencies = [
+    { name = "admin-client" },
+    { name = "httpx" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "admin-client", editable = "packages/admin-client" },
+    { name = "httpx", specifier = ">=0.28.1,<0.29.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [[package]]
@@ -556,20 +578,36 @@ dependencies = [
 requires-dist = [{ name = "pydantic", specifier = ">=2.13.4" }]
 
 [[package]]
-name = "control-plane"
+name = "control-plane-service"
 version = "0.1.0"
-source = { editable = "apps/control-plane" }
+source = { editable = "apps/control-plane-service" }
 dependencies = [
-    { name = "admin-client" },
-    { name = "httpx" },
-    { name = "pyyaml" },
+    { name = "agentic-observability" },
+    { name = "asyncpg" },
+    { name = "fastapi" },
+    { name = "nats-py" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-exporter-otlp-proto-http" },
+    { name = "opentelemetry-instrumentation-fastapi" },
+    { name = "opentelemetry-sdk" },
+    { name = "pydantic-settings" },
+    { name = "sqlalchemy" },
+    { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "admin-client", editable = "packages/admin-client" },
-    { name = "httpx", specifier = ">=0.28.1,<0.29.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "agentic-observability", editable = "packages/observability" },
+    { name = "asyncpg", specifier = ">=0.31.0" },
+    { name = "fastapi", specifier = ">=0.140.13" },
+    { name = "nats-py", specifier = ">=2.12.0" },
+    { name = "opentelemetry-api", specifier = ">=1.39.1" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.39.1" },
+    { name = "opentelemetry-instrumentation-fastapi", specifier = ">=0.60b1" },
+    { name = "opentelemetry-sdk", specifier = ">=1.39.1" },
+    { name = "pydantic-settings", specifier = ">=2.14.2" },
+    { name = "sqlalchemy", specifier = ">=2.0.51" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.51.0" },
 ]
 
 [[package]]
@@ -1348,6 +1386,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a2/6e/371856a3fb9d31ca8dac321cda606860fa4548858c0cc45d9d1d4ca2628b/mypy_extensions-1.1.0.tar.gz", hash = "sha256:52e68efc3284861e772bbcd66823fde5ae21fd2fdb51c62a211403730b916558", size = 6343, upload-time = "2025-04-22T14:54:24.164Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/79/7b/2c79738432f5c924bef5071f933bcc9efd0473bac3b4aa584a6f7c1c8df8/mypy_extensions-1.1.0-py3-none-any.whl", hash = "sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505", size = 4963, upload-time = "2025-04-22T14:54:22.983Z" },
+]
+
+[[package]]
+name = "nats-py"
+version = "2.15.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/f0/fc5e93f2b0dd14a202590ad9d30eda1955ea872039b5204357348d0f4b1e/nats_py-2.15.0.tar.gz", hash = "sha256:6622c547d9a7d2313d9c147d46c386188f4ec2c7b5c9f9a0438a4d1b55f54a93", size = 75995, upload-time = "2026-06-05T07:34:03.904Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/a8/b55606c7c621fb813c8ec78baf201d2c78bf6051091ec0c7ada572999e95/nats_py-2.15.0-py3-none-any.whl", hash = "sha256:9f8d36aa52a9926a88b8f1d70cf1fdce0ad387941479b500ee9ab3e51073cefd", size = 90334, upload-time = "2026-06-05T07:34:02.81Z" },
 ]
 
 [[package]]

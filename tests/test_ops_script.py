@@ -31,13 +31,16 @@ set -euo pipefail
 printf '%s\\n' "$*" >> "$DOCKER_LOG"
 case " $* " in
   *" config --services "*)
-    printf '%s\\n' backend postgres caddy livekit-egress
+    printf '%s\\n' backend control-plane-service postgres caddy livekit-egress
     ;;
   *" ps --status running --services "*)
-    printf '%s\\n' postgres redis minio backend job-worker voice-agent admin-web livekit livekit-egress livekit-sip caddy
+    printf '%s\\n' postgres redis nats minio backend control-plane-service job-worker voice-agent admin-web livekit livekit-egress livekit-sip caddy
     ;;
   *" exec -T redis redis-cli ping "*)
     printf 'PONG\\n'
+    ;;
+  *" exec -T nats wget "*)
+    printf 'ok\\n'
     ;;
   *" exec -T postgres sh -ec printf "*)
     printf 'backend'
@@ -129,20 +132,30 @@ def test_db_init_starts_postgres_and_runs_backend_bootstrap(tmp_path: Path) -> N
     postgres = commands.index("up -d --wait --wait-timeout 180 postgres")
     bootstrap = commands.index("python -m backend_core.platform.database.bootstrap")
     assert postgres < bootstrap
-    assert "run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec" in commands
+    assert (
+        "run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec"
+        in commands
+    )
 
 
-def test_update_bootstraps_empty_database_and_ignores_optional_checks(tmp_path: Path) -> None:
+def test_update_bootstraps_empty_database_and_ignores_optional_checks(
+    tmp_path: Path,
+) -> None:
     result = run_ops(tmp_path, "staging", "update")
 
     assert result.returncode == 0, result.stderr
     output = result.stdout + result.stderr
-    assert "No Alembic revisions or application tables found; bootstrapping schema." in output
+    assert (
+        "No Alembic revisions or application tables found; bootstrapping schema."
+        in output
+    )
     assert "[WARN] Prometheus [OPTIONAL]" in output
     assert "Result: healthy (optional checks degraded)" in output
     commands = docker_log(tmp_path)
     bootstrap = commands.index("python -m backend_core.platform.database.bootstrap")
-    optional_start = commands.index("up -d --remove-orphans prometheus tempo otel-collector grafana")
+    optional_start = commands.index(
+        "up -d --remove-orphans prometheus tempo otel-collector grafana"
+    )
     stack_start = commands.index("up -d --wait --wait-timeout 180 --remove-orphans")
     assert bootstrap < optional_start < stack_start
 
@@ -151,8 +164,14 @@ def test_production_db_reset_requires_non_tty_confirmation(tmp_path: Path) -> No
     result = run_ops(tmp_path, "production", "db-reset")
 
     assert result.returncode != 0
-    assert "production db-reset requires interactive confirmation or --yes" in result.stderr
-    assert "stop backend job-worker voice-agent" not in docker_log(tmp_path)
+    assert (
+        "production db-reset requires interactive confirmation or --yes"
+        in result.stderr
+    )
+    assert (
+        "stop backend control-plane-service job-worker voice-agent"
+        not in docker_log(tmp_path)
+    )
 
 
 def test_invalid_environment_never_invokes_docker(tmp_path: Path) -> None:
@@ -186,15 +205,20 @@ def test_production_restore_requires_confirmation_unless_yes(tmp_path: Path) -> 
     backup = tmp_path / "database.dump"
     backup.write_bytes(b"fake-postgres-custom-archive")
 
-    rejected = run_ops(tmp_path, "production", "restore", str(backup), input_text="no\n")
+    rejected = run_ops(
+        tmp_path, "production", "restore", str(backup), input_text="no\n"
+    )
     assert rejected.returncode != 0
-    assert "production restore requires interactive confirmation or --yes" in rejected.stderr
+    assert (
+        "production restore requires interactive confirmation or --yes"
+        in rejected.stderr
+    )
     assert "pg_restore --clean" not in docker_log(tmp_path)
 
     accepted = run_ops(tmp_path, "production", "restore", str(backup), "--yes")
     assert accepted.returncode == 0, accepted.stderr
     commands = docker_log(tmp_path)
-    backend_stop = commands.index("stop backend")
+    backend_stop = commands.index("stop backend control-plane-service")
     writers_stop = commands.index("stop job-worker voice-agent")
     restore = commands.index("pg_restore --clean --if-exists --exit-on-error")
     assert "run --rm --no-deps --user root --entrypoint /bin/sh backend -ec" in commands
