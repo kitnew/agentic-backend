@@ -4,10 +4,11 @@ from uuid import UUID
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from control_plane import SERVICE_NAME
 from control_plane.application.components import ComponentService
+from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
@@ -22,6 +23,21 @@ from control_plane.domain.components.errors import (
     ScopeNotAllowed,
     UnknownComponentKind,
     UnsupportedSchemaVersion,
+)
+from control_plane.domain.managed_resource_errors import (
+    InvalidManagedResource,
+    ManagedResourceError,
+    ManagedResourceNotFound,
+)
+from control_plane.domain.managed_resources import (
+    Credential,
+    CredentialRef,
+    DeploymentKind,
+    LLMCapabilities,
+    ModelDeployment,
+    ModelDeploymentRef,
+    ProviderConnection,
+    ProviderConnectionRef,
 )
 from control_plane.runtime.lifecycle import ServiceLifecycle
 
@@ -44,12 +60,77 @@ class RollbackRequest(BaseModel):
     actor: str = Field(min_length=1)
 
 
+class CredentialWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    secret: SecretStr = Field(min_length=1)
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class CredentialRotate(BaseModel):
+    secret: SecretStr = Field(min_length=1)
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class ActorRequest(BaseModel):
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class ProviderConnectionCreate(BaseModel):
+    key: str = Field(min_length=1, max_length=255)
+    provider_kind: str = Field(min_length=1, max_length=64)
+    credential_ref: UUID
+    connection_config: dict[str, object]
+    enabled: bool = False
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class ProviderConnectionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    credential_ref: UUID
+    connection_config: dict[str, object]
+    expected_generation: int = Field(ge=1)
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class GeneratedActorRequest(ActorRequest):
+    expected_generation: int = Field(ge=1)
+
+
+class LLMCapabilitiesWrite(BaseModel):
+    supports_temperature: bool
+    supports_reasoning_effort: bool
+
+
+class ModelDeploymentCreate(BaseModel):
+    key: str = Field(min_length=1, max_length=255)
+    connection_ref: UUID
+    deployment_kind: DeploymentKind
+    deployment_config: dict[str, object]
+    llm_capabilities: LLMCapabilitiesWrite | None = None
+    enabled: bool = False
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class ModelDeploymentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    connection_ref: UUID
+    deployment_config: dict[str, object]
+    llm_capabilities: LLMCapabilitiesWrite | None = None
+    expected_generation: int = Field(ge=1)
+    actor: str = Field(min_length=1, max_length=255)
+
+
 def create_http_app(
-    lifecycle: ServiceLifecycle, components: ComponentService | None = None
+    lifecycle: ServiceLifecycle,
+    components: ComponentService | None = None,
+    managed_resources: ManagedResourceService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.lifecycle = lifecycle
     app.state.components = components
+    app.state.managed_resources = managed_resources
 
     @app.exception_handler(ComponentError)
     async def component_error(_request: Request, exc: ComponentError) -> JSONResponse:
@@ -58,6 +139,21 @@ def create_http_app(
         ):
             code = status.HTTP_422_UNPROCESSABLE_CONTENT
         elif isinstance(exc, UnknownComponentKind) or exc.code.endswith("not_found"):
+            code = status.HTTP_404_NOT_FOUND
+        else:
+            code = status.HTTP_409_CONFLICT
+        return JSONResponse(
+            status_code=code,
+            content={"detail": {"code": exc.code, "message": str(exc)}},
+        )
+
+    @app.exception_handler(ManagedResourceError)
+    async def managed_resource_error(
+        _request: Request, exc: ManagedResourceError
+    ) -> JSONResponse:
+        if isinstance(exc, InvalidManagedResource):
+            code = status.HTTP_422_UNPROCESSABLE_CONTENT
+        elif isinstance(exc, ManagedResourceNotFound):
             code = status.HTTP_404_NOT_FOUND
         else:
             code = status.HTTP_409_CONFLICT
@@ -97,6 +193,8 @@ def create_http_app(
             "/v1/scopes/profile/{profile_key}",
         ):
             app.include_router(_component_router(), prefix=prefix)
+    if managed_resources is not None:
+        app.include_router(_managed_resource_router(), prefix="/v1/managed-resources")
     return app
 
 
@@ -187,6 +285,230 @@ def _component_router() -> APIRouter:
             await _service(request).rollback(
                 _address(request, kind), body.revision_number, body.actor
             )
+        )
+
+    return router
+
+
+def _managed(request: Request) -> ManagedResourceService:
+    return request.app.state.managed_resources
+
+
+def _credential_response(value: Credential) -> dict[str, object]:
+    return {
+        "id": value.ref.value,
+        "name": value.name,
+        "active_version_id": value.active_version_id,
+        "active_secret_version_number": value.active_secret_version_number,
+        "status": value.status,
+        "generation": value.generation,
+        "created_at": value.created_at,
+        "created_by": value.created_by,
+        "revoked_at": value.revoked_at,
+        "revoked_by": value.revoked_by,
+    }
+
+
+def _connection_response(value: ProviderConnection) -> dict[str, object]:
+    return {
+        "id": value.ref.value,
+        "key": value.key,
+        "provider_kind": value.provider_kind,
+        "credential_ref": value.credential_ref.value,
+        "connection_config": value.connection_config,
+        "enabled": value.enabled,
+        "generation": value.generation,
+        "created_at": value.created_at,
+        "created_by": value.created_by,
+        "updated_at": value.updated_at,
+        "updated_by": value.updated_by,
+    }
+
+
+def _deployment_response(value: ModelDeployment) -> dict[str, object]:
+    return {
+        "id": value.ref.value,
+        "key": value.key,
+        "connection_ref": value.connection_ref.value,
+        "deployment_kind": value.deployment_kind,
+        "deployment_config": value.deployment_config,
+        "llm_capabilities": (
+            {
+                "supports_temperature": value.llm_capabilities.supports_temperature,
+                "supports_reasoning_effort": value.llm_capabilities.supports_reasoning_effort,
+            }
+            if value.llm_capabilities
+            else None
+        ),
+        "enabled": value.enabled,
+        "generation": value.generation,
+        "created_at": value.created_at,
+        "created_by": value.created_by,
+        "updated_at": value.updated_at,
+        "updated_by": value.updated_by,
+    }
+
+
+def _managed_resource_router() -> APIRouter:
+    router = APIRouter()
+
+    @router.post("/credentials", status_code=status.HTTP_201_CREATED)
+    async def create_credential(request: Request, body: CredentialWrite) -> Any:
+        value = await _managed(request).create_credential(
+            body.name, body.secret.get_secret_value(), body.actor
+        )
+        return jsonable_encoder(_credential_response(value))
+
+    @router.post("/credentials/{resource_id}/rotate")
+    async def rotate_credential(
+        request: Request, resource_id: UUID, body: CredentialRotate
+    ) -> Any:
+        value = await _managed(request).rotate_credential(
+            CredentialRef(resource_id), body.secret.get_secret_value(), body.actor
+        )
+        return jsonable_encoder(_credential_response(value))
+
+    @router.post("/credentials/{resource_id}/revoke")
+    async def revoke_credential(
+        request: Request, resource_id: UUID, body: ActorRequest
+    ) -> Any:
+        value = await _managed(request).revoke_credential(
+            CredentialRef(resource_id), body.actor
+        )
+        return jsonable_encoder(_credential_response(value))
+
+    @router.get("/credentials/{resource_id}")
+    async def get_credential(request: Request, resource_id: UUID) -> Any:
+        value = await _managed(request).get_credential(CredentialRef(resource_id))
+        return jsonable_encoder(_credential_response(value))
+
+    @router.get("/credentials")
+    async def list_credentials(request: Request) -> Any:
+        return jsonable_encoder(
+            [
+                _credential_response(value)
+                for value in await _managed(request).list_credentials()
+            ]
+        )
+
+    @router.post("/provider-connections", status_code=status.HTTP_201_CREATED)
+    async def create_connection(
+        request: Request, body: ProviderConnectionCreate
+    ) -> Any:
+        value = await _managed(request).create_connection(
+            body.key,
+            body.provider_kind,
+            CredentialRef(body.credential_ref),
+            body.connection_config,
+            body.enabled,
+            body.actor,
+        )
+        return jsonable_encoder(_connection_response(value))
+
+    @router.put("/provider-connections/{resource_id}")
+    async def update_connection(
+        request: Request, resource_id: UUID, body: ProviderConnectionUpdate
+    ) -> Any:
+        value = await _managed(request).update_connection(
+            ProviderConnectionRef(resource_id),
+            CredentialRef(body.credential_ref),
+            body.connection_config,
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_connection_response(value))
+
+    @router.post("/provider-connections/{resource_id}/{operation}")
+    async def set_connection_enabled(
+        request: Request,
+        resource_id: UUID,
+        operation: str,
+        body: GeneratedActorRequest,
+    ) -> Any:
+        if operation not in {"enable", "disable"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        value = await _managed(request).set_connection_enabled(
+            ProviderConnectionRef(resource_id),
+            operation == "enable",
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_connection_response(value))
+
+    @router.get("/provider-connections/{resource_id}")
+    async def get_connection(request: Request, resource_id: UUID) -> Any:
+        value = await _managed(request).get_connection(
+            ProviderConnectionRef(resource_id)
+        )
+        return jsonable_encoder(_connection_response(value))
+
+    @router.get("/provider-connections")
+    async def list_connections(request: Request) -> Any:
+        return jsonable_encoder(
+            [
+                _connection_response(value)
+                for value in await _managed(request).list_connections()
+            ]
+        )
+
+    @router.post("/model-deployments", status_code=status.HTTP_201_CREATED)
+    async def create_deployment(request: Request, body: ModelDeploymentCreate) -> Any:
+        value = await _managed(request).create_deployment(
+            body.key,
+            ProviderConnectionRef(body.connection_ref),
+            body.deployment_kind,
+            body.deployment_config,
+            body.enabled,
+            body.actor,
+            LLMCapabilities(**body.llm_capabilities.model_dump())
+            if body.llm_capabilities else None,
+        )
+        return jsonable_encoder(_deployment_response(value))
+
+    @router.put("/model-deployments/{resource_id}")
+    async def update_deployment(
+        request: Request, resource_id: UUID, body: ModelDeploymentUpdate
+    ) -> Any:
+        value = await _managed(request).update_deployment(
+            ModelDeploymentRef(resource_id),
+            ProviderConnectionRef(body.connection_ref),
+            body.deployment_config,
+            body.expected_generation,
+            body.actor,
+            LLMCapabilities(**body.llm_capabilities.model_dump())
+            if body.llm_capabilities else None,
+        )
+        return jsonable_encoder(_deployment_response(value))
+
+    @router.post("/model-deployments/{resource_id}/{operation}")
+    async def set_deployment_enabled(
+        request: Request,
+        resource_id: UUID,
+        operation: str,
+        body: GeneratedActorRequest,
+    ) -> Any:
+        if operation not in {"enable", "disable"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        value = await _managed(request).set_deployment_enabled(
+            ModelDeploymentRef(resource_id),
+            operation == "enable",
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_deployment_response(value))
+
+    @router.get("/model-deployments/{resource_id}")
+    async def get_deployment(request: Request, resource_id: UUID) -> Any:
+        value = await _managed(request).get_deployment(ModelDeploymentRef(resource_id))
+        return jsonable_encoder(_deployment_response(value))
+
+    @router.get("/model-deployments")
+    async def list_deployments(request: Request) -> Any:
+        return jsonable_encoder(
+            [
+                _deployment_response(value)
+                for value in await _managed(request).list_deployments()
+            ]
         )
 
     return router

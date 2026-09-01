@@ -11,7 +11,7 @@ from control_plane.application.ports.messaging import OutboundMessage
 
 class NatsMessagePublisher:
     STREAM_NAME = "CONTROL_PLANE_EVENTS"
-    STREAM_SUBJECTS = ("evt.configuration.>",)
+    STREAM_SUBJECTS = ("evt.configuration.>", "evt.control_plane.>")
 
     def __init__(self, url: str) -> None:
         self._url = url

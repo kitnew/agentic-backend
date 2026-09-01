@@ -73,7 +73,7 @@ async def test_nats_adapter_connects_publishes_drains_and_closes(monkeypatch) ->
             "CONTROL_PLANE_EVENTS",
         )
     ]
-    assert client.js.config.subjects == ["evt.configuration.>"]
+    assert client.js.config.subjects == ["evt.configuration.>", "evt.control_plane.>"]
     assert client.drained
     assert client.is_closed
 

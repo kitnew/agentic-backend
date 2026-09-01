@@ -26,10 +26,19 @@ from control_plane.domain.components.errors import (
     UnpublishedDraftConflict,
     UnsupportedSchemaVersion,
 )
+from control_plane.domain.managed_resource_errors import ManagedResourceNotFound
+from control_plane.domain.managed_resources import (
+    DeploymentKind,
+    LLMCapabilities,
+    ModelDeployment,
+    ModelDeploymentRef,
+    ProviderConnectionRef,
+)
 
 from .models import ConfigurationComponent as ComponentRow
 from .models import ConfigurationComponentDraft as DraftRow
 from .models import ConfigurationComponentRevision as RevisionRow
+from .models import ModelDeployment as ModelDeploymentRow
 from .models import OutboxMessage
 
 
@@ -137,7 +146,8 @@ class SqlAlchemyComponentRepository:
                 raise DraftVersionConflict("draft was already published or discarded")
             if draft.version != expected_draft_version:
                 raise DraftVersionConflict("draft version changed")
-            self._validate(draft.schema_version, draft.value, definition)
+            typed = self._validate(draft.schema_version, draft.value, definition)
+            await self._validate_deployment(session, typed, definition)
             current_number = await session.scalar(
                 select(func.coalesce(func.max(RevisionRow.revision_number), 0)).where(
                     RevisionRow.component_id == component.id
@@ -188,7 +198,8 @@ class SqlAlchemyComponentRepository:
             )
             if target is None:
                 raise RevisionNotFound(str(revision_number))
-            self._validate(target.schema_version, target.value, definition)
+            typed = self._validate(target.schema_version, target.value, definition)
+            await self._validate_deployment(session, typed, definition)
             current_number = await session.scalar(
                 select(func.max(RevisionRow.revision_number)).where(
                     RevisionRow.component_id == component.id
@@ -251,18 +262,45 @@ class SqlAlchemyComponentRepository:
                 payload=event.model_dump(mode="json"),
                 component_id=component.id,
                 revision_number=revision.revision_number,
+                ordering_key=f"component:{component.id}",
+                ordering_sequence=revision.revision_number,
                 occurred_at=occurred_at,
             )
         )
 
     def _validate(
         self, schema_version: int, value: object, definition: ComponentDefinition[Any]
-    ) -> None:
+    ) -> Any:
         if schema_version != definition.current_schema_version:
             raise UnsupportedSchemaVersion(
                 f"expected {definition.current_schema_version}, got {schema_version}"
             )
-        definition.deserialize(value)
+        return definition.deserialize(value)
+
+    @staticmethod
+    async def _validate_deployment(
+        session: AsyncSession, value: Any, definition: ComponentDefinition[Any]
+    ) -> None:
+        if definition.deployment_ref is None or definition.validate_deployment is None:
+            return
+        row = await session.get(ModelDeploymentRow, definition.deployment_ref(value))
+        if row is None:
+            raise ManagedResourceNotFound("referenced model deployment not found")
+        deployment = ModelDeployment(
+            ModelDeploymentRef(row.id),
+            row.key,
+            ProviderConnectionRef(row.connection_id),
+            DeploymentKind(row.deployment_kind),
+            dict(row.deployment_config),
+            LLMCapabilities(**row.llm_capabilities) if row.llm_capabilities else None,
+            row.enabled,
+            row.generation,
+            row.created_at,
+            row.created_by,
+            row.updated_at,
+            row.updated_by,
+        )
+        definition.validate_deployment(value, deployment)
 
     async def _component_id(
         self, session: AsyncSession, address: ComponentAddress

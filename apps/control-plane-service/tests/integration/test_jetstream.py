@@ -53,7 +53,7 @@ async def test_real_jetstream_provisioning_and_acknowledged_publication() -> Non
         )
 
         info = await jetstream.stream_info(publisher.STREAM_NAME)
-        assert info.config.subjects == ["evt.configuration.>"]
+        assert info.config.subjects == ["evt.configuration.>", "evt.control_plane.>"]
         message = await jetstream.get_last_msg(
             publisher.STREAM_NAME, COMPONENT_PUBLISHED_SUBJECT
         )

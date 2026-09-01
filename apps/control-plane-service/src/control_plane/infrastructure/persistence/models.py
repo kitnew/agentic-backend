@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     Uuid,
@@ -135,6 +136,127 @@ class ConfigurationComponentRevision(Base):
     created_by: Mapped[str] = mapped_column(String(255))
 
 
+class Credential(Base):
+    __tablename__ = "credentials"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'revoked')", name="ck_credential_status"),
+        CheckConstraint(
+            "(status = 'active' AND revoked_at IS NULL AND revoked_by IS NULL) OR "
+            "(status = 'revoked' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL)",
+            name="ck_credential_revocation",
+        ),
+        CheckConstraint("generation >= 1", name="ck_credential_generation"),
+        ForeignKeyConstraint(
+            ["active_version_id", "id"],
+            [
+                f"{SCHEMA}.credential_versions.id",
+                f"{SCHEMA}.credential_versions.credential_id",
+            ],
+            name="fk_credential_active_version",
+            use_alter=True,
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    active_version_id: Mapped[UUID | None] = mapped_column(Uuid)
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(String(255))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_by: Mapped[str | None] = mapped_column(String(255))
+
+
+class CredentialVersion(Base):
+    __tablename__ = "credential_versions"
+    __table_args__ = (
+        CheckConstraint("version_number >= 1", name="ck_credential_version_number"),
+        UniqueConstraint(
+            "credential_id", "version_number", name="uq_credential_version_number"
+        ),
+        UniqueConstraint("id", "credential_id", name="uq_credential_version_identity"),
+        Index(
+            "uq_credential_active_version",
+            "credential_id",
+            unique=True,
+            postgresql_where=text("retired_at IS NULL"),
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    credential_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey(f"{SCHEMA}.credentials.id")
+    )
+    version_number: Mapped[int] = mapped_column(Integer)
+    key_id: Mapped[str] = mapped_column(String(255))
+    algorithm: Mapped[str] = mapped_column(String(64))
+    nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(String(255))
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ProviderConnection(Base):
+    __tablename__ = "provider_connections"
+    __table_args__ = (
+        CheckConstraint("generation >= 1", name="ck_provider_connection_generation"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    key: Mapped[str] = mapped_column(String(255), unique=True)
+    provider_kind: Mapped[str] = mapped_column(String(64))
+    credential_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey(f"{SCHEMA}.credentials.id")
+    )
+    connection_config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    enabled: Mapped[bool]
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
+class ModelDeployment(Base):
+    __tablename__ = "model_deployments"
+    __table_args__ = (
+        CheckConstraint("generation >= 1", name="ck_model_deployment_generation"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    key: Mapped[str] = mapped_column(String(255), unique=True)
+    connection_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey(f"{SCHEMA}.provider_connections.id")
+    )
+    deployment_kind: Mapped[str] = mapped_column(String(32))
+    deployment_config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    llm_capabilities: Mapped[dict[str, bool] | None] = mapped_column(JSONB)
+    enabled: Mapped[bool]
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
 class OutboxMessage(Base):
     __tablename__ = "outbox_messages"
     __table_args__ = (
@@ -143,6 +265,9 @@ class OutboxMessage(Base):
             "ix_outbox_pending",
             "created_at",
             postgresql_where=text("published_at IS NULL"),
+        ),
+        UniqueConstraint(
+            "ordering_key", "ordering_sequence", name="uq_outbox_ordering"
         ),
         Index(
             "ix_outbox_component_revision",
@@ -156,10 +281,12 @@ class OutboxMessage(Base):
     event_type: Mapped[str] = mapped_column(String(255))
     subject: Mapped[str] = mapped_column(String(255))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    component_id: Mapped[UUID] = mapped_column(
+    component_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey(f"{SCHEMA}.configuration_components.id", ondelete="CASCADE")
     )
-    revision_number: Mapped[int] = mapped_column(Integer)
+    revision_number: Mapped[int | None] = mapped_column(Integer)
+    ordering_key: Mapped[str] = mapped_column(String(255))
+    ordering_sequence: Mapped[int] = mapped_column(Integer)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

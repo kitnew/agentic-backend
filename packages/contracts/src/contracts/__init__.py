@@ -62,9 +62,13 @@ from contracts.integration import (
 from contracts.integration_events import (
     COMPONENT_PUBLISHED_EVENT_TYPE,
     COMPONENT_PUBLISHED_SUBJECT,
+    MANAGED_RESOURCE_CHANGED_EVENT_TYPE,
+    MANAGED_RESOURCE_CHANGED_SUBJECT,
     ComponentScope,
     ConfigurationComponentPublishedPayloadV1,
     ConfigurationComponentPublishedV1,
+    ManagedResourceChangedPayloadV1,
+    ManagedResourceChangedV1,
 )
 from contracts.messaging import (
     CallEventPayload,
@@ -150,6 +154,8 @@ __all__ = [
     "CANONICAL_FIELD_NORMALIZERS",
     "COMPONENT_PUBLISHED_EVENT_TYPE",
     "COMPONENT_PUBLISHED_SUBJECT",
+    "MANAGED_RESOURCE_CHANGED_EVENT_TYPE",
+    "MANAGED_RESOURCE_CHANGED_SUBJECT",
     "AgentIdentityConfig",
     "AppendConversationMessage",
     "CalculatorRequest",
@@ -212,6 +218,8 @@ __all__ = [
     "LiveKitJobMetadata",
     "LocalVADCommitRuntimeSettings",
     "LocalVADRuntimeSettings",
+    "ManagedResourceChangedPayloadV1",
+    "ManagedResourceChangedV1",
     "ManagedWebhookBodyBinding",
     "ManagedWebhookCapability",
     "ManagedWebhookFailureResponse",

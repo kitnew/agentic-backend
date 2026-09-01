@@ -1,0 +1,211 @@
+from collections.abc import Sequence
+from typing import Protocol
+
+from control_plane.domain.managed_resource_errors import InvalidManagedResource
+from control_plane.domain.managed_resources import (
+    Credential,
+    CredentialRef,
+    DeploymentKind,
+    LLMCapabilities,
+    ModelDeployment,
+    ModelDeploymentRef,
+    ProviderConnection,
+    ProviderConnectionRef,
+)
+from control_plane.domain.providers import ProviderRegistry
+
+
+class ManagedResourceRepository(Protocol):
+    async def create_credential(
+        self, name: str, secret: str, actor: str
+    ) -> Credential: ...
+    async def rotate_credential(
+        self, ref: CredentialRef, secret: str, actor: str
+    ) -> Credential: ...
+    async def revoke_credential(self, ref: CredentialRef, actor: str) -> Credential: ...
+    async def get_credential(self, ref: CredentialRef) -> Credential: ...
+    async def list_credentials(self) -> Sequence[Credential]: ...
+    async def create_connection(
+        self,
+        key: str,
+        provider_kind: str,
+        credential_ref: CredentialRef,
+        config: dict[str, object],
+        enabled: bool,
+        actor: str,
+    ) -> ProviderConnection: ...
+    async def update_connection(
+        self,
+        ref: ProviderConnectionRef,
+        credential_ref: CredentialRef,
+        config: dict[str, object],
+        expected_generation: int,
+        actor: str,
+    ) -> ProviderConnection: ...
+    async def set_connection_enabled(
+        self,
+        ref: ProviderConnectionRef,
+        enabled: bool,
+        expected_generation: int,
+        actor: str,
+    ) -> ProviderConnection: ...
+    async def get_connection(
+        self, ref: ProviderConnectionRef
+    ) -> ProviderConnection: ...
+    async def list_connections(self) -> Sequence[ProviderConnection]: ...
+    async def create_deployment(
+        self,
+        key: str,
+        connection_ref: ProviderConnectionRef,
+        kind: DeploymentKind,
+        config: dict[str, object],
+        enabled: bool,
+        actor: str,
+        llm_capabilities: LLMCapabilities | None = None,
+    ) -> ModelDeployment: ...
+    async def update_deployment(
+        self,
+        ref: ModelDeploymentRef,
+        connection_ref: ProviderConnectionRef,
+        config: dict[str, object],
+        expected_generation: int,
+        actor: str,
+        llm_capabilities: LLMCapabilities | None = None,
+    ) -> ModelDeployment: ...
+    async def set_deployment_enabled(
+        self, ref: ModelDeploymentRef, enabled: bool, expected_generation: int, actor: str
+    ) -> ModelDeployment: ...
+    async def get_deployment(self, ref: ModelDeploymentRef) -> ModelDeployment: ...
+    async def list_deployments(self) -> Sequence[ModelDeployment]: ...
+
+
+class ManagedResourceService:
+    def __init__(
+        self, registry: ProviderRegistry, repository: ManagedResourceRepository
+    ) -> None:
+        self._registry = registry
+        self._repository = repository
+
+    async def create_credential(self, name: str, secret: str, actor: str) -> Credential:
+        return await self._repository.create_credential(name, secret, actor)
+
+    async def rotate_credential(
+        self, ref: CredentialRef, secret: str, actor: str
+    ) -> Credential:
+        return await self._repository.rotate_credential(ref, secret, actor)
+
+    async def revoke_credential(self, ref: CredentialRef, actor: str) -> Credential:
+        return await self._repository.revoke_credential(ref, actor)
+
+    async def get_credential(self, ref: CredentialRef) -> Credential:
+        return await self._repository.get_credential(ref)
+
+    async def list_credentials(self) -> Sequence[Credential]:
+        return await self._repository.list_credentials()
+
+    async def create_connection(
+        self,
+        key: str,
+        provider_kind: str,
+        credential_ref: CredentialRef,
+        config: object,
+        enabled: bool,
+        actor: str,
+    ) -> ProviderConnection:
+        validated = self._registry.resolve(provider_kind).validate_connection(config)
+        return await self._repository.create_connection(
+            key, provider_kind, credential_ref, validated, enabled, actor
+        )
+
+    async def update_connection(
+        self,
+        ref: ProviderConnectionRef,
+        credential_ref: CredentialRef,
+        config: object,
+        expected_generation: int,
+        actor: str,
+    ) -> ProviderConnection:
+        current = await self._repository.get_connection(ref)
+        validated = self._registry.resolve(current.provider_kind).validate_connection(
+            config
+        )
+        return await self._repository.update_connection(
+            ref, credential_ref, validated, expected_generation, actor
+        )
+
+    async def set_connection_enabled(
+        self,
+        ref: ProviderConnectionRef,
+        enabled: bool,
+        expected_generation: int,
+        actor: str,
+    ) -> ProviderConnection:
+        return await self._repository.set_connection_enabled(
+            ref, enabled, expected_generation, actor
+        )
+
+    async def get_connection(self, ref: ProviderConnectionRef) -> ProviderConnection:
+        return await self._repository.get_connection(ref)
+
+    async def list_connections(self) -> Sequence[ProviderConnection]:
+        return await self._repository.list_connections()
+
+    async def create_deployment(
+        self,
+        key: str,
+        connection_ref: ProviderConnectionRef,
+        kind: DeploymentKind,
+        config: object,
+        enabled: bool,
+        actor: str,
+        llm_capabilities: LLMCapabilities | None = None,
+    ) -> ModelDeployment:
+        connection = await self._repository.get_connection(connection_ref)
+        validated = self._registry.resolve(
+            connection.provider_kind
+        ).validate_deployment(kind, config)
+        self._validate_llm_capabilities(kind, llm_capabilities)
+        return await self._repository.create_deployment(
+            key, connection_ref, kind, validated, enabled, actor, llm_capabilities
+        )
+
+    async def update_deployment(
+        self,
+        ref: ModelDeploymentRef,
+        connection_ref: ProviderConnectionRef,
+        config: object,
+        expected_generation: int,
+        actor: str,
+        llm_capabilities: LLMCapabilities | None = None,
+    ) -> ModelDeployment:
+        current = await self._repository.get_deployment(ref)
+        connection = await self._repository.get_connection(connection_ref)
+        validated = self._registry.resolve(
+            connection.provider_kind
+        ).validate_deployment(current.deployment_kind, config)
+        self._validate_llm_capabilities(current.deployment_kind, llm_capabilities)
+        return await self._repository.update_deployment(
+            ref, connection_ref, validated, expected_generation, actor, llm_capabilities
+        )
+
+    @staticmethod
+    def _validate_llm_capabilities(
+        kind: DeploymentKind, capabilities: LLMCapabilities | None
+    ) -> None:
+        if (kind is DeploymentKind.LLM) != (capabilities is not None):
+            raise InvalidManagedResource(
+                "llm capabilities are required only for llm deployments"
+            )
+
+    async def set_deployment_enabled(
+        self, ref: ModelDeploymentRef, enabled: bool, expected_generation: int, actor: str
+    ) -> ModelDeployment:
+        return await self._repository.set_deployment_enabled(
+            ref, enabled, expected_generation, actor
+        )
+
+    async def get_deployment(self, ref: ModelDeploymentRef) -> ModelDeployment:
+        return await self._repository.get_deployment(ref)
+
+    async def list_deployments(self) -> Sequence[ModelDeployment]:
+        return await self._repository.list_deployments()

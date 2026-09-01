@@ -57,7 +57,10 @@ async def test_bootstrap_wires_lifespan_with_supplied_dependencies() -> None:
     relay = Relay()
     app = create_app(
         Settings(
-            database_url=PostgresDsn("postgresql+asyncpg://user:pass@localhost:5432/db")
+            database_url=PostgresDsn(
+                "postgresql+asyncpg://user:pass@localhost:5432/db"
+            ),
+            control_plane_encryption_key="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
         ),
         database,  # type: ignore[arg-type]
         nats,  # type: ignore[arg-type]

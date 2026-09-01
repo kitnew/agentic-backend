@@ -5,7 +5,11 @@ import logging
 from contextlib import suppress
 from datetime import UTC, datetime
 
-from contracts import ConfigurationComponentPublishedV1
+from contracts import (
+    MANAGED_RESOURCE_CHANGED_EVENT_TYPE,
+    ConfigurationComponentPublishedV1,
+    ManagedResourceChangedV1,
+)
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
@@ -59,9 +63,9 @@ class OutboxRelay:
                     OutboxMessage.published_at.is_(None),
                     ~exists(
                         select(1).where(
-                            earlier.component_id == OutboxMessage.component_id,
+                            earlier.ordering_key == OutboxMessage.ordering_key,
                             earlier.published_at.is_(None),
-                            earlier.revision_number < OutboxMessage.revision_number,
+                            earlier.ordering_sequence < OutboxMessage.ordering_sequence,
                         )
                     ),
                 )
@@ -71,7 +75,11 @@ class OutboxRelay:
             )
             if row is None:
                 return False
-            event = ConfigurationComponentPublishedV1.model_validate(row.payload)
+            event = (
+                ManagedResourceChangedV1.model_validate(row.payload)
+                if row.event_type == MANAGED_RESOURCE_CHANGED_EVENT_TYPE
+                else ConfigurationComponentPublishedV1.model_validate(row.payload)
+            )
             row.attempt_count += 1
             try:
                 await self._publisher.publish(

@@ -97,6 +97,8 @@ services:
       dockerfile: apps/control-plane-service/Dockerfile
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/backend
+      CONTROL_PLANE_ENCRYPTION_KEY: ${CONTROL_PLANE_ENCRYPTION_KEY:?set CONTROL_PLANE_ENCRYPTION_KEY}
+      CONTROL_PLANE_ENCRYPTION_KEY_ID: ${CONTROL_PLANE_ENCRYPTION_KEY_ID:-bootstrap}
       NATS_URL: ${NATS_URL:-nats://nats:4222}
       OTEL_ENABLED: ${OTEL_ENABLED:-false}
       OTEL_SERVICE_NAME: control-plane-service

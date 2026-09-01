@@ -4,9 +4,13 @@ from uuid import UUID
 from contracts import (
     COMPONENT_PUBLISHED_EVENT_TYPE,
     COMPONENT_PUBLISHED_SUBJECT,
+    MANAGED_RESOURCE_CHANGED_EVENT_TYPE,
+    MANAGED_RESOURCE_CHANGED_SUBJECT,
     ComponentScope,
     ConfigurationComponentPublishedPayloadV1,
     ConfigurationComponentPublishedV1,
+    ManagedResourceChangedPayloadV1,
+    ManagedResourceChangedV1,
 )
 
 
@@ -33,3 +37,25 @@ def test_component_published_contract_is_versioned_and_deterministic() -> None:
     assert (
         ConfigurationComponentPublishedV1.model_validate_json(event.to_bytes()) == event
     )
+
+
+def test_managed_resource_changed_contract_is_secret_free() -> None:
+    event = ManagedResourceChangedV1(
+        event_id=UUID("00000000-0000-0000-0000-000000000004"),
+        occurred_at=datetime(2026, 9, 1, 12, tzinfo=UTC),
+        payload=ManagedResourceChangedPayloadV1(
+            resource_type="credential",
+            resource_id=UUID("00000000-0000-0000-0000-000000000005"),
+            action="rotated",
+            resource_generation=2,
+            status="active",
+        ),
+    )
+
+    assert event.event_type == MANAGED_RESOURCE_CHANGED_EVENT_TYPE
+    assert (
+        MANAGED_RESOURCE_CHANGED_SUBJECT
+        == "evt.control_plane.managed_resource.changed.v1"
+    )
+    assert ManagedResourceChangedV1.model_validate_json(event.to_bytes()) == event
+    assert b"secret" not in event.to_bytes().lower()

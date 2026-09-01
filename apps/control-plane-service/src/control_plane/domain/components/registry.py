@@ -1,5 +1,7 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -13,6 +15,8 @@ class ComponentDefinition[T]:
     value_type: type[T]
     allowed_scopes: frozenset[ScopeType]
     current_schema_version: int
+    deployment_ref: Callable[[T], UUID] | None = None
+    validate_deployment: Callable[[T, object], None] | None = None
 
     def __post_init__(self) -> None:
         if self.current_schema_version < 1:

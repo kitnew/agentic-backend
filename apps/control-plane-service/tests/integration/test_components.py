@@ -344,8 +344,9 @@ async def test_migration_constraints_and_round_trip(
         async with database.sessions.begin() as session:
             await session.execute(
                 text(
-                    "UPDATE control_plane_alembic_version SET version_num = '0002_transactional_outbox'"
-                )
+                    "UPDATE control_plane_alembic_version SET version_num = :revision"
+                ),
+                {"revision": CONTROL_PLANE_SCHEMA_REVISION},
             )
         async with database.sessions.begin() as session:
             await session.execute(
