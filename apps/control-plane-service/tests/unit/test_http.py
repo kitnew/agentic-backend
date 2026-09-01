@@ -24,7 +24,9 @@ class FakeLifecycle:
 
 @pytest.mark.asyncio
 async def test_health_does_not_require_dependencies() -> None:
-    lifecycle = FakeLifecycle(Readiness(postgres=False, nats=False))
+    lifecycle = FakeLifecycle(
+        Readiness(postgres=False, control_plane_schema=False, nats=False)
+    )
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
     async with AsyncClient(
@@ -42,7 +44,9 @@ async def test_health_does_not_require_dependencies() -> None:
 
 @pytest.mark.asyncio
 async def test_ready_reports_unavailable_dependencies() -> None:
-    lifecycle = FakeLifecycle(Readiness(postgres=False, nats=True))
+    lifecycle = FakeLifecycle(
+        Readiness(postgres=False, control_plane_schema=False, nats=True)
+    )
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
     async with AsyncClient(
@@ -54,13 +58,16 @@ async def test_ready_reports_unavailable_dependencies() -> None:
     assert response.status_code == 503
     assert response.json()["detail"]["checks"] == {
         "postgres": False,
+        "control_plane_schema": False,
         "nats": True,
     }
 
 
 @pytest.mark.asyncio
 async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
-    lifecycle = FakeLifecycle(Readiness(postgres=True, nats=True))
+    lifecycle = FakeLifecycle(
+        Readiness(postgres=True, control_plane_schema=True, nats=True)
+    )
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
     async with AsyncClient(
@@ -74,6 +81,27 @@ async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ready_rejects_incompatible_control_plane_schema() -> None:
+    lifecycle = FakeLifecycle(
+        Readiness(postgres=True, control_plane_schema=False, nats=True)
+    )
+    app = create_http_app(lifecycle)  # type: ignore[arg-type]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["checks"] == {
+        "postgres": True,
+        "control_plane_schema": False,
+        "nats": True,
+    }
+
+
+@pytest.mark.asyncio
 async def test_readiness_converts_dependency_exceptions_to_unavailable() -> None:
     class Dependency:
         async def ping(self) -> None:
@@ -82,7 +110,9 @@ async def test_readiness_converts_dependency_exceptions_to_unavailable() -> None
     lifecycle = ServiceLifecycle(Dependency(), Dependency())  # type: ignore[arg-type]
     lifecycle.state = LifecycleState.READY
 
-    assert await lifecycle.readiness() == Readiness(postgres=False, nats=False)
+    assert await lifecycle.readiness() == Readiness(
+        postgres=False, control_plane_schema=False, nats=False
+    )
 
 
 @pytest.mark.asyncio
@@ -95,7 +125,9 @@ async def test_readiness_bounds_dependency_ping(monkeypatch) -> None:
     lifecycle = ServiceLifecycle(Dependency(), Dependency())  # type: ignore[arg-type]
     lifecycle.state = LifecycleState.READY
 
-    assert await lifecycle.readiness() == Readiness(postgres=False, nats=False)
+    assert await lifecycle.readiness() == Readiness(
+        postgres=False, control_plane_schema=False, nats=False
+    )
 
 
 @pytest.mark.asyncio
@@ -108,6 +140,10 @@ async def test_lifecycle_starts_and_stops_dependencies_in_order() -> None:
 
         async def ping(self) -> None:
             calls.append("database.ping")
+
+        async def schema_compatible(self) -> bool:
+            calls.append("database.schema_compatible")
+            return True
 
         async def close(self) -> None:
             calls.append("database.close")
@@ -138,6 +174,7 @@ async def test_lifecycle_starts_and_stops_dependencies_in_order() -> None:
         "database.connect",
         "nats.connect",
         "database.ping",
+        "database.schema_compatible",
         "nats.ping",
         "nats.drain",
         "nats.close",

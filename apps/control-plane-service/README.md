@@ -6,7 +6,8 @@ write Control Plane tables, and this service must not import Backend ORM models.
 The service starts in `STARTING`, connects PostgreSQL, then NATS, and only then
 enters `READY`. Shutdown drains NATS, closes NATS, closes PostgreSQL, shuts down
 telemetry, and enters `STOPPED`. `/health` is process liveness; `/ready` checks
-the lifecycle state and bounded live PostgreSQL/NATS pings.
+the lifecycle state, bounded live PostgreSQL/NATS pings, and that the dedicated
+Control Plane Alembic revision matches the application migration head.
 
 Messaging is transport-only: application code supplies an `OutboundMessage`
 containing a subject and serialized bytes. Domain events are not serialized by

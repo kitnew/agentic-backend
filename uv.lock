@@ -583,6 +583,7 @@ version = "0.1.0"
 source = { editable = "apps/control-plane-service" }
 dependencies = [
     { name = "agentic-observability" },
+    { name = "alembic" },
     { name = "asyncpg" },
     { name = "fastapi" },
     { name = "nats-py" },
@@ -598,6 +599,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "agentic-observability", editable = "packages/observability" },
+    { name = "alembic", specifier = ">=1.18.4" },
     { name = "asyncpg", specifier = ">=0.31.0" },
     { name = "fastapi", specifier = ">=0.140.13" },
     { name = "nats-py", specifier = ">=2.12.0" },

@@ -31,6 +31,10 @@ class RuntimeDependency(Protocol):
     async def close(self) -> None: ...
 
 
+class DatabaseDependency(RuntimeDependency, Protocol):
+    async def schema_compatible(self) -> bool: ...
+
+
 class MessagingDependency(RuntimeDependency, Protocol):
     async def drain(self) -> None: ...
 
@@ -42,7 +46,7 @@ class TelemetryRuntime(Protocol):
 class ServiceLifecycle:
     def __init__(
         self,
-        database: RuntimeDependency,
+        database: DatabaseDependency,
         nats: MessagingDependency,
         telemetry: TelemetryRuntime | None = None,
     ) -> None:
@@ -96,10 +100,11 @@ class ServiceLifecycle:
 
     async def readiness(self) -> Readiness:
         if self.state != LifecycleState.READY:
-            return Readiness(postgres=False, nats=False)
+            return Readiness(postgres=False, control_plane_schema=False, nats=False)
         postgres = await _check(self.database)
+        schema = postgres and await _schema_check(self.database)
         nats = await _check(self.nats)
-        return Readiness(postgres=postgres, nats=nats)
+        return Readiness(postgres=postgres, control_plane_schema=schema, nats=nats)
 
 
 async def _check(dependency: RuntimeDependency) -> bool:
@@ -108,3 +113,12 @@ async def _check(dependency: RuntimeDependency) -> bool:
     except Exception:  # noqa: BLE001
         return False
     return True
+
+
+async def _schema_check(database: DatabaseDependency) -> bool:
+    try:
+        return await asyncio.wait_for(
+            database.schema_compatible(), timeout=READINESS_TIMEOUT_SECONDS
+        )
+    except Exception:  # noqa: BLE001
+        return False

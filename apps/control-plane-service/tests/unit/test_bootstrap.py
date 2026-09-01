@@ -14,6 +14,9 @@ class Database:
     async def ping(self) -> None:
         pass
 
+    async def schema_compatible(self) -> bool:
+        return True
+
     async def close(self) -> None:
         self.closed = True
 
