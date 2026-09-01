@@ -59,6 +59,13 @@ from contracts.integration import (
     HttpConnectionConfiguration,
     HttpConnectionSecurity,
 )
+from contracts.integration_events import (
+    COMPONENT_PUBLISHED_EVENT_TYPE,
+    COMPONENT_PUBLISHED_SUBJECT,
+    ComponentScope,
+    ConfigurationComponentPublishedPayloadV1,
+    ConfigurationComponentPublishedV1,
+)
 from contracts.messaging import (
     CallEventPayload,
     CommandError,
@@ -141,6 +148,8 @@ __all__ = [
     "CANONICAL_FIELDS",
     "CANONICAL_FIELD_DESCRIPTIONS",
     "CANONICAL_FIELD_NORMALIZERS",
+    "COMPONENT_PUBLISHED_EVENT_TYPE",
+    "COMPONENT_PUBLISHED_SUBJECT",
     "AgentIdentityConfig",
     "AppendConversationMessage",
     "CalculatorRequest",
@@ -160,6 +169,9 @@ __all__ = [
     "CatalogDescriptor",
     "CommandError",
     "CommandResult",
+    "ComponentScope",
+    "ConfigurationComponentPublishedPayloadV1",
+    "ConfigurationComponentPublishedV1",
     "ConversationMessageResponse",
     "ConversationMessageRole",
     "ConversationPersistenceStatus",

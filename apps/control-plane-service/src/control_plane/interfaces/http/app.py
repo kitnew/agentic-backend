@@ -85,6 +85,7 @@ def create_http_app(
                     "postgres": readiness.postgres,
                     "control_plane_schema": readiness.control_plane_schema,
                     "nats": readiness.nats,
+                    "outbox_relay": readiness.outbox_relay,
                 },
             },
         )

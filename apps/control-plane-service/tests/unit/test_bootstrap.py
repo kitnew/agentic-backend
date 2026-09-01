@@ -39,16 +39,29 @@ class Nats:
         self.closed = True
 
 
+class Relay:
+    def __init__(self) -> None:
+        self.ready = False
+
+    async def start(self) -> None:
+        self.ready = True
+
+    async def stop(self) -> None:
+        self.ready = False
+
+
 @pytest.mark.asyncio
 async def test_bootstrap_wires_lifespan_with_supplied_dependencies() -> None:
     database = Database()
     nats = Nats()
+    relay = Relay()
     app = create_app(
         Settings(
             database_url=PostgresDsn("postgresql+asyncpg://user:pass@localhost:5432/db")
         ),
         database,  # type: ignore[arg-type]
         nats,  # type: ignore[arg-type]
+        relay=relay,  # type: ignore[arg-type]
     )
 
     async with app.router.lifespan_context(app):

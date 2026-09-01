@@ -10,6 +10,7 @@ dependencies = [
     "agentic-observability",
     "alembic>=1.18.4",
     "asyncpg>=0.31.0",
+    "contracts",
     "fastapi>=0.140.13",
     "nats-py>=2.12.0",
     "opentelemetry-api>=1.39.1",
@@ -23,6 +24,7 @@ dependencies = [
 
 [tool.uv.sources]
 agentic-observability = { workspace = true }
+contracts = { workspace = true }
 
 [tool.uv.build-backend]
 module-name = "control_plane"

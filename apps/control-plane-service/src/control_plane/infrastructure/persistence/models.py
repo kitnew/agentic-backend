@@ -13,6 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -132,3 +133,37 @@ class ConfigurationComponentRevision(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     created_by: Mapped[str] = mapped_column(String(255))
+
+
+class OutboxMessage(Base):
+    __tablename__ = "outbox_messages"
+    __table_args__ = (
+        CheckConstraint("attempt_count >= 0", name="ck_outbox_attempt_count"),
+        Index(
+            "ix_outbox_pending",
+            "created_at",
+            postgresql_where=text("published_at IS NULL"),
+        ),
+        Index(
+            "ix_outbox_component_revision",
+            "component_id",
+            "revision_number",
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    event_type: Mapped[str] = mapped_column(String(255))
+    subject: Mapped[str] = mapped_column(String(255))
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    component_id: Mapped[UUID] = mapped_column(
+        Uuid, ForeignKey(f"{SCHEMA}.configuration_components.id", ondelete="CASCADE")
+    )
+    revision_number: Mapped[int] = mapped_column(Integer)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(String(2000))

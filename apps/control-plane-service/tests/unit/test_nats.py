@@ -1,17 +1,41 @@
 import pytest
 from control_plane.application.ports import OutboundMessage
 from control_plane.infrastructure.messaging.nats import NatsMessagePublisher
+from nats.js.errors import NotFoundError
+
+
+class FakeJetStream:
+    def __init__(self) -> None:
+        self.config = None
+        self.published: list[tuple[str, bytes, dict | None, str | None]] = []
+
+    async def stream_info(self, _name: str):
+        if self.config is None:
+            raise NotFoundError
+        return type("Info", (), {"config": self.config})()
+
+    async def add_stream(self, config):
+        self.config = config
+
+    async def update_stream(self, config):
+        self.config = config
+
+    async def publish(
+        self, subject, payload, *, headers=None, stream=None, timeout=None
+    ):
+        assert timeout == 5
+        self.published.append((subject, payload, headers, stream))
 
 
 class FakeNatsClient:
     def __init__(self) -> None:
         self.is_connected = True
         self.is_closed = False
-        self.published: list[tuple[str, bytes]] = []
+        self.js = FakeJetStream()
         self.drained = False
 
-    async def publish(self, subject: str, payload: bytes) -> None:
-        self.published.append((subject, payload))
+    def jetstream(self) -> FakeJetStream:
+        return self.js
 
     async def drain(self) -> None:
         self.drained = True
@@ -35,12 +59,21 @@ async def test_nats_adapter_connects_publishes_drains_and_closes(monkeypatch) ->
 
     publisher = NatsMessagePublisher("nats://example:4222")
     await publisher.connect()
-    await publisher.publish(OutboundMessage("events", b"serialized-message"))
+    await publisher.publish(
+        OutboundMessage("events", b"serialized-message", "event-id")
+    )
     await publisher.drain()
     await publisher.close()
 
-    assert client.published[0][0] == "events"
-    assert client.published[0][1] == b"serialized-message"
+    assert client.js.published == [
+        (
+            "events",
+            b"serialized-message",
+            {"Nats-Msg-Id": "event-id"},
+            "CONTROL_PLANE_EVENTS",
+        )
+    ]
+    assert client.js.config.subjects == ["evt.configuration.>"]
     assert client.drained
     assert client.is_closed
 

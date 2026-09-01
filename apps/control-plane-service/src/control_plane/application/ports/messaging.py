@@ -6,6 +6,7 @@ from typing import Protocol
 class OutboundMessage:
     subject: str
     payload: bytes
+    message_id: str | None = None
 
 
 class MessagePublisher(Protocol):

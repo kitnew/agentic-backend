@@ -1,7 +1,17 @@
 from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from contracts import (
+    COMPONENT_PUBLISHED_EVENT_TYPE,
+    COMPONENT_PUBLISHED_SUBJECT,
+    ConfigurationComponentPublishedPayloadV1,
+    ConfigurationComponentPublishedV1,
+)
+from contracts import (
+    ComponentScope as IntegrationComponentScope,
+)
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -20,6 +30,7 @@ from control_plane.domain.components.errors import (
 from .models import ConfigurationComponent as ComponentRow
 from .models import ConfigurationComponentDraft as DraftRow
 from .models import ConfigurationComponentRevision as RevisionRow
+from .models import OutboxMessage
 
 
 class SqlAlchemyComponentRepository:
@@ -145,9 +156,13 @@ class SqlAlchemyComponentRepository:
             )
             session.add(revision)
             await session.flush()
+            previous_active_revision_id = component.active_revision_id
             component.active_revision_id = revision.id
             component.updated_at = func.now()
             await session.delete(draft)
+            self._add_outbox(
+                session, address, component, revision, previous_active_revision_id
+            )
             await session.flush()
             await session.refresh(revision)
             return revision
@@ -192,11 +207,53 @@ class SqlAlchemyComponentRepository:
             )
             session.add(revision)
             await session.flush()
+            previous_active_revision_id = component.active_revision_id
             component.active_revision_id = revision.id
             component.updated_at = func.now()
+            self._add_outbox(
+                session, address, component, revision, previous_active_revision_id
+            )
             await session.flush()
             await session.refresh(revision)
             return revision
+
+    @staticmethod
+    def _add_outbox(
+        session: AsyncSession,
+        address: ComponentAddress,
+        component: ComponentRow,
+        revision: RevisionRow,
+        previous_active_revision_id: UUID | None,
+    ) -> None:
+        event_id = uuid4()
+        occurred_at = datetime.now(UTC)
+        event = ConfigurationComponentPublishedV1(
+            event_id=event_id,
+            occurred_at=occurred_at,
+            payload=ConfigurationComponentPublishedPayloadV1(
+                component_id=component.id,
+                component_kind=str(address.kind),
+                component_scope=IntegrationComponentScope(
+                    type=address.scope.type.value, key=address.scope.key
+                ),
+                revision_id=revision.id,
+                revision_number=revision.revision_number,
+                schema_version=revision.schema_version,
+                previous_active_revision_id=previous_active_revision_id,
+                restored_from_revision_id=revision.restored_from_revision_id,
+            ),
+        )
+        session.add(
+            OutboxMessage(
+                id=event_id,
+                event_type=COMPONENT_PUBLISHED_EVENT_TYPE,
+                subject=COMPONENT_PUBLISHED_SUBJECT,
+                payload=event.model_dump(mode="json"),
+                component_id=component.id,
+                revision_number=revision.revision_number,
+                occurred_at=occurred_at,
+            )
+        )
 
     def _validate(
         self, schema_version: int, value: object, definition: ComponentDefinition[Any]
