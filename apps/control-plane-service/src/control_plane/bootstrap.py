@@ -13,10 +13,11 @@ from control_plane.application.components import ComponentService
 from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
 )
+from control_plane.application.execution_resolver import ExecutionResolver
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
 from control_plane.application.runtime_materialization import (
-    RuntimeMaterializationService,
+    ExecutionSnapshotService,
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.capabilities import register_capability_components
@@ -36,7 +37,7 @@ from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
 from control_plane.infrastructure.persistence.runtime_execution_snapshots import (
-    SqlAlchemyRuntimeExecutionSnapshotRepository,
+    SqlAlchemyExecutionSnapshotRepository,
 )
 from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
@@ -101,7 +102,7 @@ def create_app(
                 settings.control_plane_encryption_key.get_secret_value(),
                 settings.control_plane_encryption_key_id,
             ),
-            SqlAlchemyRuntimeExecutionSnapshotRepository(database.sessions),
+            SqlAlchemyExecutionSnapshotRepository(database.sessions),
         )
         if isinstance(database, Database)
         else None
@@ -121,11 +122,12 @@ def create_app(
         else None
     )
     runtime_materialization = (
-        RuntimeMaterializationService(
+        ExecutionSnapshotService(
             database.sessions,
             runtime_resolver,
             resolution_reader,
-            SqlAlchemyRuntimeExecutionSnapshotRepository(database.sessions),
+            SqlAlchemyExecutionSnapshotRepository(database.sessions),
+            ExecutionResolver(registry, runtime_resolver),
         )
         if runtime_resolver is not None and resolution_reader is not None
         else None

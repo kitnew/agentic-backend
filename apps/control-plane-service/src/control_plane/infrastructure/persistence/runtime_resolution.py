@@ -13,6 +13,7 @@ from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
     PlatformScope,
+    ProfileScope,
     TenantScope,
 )
 from control_plane.domain.managed_resources import (
@@ -33,7 +34,10 @@ from .models import ConfigurationComponent as ComponentRow
 from .models import ConfigurationComponentRevision as RevisionRow
 from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
+from .models import HandoffDestination as HandoffRow
+from .models import IntegrationConnection as IntegrationRow
 from .models import ModelDeployment as DeploymentRow
+from .models import PhoneNumberAssignment as PhoneRow
 from .models import ProviderConnection as ConnectionRow
 
 _PLATFORM_KINDS = (
@@ -46,6 +50,11 @@ _PLATFORM_KINDS = (
 _TENANT_KINDS = (
     "runtime.architecture.policy",
     "runtime.speech.overrides",
+    "prompt.profile.selection",
+    "prompt.tenant",
+    "knowledge.tenant",
+    "capabilities.tenant",
+    "post_call.tenant",
 )
 
 
@@ -113,7 +122,18 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                     else None
                 )
                 credentials[row.id] = self._credential(row, number)
-        return RuntimeResolutionState(components, deployments, connections, credentials)
+        integrations = await self._integrations(session, tenant_id)
+        handoffs = await self._handoffs(session, tenant_id)
+        phone = await self._phone(session, tenant_id)
+        return RuntimeResolutionState(
+            components,
+            deployments,
+            connections,
+            credentials,
+            integrations,
+            handoffs,
+            phone,
+        )
 
     @staticmethod
     async def _components(
@@ -134,6 +154,10 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                             & (ComponentRow.scope_key == tenant_id)
                             & ComponentRow.kind.in_(_TENANT_KINDS)
                         ),
+                        (
+                            (ComponentRow.scope_type == "profile")
+                            & (ComponentRow.kind == "prompt.profile")
+                        ),
                     )
                 )
             )
@@ -143,7 +167,11 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
             scope = (
                 PlatformScope()
                 if component.scope_type == "platform"
-                else TenantScope(tenant_id)
+                else (
+                    TenantScope(tenant_id)
+                    if component.scope_type == "tenant"
+                    else ProfileScope(component.scope_key or "")
+                )
             )
             address = ComponentAddress(ComponentKind(component.kind), scope)
             result[address] = StoredActiveRuntimeComponent(
@@ -154,6 +182,79 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                 dict(revision.value),
             )
         return result
+
+    async def _integrations(
+        self, session: AsyncSession, tenant_id: str
+    ) -> dict[UUID, dict[str, object]]:
+        rows = (await session.scalars(select(IntegrationRow))).all()
+        result: dict[UUID, dict[str, object]] = {}
+        for row in rows:
+            credential = None
+            if row.credential_id:
+                credential_row = await session.get(CredentialRow, row.credential_id)
+                if credential_row:
+                    number = (
+                        await session.scalar(
+                            select(CredentialVersionRow.version_number).where(
+                                CredentialVersionRow.id
+                                == credential_row.active_version_id
+                            )
+                        )
+                        if credential_row.active_version_id
+                        else None
+                    )
+                    credential = {
+                        "credential_ref": credential_row.id,
+                        "generation": credential_row.generation,
+                        "status": credential_row.status,
+                        "active_version_id": credential_row.active_version_id,
+                        "active_version_number": number,
+                    }
+            result[row.id] = {
+                "tenant_id": row.tenant_id,
+                "integration_kind": row.integration_kind,
+                "config": dict(row.config),
+                "enabled": row.enabled,
+                "generation": row.generation,
+                "credential": credential,
+            }
+        return result
+
+    @staticmethod
+    async def _handoffs(
+        session: AsyncSession, tenant_id: str
+    ) -> tuple[dict[str, object], ...]:
+        rows = (
+            await session.scalars(
+                select(HandoffRow).where(
+                    HandoffRow.tenant_id == tenant_id, HandoffRow.enabled
+                )
+            )
+        ).all()
+        return tuple(
+            {
+                "id": row.id,
+                "key": row.key,
+                "description": row.description,
+                "generation": row.generation,
+            }
+            for row in sorted(rows, key=lambda row: row.key)
+        )
+
+    @staticmethod
+    async def _phone(session: AsyncSession, tenant_id: str) -> dict[str, object] | None:
+        row = await session.scalar(
+            select(PhoneRow).where(PhoneRow.tenant_id == tenant_id, PhoneRow.enabled)
+        )
+        return (
+            None
+            if row is None
+            else {
+                "id": row.id,
+                "phone_number": row.phone_number,
+                "generation": row.generation,
+            }
+        )
 
     @staticmethod
     def _deployment_ids(

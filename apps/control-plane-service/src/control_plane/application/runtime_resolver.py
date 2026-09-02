@@ -1,5 +1,5 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, NoReturn, Protocol, cast
 from uuid import UUID
 
@@ -82,6 +82,9 @@ class RuntimeResolutionState:
     deployments: Mapping[UUID, ModelDeployment]
     connections: Mapping[UUID, ProviderConnection]
     credentials: Mapping[UUID, Credential]
+    integrations: Mapping[UUID, Mapping[str, object]] = field(default_factory=dict)
+    handoffs: tuple[Mapping[str, object], ...] = ()
+    phone_assignment: Mapping[str, object] | None = None
 
 
 class RuntimeResolutionReader(Protocol):

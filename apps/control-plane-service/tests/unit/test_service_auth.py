@@ -133,7 +133,7 @@ async def test_runtime_materialization_requires_expected_signed_service_scope(
         transport=ASGITransport(app=app()), base_url="http://test"
     ) as client:
         response = await client.post(
-            "/internal/v1/runtime-execution-snapshots/00000000-0000-0000-0000-000000000001/secrets/llm",
+            "/internal/v1/execution-snapshots/00000000-0000-0000-0000-000000000001/secrets/llm",
             headers=headers,
         )
     assert response.status_code == expected

@@ -23,6 +23,14 @@ class PromptValue(BaseModel):
         return content
 
 
+class ProfileSelection(BaseModel):
+    """The explicit tenant choice of a platform profile prompt."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    profile_key: Annotated[str, Strict(), Field(min_length=1, max_length=255)]
+
+
 def register_prompt_components(registry: object) -> None:
     assert isinstance(registry, ComponentRegistry)
     registry.register(
@@ -30,6 +38,14 @@ def register_prompt_components(registry: object) -> None:
             ComponentKind("prompt.system"),
             PromptValue,
             frozenset({ScopeType.PLATFORM}),
+            1,
+        )
+    )
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("prompt.profile.selection"),
+            ProfileSelection,
+            frozenset({ScopeType.TENANT}),
             1,
         )
     )

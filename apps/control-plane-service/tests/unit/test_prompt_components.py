@@ -1,4 +1,5 @@
 import pytest
+from control_plane.application.execution_resolver import compose_instructions
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
@@ -36,6 +37,16 @@ def test_prompt_kinds_are_scope_explicit_and_content_is_lossless() -> None:
         assert isinstance(value, PromptValue)
         assert value.content == text
         assert definition.serialize(value) == {"content": text}
+
+
+def test_profile_selection_is_explicit_and_prompt_composition_is_lossless() -> None:
+    selection = registry().resolve(
+        ComponentAddress(ComponentKind("prompt.profile.selection"), TenantScope("t"))
+    ).deserialize({"profile_key": "hotel"})
+    assert selection.profile_key == "hotel"
+    assert compose_instructions("System\n", "Profile", "", "Knowledge\n") == (
+        "System\n\n\nProfile\n\nKnowledge\n"
+    )
 
 
 @pytest.mark.parametrize(

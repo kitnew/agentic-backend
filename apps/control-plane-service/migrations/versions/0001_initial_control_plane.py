@@ -295,7 +295,7 @@ def upgrade() -> None:
         postgresql_where=sa.text("enabled"),
     )
     op.create_table(
-        "runtime_execution_snapshots",
+        "execution_snapshots",
         sa.Column("snapshot_id", sa.Uuid(), primary_key=True),
         sa.Column("tenant_id", sa.String(255), nullable=False),
         sa.Column("schema_version", sa.Integer(), nullable=False),
@@ -303,16 +303,16 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("content_hash", sa.String(64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("schema_version = 1", name="ck_runtime_execution_snapshot_schema_version"),
-        sa.CheckConstraint("architecture IN ('cascade', 'realtime')", name="ck_runtime_execution_snapshot_architecture"),
+        sa.CheckConstraint("schema_version = 1", name="ck_execution_snapshot_schema_version"),
+        sa.CheckConstraint("architecture IN ('cascade', 'realtime')", name="ck_execution_snapshot_architecture"),
         schema=SCHEMA,
     )
-    op.create_index("ix_runtime_execution_snapshot_tenant_created", "runtime_execution_snapshots", ["tenant_id", "created_at"], schema=SCHEMA)
+    op.create_index("ix_execution_snapshot_tenant_created", "execution_snapshots", ["tenant_id", "created_at"], schema=SCHEMA)
 
 
 def downgrade() -> None:
-    op.drop_index("ix_runtime_execution_snapshot_tenant_created", table_name="runtime_execution_snapshots", schema=SCHEMA)
-    op.drop_table("runtime_execution_snapshots", schema=SCHEMA)
+    op.drop_index("ix_execution_snapshot_tenant_created", table_name="execution_snapshots", schema=SCHEMA)
+    op.drop_table("execution_snapshots", schema=SCHEMA)
     op.drop_index("uq_phone_number_assignment_enabled_phone", table_name="phone_number_assignments", schema=SCHEMA)
     op.drop_index("uq_phone_number_assignment_enabled_tenant", table_name="phone_number_assignments", schema=SCHEMA)
     op.drop_table("phone_number_assignments", schema=SCHEMA)

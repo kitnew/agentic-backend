@@ -14,7 +14,7 @@ from control_plane.application.execution_materialization import (
 )
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.runtime_materialization import (
-    RuntimeMaterializationService,
+    ExecutionSnapshotService,
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.components import (
@@ -214,7 +214,7 @@ def create_http_app(
     components: ComponentService | None = None,
     managed_resources: ManagedResourceService | None = None,
     runtime_resolver: RuntimeResolver | None = None,
-    runtime_materialization: RuntimeMaterializationService | None = None,
+    runtime_materialization: ExecutionSnapshotService | None = None,
     execution_materialization: ExecutionMaterializationService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
@@ -316,18 +316,20 @@ def create_http_app(
     if runtime_materialization is not None:
 
         @app.post(
-            "/v1/runtime/materialize/tenant/{tenant_id}",
+            "/v1/execution-snapshots/materialize/tenant/{tenant_id}",
             status_code=status.HTTP_201_CREATED,
         )
-        async def materialize_runtime(request: Request, tenant_id: str) -> Any:
-            service: RuntimeMaterializationService = (
+        async def materialize_execution_snapshot(
+            request: Request, tenant_id: str
+        ) -> Any:
+            service: ExecutionSnapshotService = (
                 request.app.state.runtime_materialization
             )
-            return jsonable_encoder(await service.materialize_runtime(tenant_id))
+            return jsonable_encoder(await service.materialize(tenant_id))
 
-        @app.get("/v1/runtime/execution-snapshots/{snapshot_id}")
-        async def get_runtime_snapshot(request: Request, snapshot_id: UUID) -> Any:
-            service: RuntimeMaterializationService = (
+        @app.get("/v1/execution-snapshots/{snapshot_id}")
+        async def get_execution_snapshot(request: Request, snapshot_id: UUID) -> Any:
+            service: ExecutionSnapshotService = (
                 request.app.state.runtime_materialization
             )
             snapshot = await service.get_snapshot(snapshot_id)
@@ -337,9 +339,7 @@ def create_http_app(
 
     if execution_materialization is not None:
 
-        @app.post(
-            "/internal/v1/runtime-execution-snapshots/{snapshot_id}/secrets/{slot}"
-        )
+        @app.post("/internal/v1/execution-snapshots/{snapshot_id}/secrets/{slot}")
         async def materialize_runtime_secret(
             request: Request,
             snapshot_id: UUID,

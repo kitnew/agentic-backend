@@ -6,7 +6,7 @@ from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
 from control_plane.application.runtime_materialization import (
-    RuntimeMaterializationService,
+    ExecutionSnapshotService,
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.components import (
@@ -35,7 +35,7 @@ from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
 from control_plane.infrastructure.persistence.runtime_execution_snapshots import (
-    SqlAlchemyRuntimeExecutionSnapshotRepository,
+    SqlAlchemyExecutionSnapshotRepository,
 )
 from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
@@ -214,11 +214,11 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
     register_runtime_components(registry)
     reader = SqlAlchemyRuntimeResolutionReader(database.sessions)
     resolver = RuntimeResolver(registry, default_provider_registry(), reader)
-    materializer = RuntimeMaterializationService(
+    materializer = ExecutionSnapshotService(
         database.sessions,
         resolver,
         reader,
-        SqlAlchemyRuntimeExecutionSnapshotRepository(database.sessions),
+        SqlAlchemyExecutionSnapshotRepository(database.sessions),
     )
 
     async def publish(kind: str, value: dict[str, object], tenant: bool = False):

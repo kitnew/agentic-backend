@@ -54,25 +54,29 @@ SNAPSHOT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)
-class RuntimeExecutionSnapshot:
+class ExecutionSnapshot:
     snapshot_id: UUID
     schema_version: int
     tenant_id: str
     architecture: str
     created_at: datetime
+    execution: Mapping[str, object]
     runtime: ResolvedRuntime
     resolution: RuntimeResolution
     content_hash: str
 
 
 def snapshot_payload(
-    tenant_id: str, resolution: RuntimeResolution
+    tenant_id: str,
+    resolution: RuntimeResolution,
+    execution: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
         "tenant_id": tenant_id,
         "architecture": resolution.selected.architecture,
         "runtime": _json_value(resolution.selected),
+        "execution": _json_value(execution or {"runtime": resolution.selected}),
         "resolution": {
             "architecture_policy": _json_value(resolution.architecture_policy),
             "speech_overrides": _json_value(resolution.speech_overrides),
@@ -94,7 +98,7 @@ def snapshot_from_payload(
     created_at: datetime,
     payload: Mapping[str, object],
     digest: str,
-) -> RuntimeExecutionSnapshot:
+) -> ExecutionSnapshot:
     runtime_raw = _mapping(payload["runtime"])
     resolution_raw = _mapping(payload["resolution"])
     runtime = _runtime(runtime_raw)
@@ -104,16 +108,19 @@ def snapshot_from_payload(
         _provenance(_mapping(resolution_raw["speech_overrides"])),
         tuple(_attempt(_mapping(value)) for value in resolution_raw["attempts"]),
     )
-    return RuntimeExecutionSnapshot(
+    return ExecutionSnapshot(
         snapshot_id,
         int(cast(Any, payload["schema_version"])),
         str(payload["tenant_id"]),
         str(payload["architecture"]),
         created_at,
+        _mapping(payload.get("execution", {"runtime": runtime})),
         runtime,
         resolution,
         digest,
     )
+
+
 
 
 def _json_value(value: object) -> object:

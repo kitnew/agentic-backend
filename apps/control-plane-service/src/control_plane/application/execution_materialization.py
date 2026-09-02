@@ -9,7 +9,7 @@ from control_plane.domain.managed_resource_errors import (
     ManagedResourceConflict,
     ManagedResourceNotFound,
 )
-from control_plane.domain.runtime_execution_snapshot import RuntimeExecutionSnapshot
+from control_plane.domain.runtime_execution_snapshot import ExecutionSnapshot
 from control_plane.domain.runtime_resolution import (
     ResolvedCascadeRuntime,
     ResolvedProviderResource,
@@ -21,7 +21,7 @@ from control_plane.infrastructure.persistence.models import (
     IntegrationConnection,
 )
 from control_plane.infrastructure.persistence.runtime_execution_snapshots import (
-    SqlAlchemyRuntimeExecutionSnapshotRepository,
+    SqlAlchemyExecutionSnapshotRepository,
 )
 
 
@@ -73,7 +73,7 @@ class ExecutionMaterializationService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         cipher: CredentialCipher,
-        snapshots: SqlAlchemyRuntimeExecutionSnapshotRepository,
+        snapshots: SqlAlchemyExecutionSnapshotRepository,
     ) -> None:
         self._sessions, self._cipher, self._snapshots = sessions, cipher, snapshots
 
@@ -167,7 +167,7 @@ class ExecutionMaterializationService:
             )
 
     def _runtime_resource(
-        self, snapshot: RuntimeExecutionSnapshot, slot: RuntimeSecretSlot
+        self, snapshot: ExecutionSnapshot, slot: RuntimeSecretSlot
     ) -> ResolvedProviderResource:
         runtime = snapshot.runtime
         resources = (
