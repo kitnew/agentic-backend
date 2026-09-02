@@ -53,6 +53,7 @@ class ExecutionSnapshotService:
                     resolution.selected.architecture,
                     datetime.now(UTC),
                     cast(dict[str, object], payload["execution"]),
+                    None,
                     resolution.selected,
                     resolution,
                     content_hash(payload),
@@ -66,6 +67,7 @@ class ExecutionSnapshotService:
                 execution.runtime,
                 {
                     "runtime": execution.runtime.selected,
+                    "agent": execution.agent,
                     "prompts": execution.prompts,
                     "knowledge": execution.knowledge,
                     "capabilities": execution.capabilities,
@@ -82,6 +84,7 @@ class ExecutionSnapshotService:
                 execution.architecture,
                 datetime.now(UTC),
                 cast(dict[str, object], payload["execution"]),
+                execution.agent,
                 execution.runtime.selected,
                 execution.runtime,
                 content_hash(payload),

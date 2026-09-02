@@ -45,6 +45,17 @@ class ComponentProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedTenantAgent:
+    component: ComponentProvenance
+    display_name: str
+    agent_profile: str
+    greeting: str
+    conversation_scope: str
+    locale: str
+    timezone: str
+
+
+@dataclass(frozen=True, slots=True)
 class CredentialProvenance:
     credential_ref: UUID
     generation: int

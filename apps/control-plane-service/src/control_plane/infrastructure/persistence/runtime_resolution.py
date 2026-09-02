@@ -52,6 +52,7 @@ _TENANT_KINDS = (
     "runtime.speech.overrides",
     "prompt.profile.selection",
     "prompt.tenant",
+    "agent.tenant",
     "knowledge.tenant",
     "capabilities.tenant",
     "post_call.tenant",

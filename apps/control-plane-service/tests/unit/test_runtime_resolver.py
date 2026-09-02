@@ -4,18 +4,22 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from control_plane.application.execution_resolver import ExecutionResolver
 from control_plane.application.runtime_resolver import (
     RuntimeResolutionState,
     RuntimeResolver,
     StoredActiveRuntimeComponent,
 )
+from control_plane.domain.agent_components import register_agent_components
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
     ComponentRegistry,
     PlatformScope,
+    ProfileScope,
     TenantScope,
 )
+from control_plane.domain.knowledge_components import register_knowledge_components
 from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
@@ -29,6 +33,7 @@ from control_plane.domain.managed_resources import (
     RealtimeCapabilities,
     STTCapabilities,
 )
+from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.domain.providers import default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.domain.runtime_execution_snapshot import (
@@ -37,6 +42,7 @@ from control_plane.domain.runtime_execution_snapshot import (
     snapshot_payload,
 )
 from control_plane.domain.runtime_resolution import (
+    ComponentProvenance,
     ResolutionFailureReason,
     ResolvedCascadeRuntime,
     ResolvedRealtimeRuntime,
@@ -285,6 +291,40 @@ def resolver(value: RuntimeResolutionState) -> RuntimeResolver:
     return RuntimeResolver(registry, default_provider_registry(), Reader(value))
 
 
+def execution_resolver(value: RuntimeResolutionState) -> tuple[ExecutionResolver, RuntimeResolutionState]:
+    registry = ComponentRegistry()
+    register_runtime_components(registry)
+    register_agent_components(registry)
+    register_prompt_components(registry)
+    register_knowledge_components(registry)
+    components = dict(value.components)
+    for address, raw in (
+        (ComponentAddress(ComponentKind("prompt.system"), PlatformScope()), {"content": "system"}),
+        (ComponentAddress(ComponentKind("prompt.profile"), ProfileScope("default")), {"content": "profile"}),
+        (ComponentAddress(ComponentKind("prompt.profile.selection"), TenantScope(TENANT)), {"profile_key": "default"}),
+        (ComponentAddress(ComponentKind("prompt.tenant"), TenantScope(TENANT)), {"content": "tenant"}),
+        (ComponentAddress(ComponentKind("knowledge.tenant"), TenantScope(TENANT)), {"content": "knowledge"}),
+        (
+            ComponentAddress(ComponentKind("agent.tenant"), TenantScope(TENANT)),
+            {
+                "display_name": "Amélia",
+                "agent_profile": "default",
+                "greeting": "Dobrý deň 🌿",
+                "conversation_scope": "property_only",
+                "locale": "sk-SK",
+                "timezone": "Europe/Bratislava",
+            },
+        ),
+    ):
+        components[address] = StoredActiveRuntimeComponent(
+            address, UUID(int=900 + len(components)), 2, 1, raw
+        )
+    enriched = replace(value, components=components)
+    return ExecutionResolver(
+        registry, RuntimeResolver(registry, default_provider_registry(), Reader(enriched))
+    ), enriched
+
+
 def without_component(
     value: RuntimeResolutionState, kind: str
 ) -> RuntimeResolutionState:
@@ -377,6 +417,54 @@ async def test_execution_snapshot_payload_round_trips_and_is_secret_free() -> No
         for field in ("ciphertext", "nonce", "key_id", "secret_envelope")
     )
     assert content_hash(payload) == content_hash(snapshot_payload(TENANT, resolution))
+
+
+def test_execution_resolution_contains_tenant_agent_context_and_provenance() -> None:
+    value = state(["cascade"])
+    resolver, enriched = execution_resolver(value)
+    execution = resolver.resolve_state(TENANT, enriched)
+
+    assert execution.agent.display_name == "Amélia"
+    assert execution.agent.agent_profile == "default"
+    assert execution.agent.greeting == "Dobrý deň 🌿"
+    assert execution.agent.conversation_scope == "property_only"
+    assert execution.agent.locale == "sk-SK"
+    assert execution.agent.timezone == "Europe/Bratislava"
+    agent_provenance = execution.provenance["agent"]
+    selection_provenance = execution.provenance["profile_selection"]
+    assert isinstance(agent_provenance, ComponentProvenance)
+    assert isinstance(selection_provenance, ComponentProvenance)
+    assert agent_provenance.component_kind == "agent.tenant"
+    assert selection_provenance.component_kind == (
+        "prompt.profile.selection"
+    )
+
+
+def test_execution_resolution_requires_agent_component() -> None:
+    value = state(["cascade"])
+    resolver, enriched = execution_resolver(value)
+    without_agent = without_component(enriched, "agent.tenant")
+
+    with pytest.raises(RuntimeResolutionError) as captured:
+        resolver.resolve_state(TENANT, without_agent)
+
+    assert captured.value.reason is ResolutionFailureReason.MISSING_TENANT_COMPONENT
+    assert captured.value.details["component_kind"] == "agent.tenant"
+
+
+def test_execution_snapshot_contains_agent_and_hashes_context_changes() -> None:
+    value = state(["cascade"])
+    resolver, enriched = execution_resolver(value)
+    execution = resolver.resolve_state(TENANT, enriched)
+    execution_payload = {"agent": execution.agent}
+    payload = snapshot_payload(TENANT, execution.runtime, execution_payload)
+    restored = snapshot_from_payload(UUID(int=999), NOW, payload, content_hash(payload))
+
+    assert restored.agent == execution.agent
+    changed = {"agent": replace(execution.agent, greeting="Nový deň 🌿")}
+    assert content_hash(payload) != content_hash(
+        snapshot_payload(TENANT, execution.runtime, changed)
+    )
 
 
 @pytest.mark.asyncio

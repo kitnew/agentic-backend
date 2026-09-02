@@ -10,6 +10,7 @@ from control_plane.application.runtime_resolver import (
     RuntimeResolver,
     StoredActiveRuntimeComponent,
 )
+from control_plane.domain.agent_components import TenantAgentValue
 from control_plane.domain.capabilities import (
     TenantCapabilitiesConfig,
     TenantCapabilityProfile,
@@ -30,6 +31,7 @@ from control_plane.domain.prompt_components import ProfileSelection, PromptValue
 from control_plane.domain.runtime_resolution import (
     ComponentProvenance,
     ResolutionFailureReason,
+    ResolvedTenantAgent,
     RuntimeResolution,
     RuntimeResolutionError,
 )
@@ -39,6 +41,7 @@ from control_plane.domain.runtime_resolution import (
 class ExecutionResolution:
     tenant_id: str
     runtime: RuntimeResolution
+    agent: ResolvedTenantAgent
     prompts: dict[str, object]
     knowledge: dict[str, object]
     capabilities: tuple[dict[str, object], ...]
@@ -66,6 +69,11 @@ class ExecutionResolver:
     ) -> ExecutionResolution:
         # Runtime selection is intentionally complete before non-runtime domains.
         runtime = self._runtime.resolve_state(tenant_id, state)
+        agent = self._required(
+            state,
+            ComponentAddress(ComponentKind("agent.tenant"), TenantScope(tenant_id)),
+            TenantAgentValue,
+        )
         system = self._required(
             state,
             ComponentAddress(ComponentKind("prompt.system"), PlatformScope()),
@@ -145,6 +153,15 @@ class ExecutionResolver:
         return ExecutionResolution(
             tenant_id,
             runtime,
+            ResolvedTenantAgent(
+                self._provenance(agent),
+                agent.value.display_name,
+                agent.value.agent_profile,
+                agent.value.greeting,
+                agent.value.conversation_scope,
+                agent.value.locale,
+                agent.value.timezone,
+            ),
             prompts,
             {
                 "content": knowledge.value.content,
@@ -155,6 +172,7 @@ class ExecutionResolver:
             handoff,
             state.phone_assignment,
             {
+                "agent": self._provenance(agent),
                 "profile_selection": self._provenance(selection),
                 "capabilities": self._provenance(capabilities)
                 if capabilities.stored

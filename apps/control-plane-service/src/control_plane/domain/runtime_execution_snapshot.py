@@ -46,11 +46,12 @@ from control_plane.domain.runtime_resolution import (
     ResolvedRealtimeTranscription,
     ResolvedRuntime,
     ResolvedSpeechHints,
+    ResolvedTenantAgent,
     RuntimeResolution,
     SpeechHintStatus,
 )
 
-SNAPSHOT_SCHEMA_VERSION = 1
+SNAPSHOT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +62,7 @@ class ExecutionSnapshot:
     architecture: str
     created_at: datetime
     execution: Mapping[str, object]
+    agent: ResolvedTenantAgent | None
     runtime: ResolvedRuntime
     resolution: RuntimeResolution
     content_hash: str
@@ -76,6 +78,9 @@ def snapshot_payload(
         "tenant_id": tenant_id,
         "architecture": resolution.selected.architecture,
         "runtime": _json_value(resolution.selected),
+        "agent": _json_value(cast(Any, execution)["agent"])
+        if execution is not None and "agent" in execution
+        else None,
         "execution": _json_value(execution or {"runtime": resolution.selected}),
         "resolution": {
             "architecture_policy": _json_value(resolution.architecture_policy),
@@ -100,6 +105,7 @@ def snapshot_from_payload(
     digest: str,
 ) -> ExecutionSnapshot:
     runtime_raw = _mapping(payload["runtime"])
+    agent_raw = payload.get("agent")
     resolution_raw = _mapping(payload["resolution"])
     runtime = _runtime(runtime_raw)
     resolution = RuntimeResolution(
@@ -115,9 +121,22 @@ def snapshot_from_payload(
         str(payload["architecture"]),
         created_at,
         _mapping(payload.get("execution", {"runtime": runtime})),
+        _agent(_mapping(agent_raw)) if agent_raw is not None else None,
         runtime,
         resolution,
         digest,
+    )
+
+
+def _agent(value: Mapping[str, Any]) -> ResolvedTenantAgent:
+    return ResolvedTenantAgent(
+        _provenance(_mapping(value["component"])),
+        value["display_name"],
+        value["agent_profile"],
+        value["greeting"],
+        value["conversation_scope"],
+        value["locale"],
+        value["timezone"],
     )
 
 

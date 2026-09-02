@@ -20,6 +20,7 @@ from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
+from control_plane.domain.agent_components import register_agent_components
 from control_plane.domain.capabilities import register_capability_components
 from control_plane.domain.components import ComponentRegistry
 from control_plane.domain.knowledge_components import register_knowledge_components
@@ -65,6 +66,7 @@ def create_app(
     if registry is None:
         registry = ComponentRegistry()
         register_runtime_components(registry)
+        register_agent_components(registry)
         register_prompt_components(registry)
         register_knowledge_components(registry)
         register_capability_components(registry)
