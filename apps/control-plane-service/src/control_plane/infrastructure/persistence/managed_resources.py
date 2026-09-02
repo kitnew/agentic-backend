@@ -172,23 +172,6 @@ class SqlAlchemyManagedResourceRepository:
                 for row in rows
             ]
 
-    async def resolve_secret(self, credential_ref: CredentialRef) -> str:
-        async with self._sessions() as session:
-            row = await self._credential_row(session, credential_ref)
-            if row.status == CredentialStatus.REVOKED or row.active_version_id is None:
-                raise ManagedResourceConflict("credential is not usable")
-            version = await session.get(CredentialVersionRow, row.active_version_id)
-            if version is None:
-                raise ManagedResourceConflict("credential has no active version")
-            return self._cipher.decrypt(
-                row.id,
-                version.version_number,
-                version.nonce,
-                version.ciphertext,
-                version.key_id,
-                version.algorithm,
-            )
-
     async def list_credential_versions(
         self, credential_ref: CredentialRef
     ) -> Sequence[CredentialVersion]:

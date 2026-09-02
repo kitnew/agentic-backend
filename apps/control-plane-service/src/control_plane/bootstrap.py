@@ -10,6 +10,9 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from control_plane import SERVICE_NAME
 from control_plane.application.components import ComponentService
+from control_plane.application.execution_materialization import (
+    ExecutionMaterializationService,
+)
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
 from control_plane.application.runtime_materialization import (
@@ -91,6 +94,18 @@ def create_app(
         if isinstance(database, Database)
         else None
     )
+    execution_materialization = (
+        ExecutionMaterializationService(
+            database.sessions,
+            CredentialCipher(
+                settings.control_plane_encryption_key.get_secret_value(),
+                settings.control_plane_encryption_key_id,
+            ),
+            SqlAlchemyRuntimeExecutionSnapshotRepository(database.sessions),
+        )
+        if isinstance(database, Database)
+        else None
+    )
     resolution_reader = (
         SqlAlchemyRuntimeResolutionReader(database.sessions)
         if isinstance(database, Database)
@@ -121,6 +136,7 @@ def create_app(
         managed_resources,
         runtime_resolver,
         runtime_materialization,
+        execution_materialization,
     )
     app.state.settings = settings
     app.state.database = database

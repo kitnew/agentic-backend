@@ -94,7 +94,6 @@ async def test_credentials_are_encrypted_rotated_and_terminal(
         created = await service.create_credential("azure-prod", secret, "alice")
         assert created.active_secret_version_number == 1
         assert created.generation == 1
-        assert await repository.resolve_secret(created.ref) == secret
 
         async with database.sessions() as session:
             stored = await session.scalar(select(CredentialVersion))
@@ -129,26 +128,32 @@ async def test_credentials_are_encrypted_rotated_and_terminal(
         revoked = await service.revoke_credential(created.ref, "dave")
         assert revoked.status == "revoked" and revoked.active_version_id is None
         assert revoked.generation == 4
-        assert [value.version_number for value in await repository.list_credential_versions(created.ref)] == [1, 2, 3]
+        assert [
+            value.version_number
+            for value in await repository.list_credential_versions(created.ref)
+        ] == [1, 2, 3]
         async with database.sessions() as session:
             events = (
                 await session.scalars(
                     select(OutboxMessage)
-                    .where(OutboxMessage.ordering_key == f"managed:credential:{created.ref.value}")
+                    .where(
+                        OutboxMessage.ordering_key
+                        == f"managed:credential:{created.ref.value}"
+                    )
                     .order_by(OutboxMessage.ordering_sequence)
                 )
             ).all()
         assert [
             (
                 ManagedResourceChangedV1.model_validate(event.payload).payload.action,
-                ManagedResourceChangedV1.model_validate(event.payload).payload.resource_generation,
+                ManagedResourceChangedV1.model_validate(
+                    event.payload
+                ).payload.resource_generation,
             )
             for event in events
         ] == [("created", 1), ("rotated", 2), ("rotated", 3), ("revoked", 4)]
         with pytest.raises(ManagedResourceConflict, match="cannot be rotated"):
             await service.rotate_credential(created.ref, "fourth", "dave")
-        with pytest.raises(ManagedResourceConflict, match="not usable"):
-            await repository.resolve_secret(created.ref)
         assert secret not in caplog.text
     finally:
         await database.close()
@@ -297,7 +302,10 @@ async def test_managed_outbox_preserves_resource_order_but_not_global_order(
         assert await second.relay_once()
         first_publisher.release.set()
         assert await in_flight
-        assert second_publisher.messages[-1].message_id != first_publisher.messages[-1].message_id
+        assert (
+            second_publisher.messages[-1].message_id
+            != first_publisher.messages[-1].message_id
+        )
     finally:
         first_publisher.release.set()
         await database.close()
@@ -359,15 +367,15 @@ async def test_http_lifecycle_and_secret_free_responses(
                     "key": "azure-chat-http",
                     "connection_ref": connection_id,
                     "deployment_kind": "llm",
-                        "deployment_config": {
+                    "deployment_config": {
                         "deployment_name": "chat",
                         "model": "gpt-5.6-terra",
                         "api_version": "2025-01-01-preview",
-                        },
-                        "llm_capabilities": {
-                            "supports_temperature": False,
-                            "supports_reasoning_effort": True,
-                        },
+                    },
+                    "llm_capabilities": {
+                        "supports_temperature": False,
+                        "supports_reasoning_effort": True,
+                    },
                     "enabled": True,
                     "actor": "admin",
                 },

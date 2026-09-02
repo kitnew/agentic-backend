@@ -16,7 +16,10 @@ class SqlAlchemyRuntimeExecutionSnapshotRepository:
         self._sessions = sessions
 
     async def create(
-        self, session: AsyncSession, snapshot: RuntimeExecutionSnapshot, payload: dict[str, object]
+        self,
+        session: AsyncSession,
+        snapshot: RuntimeExecutionSnapshot,
+        payload: dict[str, object],
     ) -> RuntimeExecutionSnapshot:
         session.add(
             SnapshotRow(
@@ -33,10 +36,15 @@ class SqlAlchemyRuntimeExecutionSnapshotRepository:
 
     async def get(self, snapshot_id: UUID) -> RuntimeExecutionSnapshot | None:
         async with self._sessions() as session:
-            row = await session.scalar(
-                select(SnapshotRow).where(SnapshotRow.snapshot_id == snapshot_id)
-            )
-            return self._snapshot(row) if row else None
+            return await self.get_in_session(session, snapshot_id)
+
+    async def get_in_session(
+        self, session: AsyncSession, snapshot_id: UUID
+    ) -> RuntimeExecutionSnapshot | None:
+        row = await session.scalar(
+            select(SnapshotRow).where(SnapshotRow.snapshot_id == snapshot_id)
+        )
+        return self._snapshot(row) if row else None
 
     @staticmethod
     def _snapshot(row: SnapshotRow) -> RuntimeExecutionSnapshot:

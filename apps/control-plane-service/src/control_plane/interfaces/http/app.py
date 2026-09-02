@@ -1,13 +1,17 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from control_plane import SERVICE_NAME
 from control_plane.application.components import ComponentService
+from control_plane.application.execution_materialization import (
+    ExecutionMaterializationService,
+    RuntimeSecretSlot,
+)
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.runtime_materialization import (
     RuntimeMaterializationService,
@@ -52,6 +56,10 @@ from control_plane.domain.managed_resources import (
     STTCapabilities,
 )
 from control_plane.domain.runtime_resolution import RuntimeResolutionError
+from control_plane.interfaces.http.service_auth import (
+    ServicePrincipal,
+    require_service_scope,
+)
 from control_plane.runtime.lifecycle import ServiceLifecycle
 
 
@@ -158,6 +166,10 @@ class PhoneNumberAssignmentCreate(BaseModel):
     actor: str = Field(min_length=1, max_length=255)
 
 
+_runtime_secret_auth = Depends(require_service_scope("runtime-secret:materialize"))
+_integration_material_auth = Depends(require_service_scope("integration-material:read"))
+
+
 class LLMCapabilitiesWrite(BaseModel):
     supports_temperature: bool
     supports_reasoning_effort: bool
@@ -203,6 +215,7 @@ def create_http_app(
     managed_resources: ManagedResourceService | None = None,
     runtime_resolver: RuntimeResolver | None = None,
     runtime_materialization: RuntimeMaterializationService | None = None,
+    execution_materialization: ExecutionMaterializationService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.lifecycle = lifecycle
@@ -210,6 +223,7 @@ def create_http_app(
     app.state.managed_resources = managed_resources
     app.state.runtime_resolver = runtime_resolver
     app.state.runtime_materialization = runtime_materialization
+    app.state.execution_materialization = execution_materialization
 
     @app.exception_handler(ComponentError)
     async def component_error(_request: Request, exc: ComponentError) -> JSONResponse:
@@ -321,7 +335,94 @@ def create_http_app(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
             return jsonable_encoder(snapshot)
 
+    if execution_materialization is not None:
+
+        @app.post(
+            "/internal/v1/runtime-execution-snapshots/{snapshot_id}/secrets/{slot}"
+        )
+        async def materialize_runtime_secret(
+            request: Request,
+            snapshot_id: UUID,
+            slot: RuntimeSecretSlot,
+            _principal: ServicePrincipal = _runtime_secret_auth,
+        ) -> JSONResponse:
+            service: ExecutionMaterializationService = (
+                request.app.state.execution_materialization
+            )
+            material = await service.runtime_secret(snapshot_id, slot)
+            return JSONResponse(
+                jsonable_encoder(_runtime_secret_response(material)),
+                headers=_secret_headers(),
+            )
+
+        @app.post(
+            "/internal/v1/tenants/{tenant_id}/integration-connections/{connection_id}/execution-material"
+        )
+        async def materialize_integration_execution(
+            request: Request,
+            tenant_id: str,
+            connection_id: UUID,
+            _principal: ServicePrincipal = _integration_material_auth,
+        ) -> JSONResponse:
+            service: ExecutionMaterializationService = (
+                request.app.state.execution_materialization
+            )
+            material = await service.integration_material(tenant_id, connection_id)
+            return JSONResponse(
+                jsonable_encoder(_integration_material_response(material)),
+                headers=_secret_headers(),
+            )
+
     return app
+
+
+def _secret_headers() -> dict[str, str]:
+    return {
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+    }
+
+
+def _runtime_secret_response(value: object) -> dict[str, object]:
+    from control_plane.application.execution_materialization import (
+        RuntimeSecretMaterial,
+    )
+
+    assert isinstance(value, RuntimeSecretMaterial)
+    return {
+        "snapshot_id": value.snapshot_id,
+        "slot": value.slot,
+        "secret": value.secret,
+        "credential_ref": value.credential_ref,
+        "credential_generation": value.credential_generation,
+        "credential_version_id": value.credential_version_id,
+        "credential_version_number": value.credential_version_number,
+        "provider_connection_ref": value.provider_connection_ref,
+        "provider_connection_generation": value.provider_connection_generation,
+        "model_deployment_ref": value.model_deployment_ref,
+        "model_deployment_generation": value.model_deployment_generation,
+    }
+
+
+def _integration_material_response(value: object) -> dict[str, object]:
+    from control_plane.application.execution_materialization import (
+        IntegrationExecutionMaterial,
+    )
+
+    assert isinstance(value, IntegrationExecutionMaterial)
+    return {
+        "tenant_id": value.tenant_id,
+        "integration_connection_id": value.integration_connection_id,
+        "integration_connection_generation": value.integration_connection_generation,
+        "integration_kind": value.integration_kind,
+        "config": value.config,
+        "secret": value.secret,
+        "credential_ref": value.credential_ref,
+        "credential_generation": value.credential_generation,
+        "credential_version_id": value.credential_version_id,
+        "credential_version_number": value.credential_version_number,
+    }
 
 
 def _address(request: Request, kind: str) -> ComponentAddress:
