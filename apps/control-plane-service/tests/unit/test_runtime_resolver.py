@@ -372,7 +372,10 @@ async def test_execution_snapshot_payload_round_trips_and_is_secret_free() -> No
 
     assert restored.runtime == resolution.selected
     assert restored.resolution == resolution
-    assert all(field not in str(payload).lower() for field in ("ciphertext", "nonce", "key_id", "secret_envelope"))
+    assert all(
+        field not in str(payload).lower()
+        for field in ("ciphertext", "nonce", "key_id", "secret_envelope")
+    )
     assert content_hash(payload) == content_hash(snapshot_payload(TENANT, resolution))
 
 

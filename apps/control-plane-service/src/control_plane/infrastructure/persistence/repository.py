@@ -415,9 +415,15 @@ class SqlAlchemyComponentRepository:
         from contracts.integration import HttpConnectionConfiguration
 
         config = HttpConnectionConfiguration.model_validate(connection.config)
-        if config.authentication.type == "api_key_header" and connection.credential_id is None:
+        if (
+            config.authentication.type == "api_key_header"
+            and connection.credential_id is None
+        ):
             raise InvalidComponentValue("HTTP API-key connection has no credential")
-        if config.authentication.type == "none" and connection.credential_id is not None:
+        if (
+            config.authentication.type == "none"
+            and connection.credential_id is not None
+        ):
             raise InvalidComponentValue("HTTP no-auth connection has a credential")
         if connection.credential_id is not None:
             credential = await session.get(CredentialRow, connection.credential_id)

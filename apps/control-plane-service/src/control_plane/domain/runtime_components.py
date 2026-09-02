@@ -18,7 +18,9 @@ from control_plane.domain.managed_resources import DeploymentKind, ModelDeployme
 
 
 class _RuntimeComponent(BaseModel):
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, str_strip_whitespace=True)
+    model_config = ConfigDict(
+        extra="forbid", allow_inf_nan=False, str_strip_whitespace=True
+    )
 
 
 class LLMDefaults(_RuntimeComponent):
@@ -183,7 +185,10 @@ def _validate_llm(config: LLMDefaults, value: object) -> None:
         raise InvalidComponentValue("llm deployment has no capabilities")
     if config.temperature is not None and not capabilities.supports_temperature:
         raise InvalidComponentValue("deployment does not support temperature")
-    if config.reasoning_effort is not None and not capabilities.supports_reasoning_effort:
+    if (
+        config.reasoning_effort is not None
+        and not capabilities.supports_reasoning_effort
+    ):
         raise InvalidComponentValue("deployment does not support reasoning_effort")
 
 
@@ -205,34 +210,66 @@ def register_runtime_components(registry: object) -> None:
 
     assert isinstance(registry, ComponentRegistry)
     platform = frozenset({ScopeType.PLATFORM})
-    registry.register(ComponentDefinition(
-        ComponentKind("runtime.llm.defaults"), LLMDefaults, platform, 1,
-        lambda value: value.deployment_ref, _validate_llm,
-    ))
-    registry.register(ComponentDefinition(
-        ComponentKind("runtime.stt.defaults"), STTDefaults, platform, 1,
-        lambda value: value.deployment_ref, _validate_stt,
-    ))
-    registry.register(ComponentDefinition(
-        ComponentKind("runtime.tts.defaults"), TTSDefaults, platform, 1,
-        lambda value: value.deployment_ref, _validate_tts,
-    ))
-    registry.register(ComponentDefinition(
-        ComponentKind("runtime.cascade.execution.defaults"),
-        CascadeExecutionDefaults,
-        platform,
-        1,
-    ))
-    registry.register(ComponentDefinition(
-        ComponentKind("runtime.realtime.execution.defaults"),
-        RealtimeExecutionDefaults,
-        platform,
-        1,
-    ))
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("runtime.llm.defaults"),
+            LLMDefaults,
+            platform,
+            1,
+            lambda value: value.deployment_ref,
+            _validate_llm,
+        )
+    )
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("runtime.stt.defaults"),
+            STTDefaults,
+            platform,
+            1,
+            lambda value: value.deployment_ref,
+            _validate_stt,
+        )
+    )
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("runtime.tts.defaults"),
+            TTSDefaults,
+            platform,
+            1,
+            lambda value: value.deployment_ref,
+            _validate_tts,
+        )
+    )
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("runtime.cascade.execution.defaults"),
+            CascadeExecutionDefaults,
+            platform,
+            1,
+        )
+    )
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("runtime.realtime.execution.defaults"),
+            RealtimeExecutionDefaults,
+            platform,
+            1,
+        )
+    )
     tenant = frozenset({ScopeType.TENANT})
-    registry.register(ComponentDefinition(
-        ComponentKind("runtime.architecture.policy"), ArchitecturePolicy, tenant, 1,
-    ))
-    registry.register(ComponentDefinition(
-        ComponentKind("runtime.speech.overrides"), SpeechOverrides, tenant, 1,
-    ))
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("runtime.architecture.policy"),
+            ArchitecturePolicy,
+            tenant,
+            1,
+        )
+    )
+    registry.register(
+        ComponentDefinition(
+            ComponentKind("runtime.speech.overrides"),
+            SpeechOverrides,
+            tenant,
+            1,
+        )
+    )

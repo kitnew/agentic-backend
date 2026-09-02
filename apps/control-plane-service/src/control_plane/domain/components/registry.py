@@ -29,7 +29,9 @@ class ComponentDefinition[T]:
             raise InvalidComponentValue(str(exc)) from exc
 
     def serialize(self, value: T) -> Any:
-        return TypeAdapter(self.value_type).dump_python(value, mode="json", by_alias=True)
+        return TypeAdapter(self.value_type).dump_python(
+            value, mode="json", by_alias=True
+        )
 
 
 class ComponentRegistry:

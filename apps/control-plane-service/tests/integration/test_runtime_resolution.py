@@ -223,23 +223,48 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
 
     async def publish(kind: str, value: dict[str, object], tenant: bool = False):
         address = ComponentAddress(
-            ComponentKind(kind), TenantScope("materialize") if tenant else PlatformScope()
+            ComponentKind(kind),
+            TenantScope("materialize") if tenant else PlatformScope(),
         )
         draft = await components.save_draft(address, value, 1, None, None, "test")
         return await components.publish_draft(address, draft.version, "test")
 
     try:
-        llm = await deployment(resources, DeploymentKind.LLM, "snapshot-llm", LLMCapabilities(True, True))
+        llm = await deployment(
+            resources, DeploymentKind.LLM, "snapshot-llm", LLMCapabilities(True, True)
+        )
         stt = await deployment(resources, DeploymentKind.STT, "snapshot-stt")
         tts = await deployment(resources, DeploymentKind.TTS, "snapshot-tts")
-        await publish("runtime.llm.defaults", {"deployment_ref": str(llm.ref.value), "max_completion_tokens": 1024})
+        await publish(
+            "runtime.llm.defaults",
+            {"deployment_ref": str(llm.ref.value), "max_completion_tokens": 1024},
+        )
         await publish("runtime.stt.defaults", {"deployment_ref": str(stt.ref.value)})
-        await publish("runtime.tts.defaults", {"deployment_ref": str(tts.ref.value), "default_voice_id": "voice-default", "min_sentence_chars": 20})
+        await publish(
+            "runtime.tts.defaults",
+            {
+                "deployment_ref": str(tts.ref.value),
+                "default_voice_id": "voice-default",
+                "min_sentence_chars": 20,
+            },
+        )
         await publish("runtime.cascade.execution.defaults", cascade_policy())
-        await publish("runtime.architecture.policy", {"architectures": ["cascade"]}, True)
-        await publish("runtime.speech.overrides", {"language": "sk", "stt": {"keyterms": ["Penzión Grand"]}, "voices": {"cascade": None, "realtime": None}}, True)
+        await publish(
+            "runtime.architecture.policy", {"architectures": ["cascade"]}, True
+        )
+        await publish(
+            "runtime.speech.overrides",
+            {
+                "language": "sk",
+                "stt": {"keyterms": ["Penzión Grand"]},
+                "voices": {"cascade": None, "realtime": None},
+            },
+            True,
+        )
         async with database.sessions() as session:
-            before = await session.scalar(select(func.count()).select_from(OutboxMessage))
+            before = await session.scalar(
+                select(func.count()).select_from(OutboxMessage)
+            )
         first = await materializer.materialize_runtime("materialize")
         second = await materializer.materialize_runtime("materialize")
         assert first.snapshot_id != second.snapshot_id
@@ -247,7 +272,9 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
         assert await materializer.get_snapshot(first.snapshot_id) == first
         assert "ciphertext" not in str(first).lower()
         async with database.sessions() as session:
-            after = await session.scalar(select(func.count()).select_from(OutboxMessage))
+            after = await session.scalar(
+                select(func.count()).select_from(OutboxMessage)
+            )
         assert before == after
     finally:
         await database.close()

@@ -26,13 +26,28 @@ from control_plane.domain.managed_resources import (
 from control_plane.domain.runtime_components import register_runtime_components
 
 
-def deployment(kind: DeploymentKind, capabilities: LLMCapabilities | None = None,
-               realtime: RealtimeCapabilities | None = None,
-               stt: STTCapabilities | None = None) -> ModelDeployment:
+def deployment(
+    kind: DeploymentKind,
+    capabilities: LLMCapabilities | None = None,
+    realtime: RealtimeCapabilities | None = None,
+    stt: STTCapabilities | None = None,
+) -> ModelDeployment:
     now = datetime.now(UTC)
     return ModelDeployment(
-        ModelDeploymentRef(uuid4()), "test", ProviderConnectionRef(uuid4()), kind,
-        {}, capabilities, realtime, stt, True, 1, now, "test", now, "test"
+        ModelDeploymentRef(uuid4()),
+        "test",
+        ProviderConnectionRef(uuid4()),
+        kind,
+        {},
+        capabilities,
+        realtime,
+        stt,
+        True,
+        1,
+        now,
+        "test",
+        now,
+        "test",
     )
 
 
@@ -54,23 +69,29 @@ def cascade_policy(strategy: str = "local_vad") -> dict[str, object]:
     stt_commit: dict[str, object] = {"strategy": strategy}
     if strategy == "provider_vad":
         stt_commit["provider_vad"] = {
-            "threshold": 0.5, "silence_threshold_seconds": 0.35,
-            "min_speech_ms": 100, "min_silence_ms": 350,
+            "threshold": 0.5,
+            "silence_threshold_seconds": 0.35,
+            "min_speech_ms": 100,
+            "min_silence_ms": 350,
         }
     return {
         "speech_activity": {
-            "min_speech_seconds": 0.05, "min_silence_seconds": 0.25,
+            "min_speech_seconds": 0.05,
+            "min_silence_seconds": 0.25,
             "activation_threshold": 0.5,
         },
         "stt_commit": stt_commit,
         "endpointing": {"min_delay_seconds": 0.1, "max_delay_seconds": 0.7},
         "interruption": {
-            "enabled": True, "min_duration_seconds": 0.5, "min_words": 0,
+            "enabled": True,
+            "min_duration_seconds": 0.5,
+            "min_words": 0,
             "false_interruption_timeout_seconds": 2.0,
             "resume_after_false_interruption": True,
         },
         "response_scheduling": {
-            "preemptive_generation": True, "preemptive_tts": True,
+            "preemptive_generation": True,
+            "preemptive_tts": True,
         },
     }
 
@@ -78,9 +99,15 @@ def cascade_policy(strategy: str = "local_vad") -> dict[str, object]:
 def test_runtime_registry_registers_only_platform_defaults() -> None:
     registry = ComponentRegistry()
     register_runtime_components(registry)
-    assert registry.resolve(ComponentAddress(ComponentKind("runtime.llm.defaults"), PlatformScope()))
-    assert registry.resolve(ComponentAddress(ComponentKind("runtime.stt.defaults"), PlatformScope()))
-    assert registry.resolve(ComponentAddress(ComponentKind("runtime.tts.defaults"), PlatformScope()))
+    assert registry.resolve(
+        ComponentAddress(ComponentKind("runtime.llm.defaults"), PlatformScope())
+    )
+    assert registry.resolve(
+        ComponentAddress(ComponentKind("runtime.stt.defaults"), PlatformScope())
+    )
+    assert registry.resolve(
+        ComponentAddress(ComponentKind("runtime.tts.defaults"), PlatformScope())
+    )
     cascade = ComponentKind("runtime.cascade.execution.defaults")
     assert registry.resolve(ComponentAddress(cascade, PlatformScope()))
     realtime = ComponentKind("runtime.realtime.execution.defaults")
@@ -94,9 +121,7 @@ def test_runtime_registry_registers_only_platform_defaults() -> None:
 
     for kind in ("runtime.architecture.policy", "runtime.speech.overrides"):
         tenant_kind = ComponentKind(kind)
-        assert registry.resolve(
-            ComponentAddress(tenant_kind, TenantScope("tenant"))
-        )
+        assert registry.resolve(ComponentAddress(tenant_kind, TenantScope("tenant")))
         with pytest.raises(ScopeNotAllowed):
             registry.resolve(ComponentAddress(tenant_kind, PlatformScope()))
         with pytest.raises(ScopeNotAllowed):
@@ -163,9 +188,7 @@ def test_speech_overrides_accepts_each_optional_voice(
     architecture: str, voice: str
 ) -> None:
     speech = tenant_definition("runtime.speech.overrides")
-    value = speech.deserialize(
-        {"language": "sk", "voices": {architecture: voice}}
-    )
+    value = speech.deserialize({"language": "sk", "voices": {architecture: voice}})
     assert getattr(value.voices, architecture) == voice
 
 
@@ -189,14 +212,30 @@ def test_speech_overrides_rejects_invalid_semantic_values(
 
 def test_llm_capabilities_and_runtime_ranges() -> None:
     terra = definition("runtime.llm.defaults")
-    reasoning = terra.deserialize({"deployment_ref": str(uuid4()), "reasoning_effort": "high", "max_completion_tokens": 1})
-    terra.validate_deployment(reasoning, deployment(DeploymentKind.LLM, LLMCapabilities(False, True)))
-    temperature = terra.deserialize({"deployment_ref": str(uuid4()), "temperature": 0.2, "max_completion_tokens": 1})
-    terra.validate_deployment(temperature, deployment(DeploymentKind.LLM, LLMCapabilities(True, False)))
+    reasoning = terra.deserialize(
+        {
+            "deployment_ref": str(uuid4()),
+            "reasoning_effort": "high",
+            "max_completion_tokens": 1,
+        }
+    )
+    terra.validate_deployment(
+        reasoning, deployment(DeploymentKind.LLM, LLMCapabilities(False, True))
+    )
+    temperature = terra.deserialize(
+        {"deployment_ref": str(uuid4()), "temperature": 0.2, "max_completion_tokens": 1}
+    )
+    terra.validate_deployment(
+        temperature, deployment(DeploymentKind.LLM, LLMCapabilities(True, False))
+    )
     with pytest.raises(InvalidComponentValue, match="temperature"):
-        terra.validate_deployment(temperature, deployment(DeploymentKind.LLM, LLMCapabilities(False, True)))
+        terra.validate_deployment(
+            temperature, deployment(DeploymentKind.LLM, LLMCapabilities(False, True))
+        )
     with pytest.raises(InvalidComponentValue, match="reasoning_effort"):
-        terra.validate_deployment(reasoning, deployment(DeploymentKind.LLM, LLMCapabilities(True, False)))
+        terra.validate_deployment(
+            reasoning, deployment(DeploymentKind.LLM, LLMCapabilities(True, False))
+        )
     with pytest.raises(InvalidComponentValue):
         terra.deserialize({"deployment_ref": str(uuid4()), "max_completion_tokens": 0})
 
@@ -206,9 +245,13 @@ def test_stt_defaults_contains_only_deployment_ref() -> None:
     deployment_ref = uuid4()
     value = stt.deserialize({"deployment_ref": str(deployment_ref)})
     assert stt.serialize(value) == {"deployment_ref": str(deployment_ref)}
-    stt.validate_deployment(value, deployment(DeploymentKind.STT, stt=STTCapabilities(True, False)))
+    stt.validate_deployment(
+        value, deployment(DeploymentKind.STT, stt=STTCapabilities(True, False))
+    )
     with pytest.raises(InvalidComponentValue, match="cascade STT"):
-        stt.validate_deployment(value, deployment(DeploymentKind.STT, stt=STTCapabilities(False, True)))
+        stt.validate_deployment(
+            value, deployment(DeploymentKind.STT, stt=STTCapabilities(False, True))
+        )
     with pytest.raises(InvalidComponentValue, match="deployment_kind"):
         stt.validate_deployment(value, deployment(DeploymentKind.TTS))
     with pytest.raises(InvalidComponentValue):
@@ -225,8 +268,10 @@ def test_cascade_commit_strategy_is_structurally_discriminated() -> None:
     mixed_commit = mixed["stt_commit"]
     assert isinstance(mixed_commit, dict)
     mixed_commit["provider_vad"] = {
-        "threshold": 0.5, "silence_threshold_seconds": 0.35,
-        "min_speech_ms": 100, "min_silence_ms": 350,
+        "threshold": 0.5,
+        "silence_threshold_seconds": 0.35,
+        "min_speech_ms": 100,
+        "min_silence_ms": 350,
     }
     with pytest.raises(InvalidComponentValue):
         cascade.deserialize(mixed)
@@ -240,8 +285,12 @@ def test_cascade_commit_strategy_is_structurally_discriminated() -> None:
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("threshold", 1.1), ("silence_threshold_seconds", 0),
-     ("min_speech_ms", 0), ("min_silence_ms", 60_001)],
+    [
+        ("threshold", 1.1),
+        ("silence_threshold_seconds", 0),
+        ("min_speech_ms", 0),
+        ("min_silence_ms", 60_001),
+    ],
 )
 def test_provider_vad_tuning_is_validated(field: str, value: object) -> None:
     payload = cascade_policy("provider_vad")
@@ -263,17 +312,24 @@ def test_cascade_schema_rejects_interim_preflight() -> None:
 
 def test_tts_shape_rejects_deferred_fields() -> None:
     tts = definition("runtime.tts.defaults")
-    value = tts.deserialize({"deployment_ref": str(uuid4()), "default_voice_id": "voice", "min_sentence_chars": 20})
+    value = tts.deserialize(
+        {
+            "deployment_ref": str(uuid4()),
+            "default_voice_id": "voice",
+            "min_sentence_chars": 20,
+        }
+    )
     tts.validate_deployment(value, deployment(DeploymentKind.TTS))
     with pytest.raises(InvalidComponentValue, match="deployment_kind"):
         tts.validate_deployment(value, deployment(DeploymentKind.STT))
 
 
 def realtime_policy(strategy: str = "server_vad") -> dict[str, object]:
-    turn_completion = ({"strategy": strategy, "activation_threshold": 0.5,
-                        "silence_duration_ms": 200}
-                       if strategy == "server_vad"
-                       else {"strategy": strategy, "eagerness": "auto"})
+    turn_completion = (
+        {"strategy": strategy, "activation_threshold": 0.5, "silence_duration_ms": 200}
+        if strategy == "server_vad"
+        else {"strategy": strategy, "eagerness": "auto"}
+    )
     return {
         "deployment_ref": str(uuid4()),
         "input_transcription": {"deployment_ref": str(uuid4())},
@@ -285,24 +341,36 @@ def realtime_policy(strategy: str = "server_vad") -> dict[str, object]:
 
 def test_realtime_turn_completion_is_structurally_discriminated() -> None:
     realtime = definition("runtime.realtime.execution.defaults")
-    assert realtime.deserialize(realtime_policy()).turn_completion.strategy == "server_vad"
-    assert realtime.deserialize(realtime_policy("semantic_vad")).turn_completion.strategy == "semantic_vad"
-    for strategy, inactive_field in (("server_vad", "eagerness"),
-                                     ("semantic_vad", "activation_threshold")):
+    assert (
+        realtime.deserialize(realtime_policy()).turn_completion.strategy == "server_vad"
+    )
+    assert (
+        realtime.deserialize(realtime_policy("semantic_vad")).turn_completion.strategy
+        == "semantic_vad"
+    )
+    for strategy, inactive_field in (
+        ("server_vad", "eagerness"),
+        ("semantic_vad", "activation_threshold"),
+    ):
         payload = realtime_policy(strategy)
         turn_completion = payload["turn_completion"]
         assert isinstance(turn_completion, dict)
-        turn_completion[inactive_field] = "high" if inactive_field == "eagerness" else 0.5
+        turn_completion[inactive_field] = (
+            "high" if inactive_field == "eagerness" else 0.5
+        )
         with pytest.raises(InvalidComponentValue):
             realtime.deserialize(payload)
 
 
-@pytest.mark.parametrize(("strategy", "field", "value"), [
-    ("server_vad", "activation_threshold", -0.1),
-    ("server_vad", "activation_threshold", 1.1),
-    ("server_vad", "silence_duration_ms", 0),
-    ("semantic_vad", "eagerness", "immediate"),
-])
+@pytest.mark.parametrize(
+    ("strategy", "field", "value"),
+    [
+        ("server_vad", "activation_threshold", -0.1),
+        ("server_vad", "activation_threshold", 1.1),
+        ("server_vad", "silence_duration_ms", 0),
+        ("semantic_vad", "eagerness", "immediate"),
+    ],
+)
 def test_realtime_turn_completion_rejects_invalid_values(
     strategy: str, field: str, value: object
 ) -> None:

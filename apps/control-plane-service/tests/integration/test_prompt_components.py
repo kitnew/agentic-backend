@@ -23,7 +23,8 @@ def service(database: Database) -> ComponentService:
     registry = ComponentRegistry()
     register_prompt_components(registry)
     return ComponentService(
-        registry, SqlAlchemyComponentRepository(database.sessions)  # type: ignore[arg-type]
+        registry,
+        SqlAlchemyComponentRepository(database.sessions),  # type: ignore[arg-type]
     )
 
 

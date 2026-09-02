@@ -63,65 +63,57 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
     async def load_in_session(
         self, session: AsyncSession, tenant_id: str
     ) -> RuntimeResolutionState:
-            components = await self._components(session, tenant_id)
-            deployment_ids = self._deployment_ids(components.values())
-            deployments = (
-                {
-                    row.id: self._deployment(row)
-                    for row in (
-                        await session.scalars(
-                            select(DeploymentRow).where(
-                                DeploymentRow.id.in_(deployment_ids)
-                            )
-                        )
-                    ).all()
-                }
-                if deployment_ids
-                else {}
-            )
-            connection_ids = {
-                value.connection_ref.value for value in deployments.values()
-            }
-            connections = (
-                {
-                    row.id: self._connection(row)
-                    for row in (
-                        await session.scalars(
-                            select(ConnectionRow).where(
-                                ConnectionRow.id.in_(connection_ids)
-                            )
-                        )
-                    ).all()
-                }
-                if connection_ids
-                else {}
-            )
-            credential_ids = {
-                value.credential_ref.value for value in connections.values()
-            }
-            credentials: dict[UUID, Credential] = {}
-            if credential_ids:
-                rows = (
+        components = await self._components(session, tenant_id)
+        deployment_ids = self._deployment_ids(components.values())
+        deployments = (
+            {
+                row.id: self._deployment(row)
+                for row in (
                     await session.scalars(
-                        select(CredentialRow).where(
-                            CredentialRow.id.in_(credential_ids)
+                        select(DeploymentRow).where(
+                            DeploymentRow.id.in_(deployment_ids)
                         )
                     )
                 ).all()
-                for row in rows:
-                    number = (
-                        await session.scalar(
-                            select(CredentialVersionRow.version_number).where(
-                                CredentialVersionRow.id == row.active_version_id
-                            )
+            }
+            if deployment_ids
+            else {}
+        )
+        connection_ids = {value.connection_ref.value for value in deployments.values()}
+        connections = (
+            {
+                row.id: self._connection(row)
+                for row in (
+                    await session.scalars(
+                        select(ConnectionRow).where(
+                            ConnectionRow.id.in_(connection_ids)
                         )
-                        if row.active_version_id
-                        else None
                     )
-                    credentials[row.id] = self._credential(row, number)
-            return RuntimeResolutionState(
-                components, deployments, connections, credentials
-            )
+                ).all()
+            }
+            if connection_ids
+            else {}
+        )
+        credential_ids = {value.credential_ref.value for value in connections.values()}
+        credentials: dict[UUID, Credential] = {}
+        if credential_ids:
+            rows = (
+                await session.scalars(
+                    select(CredentialRow).where(CredentialRow.id.in_(credential_ids))
+                )
+            ).all()
+            for row in rows:
+                number = (
+                    await session.scalar(
+                        select(CredentialVersionRow.version_number).where(
+                            CredentialVersionRow.id == row.active_version_id
+                        )
+                    )
+                    if row.active_version_id
+                    else None
+                )
+                credentials[row.id] = self._credential(row, number)
+        return RuntimeResolutionState(components, deployments, connections, credentials)
 
     @staticmethod
     async def _components(

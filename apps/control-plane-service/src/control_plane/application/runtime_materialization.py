@@ -34,14 +34,22 @@ class RuntimeMaterializationService:
 
     async def materialize_runtime(self, tenant_id: str) -> RuntimeExecutionSnapshot:
         async with self._sessions.begin() as session:
-            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+            await session.execute(
+                text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            )
             resolution = self._resolver.resolve_state(
                 tenant_id, await self._reader.load_in_session(session, tenant_id)
             )
             payload = snapshot_payload(tenant_id, resolution)
             snapshot = RuntimeExecutionSnapshot(
-                uuid4(), SNAPSHOT_SCHEMA_VERSION, tenant_id, resolution.selected.architecture,
-                datetime.now(UTC), resolution.selected, resolution, content_hash(payload),
+                uuid4(),
+                SNAPSHOT_SCHEMA_VERSION,
+                tenant_id,
+                resolution.selected.architecture,
+                datetime.now(UTC),
+                resolution.selected,
+                resolution,
+                content_hash(payload),
             )
             return await self._snapshots.create(session, snapshot, payload)
 

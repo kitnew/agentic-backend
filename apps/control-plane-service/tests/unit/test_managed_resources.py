@@ -104,4 +104,6 @@ def test_credential_cipher_uses_authenticated_resource_bound_encryption() -> Non
             credential_id, 2, nonce, ciphertext, cipher.key_id, cipher.ALGORITHM
         )
     with pytest.raises(ValueError, match="envelope is not supported"):
-        cipher.decrypt(credential_id, 1, nonce, ciphertext, "retired-key", cipher.ALGORITHM)
+        cipher.decrypt(
+            credential_id, 1, nonce, ciphertext, "retired-key", cipher.ALGORITHM
+        )

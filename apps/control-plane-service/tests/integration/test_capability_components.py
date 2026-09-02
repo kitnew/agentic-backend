@@ -29,7 +29,13 @@ def services(database: Database) -> tuple[ComponentService, ManagedResourceServi
     register_capability_components(registry)
     return (
         ComponentService(registry, SqlAlchemyComponentRepository(database.sessions)),
-        ManagedResourceService(default_provider_registry(), SqlAlchemyManagedResourceRepository(database.sessions, CredentialCipher(base64.b64encode(b"0" * 32).decode()))),
+        ManagedResourceService(
+            default_provider_registry(),
+            SqlAlchemyManagedResourceRepository(
+                database.sessions,
+                CredentialCipher(base64.b64encode(b"0" * 32).decode()),
+            ),
+        ),
     )
 
 
@@ -40,33 +46,73 @@ def capability(connection_id: str) -> dict[str, object]:
                 "enabled": True,
                 "description": "Create reservation",
                 "announcement": "Creating it.",
-                "agent_input_schema": {"type": "object", "additionalProperties": False, "properties": {"guest": {"type": "string"}}},
-                "execution": {"integration_connection_ref": connection_id, "method": "POST", "path": "/reservations", "request": {"codec": "json", "mapping": {"guest": {"$expr": "request.guest"}}}, "response": {"codec": "none"}, "timeout_seconds": 10},
+                "agent_input_schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"guest": {"type": "string"}},
+                },
+                "execution": {
+                    "integration_connection_ref": connection_id,
+                    "method": "POST",
+                    "path": "/reservations",
+                    "request": {
+                        "codec": "json",
+                        "mapping": {"guest": {"$expr": "request.guest"}},
+                    },
+                    "response": {"codec": "none"},
+                    "timeout_seconds": 10,
+                },
             }
         }
     }
 
 
 @pytest.mark.asyncio
-async def test_capability_publication_resolves_live_tenant_connection(migrated_database_url: str) -> None:
+async def test_capability_publication_resolves_live_tenant_connection(
+    migrated_database_url: str,
+) -> None:
     database = Database(migrated_database_url)
     components, resources = services(database)
-    address = ComponentAddress(ComponentKind("capabilities.tenant"), TenantScope("tenant-a"))
+    address = ComponentAddress(
+        ComponentKind("capabilities.tenant"), TenantScope("tenant-a")
+    )
     try:
-        draft = await components.save_draft(address, capability(str(uuid4())), 1, None, None, "test")
+        draft = await components.save_draft(
+            address, capability(str(uuid4())), 1, None, None, "test"
+        )
         with pytest.raises(ManagedResourceNotFound):
             await components.publish_draft(address, draft.version, "test")
 
-        connection = await resources.create_integration_connection("tenant-a", "booking-api", {"endpoint": "https://api.example.com", "authentication": {"type": "none"}}, None, True, "test")
-        draft = await components.save_draft(address, capability(str(connection.ref.value)), 1, draft.version, None, "test")
+        connection = await resources.create_integration_connection(
+            "tenant-a",
+            "booking-api",
+            {"endpoint": "https://api.example.com", "authentication": {"type": "none"}},
+            None,
+            True,
+            "test",
+        )
+        draft = await components.save_draft(
+            address,
+            capability(str(connection.ref.value)),
+            1,
+            draft.version,
+            None,
+            "test",
+        )
         revision = await components.publish_draft(address, draft.version, "test")
         assert revision.revision_number == 1
 
-        disabled = await resources.set_integration_connection_enabled(connection.ref, False, connection.generation, "test")
-        assert (await components.get_active(address)).revision_id == revision.revision_id
+        disabled = await resources.set_integration_connection_enabled(
+            connection.ref, False, connection.generation, "test"
+        )
+        assert (
+            await components.get_active(address)
+        ).revision_id == revision.revision_id
         with pytest.raises(InvalidComponentValue, match="not enabled HTTP"):
             await components.rollback(address, revision.revision_number, "test")
-        assert (await resources.get_integration_connection(connection.ref)).generation == disabled.generation
+        assert (
+            await resources.get_integration_connection(connection.ref)
+        ).generation == disabled.generation
     finally:
         await database.close()
 
@@ -104,7 +150,11 @@ async def test_credential_lifecycle_never_rewrites_capability_revision(
         revision = await components.publish_draft(address, draft.version, "test")
         await resources.rotate_credential(credential.ref, "rotated", "test")
         await resources.revoke_credential(credential.ref, "test")
-        assert (await components.get_active(address)).revision_id == revision.revision_id
-        assert (await resources.get_integration_connection(connection.ref)).generation == 1
+        assert (
+            await components.get_active(address)
+        ).revision_id == revision.revision_id
+        assert (
+            await resources.get_integration_connection(connection.ref)
+        ).generation == 1
     finally:
         await database.close()
