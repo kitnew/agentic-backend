@@ -59,6 +59,7 @@ class CapabilityInvocation(Base):
     semantic_version: Mapped[int] = mapped_column(Integer)
     tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
     runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    execution_snapshot_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     status: Mapped[CapabilityInvocationStatus] = mapped_column(
         Enum(
             CapabilityInvocationStatus,
@@ -127,6 +128,7 @@ class CapabilityConfirmation(Base):
     semantic_version: Mapped[int] = mapped_column(Integer)
     tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
     runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    execution_snapshot_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     canonical_input: Mapped[dict[str, object]] = mapped_column(JSONB)
     agent_input: Mapped[dict[str, object]] = mapped_column(JSONB)
     payload_hash: Mapped[str] = mapped_column(String(64))

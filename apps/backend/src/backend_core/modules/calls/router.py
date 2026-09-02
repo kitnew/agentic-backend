@@ -76,6 +76,7 @@ def build_call_session_service(
     tracer: Tracer | None = None,
     metrics: CoreMetrics | None = None,
     privacy_key: bytes | None = None,
+    control_plane=None,
 ) -> CallSessionService:
     return CallSessionService(
         CallSessionRepository(session),
@@ -88,6 +89,7 @@ def build_call_session_service(
         tracer,
         metrics,
         privacy_key,
+        control_plane,
     )
 
 
@@ -103,6 +105,7 @@ def get_call_session_service(
         derive_observability_key(
             request.app.state.settings.integration_encryption_key.get_secret_value()
         ),
+        request.app.state.control_plane,
     )
 
 

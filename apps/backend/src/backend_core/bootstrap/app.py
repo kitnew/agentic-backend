@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from backend_core.bootstrap.lifespan import lifespan
 from backend_core.bootstrap.settings import Settings
 from backend_core.interfaces.http import router
+from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.platform.database import Database
 from backend_core.platform.livekit import LiveKitAdapter
 
@@ -32,6 +33,11 @@ def create_app(
     app.state.database = database
     app.state.settings = settings
     app.state.livekit = livekit
+    app.state.control_plane = ControlPlaneClient(
+        str(settings.control_plane_url),
+        settings.backend_core_service_secret.get_secret_value(),
+        settings.internal_api_audience,
+    )
     app.state.outbox_tracer = None
     app.state.core_metrics = None
 

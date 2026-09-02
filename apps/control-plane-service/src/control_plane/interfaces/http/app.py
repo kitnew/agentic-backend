@@ -168,6 +168,13 @@ class PhoneNumberAssignmentCreate(BaseModel):
 
 _runtime_secret_auth = Depends(require_service_scope("runtime-secret:materialize"))
 _integration_material_auth = Depends(require_service_scope("integration-material:read"))
+_snapshot_materialize_auth = Depends(require_service_scope("execution-snapshot:materialize"))
+_snapshot_read_auth = Depends(require_service_scope("execution-snapshot:read"))
+_handoff_material_auth = Depends(require_service_scope("handoff-material:read"))
+
+
+class HandoffMaterialRequest(BaseModel):
+    destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
 
 
 class LLMCapabilitiesWrite(BaseModel):
@@ -337,6 +344,30 @@ def create_http_app(
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
             return jsonable_encoder(snapshot)
 
+        @app.post(
+            "/internal/v1/execution-snapshots/materialize/tenant/{tenant_id}",
+            status_code=status.HTTP_201_CREATED,
+        )
+        async def materialize_internal(
+            request: Request,
+            tenant_id: str,
+            _principal: ServicePrincipal = _snapshot_materialize_auth,
+        ) -> Any:
+            return jsonable_encoder(
+                await request.app.state.runtime_materialization.materialize(tenant_id)
+            )
+
+        @app.get("/internal/v1/execution-snapshots/{snapshot_id}")
+        async def read_internal(
+            request: Request,
+            snapshot_id: UUID,
+            _principal: ServicePrincipal = _snapshot_read_auth,
+        ) -> Any:
+            snapshot = await request.app.state.runtime_materialization.get_snapshot(snapshot_id)
+            if snapshot is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            return jsonable_encoder(snapshot)
+
     if execution_materialization is not None:
 
         @app.post("/internal/v1/execution-snapshots/{snapshot_id}/secrets/{slot}")
@@ -370,6 +401,41 @@ def create_http_app(
             material = await service.integration_material(tenant_id, connection_id)
             return JSONResponse(
                 jsonable_encoder(_integration_material_response(material)),
+                headers=_secret_headers(),
+            )
+
+        @app.post(
+            "/internal/v1/execution-snapshots/{snapshot_id}/handoff-material"
+        )
+        async def handoff_material(
+            request: Request,
+            snapshot_id: UUID,
+            body: HandoffMaterialRequest,
+            _principal: ServicePrincipal = _handoff_material_auth,
+        ) -> JSONResponse:
+            snapshot = await request.app.state.runtime_materialization.get_snapshot(snapshot_id)
+            if snapshot is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            destinations = snapshot.execution.get("handoff", [])
+            selected = next(
+                (item for item in destinations
+                 if isinstance(item, dict) and item.get("key") == body.destination),
+                None,
+            )
+            if not isinstance(selected, dict) or not selected.get("ref"):
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            if request.app.state.managed_resources is None:
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+            destination = await request.app.state.managed_resources.get_handoff_destination(
+                HandoffDestinationRef(UUID(str(selected["ref"])))
+            )
+            if destination.tenant_id != snapshot.tenant_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            if not destination.enabled:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT)
+            return JSONResponse(
+                {"snapshot_id": snapshot_id, "destination": body.destination,
+                 "generation": destination.generation, "phone_number": destination.phone_number},
                 headers=_secret_headers(),
             )
 

@@ -9,9 +9,14 @@ from jwt import InvalidTokenError
 
 VOICE_AGENT = "voice-agent"
 JOB_WORKER = "job-worker"
+BACKEND_CORE = "backend-core"
 SERVICE_SCOPES = {
     VOICE_AGENT: frozenset({"runtime-secret:materialize"}),
     JOB_WORKER: frozenset({"integration-material:read"}),
+    BACKEND_CORE: frozenset({
+        "execution-snapshot:materialize", "execution-snapshot:read",
+        "integration-material:read", "handoff-material:read",
+    }),
 }
 _bearer = HTTPBearer(scheme_name="InternalServiceToken", auto_error=False)
 Credentials = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]
@@ -46,10 +51,11 @@ def require_service_scope(scope: str) -> Callable[..., ServicePrincipal]:
             if not isinstance(service, str) or service not in SERVICE_SCOPES:
                 raise _unauthorized()
             settings = request.app.state.settings
-            secret = {
-                VOICE_AGENT: settings.voice_agent_service_secret.get_secret_value(),
-                JOB_WORKER: settings.job_worker_service_secret.get_secret_value(),
-            }[service]
+            secret = getattr(settings, {
+                VOICE_AGENT: "voice_agent_service_secret",
+                JOB_WORKER: "job_worker_service_secret",
+                BACKEND_CORE: "backend_core_service_secret",
+            }[service]).get_secret_value()
             claims = jwt.decode(
                 credentials.credentials,
                 secret,

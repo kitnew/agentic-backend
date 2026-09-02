@@ -32,8 +32,10 @@ from backend_core.modules.integrations.models import (
     IntegrationConnectionStatus,
     IntegrationProvider,
 )
+from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.capabilities.mapping import evaluate_query, evaluate_template
+from backend_core.runtime.execution_context import ExecutionContextReader
 from backend_core.runtime.finalization.models import (
     ArtifactRepresentation,
     CallFinalization,
@@ -58,10 +60,21 @@ class FinalizationService:
         session: AsyncSession,
         commands: CommandBus,
         tracer: Tracer | None = None,
+        execution_context: ExecutionContextReader | None = None,
+        control_plane: ControlPlaneClient | None = None,
     ) -> None:
         self._session = session
         self._commands = commands
+        self._control_plane = control_plane
         self._tracer = tracer
+        self._execution_context = execution_context
+
+    async def control_plane_material(self, tenant_id: UUID, connection_id: UUID):
+        if self._control_plane is None:
+            raise FinalizationError("integration material unavailable")
+        return await self._control_plane.integration_execution_material(
+            tenant_id, connection_id
+        )
 
     async def start(self, event: MessageEnvelope) -> CallFinalization:
         with domain_span(
@@ -773,8 +786,16 @@ class FinalizationService:
         )
         if conversation is None:
             raise FinalizationError("conversation not found")
-        bundle = await self._bundle_payload(call)
-        agent_id, agent_name = bundle.agent_profile, bundle.agent_display_name
+        if call.execution_snapshot_id is not None:
+            if self._execution_context is None:
+                raise FinalizationError("execution snapshot unavailable")
+            snapshot = await self._execution_context.snapshot(call)
+            agent = snapshot.agent or {}
+            agent_id = agent.get("agent_profile")
+            agent_name = agent.get("display_name")
+        else:
+            bundle = await self._bundle_payload(call)
+            agent_id, agent_name = bundle.agent_profile, bundle.agent_display_name
         return {
             "call_id": str(call.id),
             "call": {
@@ -825,6 +846,13 @@ class FinalizationService:
     async def _actions(
         self, call: CallSession
     ) -> list[RuntimePostCallAction]:
+        if call.execution_snapshot_id is not None:
+            if self._execution_context is None:
+                raise FinalizationError("execution snapshot unavailable")
+            try:
+                return await self._execution_context.post_call_actions(call)
+            except ValueError as error:
+                raise FinalizationError("execution snapshot unavailable") from error
         return (await self._bundle_payload(call)).post_call_actions
 
     async def _bundle_payload(

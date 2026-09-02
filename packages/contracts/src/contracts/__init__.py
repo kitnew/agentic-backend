@@ -45,6 +45,7 @@ from contracts.domain_catalog import (
     PostCallArtifactDescriptor,
     PostCallDiscoveryResponse,
 )
+from contracts.execution_snapshot import ExecutionSnapshot
 from contracts.http_operation import (
     ExpressionNode,
     HttpBodyBinding,
@@ -187,6 +188,7 @@ __all__ = [
     "EffectiveVoiceRuntime",
     "ExecutePostCallAction",
     "ExecutionPlan",
+    "ExecutionSnapshot",
     "ExpressionNode",
     "GenerateCallSummary",
     "GoogleSheetsAppendExecution",

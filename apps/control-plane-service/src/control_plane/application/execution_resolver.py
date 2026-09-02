@@ -144,11 +144,16 @@ class ExecutionResolver:
         enabled = []
         for key, value in capabilities.value.capabilities.items():
             if isinstance(value, TenantCapabilityProfile) and value.enabled:
-                enabled.append(self._capability(tenant_id, key, value, state))
-        actions = tuple(
-            self._post_call(tenant_id, action, state)
-            for action in post_call.value.actions
-        )
+                self._validate_integration(
+                    tenant_id, value.execution.integration_connection_ref.value, state
+                )
+                enabled.append(self._capability(key, value))
+        actions = []
+        for action in post_call.value.actions:
+            self._validate_integration(
+                tenant_id, action.execution.integration_connection_ref.value, state
+            )
+            actions.append(self._post_call(action))
         handoff = tuple(sorted(state.handoffs, key=lambda row: str(row["key"])))
         return ExecutionResolution(
             tenant_id,
@@ -168,7 +173,7 @@ class ExecutionResolver:
                 "provenance": self._provenance(knowledge),
             },
             tuple(enabled),
-            actions,
+            tuple(actions),
             handoff,
             state.phone_assignment,
             {
@@ -183,53 +188,46 @@ class ExecutionResolver:
 
     def _capability(
         self,
-        tenant_id: str,
         key: str,
         value: TenantCapabilityProfile,
-        state: RuntimeResolutionState,
     ) -> dict[str, object]:
+        execution = cast(dict[str, object], value.execution.model_dump(mode="json"))
+        execution["connection_id"] = execution.pop("integration_connection_ref")
         return {
             "semantic_key": key,
+            "semantic_version": 1,
             "tool_name": derive_tool_name(key),
+            "enabled": value.enabled,
             "description": value.description,
             "announcement": value.announcement,
             "input_schema": value.agent_input_schema,
             "bindings": value.bindings,
-            "constraints": value.input_constraints,
+            "input_constraints": value.input_constraints,
             "policy": value.business_policy,
-            "execution": value.execution,
+            "execution": execution,
             "result_schema": value.result_schema,
-            "integration": self._integration(
-                tenant_id, value.execution.integration_connection_ref.value, state
-            ),
         }
 
-    def _post_call(
-        self, tenant_id: str, action: Any, state: RuntimeResolutionState
-    ) -> dict[str, object]:
+    def _post_call(self, action: Any) -> dict[str, object]:
+        execution = cast(dict[str, object], action.execution.model_dump(mode="json"))
+        execution["connection_id"] = execution.pop("integration_connection_ref")
         return {
             "action_id": action.action_id,
-            "type": action.type,
-            "inputs": action.inputs,
-            "execution": action.execution,
-            "integration": self._integration(
-                tenant_id, action.execution.integration_connection_ref.value, state
-            ),
+            "inputs": {
+                key: value.model_dump(mode="json")
+                for key, value in action.inputs.items()
+            },
+            "execution": execution,
         }
 
     @staticmethod
-    def _integration(
+    def _validate_integration(
         tenant_id: str, ref: UUID, state: RuntimeResolutionState
-    ) -> dict[str, object]:
+    ) -> None:
         value = state.integrations.get(ref)
-        if value is None:
+        if value is None or value["tenant_id"] != tenant_id:
             raise RuntimeResolutionError(
                 ResolutionFailureReason.MISSING_RESOURCE,
-                {"resource_type": "integration_connection", "resource_id": str(ref)},
-            )
-        if value["tenant_id"] != tenant_id:
-            raise RuntimeResolutionError(
-                ResolutionFailureReason.CROSS_TENANT_RESOURCE,
                 {"resource_type": "integration_connection", "resource_id": str(ref)},
             )
         if not value["enabled"] or value["integration_kind"] != "http":
@@ -237,41 +235,12 @@ class ExecutionResolver:
                 ResolutionFailureReason.RESOURCE_DISABLED,
                 {"resource_type": "integration_connection", "resource_id": str(ref)},
             )
-        try:
-            config = HttpConnectionConfiguration.model_validate(value["config"])
-        except ValueError as error:
+        config = HttpConnectionConfiguration.model_validate(value["config"])
+        if config.authentication.type != "none" and value["credential"] is None:
             raise RuntimeResolutionError(
-                ResolutionFailureReason.CURRENT_STATE_INVALID,
-                {"resource_type": "integration_connection", "resource_id": str(ref)},
-            ) from error
-        credential = value["credential"]
-        if config.authentication.type != "none":
-            if credential is None:
-                raise RuntimeResolutionError(
-                    ResolutionFailureReason.MISSING_RESOURCE,
-                    {
-                        "resource_type": "credential",
-                        "integration_connection_id": str(ref),
-                    },
-                )
-            credential = cast(Mapping[str, object], credential)
-            if credential["status"] != "active":
-                raise RuntimeResolutionError(
-                    ResolutionFailureReason.CREDENTIAL_REVOKED,
-                    {"credential_ref": str(credential["credential_ref"])},
-                )
-            if credential["active_version_id"] is None:
-                raise RuntimeResolutionError(
-                    ResolutionFailureReason.CURRENT_STATE_INVALID,
-                    {"credential_ref": str(credential["credential_ref"])},
-                )
-        return {
-            "integration_connection_id": ref,
-            "generation": value["generation"],
-            "kind": "http",
-            "enabled": True,
-            "credential": credential,
-        }
+                ResolutionFailureReason.MISSING_RESOURCE,
+                {"resource_type": "credential", "integration_connection_id": str(ref)},
+            )
 
     def _required(
         self,

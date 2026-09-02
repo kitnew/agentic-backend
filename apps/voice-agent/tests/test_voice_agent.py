@@ -808,8 +808,8 @@ async def test_provider_factory_passes_low_latency_tts_and_stt_candidates() -> N
     )
     session = create_agent_session(settings(), runtime, "voice-agent-prompt:test")
     try:
-        assert isinstance(session.stt, InterimPreflightSTT)
-        provider_stt = session.stt.wrapped_stt
+        assert not isinstance(session.stt, InterimPreflightSTT)
+        provider_stt = session.stt
         assert isinstance(provider_stt, elevenlabs.STT)
         assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.25
         assert provider_stt._opts.server_vad["min_silence_duration_ms"] == 250

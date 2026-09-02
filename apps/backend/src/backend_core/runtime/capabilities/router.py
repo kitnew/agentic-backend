@@ -34,6 +34,7 @@ from backend_core.runtime.capabilities.service import (
     CapabilityInvocationService,
     invocation_response,
 )
+from backend_core.runtime.execution_context import ExecutionContextReader
 
 logger = logging.getLogger(__name__)
 voice_router = APIRouter(prefix="/internal/v1/calls", tags=["internal:capabilities"])
@@ -49,6 +50,7 @@ def build_service(
     session: AsyncSession,
     tracer: Tracer | None = None,
     metrics: CoreMetrics | None = None,
+    execution_context: ExecutionContextReader | None = None,
 ) -> CapabilityInvocationService:
     return CapabilityInvocationService(
         CapabilityInvocationRepository(session),
@@ -56,6 +58,7 @@ def build_service(
         ConversationRepository(session),
         IntegrationConnectionRepository(session),
         RuntimeBundleStore(session),
+        execution_context,
         tracer,
         metrics,
     )
@@ -63,7 +66,10 @@ def build_service(
 
 def service(session: DatabaseSession, request: Request) -> CapabilityInvocationService:
     return build_service(
-        session, request.app.state.outbox_tracer, request.app.state.core_metrics
+        session,
+        request.app.state.outbox_tracer,
+        request.app.state.core_metrics,
+        ExecutionContextReader(request.app.state.control_plane),
     )
 
 
@@ -82,7 +88,10 @@ def integration_resolver(
         ),
     )
     return CapabilityIntegrationResolver(
-        CapabilityInvocationRepository(session), connections, integrations
+        CapabilityInvocationRepository(session),
+        connections,
+        integrations,
+        request.app.state.control_plane,
     )
 
 
@@ -197,6 +206,7 @@ async def integration_material(
     integrations: IntegrationResolver,
     call_id: UUID | None = None,
     runtime_bundle_id: UUID | None = None,
+    execution_snapshot_id: UUID | None = None,
 ) -> RuntimeIntegrationMaterial:
     try:
         return await integrations.resolve(
@@ -204,6 +214,7 @@ async def integration_material(
             job_id,
             call_id=call_id,
             runtime_bundle_id=runtime_bundle_id,
+            execution_snapshot_id=execution_snapshot_id,
         )
     except IntegrationConnectionError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error

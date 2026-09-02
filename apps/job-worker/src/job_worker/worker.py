@@ -1013,6 +1013,9 @@ class BackendClient:
                     "runtime_bundle_id": str(job.runtime_bundle_id)
                     if job.runtime_bundle_id
                     else None,
+                    "execution_snapshot_id": str(job.execution_snapshot_id)
+                    if job.execution_snapshot_id
+                    else None,
                 },
                 headers={"Authorization": f"Bearer {self._token()}"},
             )

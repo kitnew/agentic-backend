@@ -124,40 +124,38 @@ def test_help_lists_database_and_operator_commands(tmp_path: Path) -> None:
     assert "release" in result.stderr
 
 
-def test_db_init_starts_postgres_and_runs_backend_bootstrap(tmp_path: Path) -> None:
+def test_db_init_starts_postgres_and_runs_backend_migrations(tmp_path: Path) -> None:
     result = run_ops(tmp_path, "staging", "db-init")
 
     assert result.returncode == 0, result.stderr
     commands = docker_log(tmp_path)
     postgres = commands.index("up -d --wait --wait-timeout 180 postgres")
-    bootstrap = commands.index("python -m backend_core.platform.database.bootstrap")
-    assert postgres < bootstrap
+    migrate = commands.index("alembic -c apps/backend/alembic.ini upgrade head")
+    assert postgres < migrate
     assert (
         "run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec"
         in commands
     )
 
 
-def test_update_bootstraps_empty_database_and_ignores_optional_checks(
+def test_update_migrates_empty_database_and_ignores_optional_checks(
     tmp_path: Path,
 ) -> None:
     result = run_ops(tmp_path, "staging", "update")
 
     assert result.returncode == 0, result.stderr
     output = result.stdout + result.stderr
-    assert (
-        "No Alembic revisions or application tables found; bootstrapping schema."
-        in output
-    )
+    assert "Checking Backend Alembic baseline adoption." in output
     assert "[WARN] Prometheus [OPTIONAL]" in output
     assert "Result: healthy (optional checks degraded)" in output
     commands = docker_log(tmp_path)
-    bootstrap = commands.index("python -m backend_core.platform.database.bootstrap")
+    adopt = commands.index("python -m backend_core.platform.database.bootstrap --adopt")
+    migrate = commands.index("alembic -c apps/backend/alembic.ini upgrade head")
     optional_start = commands.index(
         "up -d --remove-orphans prometheus tempo otel-collector grafana"
     )
     stack_start = commands.index("up -d --wait --wait-timeout 180 --remove-orphans")
-    assert bootstrap < optional_start < stack_start
+    assert adopt < migrate < optional_start < stack_start
 
 
 def test_production_db_reset_requires_non_tty_confirmation(tmp_path: Path) -> None:

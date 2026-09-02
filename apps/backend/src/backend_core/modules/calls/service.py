@@ -53,8 +53,10 @@ from backend_core.modules.tenants.repository import (
     TenantRepository,
 )
 from backend_core.modules.tenants.schemas import normalize_e164
+from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.platform.livekit import LiveKitAdapter
 from backend_core.runtime.bundle_store import RuntimeBundleStore
+from backend_core.runtime.execution_context import ExecutionContextReader
 
 logger = logging.getLogger(__name__)
 MANUAL_TEST_CALLER_PHONE = "+15555550100"
@@ -73,6 +75,7 @@ class CallSessionService:
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
         privacy_key: bytes | None = None,
+        control_plane: ControlPlaneClient | None = None,
     ) -> None:
         self._calls = calls
         self._routes = routes
@@ -84,6 +87,18 @@ class CallSessionService:
         self._privacy_key = privacy_key
         self._releases = releases
         self._bundles = bundles
+        self._control_plane = control_plane
+        self._execution_context = (
+            ExecutionContextReader(control_plane) if control_plane is not None else None
+        )
+
+    async def _snapshot(self, tenant_id: UUID):
+        if self._control_plane is None:
+            raise CallSessionConfigUnavailableError
+        snapshot = await self._control_plane.materialize_execution_snapshot(tenant_id)
+        if snapshot.tenant_id != str(tenant_id):
+            raise CallSessionConfigUnavailableError
+        return snapshot
 
     def _phone_hash(self, value: str) -> str:
         if self._privacy_key is None:
@@ -140,12 +155,13 @@ class CallSessionService:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
         self._require_inbound_telephony_ready(resolution)
-        self._require_runtime_bundle(resolution.bundle.payload)
+        snapshot = await self._snapshot(resolution.tenant.id)
 
         call = CallSession(
             tenant_id=resolution.tenant.id,
             tenant_release_id=resolution.release.id,
             runtime_bundle_id=resolution.bundle.id,
+            execution_snapshot_id=snapshot.snapshot_id,
             channel=CallChannel.SIP,
             direction=CallDirection.INBOUND,
             provider=data.provider,
@@ -209,7 +225,7 @@ class CallSessionService:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
         self._require_inbound_telephony_ready(resolution)
-        self._require_runtime_bundle(resolution.bundle.payload)
+        snapshot = await self._snapshot(resolution.tenant.id)
         logger.info(
             "Inbound SIP DID resolved",
             extra={
@@ -222,6 +238,7 @@ class CallSessionService:
             tenant_id=resolution.tenant.id,
             tenant_release_id=resolution.release.id,
             runtime_bundle_id=resolution.bundle.id,
+            execution_snapshot_id=snapshot.snapshot_id,
             channel=CallChannel.SIP,
             direction=CallDirection.INBOUND,
             provider="livekit",
@@ -341,7 +358,7 @@ class CallSessionService:
         runtime = await self._releases.active_runtime(tenant.id)
         if runtime is None or tenant.status is not TenantStatus.ACTIVE:
             raise CallSessionConfigUnavailableError
-        self._require_runtime_bundle(runtime.bundle.payload)
+        snapshot = await self._snapshot(tenant.id)
 
         call_id = uuid4()
         room_name = f"call_{call_id}"
@@ -355,6 +372,7 @@ class CallSessionService:
             tenant_id=tenant.id,
             tenant_release_id=runtime.release.id,
             runtime_bundle_id=runtime.bundle.id,
+            execution_snapshot_id=snapshot.snapshot_id,
             channel=CallChannel.WEB,
             direction=CallDirection.INBOUND,
             provider="livekit",
@@ -401,6 +419,11 @@ class CallSessionService:
         call_id: UUID,
     ) -> VoiceAgentRuntimeContext:
         call = await self.get(call_id)
+        if call.execution_snapshot_id is not None and self._execution_context is not None:
+            try:
+                return await self._execution_context.read(call)
+            except (ValueError, RuntimeError) as error:
+                raise CallSessionConfigUnavailableError from error
         bundle = await self._bundles.get(
             call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
         )
@@ -454,7 +477,7 @@ class CallSessionService:
         tenant = await self._tenants.get(call.tenant_id)
         if tenant is None or tenant.status is not TenantStatus.ACTIVE:
             raise HumanHandoffError("call_not_transferable")
-        phone_number, destinations = await self._pinned_handoff(call)
+        phone_number, destinations = await self._pinned_handoff(call, data.destination)
         if not phone_number or not destinations:
             raise HumanHandoffError("handoff_not_configured")
         destination = destinations.get(data.destination)
@@ -507,8 +530,30 @@ class CallSessionService:
         return HumanHandoffResponse(destination=data.destination)
 
     async def _pinned_handoff(
-        self, call: CallSession
+        self, call: CallSession, requested_destination: str | None = None
     ) -> tuple[str | None, dict[str, RuntimeHandoffDestination]]:
+        if call.execution_snapshot_id is not None:
+            if self._execution_context is None or self._control_plane is None:
+                raise HumanHandoffError("telephony_not_ready")
+            try:
+                destinations = await self._execution_context.handoff(call)
+                selected = destinations.get(requested_destination or "")
+                if selected is None or selected.ref is None:
+                    raise HumanHandoffError("unknown_destination")
+                material = await self._control_plane.handoff_material(
+                    call.execution_snapshot_id,
+                    requested_destination or "",
+                )
+                phone = material.get("phone_number")
+                if not isinstance(phone, str):
+                    raise HumanHandoffError("telephony_not_ready")
+                return call.caller_phone_e164, {
+                    requested_destination or "": RuntimeHandoffDestination(
+                        description=selected.description, phone_number=phone
+                    )
+                }
+            except (ValueError, KeyError, TypeError, RuntimeError) as error:
+                raise HumanHandoffError("telephony_not_ready") from error
         bundle = await self._bundles.get(
             call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
         )

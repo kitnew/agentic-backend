@@ -30,6 +30,7 @@ from backend_core.platform.messaging import (
 )
 from backend_core.platform.outbox import OutboxDispatcher
 from backend_core.platform.stream_consumer import RedisStreamConsumer
+from backend_core.runtime.execution_context import ExecutionContextReader
 from backend_core.runtime.finalization.recording import RecordingCoordinator
 from backend_core.runtime.finalization.service import FinalizationService
 
@@ -130,6 +131,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         tracer,
                     ),
                     tracer,
+                    ExecutionContextReader(app.state.control_plane),
+                    app.state.control_plane,
                 )
                 if event.message_type == "call.ended":
                     await finalization.start(event)
@@ -154,6 +157,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         tracer,
                     ),
                     tracer,
+                    ExecutionContextReader(app.state.control_plane),
+                    app.state.control_plane,
                 ).handle_result(envelope, result)
 
         consumers = [
@@ -205,6 +210,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.control_plane.aclose()
         if reconciliation_task is not None:
             reconciliation_task.cancel()
             with suppress(asyncio.CancelledError):

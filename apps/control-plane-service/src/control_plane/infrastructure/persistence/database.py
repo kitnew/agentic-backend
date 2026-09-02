@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-CONTROL_PLANE_SCHEMA_REVISION = "0001_initial_control_plane"
+CONTROL_PLANE_SCHEMA_REVISION = "0002_snapshot_schema_v2"
 CONTROL_PLANE_VERSION_TABLE = "control_plane_alembic_version"
 
 

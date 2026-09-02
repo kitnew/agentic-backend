@@ -32,6 +32,7 @@ from backend_core.modules.integrations.schemas import (
     IntegrationReadiness,
 )
 from backend_core.modules.tenants.repository import TenantRepository
+from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
 
 _execution_plan: TypeAdapter[ExecutionPlan] = TypeAdapter(ExecutionPlan)
@@ -309,17 +310,23 @@ class IntegrationConnectionService:
 
 
 class CapabilityIntegrationResolver:
-    def __init__(self, invocations: CapabilityInvocationRepository, connections: IntegrationConnectionRepository, integrations: IntegrationConnectionService) -> None:
-        self._invocations, self._connections, self._integrations = invocations, connections, integrations
+    def __init__(self, invocations: CapabilityInvocationRepository, connections: IntegrationConnectionRepository, integrations: IntegrationConnectionService, control_plane: ControlPlaneClient | None = None) -> None:
+        self._invocations, self._connections, self._integrations, self._control_plane = invocations, connections, integrations, control_plane
 
-    async def resolve(self, invocation_id: UUID, job_id: UUID, *, call_id: UUID | None = None, runtime_bundle_id: UUID | None = None) -> RuntimeIntegrationMaterial:
+    async def resolve(self, invocation_id: UUID, job_id: UUID, *, call_id: UUID | None = None, runtime_bundle_id: UUID | None = None, execution_snapshot_id: UUID | None = None) -> RuntimeIntegrationMaterial:
         invocation = await self._invocations.get(invocation_id)
-        if invocation is None or invocation.job_id != job_id or (call_id is not None and invocation.call_id != call_id) or (runtime_bundle_id is not None and invocation.runtime_bundle_id != runtime_bundle_id):
+        if invocation is None or invocation.job_id != job_id or (call_id is not None and invocation.call_id != call_id) or (runtime_bundle_id is not None and invocation.runtime_bundle_id != runtime_bundle_id) or (execution_snapshot_id is not None and invocation.execution_snapshot_id != execution_snapshot_id):
             raise IntegrationConnectionError("capability_not_found")
         try:
             plan = _execution_plan.validate_python(invocation.execution_plan)
         except ValidationError as error:
             raise IntegrationConnectionError("capability_plan_invalid") from error
+        if getattr(invocation, "execution_snapshot_id", None) is not None:
+            if self._control_plane is None:
+                raise IntegrationConnectionError("control_plane_unavailable")
+            return await self._control_plane.integration_execution_material(
+                invocation.tenant_id, plan.integration_id
+            )
         connection = await self._connections.get(invocation.tenant_id, plan.integration_id)
         if connection is None:
             raise IntegrationConnectionError("connection_not_found")

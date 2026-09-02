@@ -112,6 +112,7 @@ class CallSession(Base):
     )
     tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
     runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    execution_snapshot_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     channel: Mapped[CallChannel] = mapped_column(
         Enum(
             CallChannel,

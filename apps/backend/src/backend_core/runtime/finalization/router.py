@@ -17,6 +17,7 @@ from backend_core.modules.tenants.repository import TenantRepository
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
 from backend_core.platform.messaging import TransactionalOutboxBus
+from backend_core.runtime.execution_context import ExecutionContextReader
 from backend_core.runtime.finalization.service import (
     FinalizationError,
     FinalizationService,
@@ -54,6 +55,8 @@ def service(session: DatabaseSession, request: Request) -> FinalizationService:
             request.app.state.settings.command_stream,
             request.app.state.outbox_tracer,
         ),
+        execution_context=ExecutionContextReader(request.app.state.control_plane),
+        control_plane=request.app.state.control_plane,
     )
 
 
@@ -134,6 +137,10 @@ async def post_call_action_material(
         call = await session.get(CallSession, call_id)
         if call is None:
             raise FinalizationError("call not found")
+        if call.execution_snapshot_id is not None:
+            return await finalization.control_plane_material(
+                call.tenant_id, plan.integration_id
+            )
         view = await integrations.get_by_id(call.tenant_id, plan.integration_id)
         if view.connection.provider is not IntegrationProvider.HTTP:
             raise IntegrationConnectionError("connection_provider_mismatch")

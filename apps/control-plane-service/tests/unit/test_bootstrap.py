@@ -63,6 +63,7 @@ async def test_bootstrap_wires_lifespan_with_supplied_dependencies() -> None:
             control_plane_encryption_key="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
             voice_agent_service_secret="voice-agent-test-secret",
             job_worker_service_secret="job-worker-test-secret",
+            backend_core_service_secret="backend-core-test-secret",
         ),
         database,  # type: ignore[arg-type]
         nats,  # type: ignore[arg-type]

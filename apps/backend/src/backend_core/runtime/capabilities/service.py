@@ -49,6 +49,7 @@ from backend_core.runtime.capabilities.models import (
     OutboxMessage,
 )
 from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
+from backend_core.runtime.execution_context import ExecutionContextReader
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class CapabilityInvocationService:
         conversations: ConversationRepository,
         connections: IntegrationConnectionRepository,
         bundles: RuntimeBundleStore,
+        execution_context: ExecutionContextReader | None = None,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
@@ -69,6 +71,7 @@ class CapabilityInvocationService:
         self._conversations = conversations
         self._connections = connections
         self._bundles = bundles
+        self._execution_context = execution_context
         self._tracer = tracer
         self._metrics = metrics
 
@@ -114,10 +117,33 @@ class CapabilityInvocationService:
             raise CapabilityValidationError(
                 "call_not_active", "Call does not allow capability execution"
             )
-        payload, release_id, bundle_id = await self._bundle(call)
-        runtime_profile = self._requested_bundle_capability(
-            payload.capability_bindings, request.capability
-        )
+        if getattr(call, "execution_snapshot_id", None) is not None:
+            if self._execution_context is None:
+                raise CapabilityValidationError(
+                    "configuration_invalid", "Execution snapshot reader is unavailable"
+                )
+            try:
+                runtime_profile = await self._execution_context.capability(
+                    call, request.capability
+                )
+            except ValueError as error:
+                raise CapabilityValidationError(
+                    "configuration_invalid", "Execution snapshot is unavailable"
+                ) from error
+            payload_timezone = (await self._execution_context.snapshot(call)).agent or {}
+            timezone = str(payload_timezone.get("timezone", "UTC"))
+            release_id, bundle_id, pin_id = (
+                call.tenant_release_id,
+                call.runtime_bundle_id,
+                call.execution_snapshot_id,
+            )
+        else:
+            payload, release_id, bundle_id = await self._bundle(call)
+            pin_id = bundle_id
+            runtime_profile = self._requested_bundle_capability(
+                payload.capability_bindings, request.capability
+            )
+            timezone = payload.timezone
         if not runtime_profile.enabled:
             raise CapabilityValidationError(
                 "capability_disabled", "Capability is disabled"
@@ -129,7 +155,7 @@ class CapabilityInvocationService:
         )
         enforce_input_constraints(
             canonical,
-            payload.timezone,
+            timezone,
             runtime_profile.input_constraints,
         )
         if (
@@ -141,7 +167,15 @@ class CapabilityInvocationService:
                 "Caller phone is required for capability execution",
                 "metadata.caller_phone",
             )
-        return call, release_id, bundle_id, bundle_id, runtime_profile, canonical
+        assert pin_id is not None
+        return (
+            call,
+            release_id,
+            bundle_id,
+            pin_id,
+            runtime_profile,
+            canonical,
+        )
 
     async def prepare_confirmation(
         self, call_id: UUID, request: CapabilityInvocationRequest
@@ -199,6 +233,7 @@ class CapabilityInvocationService:
             semantic_version=profile.semantic_version,
             tenant_release_id=release_id,
             runtime_bundle_id=bundle_id,
+            execution_snapshot_id=call.execution_snapshot_id,
             canonical_input=canonical,
             agent_input=request.agent_input,
             payload_hash=payload_hash,
@@ -332,21 +367,22 @@ class CapabilityInvocationService:
                 "runtime_bundle_id": str(bundle_id) if bundle_id else None,
             },
         )
-        connection = await self._connections.get(
-            call.tenant_id, profile.execution.connection_id
-        )
-        if connection is None:
-            raise CapabilityValidationError(
-                "connection_not_found", "Integration connection was not found"
+        if getattr(call, "execution_snapshot_id", None) is None:
+            connection = await self._connections.get(
+                call.tenant_id, profile.execution.connection_id
             )
-        if (
-            connection.status is not IntegrationConnectionStatus.ACTIVE
-            or connection.provider
-            is not provider_for_plan_type(profile.execution.plan_type)
-        ):
-            raise CapabilityValidationError(
-                "connection_disabled", "Integration connection is unavailable"
-            )
+            if connection is None:
+                raise CapabilityValidationError(
+                    "connection_not_found", "Integration connection was not found"
+                )
+            if (
+                connection.status is not IntegrationConnectionStatus.ACTIVE
+                or connection.provider
+                is not provider_for_plan_type(profile.execution.plan_type)
+            ):
+                raise CapabilityValidationError(
+                    "connection_disabled", "Integration connection is unavailable"
+                )
         conversation = await self._conversations.get_for_call(call.id)
         if conversation is None:
             raise CapabilityValidationError(
@@ -362,7 +398,7 @@ class CapabilityInvocationService:
             operation_id=invocation_id,
             call_id=call.id,
             tool_call_id=request.tool_call_id,
-            integration_id=connection.id,
+            integration_id=profile.execution.connection_id,
             caller_phone=call.caller_phone_e164 or "",
             semantic_key=semantic_key,
         )
@@ -372,6 +408,7 @@ class CapabilityInvocationService:
             call_id=call.id,
             tenant_release_id=release_id,
             runtime_bundle_id=bundle_id,
+            execution_snapshot_id=call.execution_snapshot_id,
             execution_plan=plan,
             created_at=now,
             expires_at=now + timedelta(minutes=10),

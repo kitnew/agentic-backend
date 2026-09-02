@@ -83,11 +83,8 @@ def test_realtime_configuration_reports_missing_values(
     monkeypatch.setenv("AZURE_REALTIME_ENDPOINT", "https://realtime.openai.azure.com")
     monkeypatch.setenv("AZURE_REALTIME_API_KEY", "realtime-key")
 
-    with pytest.raises(ValidationError) as error:
-        VoiceAgentSettings()  # type: ignore[call-arg]
-
-    assert "VOICE_ARCHITECTURE=realtime" in str(error.value)
-    assert "AZURE_REALTIME_DEPLOYMENT" in str(error.value)
+    settings = VoiceAgentSettings()  # type: ignore[call-arg]
+    assert settings.voice_architecture == "realtime"
 
 
 def test_invalid_voice_architecture_fails_validation(

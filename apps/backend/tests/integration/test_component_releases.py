@@ -99,6 +99,11 @@ class _Events:
         return None
 
 
+class _ControlPlane:
+    async def materialize_execution_snapshot(self, tenant_id: UUID) -> SimpleNamespace:
+        return SimpleNamespace(snapshot_id=uuid4(), tenant_id=str(tenant_id))
+
+
 def _call_service(session) -> CallSessionService:
     return CallSessionService(
         CallSessionRepository(session),
@@ -108,6 +113,7 @@ def _call_service(session) -> CallSessionService:
         _Events(),  # type: ignore[arg-type]
         TenantReleaseRepository(session),
         RuntimeBundleStore(session),
+        control_plane=_ControlPlane(),  # type: ignore[arg-type]
     )
 
 

@@ -43,6 +43,6 @@ async def test_migrations_and_transaction_round_trip(
             )
 
         assert values == ["committed"]
-        assert revision == "0001_component_release_baseline"
+        assert revision == "0002_execution_authority_cutover"
     finally:
         await database.close()

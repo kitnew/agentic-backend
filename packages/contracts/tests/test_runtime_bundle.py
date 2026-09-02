@@ -85,6 +85,7 @@ def test_runtime_bundle_hash_includes_provenance() -> None:
         platform_runtime_revision_id=uuid4(),
         system_prompt_revision_id=uuid4(),
         profile_prompt_revision_id=uuid4(),
+        post_call_revision_id=uuid4(),
     )
     second = first.model_copy(update={"system_prompt_revision_id": uuid4()})
 

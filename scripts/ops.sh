@@ -146,35 +146,15 @@ ensure_database() {
   compose exec -T postgres sh -ec 'createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
 }
 
-database_table_count() {
-  compose exec -T postgres sh -ec '
-    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc \
-      "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = '\''public'\'' AND tablename <> '\''alembic_version'\''"
-  ' | tr -d '\r\n'
-}
-
-database_has_application_tables() {
-  local count
-  count="$(database_table_count)"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "could not read PostgreSQL table count"
-  (( count > 0 ))
-}
-
-has_alembic_revisions() {
-  local versions="$ROOT/apps/backend/migrations/versions"
-  [[ -d "$versions" ]] || return 1
-  find "$versions" -maxdepth 1 -type f -name '*.py' -print -quit | grep -q .
-}
-
 run_migration() {
   compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
     exec alembic -c apps/backend/alembic.ini upgrade head
   '
 }
 
-run_schema_bootstrap() {
-  compose run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec '
-    exec python -m backend_core.platform.database.bootstrap
+run_baseline_adoption() {
+  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
+    exec python -m backend_core.platform.database.bootstrap --adopt
   '
 }
 
@@ -188,23 +168,17 @@ database_init() {
   check_compose
   ensure_postgres
   ensure_database
-  printf 'Bootstrapping SQLAlchemy metadata; this is not an Alembic upgrade.\n'
-  run_schema_bootstrap
+  printf 'Applying Backend Alembic revisions.\n'
+  run_migration
 }
 
 database_prepare() {
   ensure_postgres
   ensure_database
-  if has_alembic_revisions; then
-    printf 'Applying Alembic revisions.\n'
-    run_migration
-  elif database_has_application_tables; then
-    printf 'No Alembic revisions found; checking the existing SQLAlchemy schema.\n'
-    run_schema_check
-  else
-    printf 'No Alembic revisions or application tables found; bootstrapping schema.\n'
-    run_schema_bootstrap
-  fi
+  printf 'Checking Backend Alembic baseline adoption.\n'
+  run_baseline_adoption
+  printf 'Applying Backend Alembic revisions.\n'
+  run_migration
 }
 
 database_reset() {
@@ -558,9 +532,7 @@ case "$COMMAND" in
   migrate)
     [[ $# -eq 0 ]] || usage
     check_compose
-    ensure_postgres
-    ensure_database
-    run_migration
+    database_prepare
     ;;
   db-init)
     [[ $# -eq 0 ]] || usage

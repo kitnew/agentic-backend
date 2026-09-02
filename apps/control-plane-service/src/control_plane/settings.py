@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     control_plane_encryption_key_id: Annotated[str, Field(min_length=1)] = "bootstrap"
     voice_agent_service_secret: SecretStr
     job_worker_service_secret: SecretStr
+    backend_core_service_secret: SecretStr
     nats_url: Annotated[str, Field(min_length=1)] = "nats://nats:4222"
     outbox_poll_interval_seconds: Annotated[float, Field(gt=0)] = 1.0
     otel_enabled: bool = False

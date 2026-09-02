@@ -1,3 +1,5 @@
+from typing import Any
+
 import httpx
 from contracts import EffectiveVoiceRuntime
 from contracts.voice_runtime import model_supports_reasoning
@@ -8,11 +10,11 @@ from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import elevenlabs, openai
 from livekit.plugins.elevenlabs.stt import VADOptions
+from livekit.plugins.openai import realtime
 
 from voice_agent.observability import VoiceMetrics
 from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_endpointing import LocalVadCommitController, LocalVadCommitSTT
-from voice_agent.stt_preflight import InterimPreflightSTT
 
 
 def provider_languages(locale: str) -> tuple[str, str]:
@@ -46,7 +48,10 @@ def create_agent_session(
     runtime: EffectiveVoiceRuntime,
     prompt_cache_key: str,
     metrics: VoiceMetrics | None = None,
+    secrets: dict[str, str] | None = None,
+    snapshot_runtime: dict[str, Any] | None = None,
 ) -> agents.AgentSession:
+    secrets = secrets or {}
     if runtime.llm.provider != "azure_openai":
         raise ValueError(f"unsupported LLM provider: {runtime.llm.provider}")
     if runtime.stt.provider != "elevenlabs":
@@ -70,7 +75,7 @@ def create_agent_session(
             "min_silence_duration_ms": runtime.stt.server_vad.min_silence_ms,
         }
     provider_stt = elevenlabs.STT(
-        api_key=settings.elevenlabs_api_key.get_secret_value(),
+        api_key=secrets["stt"] if snapshot_runtime is not None else _env_secret(settings.elevenlabs_api_key),
         model=runtime.stt.model,
         language_code=stt_language,
         keyterms=keyterms,
@@ -81,32 +86,34 @@ def create_agent_session(
     if runtime.stt.local_vad_commit.enabled:
         commit_controller = LocalVadCommitController(metrics)
         stt = LocalVadCommitSTT(provider_stt, commit_controller)
-    preflight = runtime.stt.interim_preflight
-    if preflight.enabled:
-        stt = InterimPreflightSTT(
-            stt,
-            min_transcript_chars=preflight.min_transcript_chars,
-            min_growth_chars=preflight.min_growth_chars,
-            max_generations_per_turn=preflight.max_generations_per_turn,
-        )
     vad = inference.VAD(
         min_speech_duration=runtime.local_vad.min_speech_seconds,
         min_silence_duration=runtime.local_vad.min_silence_seconds,
         activation_threshold=runtime.local_vad.activation_threshold,
     )
+    if snapshot_runtime is not None:
+        deployment = _runtime_value(snapshot_runtime, "llm", "deployment_name")
+        endpoint = _runtime_value(snapshot_runtime, "llm", "endpoint")
+        api_version = _runtime_value(snapshot_runtime, "llm", "api_version")
+        if not deployment or not endpoint or not api_version:
+            raise ValueError("snapshot LLM configuration is unavailable")
+    else:
+        deployment = _env_value(settings.azure_openai_deployment)
+        endpoint = _env_value(settings.azure_openai_endpoint)
+        api_version = _env_value(settings.azure_openai_api_version)
     llm_provider = openai.LLM.with_azure(
         model=runtime.llm.model,
-        azure_deployment=settings.azure_openai_deployment,
-        azure_endpoint=azure_endpoint(settings.azure_openai_endpoint),
-        api_version=settings.azure_openai_api_version,
-        api_key=settings.azure_openai_api_key.get_secret_value(),
+        azure_deployment=deployment,
+        azure_endpoint=azure_endpoint(endpoint),
+        api_version=api_version,
+        api_key=secrets["llm"] if snapshot_runtime is not None else _env_secret(settings.azure_openai_api_key),
         prompt_cache_key=prompt_cache_key,
         timeout=httpx.Timeout(settings.provider_timeout_seconds),
         max_completion_tokens=256,
         **llm_behavior_options(runtime),  # type: ignore[arg-type]
     )
     tts = elevenlabs.TTS(
-        api_key=settings.elevenlabs_api_key.get_secret_value(),
+        api_key=secrets["tts"] if snapshot_runtime is not None else _env_secret(settings.elevenlabs_api_key),
         model=runtime.tts.model,
         voice_id=runtime.tts.voice_id,
         language=tts_language,
@@ -150,3 +157,59 @@ def create_agent_session(
     if commit_controller is not None:
         commit_controller.attach(session)
     return session
+
+
+def create_realtime_session(
+    settings: VoiceAgentSettings,
+    runtime: dict[str, Any],
+    secrets: dict[str, str],
+) -> agents.AgentSession:
+    model = runtime["model"]
+    transcription = runtime["input_transcription"]
+    deployment = model["resource"]["deployment"]["deployment_config"]
+    connection = model["resource"]["connection"]["connection_config"]
+    transcription_config = transcription["resource"]["deployment"]["deployment_config"]
+    realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
+        model=deployment.get("model", deployment.get("deployment_name", "gpt-realtime")),
+        voice=runtime["voice"],
+        azure_deployment=deployment.get("deployment_name"),
+        base_url=connection.get("endpoint"),
+        api_key=secrets["model"],
+        input_audio_transcription={
+            "model": transcription_config.get("model", transcription_config.get("deployment_name")),
+            "language": runtime["input_transcription"].get("language"),
+        },
+        turn_detection=_turn_detection(runtime["turn_completion"]),
+        conn_options=agents.APIConnectOptions(
+            timeout=settings.provider_timeout_seconds,
+            max_retry=settings.provider_retry_limit,
+        ),
+    )
+    return agents.AgentSession(llm=realtime_model, vad=None, tools=[])
+
+
+def _turn_detection(value: dict[str, Any]) -> dict[str, Any]:
+    if value.get("strategy") == "semantic_vad":
+        return {"type": "semantic_vad", "eagerness": value.get("eagerness", "auto")}
+    return {"type": "server_vad", "threshold": value.get("activation_threshold", 0.5), "silence_duration_ms": value.get("silence_duration_ms", 200)}
+
+
+def _runtime_value(runtime: dict[str, Any] | None, component: str, key: str) -> str | None:
+    if not runtime:
+        return None
+    resource = runtime.get(component, {}).get("resource", {})
+    deployment = resource.get("deployment", {}).get("deployment_config", {})
+    connection = resource.get("connection", {}).get("connection_config", {})
+    return deployment.get(key) or connection.get(key)
+
+
+def _env_value(value: str | None) -> str:
+    if not value:
+        raise ValueError("snapshot provider configuration is unavailable")
+    return value
+
+
+def _env_secret(value) -> str:
+    if value is None:
+        raise ValueError("snapshot provider secret is unavailable")
+    return value.get_secret_value()
