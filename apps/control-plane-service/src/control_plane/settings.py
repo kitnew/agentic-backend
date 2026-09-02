@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     voice_agent_service_secret: SecretStr
     job_worker_service_secret: SecretStr
     backend_core_service_secret: SecretStr
+    control_plane_management_token: SecretStr = SecretStr("")
+    control_plane_management_actor: str = "agentctl"
     nats_url: Annotated[str, Field(min_length=1)] = "nats://nats:4222"
     outbox_poll_interval_seconds: Annotated[float, Field(gt=0)] = 1.0
     otel_enabled: bool = False

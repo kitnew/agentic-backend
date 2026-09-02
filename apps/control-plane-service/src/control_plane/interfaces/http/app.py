@@ -1,6 +1,7 @@
 from typing import Any
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -57,7 +58,9 @@ from control_plane.domain.managed_resources import (
 )
 from control_plane.domain.runtime_resolution import RuntimeResolutionError
 from control_plane.interfaces.http.service_auth import (
+    ManagementPrincipal,
     ServicePrincipal,
+    require_management_token,
     require_service_scope,
 )
 from control_plane.runtime.lifecycle import ServiceLifecycle
@@ -68,32 +71,27 @@ class SaveDraftRequest(BaseModel):
     schema_version: int = Field(ge=1)
     expected_draft_version: int | None
     expected_active_revision_id: UUID | None
-    actor: str = Field(min_length=1)
 
 
 class PublishRequest(BaseModel):
     expected_draft_version: int
-    actor: str = Field(min_length=1)
 
 
 class RollbackRequest(BaseModel):
     revision_number: int = Field(ge=1)
-    actor: str = Field(min_length=1)
 
 
 class CredentialWrite(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     secret: SecretStr = Field(min_length=1)
-    actor: str = Field(min_length=1, max_length=255)
 
 
 class CredentialRotate(BaseModel):
     secret: SecretStr = Field(min_length=1)
-    actor: str = Field(min_length=1, max_length=255)
 
 
-class ActorRequest(BaseModel):
-    actor: str = Field(min_length=1, max_length=255)
+class RevokeRequest(BaseModel):
+    pass
 
 
 class ProviderConnectionCreate(BaseModel):
@@ -102,7 +100,6 @@ class ProviderConnectionCreate(BaseModel):
     credential_ref: UUID
     connection_config: dict[str, object]
     enabled: bool = False
-    actor: str = Field(min_length=1, max_length=255)
 
 
 class ProviderConnectionUpdate(BaseModel):
@@ -111,10 +108,9 @@ class ProviderConnectionUpdate(BaseModel):
     credential_ref: UUID
     connection_config: dict[str, object]
     expected_generation: int = Field(ge=1)
-    actor: str = Field(min_length=1, max_length=255)
 
 
-class GeneratedActorRequest(ActorRequest):
+class GeneratedActorRequest(BaseModel):
     expected_generation: int = Field(ge=1)
 
 
@@ -126,7 +122,6 @@ class IntegrationConnectionCreate(BaseModel):
     config: dict[str, object]
     credential_ref: UUID | None = None
     enabled: bool = False
-    actor: str = Field(min_length=1, max_length=255)
 
 
 class IntegrationConnectionUpdate(BaseModel):
@@ -134,7 +129,6 @@ class IntegrationConnectionUpdate(BaseModel):
     config: dict[str, object]
     credential_ref: UUID | None = None
     expected_generation: int = Field(ge=1)
-    actor: str = Field(min_length=1, max_length=255)
 
 
 class HandoffDestinationCreate(BaseModel):
@@ -145,7 +139,6 @@ class HandoffDestinationCreate(BaseModel):
     description: str = Field(min_length=1, max_length=1000)
     phone_number: str = Field(min_length=1, max_length=64)
     enabled: bool = False
-    actor: str = Field(min_length=1, max_length=255)
 
 
 class HandoffDestinationUpdate(BaseModel):
@@ -154,7 +147,6 @@ class HandoffDestinationUpdate(BaseModel):
     description: str = Field(min_length=1, max_length=1000)
     phone_number: str = Field(min_length=1, max_length=64)
     expected_generation: int = Field(ge=1)
-    actor: str = Field(min_length=1, max_length=255)
 
 
 class PhoneNumberAssignmentCreate(BaseModel):
@@ -163,7 +155,6 @@ class PhoneNumberAssignmentCreate(BaseModel):
     tenant_id: str = Field(min_length=1, max_length=255)
     phone_number: str = Field(min_length=1, max_length=64)
     enabled: bool = False
-    actor: str = Field(min_length=1, max_length=255)
 
 
 _runtime_secret_auth = Depends(require_service_scope("runtime-secret:materialize"))
@@ -202,7 +193,6 @@ class ModelDeploymentCreate(BaseModel):
     realtime_capabilities: RealtimeCapabilitiesWrite | None = None
     stt_capabilities: STTCapabilitiesWrite | None = None
     enabled: bool = False
-    actor: str = Field(min_length=1, max_length=255)
 
 
 class ModelDeploymentUpdate(BaseModel):
@@ -214,7 +204,6 @@ class ModelDeploymentUpdate(BaseModel):
     realtime_capabilities: RealtimeCapabilitiesWrite | None = None
     stt_capabilities: STTCapabilitiesWrite | None = None
     expected_generation: int = Field(ge=1)
-    actor: str = Field(min_length=1, max_length=255)
 
 
 def create_http_app(
@@ -226,12 +215,28 @@ def create_http_app(
     execution_materialization: ExecutionMaterializationService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
+    app.state.settings = None
     app.state.lifecycle = lifecycle
     app.state.components = components
     app.state.managed_resources = managed_resources
     app.state.runtime_resolver = runtime_resolver
     app.state.runtime_materialization = runtime_materialization
     app.state.execution_materialization = execution_materialization
+
+    @app.middleware("http")
+    async def management_boundary(request: Request, call_next):
+        if request.url.path.startswith("/v1/") and not request.url.path.startswith(
+            "/v1/runtime/resolve"
+        ):
+            try:
+                request.state.management_principal = require_management_token(request)
+            except HTTPException as error:
+                return JSONResponse(
+                    {"detail": error.detail},
+                    status_code=error.status_code,
+                    headers=error.headers,
+                )
+        return await call_next(request)
 
     @app.exception_handler(ComponentError)
     async def component_error(_request: Request, exc: ComponentError) -> JSONResponse:
@@ -536,6 +541,12 @@ def _service(request: Request) -> ComponentService:
     return request.app.state.components
 
 
+def _management_actor(request: Request) -> str:
+    principal = request.state.management_principal
+    assert isinstance(principal, ManagementPrincipal)
+    return principal.subject
+
+
 def _component_router() -> APIRouter:
     router = APIRouter()
 
@@ -560,7 +571,7 @@ def _component_router() -> APIRouter:
                 body.schema_version,
                 body.expected_draft_version,
                 body.expected_active_revision_id,
-                body.actor,
+                _management_actor(request),
             )
         )
 
@@ -576,7 +587,7 @@ def _component_router() -> APIRouter:
     async def publish(request: Request, kind: str, body: PublishRequest) -> Any:
         return jsonable_encoder(
             await _service(request).publish_draft(
-                _address(request, kind), body.expected_draft_version, body.actor
+                _address(request, kind), body.expected_draft_version, _management_actor(request)
             )
         )
 
@@ -606,7 +617,7 @@ def _component_router() -> APIRouter:
     async def rollback(request: Request, kind: str, body: RollbackRequest) -> Any:
         return jsonable_encoder(
             await _service(request).rollback(
-                _address(request, kind), body.revision_number, body.actor
+                _address(request, kind), body.revision_number, _management_actor(request)
             )
         )
 
@@ -743,7 +754,7 @@ def _managed_resource_router() -> APIRouter:
     @router.post("/credentials", status_code=status.HTTP_201_CREATED)
     async def create_credential(request: Request, body: CredentialWrite) -> Any:
         value = await _managed(request).create_credential(
-            body.name, body.secret.get_secret_value(), body.actor
+            body.name, body.secret.get_secret_value(), _management_actor(request)
         )
         return jsonable_encoder(_credential_response(value))
 
@@ -752,16 +763,16 @@ def _managed_resource_router() -> APIRouter:
         request: Request, resource_id: UUID, body: CredentialRotate
     ) -> Any:
         value = await _managed(request).rotate_credential(
-            CredentialRef(resource_id), body.secret.get_secret_value(), body.actor
+            CredentialRef(resource_id), body.secret.get_secret_value(), _management_actor(request)
         )
         return jsonable_encoder(_credential_response(value))
 
     @router.post("/credentials/{resource_id}/revoke")
     async def revoke_credential(
-        request: Request, resource_id: UUID, body: ActorRequest
+        request: Request, resource_id: UUID, body: RevokeRequest
     ) -> Any:
         value = await _managed(request).revoke_credential(
-            CredentialRef(resource_id), body.actor
+            CredentialRef(resource_id), _management_actor(request)
         )
         return jsonable_encoder(_credential_response(value))
 
@@ -789,7 +800,7 @@ def _managed_resource_router() -> APIRouter:
             CredentialRef(body.credential_ref),
             body.connection_config,
             body.enabled,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_connection_response(value))
 
@@ -805,7 +816,7 @@ def _managed_resource_router() -> APIRouter:
             body.config,
             CredentialRef(body.credential_ref) if body.credential_ref else None,
             body.enabled,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_integration_connection_response(value))
 
@@ -818,7 +829,7 @@ def _managed_resource_router() -> APIRouter:
             body.config,
             CredentialRef(body.credential_ref) if body.credential_ref else None,
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_integration_connection_response(value))
 
@@ -832,7 +843,7 @@ def _managed_resource_router() -> APIRouter:
             IntegrationConnectionRef(resource_id),
             operation == "enable",
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_integration_connection_response(value))
 
@@ -859,6 +870,33 @@ def _managed_resource_router() -> APIRouter:
             ]
         )
 
+    @router.post("/integration-connections/{resource_id}/validate")
+    async def validate_integration_connection(request: Request, resource_id: UUID) -> Any:
+        connection = await _managed(request).get_integration_connection(
+            IntegrationConnectionRef(resource_id)
+        )
+        if not connection.enabled:
+            return {"valid": False, "usable": False, "reason": "disabled"}
+        config = connection.config
+        headers = dict(config.get("headers", {}))
+        authentication = config.get("authentication", {})
+        if authentication.get("type") != "none":
+            materializer = request.app.state.execution_materialization
+            if materializer is None:
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE)
+            material = await materializer.integration_material(
+                connection.tenant_id, resource_id
+            )
+            header_name = authentication.get("header_name")
+            if isinstance(header_name, str):
+                headers[header_name] = material.secret
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0), follow_redirects=False) as client:
+                response = await client.get(config["endpoint"], headers=headers)
+        except (httpx.HTTPError, KeyError) as error:
+            return {"valid": False, "usable": False, "reason": type(error).__name__}
+        return {"valid": True, "usable": response.is_success, "status_code": response.status_code}
+
     @router.post("/handoff-destinations", status_code=status.HTTP_201_CREATED)
     async def create_handoff_destination(
         request: Request, body: HandoffDestinationCreate
@@ -869,7 +907,7 @@ def _managed_resource_router() -> APIRouter:
             body.description,
             body.phone_number,
             body.enabled,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_handoff_destination_response(value))
 
@@ -882,7 +920,7 @@ def _managed_resource_router() -> APIRouter:
             body.description,
             body.phone_number,
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_handoff_destination_response(value))
 
@@ -896,7 +934,7 @@ def _managed_resource_router() -> APIRouter:
             HandoffDestinationRef(resource_id),
             operation == "enable",
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_handoff_destination_response(value))
 
@@ -928,7 +966,7 @@ def _managed_resource_router() -> APIRouter:
         request: Request, body: PhoneNumberAssignmentCreate
     ) -> Any:
         value = await _managed(request).create_phone_number_assignment(
-            body.tenant_id, body.phone_number, body.enabled, body.actor
+            body.tenant_id, body.phone_number, body.enabled, _management_actor(request)
         )
         return jsonable_encoder(_phone_number_assignment_response(value))
 
@@ -942,7 +980,7 @@ def _managed_resource_router() -> APIRouter:
             PhoneNumberAssignmentRef(resource_id),
             operation == "enable",
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_phone_number_assignment_response(value))
 
@@ -978,7 +1016,7 @@ def _managed_resource_router() -> APIRouter:
             CredentialRef(body.credential_ref),
             body.connection_config,
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_connection_response(value))
 
@@ -995,7 +1033,7 @@ def _managed_resource_router() -> APIRouter:
             ProviderConnectionRef(resource_id),
             operation == "enable",
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_connection_response(value))
 
@@ -1023,7 +1061,7 @@ def _managed_resource_router() -> APIRouter:
             body.deployment_kind,
             body.deployment_config,
             body.enabled,
-            body.actor,
+            _management_actor(request),
             LLMCapabilities(**body.llm_capabilities.model_dump())
             if body.llm_capabilities
             else None,
@@ -1045,7 +1083,7 @@ def _managed_resource_router() -> APIRouter:
             ProviderConnectionRef(body.connection_ref),
             body.deployment_config,
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
             LLMCapabilities(**body.llm_capabilities.model_dump())
             if body.llm_capabilities
             else None,
@@ -1071,7 +1109,7 @@ def _managed_resource_router() -> APIRouter:
             ModelDeploymentRef(resource_id),
             operation == "enable",
             body.expected_generation,
-            body.actor,
+            _management_actor(request),
         )
         return jsonable_encoder(_deployment_response(value))
 

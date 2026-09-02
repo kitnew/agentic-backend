@@ -41,6 +41,7 @@ from .models import PhoneNumberAssignment as PhoneRow
 from .models import ProviderConnection as ConnectionRow
 
 _PLATFORM_KINDS = (
+    "prompt.system",
     "runtime.llm.defaults",
     "runtime.stt.defaults",
     "runtime.tts.defaults",

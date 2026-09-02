@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from secrets import compare_digest
 from typing import Annotated
 
 import jwt
@@ -27,6 +28,11 @@ class ServicePrincipal:
     subject: str
     service: str
     scopes: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class ManagementPrincipal:
+    subject: str
 
 
 def _unauthorized() -> HTTPException:
@@ -87,3 +93,21 @@ def require_service_scope(scope: str) -> Callable[..., ServicePrincipal]:
         return ServicePrincipal(subject, service, scopes)
 
     return dependency
+
+
+def require_management_token(request: Request) -> ManagementPrincipal:
+    """Authenticate the separate, narrow management principal used by agentctl."""
+    authorization = request.headers.get("authorization", "")
+    scheme, _, token = authorization.partition(" ")
+    settings = getattr(request.app.state, "settings", None)
+    configured = getattr(settings, "control_plane_management_token", None)
+    expected = (
+        configured.get_secret_value()
+        if configured is not None and hasattr(configured, "get_secret_value")
+        else ""
+    )
+    if scheme.lower() != "bearer" or not token or not expected or not compare_digest(token, expected):
+        raise _unauthorized()
+    return ManagementPrincipal(
+        getattr(settings, "control_plane_management_actor", "agentctl")
+    )
