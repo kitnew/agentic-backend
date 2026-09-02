@@ -263,6 +263,67 @@ class IntegrationConnection(Base):
     updated_by: Mapped[str] = mapped_column(String(255))
 
 
+class HandoffDestination(Base):
+    __tablename__ = "handoff_destinations"
+    __table_args__ = (
+        CheckConstraint("generation >= 1", name="ck_handoff_destination_generation"),
+        UniqueConstraint("tenant_id", "key", name="uq_handoff_destination_tenant_key"),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(255))
+    key: Mapped[str] = mapped_column(String(64))
+    description: Mapped[str] = mapped_column(String(1000))
+    phone_number: Mapped[str] = mapped_column(String(16))
+    enabled: Mapped[bool]
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
+class PhoneNumberAssignment(Base):
+    __tablename__ = "phone_number_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "generation >= 1", name="ck_phone_number_assignment_generation"
+        ),
+        Index(
+            "uq_phone_number_assignment_enabled_tenant",
+            "tenant_id",
+            unique=True,
+            postgresql_where=text("enabled"),
+        ),
+        Index(
+            "uq_phone_number_assignment_enabled_phone",
+            "phone_number",
+            unique=True,
+            postgresql_where=text("enabled"),
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(255))
+    phone_number: Mapped[str] = mapped_column(String(16))
+    enabled: Mapped[bool]
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
 class ModelDeployment(Base):
     __tablename__ = "model_deployments"
     __table_args__ = (

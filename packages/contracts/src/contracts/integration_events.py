@@ -55,7 +55,14 @@ class ConfigurationComponentPublishedV1(IntegrationContract):
 
 
 class ManagedResourceChangedPayloadV1(IntegrationContract):
-    resource_type: Literal["credential", "provider_connection", "model_deployment", "integration_connection"]
+    resource_type: Literal[
+        "credential",
+        "provider_connection",
+        "model_deployment",
+        "integration_connection",
+        "handoff_destination",
+        "phone_number_assignment",
+    ]
     resource_id: UUID
     action: Literal["created", "updated", "enabled", "disabled", "rotated", "revoked"]
     resource_generation: int

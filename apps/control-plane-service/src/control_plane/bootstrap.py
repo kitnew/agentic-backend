@@ -18,6 +18,7 @@ from control_plane.application.runtime_materialization import (
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.capabilities import register_capability_components
 from control_plane.domain.components import ComponentRegistry
+from control_plane.domain.knowledge_components import register_knowledge_components
 from control_plane.domain.post_call import register_post_call_components
 from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.domain.providers import ProviderRegistry, default_provider_registry
@@ -61,6 +62,7 @@ def create_app(
         registry = ComponentRegistry()
         register_runtime_components(registry)
         register_prompt_components(registry)
+        register_knowledge_components(registry)
         register_capability_components(registry)
         register_post_call_components(registry)
     provider_registry = provider_registry or default_provider_registry()

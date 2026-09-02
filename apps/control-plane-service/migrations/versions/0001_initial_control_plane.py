@@ -248,6 +248,53 @@ def upgrade() -> None:
         schema=SCHEMA,
     )
     op.create_table(
+        "handoff_destinations",
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("tenant_id", sa.String(255), nullable=False),
+        sa.Column("key", sa.String(64), nullable=False),
+        sa.Column("description", sa.String(1000), nullable=False),
+        sa.Column("phone_number", sa.String(16), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_by", sa.String(255), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_by", sa.String(255), nullable=False),
+        sa.CheckConstraint("generation >= 1", name="ck_handoff_destination_generation"),
+        sa.UniqueConstraint("tenant_id", "key", name="uq_handoff_destination_tenant_key"),
+        schema=SCHEMA,
+    )
+    op.create_table(
+        "phone_number_assignments",
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("tenant_id", sa.String(255), nullable=False),
+        sa.Column("phone_number", sa.String(16), nullable=False),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_by", sa.String(255), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_by", sa.String(255), nullable=False),
+        sa.CheckConstraint("generation >= 1", name="ck_phone_number_assignment_generation"),
+        schema=SCHEMA,
+    )
+    op.create_index(
+        "uq_phone_number_assignment_enabled_tenant",
+        "phone_number_assignments",
+        ["tenant_id"],
+        unique=True,
+        schema=SCHEMA,
+        postgresql_where=sa.text("enabled"),
+    )
+    op.create_index(
+        "uq_phone_number_assignment_enabled_phone",
+        "phone_number_assignments",
+        ["phone_number"],
+        unique=True,
+        schema=SCHEMA,
+        postgresql_where=sa.text("enabled"),
+    )
+    op.create_table(
         "runtime_execution_snapshots",
         sa.Column("snapshot_id", sa.Uuid(), primary_key=True),
         sa.Column("tenant_id", sa.String(255), nullable=False),
@@ -266,6 +313,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_runtime_execution_snapshot_tenant_created", table_name="runtime_execution_snapshots", schema=SCHEMA)
     op.drop_table("runtime_execution_snapshots", schema=SCHEMA)
+    op.drop_index("uq_phone_number_assignment_enabled_phone", table_name="phone_number_assignments", schema=SCHEMA)
+    op.drop_index("uq_phone_number_assignment_enabled_tenant", table_name="phone_number_assignments", schema=SCHEMA)
+    op.drop_table("phone_number_assignments", schema=SCHEMA)
+    op.drop_table("handoff_destinations", schema=SCHEMA)
     op.drop_table("integration_connections", schema=SCHEMA)
     op.drop_table("model_deployments", schema=SCHEMA)
     op.drop_table("provider_connections", schema=SCHEMA)

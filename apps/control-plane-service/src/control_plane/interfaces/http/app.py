@@ -37,11 +37,15 @@ from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
     DeploymentKind,
+    HandoffDestination,
+    HandoffDestinationRef,
     IntegrationConnection,
     IntegrationConnectionRef,
     LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
+    PhoneNumberAssignment,
+    PhoneNumberAssignmentRef,
     ProviderConnection,
     ProviderConnectionRef,
     RealtimeCapabilities,
@@ -122,6 +126,35 @@ class IntegrationConnectionUpdate(BaseModel):
     config: dict[str, object]
     credential_ref: UUID | None = None
     expected_generation: int = Field(ge=1)
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class HandoffDestinationCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: str = Field(min_length=1, max_length=255)
+    key: str = Field(min_length=1, max_length=64)
+    description: str = Field(min_length=1, max_length=1000)
+    phone_number: str = Field(min_length=1, max_length=64)
+    enabled: bool = False
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class HandoffDestinationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str = Field(min_length=1, max_length=1000)
+    phone_number: str = Field(min_length=1, max_length=64)
+    expected_generation: int = Field(ge=1)
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class PhoneNumberAssignmentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: str = Field(min_length=1, max_length=255)
+    phone_number: str = Field(min_length=1, max_length=64)
+    enabled: bool = False
     actor: str = Field(min_length=1, max_length=255)
 
 
@@ -435,6 +468,38 @@ def _integration_connection_response(value: IntegrationConnection) -> dict[str, 
     }
 
 
+def _handoff_destination_response(value: HandoffDestination) -> dict[str, object]:
+    return {
+        "id": value.ref.value,
+        "tenant_id": value.tenant_id,
+        "key": value.key,
+        "description": value.description,
+        "phone_number": value.phone_number,
+        "enabled": value.enabled,
+        "generation": value.generation,
+        "created_at": value.created_at,
+        "created_by": value.created_by,
+        "updated_at": value.updated_at,
+        "updated_by": value.updated_by,
+    }
+
+
+def _phone_number_assignment_response(
+    value: PhoneNumberAssignment,
+) -> dict[str, object]:
+    return {
+        "id": value.ref.value,
+        "tenant_id": value.tenant_id,
+        "phone_number": value.phone_number,
+        "enabled": value.enabled,
+        "generation": value.generation,
+        "created_at": value.created_at,
+        "created_by": value.created_by,
+        "updated_at": value.updated_at,
+        "updated_by": value.updated_by,
+    }
+
+
 def _deployment_response(value: ModelDeployment) -> dict[str, object]:
     return {
         "id": value.ref.value,
@@ -592,6 +657,116 @@ def _managed_resource_router() -> APIRouter:
             [
                 _integration_connection_response(value)
                 for value in await _managed(request).list_integration_connections(
+                    tenant_id
+                )
+            ]
+        )
+
+    @router.post("/handoff-destinations", status_code=status.HTTP_201_CREATED)
+    async def create_handoff_destination(
+        request: Request, body: HandoffDestinationCreate
+    ) -> Any:
+        value = await _managed(request).create_handoff_destination(
+            body.tenant_id,
+            body.key,
+            body.description,
+            body.phone_number,
+            body.enabled,
+            body.actor,
+        )
+        return jsonable_encoder(_handoff_destination_response(value))
+
+    @router.put("/handoff-destinations/{resource_id}")
+    async def update_handoff_destination(
+        request: Request, resource_id: UUID, body: HandoffDestinationUpdate
+    ) -> Any:
+        value = await _managed(request).update_handoff_destination(
+            HandoffDestinationRef(resource_id),
+            body.description,
+            body.phone_number,
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_handoff_destination_response(value))
+
+    @router.post("/handoff-destinations/{resource_id}/{operation}")
+    async def set_handoff_destination_enabled(
+        request: Request, resource_id: UUID, operation: str, body: GeneratedActorRequest
+    ) -> Any:
+        if operation not in {"enable", "disable"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        value = await _managed(request).set_handoff_destination_enabled(
+            HandoffDestinationRef(resource_id),
+            operation == "enable",
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_handoff_destination_response(value))
+
+    @router.get("/handoff-destinations/{resource_id}")
+    async def get_handoff_destination(request: Request, resource_id: UUID) -> Any:
+        return jsonable_encoder(
+            _handoff_destination_response(
+                await _managed(request).get_handoff_destination(
+                    HandoffDestinationRef(resource_id)
+                )
+            )
+        )
+
+    @router.get("/handoff-destinations")
+    async def list_handoff_destinations(
+        request: Request, tenant_id: str | None = None
+    ) -> Any:
+        return jsonable_encoder(
+            [
+                _handoff_destination_response(value)
+                for value in await _managed(request).list_handoff_destinations(
+                    tenant_id
+                )
+            ]
+        )
+
+    @router.post("/phone-number-assignments", status_code=status.HTTP_201_CREATED)
+    async def create_phone_number_assignment(
+        request: Request, body: PhoneNumberAssignmentCreate
+    ) -> Any:
+        value = await _managed(request).create_phone_number_assignment(
+            body.tenant_id, body.phone_number, body.enabled, body.actor
+        )
+        return jsonable_encoder(_phone_number_assignment_response(value))
+
+    @router.post("/phone-number-assignments/{resource_id}/{operation}")
+    async def set_phone_number_assignment_enabled(
+        request: Request, resource_id: UUID, operation: str, body: GeneratedActorRequest
+    ) -> Any:
+        if operation not in {"enable", "disable"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        value = await _managed(request).set_phone_number_assignment_enabled(
+            PhoneNumberAssignmentRef(resource_id),
+            operation == "enable",
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_phone_number_assignment_response(value))
+
+    @router.get("/phone-number-assignments/{resource_id}")
+    async def get_phone_number_assignment(request: Request, resource_id: UUID) -> Any:
+        return jsonable_encoder(
+            _phone_number_assignment_response(
+                await _managed(request).get_phone_number_assignment(
+                    PhoneNumberAssignmentRef(resource_id)
+                )
+            )
+        )
+
+    @router.get("/phone-number-assignments")
+    async def list_phone_number_assignments(
+        request: Request, tenant_id: str | None = None
+    ) -> Any:
+        return jsonable_encoder(
+            [
+                _phone_number_assignment_response(value)
+                for value in await _managed(request).list_phone_number_assignments(
                     tenant_id
                 )
             ]

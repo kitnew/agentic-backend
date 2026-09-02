@@ -97,6 +97,38 @@ async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
+    app = create_http_app(
+        FakeLifecycle(
+            Readiness(
+                postgres=True,
+                control_plane_schema=True,
+                nats=True,
+                outbox_relay=True,
+            )
+        ),
+        managed_resources=object(),  # type: ignore[arg-type]
+    )
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        phone_response = await client.put(
+            "/v1/managed-resources/phone-number-assignments/00000000-0000-0000-0000-000000000000",
+            json={
+                "phone_number": "+421552301401",
+                "expected_generation": 1,
+                "actor": "admin",
+            },
+        )
+        tenant_response = await client.put(
+            "/v1/managed-resources/phone-number-assignments/00000000-0000-0000-0000-000000000000",
+            json={"tenant_id": "tenant-b", "expected_generation": 1, "actor": "admin"},
+        )
+
+    assert phone_response.status_code == tenant_response.status_code == 405
+
+
+@pytest.mark.asyncio
 async def test_ready_rejects_incompatible_control_plane_schema() -> None:
     lifecycle = FakeLifecycle(
         Readiness(
