@@ -738,8 +738,44 @@ def upgrade() -> None:
     op.create_index(op.f('ix_post_call_action_executions_finalization_id'), 'post_call_action_executions', ['finalization_id'], unique=False)
     op.create_index('ix_outbox_messages_undispatched', 'outbox_messages', ['created_at'], unique=False, postgresql_where='dispatched_at IS NULL')
 
+    for table in ('call_sessions', 'capability_invocations', 'capability_confirmations'):
+        op.add_column(table, sa.Column('execution_snapshot_id', sa.Uuid(), nullable=True))
+        op.drop_constraint(f'fk_{table}_release_bundle_same_tenant', table, type_='foreignkey')
+        op.alter_column(table, 'tenant_release_id', nullable=True)
+        op.alter_column(table, 'runtime_bundle_id', nullable=True)
+        op.create_check_constraint(
+            f'ck_{table}_snapshot_or_legacy_pin', table,
+            "(execution_snapshot_id IS NOT NULL AND tenant_release_id IS NULL AND runtime_bundle_id IS NULL) OR "
+            "(execution_snapshot_id IS NULL AND tenant_release_id IS NOT NULL AND runtime_bundle_id IS NOT NULL)",
+        )
+    op.add_column('call_sessions', sa.Column('phone_assignment_id', sa.Uuid(), nullable=True))
+    op.add_column('call_sessions', sa.Column('phone_assignment_generation', sa.Integer(), nullable=True))
+    op.add_column('tenant_telephony_provisioning', sa.Column('phone_assignment_id', sa.Uuid(), nullable=True))
+    op.add_column('tenant_telephony_provisioning', sa.Column('desired_generation', sa.Integer(), nullable=True))
+    op.add_column('tenant_telephony_provisioning', sa.Column('applied_generation', sa.Integer(), nullable=True))
+    op.create_unique_constraint(
+        'uq_tenant_telephony_provisioning_assignment', 'tenant_telephony_provisioning',
+        ['tenant_id', 'phone_assignment_id'],
+    )
+
 
 def downgrade() -> None:
+    op.drop_constraint('uq_tenant_telephony_provisioning_assignment', 'tenant_telephony_provisioning', type_='unique')
+    op.drop_column('tenant_telephony_provisioning', 'applied_generation')
+    op.drop_column('tenant_telephony_provisioning', 'desired_generation')
+    op.drop_column('tenant_telephony_provisioning', 'phone_assignment_id')
+    op.drop_column('call_sessions', 'phone_assignment_generation')
+    op.drop_column('call_sessions', 'phone_assignment_id')
+    for table in ('capability_confirmations', 'capability_invocations', 'call_sessions'):
+        op.drop_constraint(f'ck_{table}_snapshot_or_legacy_pin', table, type_='check')
+        op.alter_column(table, 'tenant_release_id', nullable=False)
+        op.alter_column(table, 'runtime_bundle_id', nullable=False)
+        op.create_foreign_key(
+            f'fk_{table}_release_bundle_same_tenant', table, 'tenant_releases',
+            ['tenant_id', 'tenant_release_id', 'runtime_bundle_id'],
+            ['tenant_id', 'id', 'runtime_bundle_id'],
+        )
+        op.drop_column(table, 'execution_snapshot_id')
     op.drop_constraint(
         "fk_tenants_active_release_same_tenant",
         "tenants",

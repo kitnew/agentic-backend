@@ -58,11 +58,6 @@ class ActiveReleaseRuntime:
     bundle: RuntimeBundleRecord
 
 
-@dataclass(frozen=True, slots=True)
-class InboundReleaseRuntime(ActiveReleaseRuntime):
-    provisioning: TenantTelephonyProvisioning | None
-
-
 _DRAFT_MODELS = {
     TenantComponent.RUNTIME: TenantRuntimeDraft,
     TenantComponent.AGENT: TenantAgentDraft,
@@ -117,40 +112,6 @@ class TenantReleaseRepository:
             )
         ).one_or_none()
         return None if row is None else ActiveReleaseRuntime(*row)
-
-    async def inbound_runtime(
-        self, phone_number: str
-    ) -> InboundReleaseRuntime | None:
-        row = (
-            await self._session.execute(
-                select(
-                    Tenant,
-                    TenantRelease,
-                    RuntimeBundleRecord,
-                    TenantTelephonyProvisioning,
-                )
-                .join(ActivePhoneClaim, ActivePhoneClaim.tenant_id == Tenant.id)
-                .join(TenantRelease, Tenant.active_release_id == TenantRelease.id)
-                .join(
-                    RuntimeBundleRecord,
-                    and_(
-                        RuntimeBundleRecord.id == TenantRelease.runtime_bundle_id,
-                        RuntimeBundleRecord.tenant_id == Tenant.id,
-                    ),
-                )
-                .outerjoin(
-                    TenantTelephonyProvisioning,
-                    TenantTelephonyProvisioning.tenant_id == Tenant.id,
-                )
-                .where(
-                    ActivePhoneClaim.normalized_phone_number == phone_number,
-                    ActivePhoneClaim.active_telephony_revision_id
-                    == TenantRelease.telephony_revision_id,
-                )
-                .with_for_update(of=Tenant)
-            )
-        ).one_or_none()
-        return None if row is None else InboundReleaseRuntime(*row)
 
     async def bundle_for_release(
         self,

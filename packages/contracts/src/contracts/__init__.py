@@ -99,6 +99,7 @@ from contracts.runtime_bundle import (
     canonical_json_bytes,
     runtime_bundle_content_hash,
 )
+from contracts.telephony import PhoneAssignment
 from contracts.tenant_components import (
     AgentIdentityConfig,
     CapabilityBusinessPolicy,
@@ -233,6 +234,7 @@ __all__ = [
     "ManagedWebhookSuccessResponse",
     "MaterializeArtifactRepresentation",
     "MessageEnvelope",
+    "PhoneAssignment",
     "PlatformRuntimePolicy",
     "PostCallAction",
     "PostCallActionInput",

@@ -171,6 +171,7 @@ _integration_material_auth = Depends(require_service_scope("integration-material
 _snapshot_materialize_auth = Depends(require_service_scope("execution-snapshot:materialize"))
 _snapshot_read_auth = Depends(require_service_scope("execution-snapshot:read"))
 _handoff_material_auth = Depends(require_service_scope("handoff-material:read"))
+_telephony_read_auth = Depends(require_service_scope("telephony:read"))
 
 
 class HandoffMaterialRequest(BaseModel):
@@ -385,6 +386,35 @@ def create_http_app(
                 jsonable_encoder(_runtime_secret_response(material)),
                 headers=_secret_headers(),
             )
+
+    if managed_resources is not None:
+        @app.get("/internal/v1/telephony/phone-number-assignments/resolve")
+        async def resolve_phone_assignment(
+            request: Request,
+            phone_number: str = Query(...),
+            _principal: ServicePrincipal = _telephony_read_auth,
+        ) -> Any:
+            try:
+                from control_plane.domain.managed_resources import normalize_e164
+                phone_number = normalize_e164(phone_number)
+            except ValueError as error:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from error
+            assignments = await request.app.state.managed_resources.list_phone_number_assignments()
+            assignment = next((item for item in assignments if item.enabled and item.phone_number == phone_number), None)
+            if assignment is None:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+            return {"assignment_id": assignment.ref.value, "tenant_id": assignment.tenant_id,
+                    "phone_number": assignment.phone_number, "generation": assignment.generation}
+
+        @app.get("/internal/v1/telephony/phone-number-assignments")
+        async def list_enabled_phone_assignments(
+            request: Request,
+            _principal: ServicePrincipal = _telephony_read_auth,
+        ) -> list[dict[str, Any]]:
+            assignments = await request.app.state.managed_resources.list_phone_number_assignments()
+            return [{"assignment_id": item.ref.value, "tenant_id": item.tenant_id,
+                     "phone_number": item.phone_number, "generation": item.generation}
+                    for item in assignments if item.enabled]
 
         @app.post(
             "/internal/v1/tenants/{tenant_id}/integration-connections/{connection_id}/execution-material"

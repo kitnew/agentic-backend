@@ -114,6 +114,7 @@ def platform_telephony_service(
         TelephonyRepository(session),
         request.app.state.livekit,
         request.app.state.settings,
+        request.app.state.control_plane,
         request.app.state.outbox_tracer,
         request.app.state.core_metrics,
     )

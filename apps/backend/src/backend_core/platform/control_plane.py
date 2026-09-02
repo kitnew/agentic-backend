@@ -4,7 +4,7 @@ from uuid import UUID
 
 import httpx
 import jwt
-from contracts import ExecutionSnapshot, RuntimeIntegrationMaterial
+from contracts import ExecutionSnapshot, PhoneAssignment, RuntimeIntegrationMaterial
 from contracts.integration import HttpConnectionConfiguration
 
 
@@ -38,6 +38,23 @@ class ControlPlaneClient:
         )
         response.raise_for_status()
         return ExecutionSnapshot.model_validate(response.json())
+
+    async def resolve_phone_number(self, phone_number: str) -> PhoneAssignment:
+        response = await self._client.get(
+            f"{self._base_url}/internal/v1/telephony/phone-number-assignments/resolve",
+            params={"phone_number": phone_number},
+            headers={"Authorization": f"Bearer {self._token(['telephony:read'])}"},
+        )
+        response.raise_for_status()
+        return PhoneAssignment.model_validate(response.json())
+
+    async def list_enabled_phone_assignments(self) -> list[PhoneAssignment]:
+        response = await self._client.get(
+            f"{self._base_url}/internal/v1/telephony/phone-number-assignments",
+            headers={"Authorization": f"Bearer {self._token(['telephony:read'])}"},
+        )
+        response.raise_for_status()
+        return [PhoneAssignment.model_validate(item) for item in response.json()]
 
     async def integration_execution_material(
         self, tenant_id: UUID, connection_id: UUID

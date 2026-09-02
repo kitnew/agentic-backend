@@ -858,6 +858,8 @@ class FinalizationService:
     async def _bundle_payload(
         self, call: CallSession
     ) -> RuntimeBundlePayload:
+        if call.tenant_release_id is None or call.runtime_bundle_id is None:
+            raise FinalizationError("pinned runtime bundle unavailable")
         bundle = await RuntimeBundleStore(self._session).get(
             call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
         )

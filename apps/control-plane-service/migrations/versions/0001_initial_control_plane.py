@@ -303,7 +303,7 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("content_hash", sa.String(64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("schema_version = 1", name="ck_execution_snapshot_schema_version"),
+        sa.CheckConstraint("schema_version IN (1, 2)", name="ck_execution_snapshot_schema_version"),
         sa.CheckConstraint("architecture IN ('cascade', 'realtime')", name="ck_execution_snapshot_architecture"),
         schema=SCHEMA,
     )

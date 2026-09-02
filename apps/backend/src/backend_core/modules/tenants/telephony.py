@@ -8,6 +8,7 @@ from agentic_observability.domain import CoreMetrics, domain_span
 from opentelemetry.trace import Tracer
 
 from backend_core.modules.tenants.models import TelephonyProvisioningStatus
+from backend_core.modules.tenants.release_models import TenantTelephonyProvisioning
 from backend_core.modules.tenants.release_repository import (
     TenantComponent,
     TenantReleaseRepository,
@@ -20,6 +21,7 @@ from backend_core.modules.tenants.schemas import (
     TelephonyProvisioningStatusResponse,
     TenantTelephonyStatus,
 )
+from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.platform.database import Database
 from backend_core.platform.livekit import LiveKitAdapter
 
@@ -99,12 +101,14 @@ class PlatformTelephonyService:
         telephony: TelephonyRepository,
         livekit: LiveKitAdapter,
         settings: Settings,
+        control_plane: ControlPlaneClient,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
         self._telephony = telephony
         self._livekit = livekit
         self._settings = settings
+        self._control_plane = control_plane
         self._tracer = tracer
         self._metrics = metrics
 
@@ -140,11 +144,9 @@ class PlatformTelephonyService:
                 "SIP provider connection is not configured",
                 started,
             )
-        numbers = sorted(
-            claim.normalized_phone_number
-            for claim in await self._telephony.active_phone_claims()
-        )
         try:
+            assignments = await self._control_plane.list_enabled_phone_assignments()
+            numbers = sorted(item.phone_number for item in assignments)
             with domain_span(self._tracer, "telephony.reconcile"):
                 inbound, outbound, dispatch = await self._livekit.reconcile_shared_sip(
                     numbers=numbers,
@@ -171,11 +173,27 @@ class PlatformTelephonyService:
             )
             state.provisioning_status = TelephonyProvisioningStatus.READY
             state.last_reconciled_at = datetime.now(UTC)
-            for item in provisionings:
-                item.applied_revision_id = item.desired_revision_id
+            for assignment in assignments:
+                item = await self._telephony.provisioning_for(assignment.tenant_id, assignment.assignment_id)
+                if item is None:
+                    item = next((value for value in provisionings if value.tenant_id == assignment.tenant_id), None)
+                if item is None:
+                    item = TenantTelephonyProvisioning(
+                        tenant_id=assignment.tenant_id,
+                        phone_assignment_id=assignment.assignment_id,
+                        desired_generation=assignment.generation,
+                    )
+                    await self._telephony.add(item)
+                item.phone_assignment_id = assignment.assignment_id
+                item.desired_generation = assignment.generation
+                item.applied_generation = assignment.generation
                 item.status = "ready"
                 item.last_error = None
                 item.last_reconciled_at = state.last_reconciled_at
+            for item in provisionings:
+                if not any(item.phone_assignment_id == a.assignment_id for a in assignments):
+                    item.status = "degraded"
+                    item.last_error = "assignment is no longer enabled"
             await self._telephony.flush()
             if self._metrics is not None:
                 self._metrics.telephony_reconciliation("ready", monotonic() - started)
@@ -209,34 +227,27 @@ class PlatformTelephonyReconciler:
         database: Database,
         livekit: LiveKitAdapter,
         settings: Settings,
+        control_plane: ControlPlaneClient,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
         self._database, self._livekit, self._settings = database, livekit, settings
-        self._tracer, self._metrics = tracer, metrics
+        self._tracer, self._metrics, self._control_plane = tracer, metrics, control_plane
 
     async def run(self, interval_seconds: float) -> None:
         while True:
             try:
                 async with self._database.transaction() as session:
                     repository = TelephonyRepository(session)
-                    platform = await repository.platform()
-                    provisionings = await repository.provisioning()
-                    if (
-                        platform.provisioning_status
-                        is TelephonyProvisioningStatus.PENDING
-                        or any(
-                            item.status == TelephonyProvisioningStatus.PENDING.value
-                            for item in provisionings
-                        )
-                    ):
-                        await PlatformTelephonyService(
-                            repository,
-                            self._livekit,
-                            self._settings,
-                            self._tracer,
-                            self._metrics,
-                        ).reconcile()
+                    await repository.platform()
+                    await PlatformTelephonyService(
+                        repository,
+                        self._livekit,
+                        self._settings,
+                        self._control_plane,
+                        self._tracer,
+                        self._metrics,
+                    ).reconcile()
             except Exception:
                 logger.exception("Automatic platform telephony reconciliation failed")
             await asyncio.sleep(interval_seconds)

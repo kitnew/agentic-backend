@@ -35,10 +35,10 @@ class CapabilityInvocation(Base):
             ("conversations.tenant_id", "conversations.id"),
             name="fk_capability_invocations_conversation_same_tenant",
         ),
-        ForeignKeyConstraint(
-            ("tenant_id", "tenant_release_id", "runtime_bundle_id"),
-            ("tenant_releases.tenant_id", "tenant_releases.id", "tenant_releases.runtime_bundle_id"),
-            name="fk_capability_invocations_release_bundle_same_tenant",
+        CheckConstraint(
+            "(execution_snapshot_id IS NOT NULL AND tenant_release_id IS NULL AND runtime_bundle_id IS NULL) OR "
+            "(execution_snapshot_id IS NULL AND tenant_release_id IS NOT NULL AND runtime_bundle_id IS NOT NULL)",
+            name="ck_capability_invocations_snapshot_or_legacy_pin",
         ),
         UniqueConstraint(
             "tenant_id",
@@ -57,8 +57,8 @@ class CapabilityInvocation(Base):
     tool_call_id: Mapped[str] = mapped_column(String(255))
     semantic_key: Mapped[str] = mapped_column(String(128))
     semantic_version: Mapped[int] = mapped_column(Integer)
-    tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
-    runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    tenant_release_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    runtime_bundle_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     execution_snapshot_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     status: Mapped[CapabilityInvocationStatus] = mapped_column(
         Enum(
@@ -106,10 +106,10 @@ class CapabilityConfirmation(Base):
             ("call_sessions.tenant_id", "call_sessions.id"),
             name="fk_capability_confirmations_call_same_tenant",
         ),
-        ForeignKeyConstraint(
-            ("tenant_id", "tenant_release_id", "runtime_bundle_id"),
-            ("tenant_releases.tenant_id", "tenant_releases.id", "tenant_releases.runtime_bundle_id"),
-            name="fk_capability_confirmations_release_bundle_same_tenant",
+        CheckConstraint(
+            "(execution_snapshot_id IS NOT NULL AND tenant_release_id IS NULL AND runtime_bundle_id IS NULL) OR "
+            "(execution_snapshot_id IS NULL AND tenant_release_id IS NOT NULL AND runtime_bundle_id IS NOT NULL)",
+            name="ck_capability_confirmations_snapshot_or_legacy_pin",
         ),
         UniqueConstraint(
             "tenant_id",
@@ -126,8 +126,8 @@ class CapabilityConfirmation(Base):
     tool_call_id: Mapped[str] = mapped_column(String(255))
     semantic_key: Mapped[str] = mapped_column(String(128))
     semantic_version: Mapped[int] = mapped_column(Integer)
-    tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
-    runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    tenant_release_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    runtime_bundle_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     execution_snapshot_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     canonical_input: Mapped[dict[str, object]] = mapped_column(JSONB)
     agent_input: Mapped[dict[str, object]] = mapped_column(JSONB)

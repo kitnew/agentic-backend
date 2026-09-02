@@ -107,7 +107,7 @@ class CapabilityInvocationService:
 
     async def _validate_request(
         self, call_id: UUID, request: CapabilityInvocationRequest
-    ) -> tuple[Any, UUID, UUID, UUID, RuntimeCapabilityBinding, dict[str, object]]:
+    ) -> tuple[Any, UUID | None, UUID | None, UUID, RuntimeCapabilityBinding, dict[str, object]]:
         call = await self._calls.get(call_id)
         if call is None:
             raise CapabilityValidationError("call_not_found", "Call does not exist")
@@ -423,6 +423,7 @@ class CapabilityInvocationService:
             semantic_version=profile.semantic_version,
             tenant_release_id=release_id,
             runtime_bundle_id=bundle_id,
+            execution_snapshot_id=call.execution_snapshot_id,
             canonical_input=canonical,
             execution_plan=plan.model_dump(mode="json"),
             operation_id=invocation_id,

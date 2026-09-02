@@ -15,7 +15,7 @@ SERVICE_SCOPES = {
     JOB_WORKER: frozenset({"integration-material:read"}),
     BACKEND_CORE: frozenset({
         "execution-snapshot:materialize", "execution-snapshot:read",
-        "integration-material:read", "handoff-material:read",
+        "integration-material:read", "handoff-material:read", "telephony:read",
     }),
 }
 _bearer = HTTPBearer(scheme_name="InternalServiceToken", auto_error=False)

@@ -343,18 +343,16 @@ class TenantTelephonyProvisioning(Base):
     __tablename__ = "tenant_telephony_provisioning"
     __table_args__ = (
         ForeignKeyConstraint(("tenant_id",), ("tenants.id",), ondelete="CASCADE"),
-        ForeignKeyConstraint(
-            ("tenant_id", "desired_revision_id"),
-            ("tenant_telephony_revisions.tenant_id", "tenant_telephony_revisions.id"),
-        ),
-        ForeignKeyConstraint(
-            ("tenant_id", "applied_revision_id"),
-            ("tenant_telephony_revisions.tenant_id", "tenant_telephony_revisions.id"),
-        ),
+        UniqueConstraint("tenant_id", "phone_assignment_id", name="uq_tenant_telephony_provisioning_assignment"),
+        ForeignKeyConstraint(("tenant_id", "desired_revision_id"), ("tenant_telephony_revisions.tenant_id", "tenant_telephony_revisions.id")),
+        ForeignKeyConstraint(("tenant_id", "applied_revision_id"), ("tenant_telephony_revisions.tenant_id", "tenant_telephony_revisions.id")),
     )
 
     tenant_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
-    desired_revision_id: Mapped[UUID] = mapped_column(Uuid)
+    phone_assignment_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    desired_generation: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    applied_generation: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    desired_revision_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     applied_revision_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     applied_state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     status: Mapped[str] = mapped_column(
