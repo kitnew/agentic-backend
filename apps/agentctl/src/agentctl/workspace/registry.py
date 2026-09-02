@@ -11,6 +11,7 @@ from agentctl.workspace.model import (
     PlatformResourceKind,
     ResourceId,
     ResourceKind,
+    WorkspaceResourceKind,
     resource_path,
 )
 
@@ -33,7 +34,7 @@ class ResourcePresence(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ResourceDescriptor:
-    kind: ResourceKind | PlatformResourceKind | LiveResourceKind | DraftResourceKind
+    kind: ResourceKind | WorkspaceResourceKind | PlatformResourceKind | LiveResourceKind | DraftResourceKind
     filename: str | None
     scope: str = "tenant"
     qualifier: str | None = None
@@ -63,17 +64,23 @@ class ResourceDescriptor:
 DESCRIPTORS = tuple(
     ResourceDescriptor(kind, filename)
     for kind, filename in (
-        (ResourceKind.AGENT, "tenant.yaml"),
-        (ResourceKind.RUNTIME, "runtime.yaml"),
-        (ResourceKind.PROMPT, "tenant_prompt.md"),
-        (ResourceKind.KNOWLEDGE, "knowledge/"),
-        (ResourceKind.CAPABILITIES, "capabilities.yaml"),
-        (ResourceKind.POST_CALL, "post_call.yaml"),
+        (WorkspaceResourceKind.AGENT, "agent.yaml"),
+        (WorkspaceResourceKind.RUNTIME_ARCHITECTURE, "runtime/architecture.yaml"),
+        (WorkspaceResourceKind.RUNTIME_SPEECH, "runtime/speech.yaml"),
+        (WorkspaceResourceKind.PROMPT_PROFILE_SELECTION, "prompt/profile_selection.yaml"),
+        (WorkspaceResourceKind.PROMPT_TENANT, "prompt/tenant.md"),
+        (WorkspaceResourceKind.KNOWLEDGE, "knowledge.md"),
+        (WorkspaceResourceKind.CAPABILITIES, "capabilities.yaml"),
+        (WorkspaceResourceKind.POST_CALL, "post_call.yaml"),
     )
 )
 
 PLATFORM_DESCRIPTORS = (
-    ResourceDescriptor(ResourceKind.RUNTIME, "platform/runtime.yaml", "platform"),
+    ResourceDescriptor(WorkspaceResourceKind.PLATFORM_RUNTIME_LLM, "platform/runtime/llm.yaml", "platform"),
+    ResourceDescriptor(WorkspaceResourceKind.PLATFORM_RUNTIME_STT, "platform/runtime/stt.yaml", "platform"),
+    ResourceDescriptor(WorkspaceResourceKind.PLATFORM_RUNTIME_TTS, "platform/runtime/tts.yaml", "platform"),
+    ResourceDescriptor(WorkspaceResourceKind.PLATFORM_RUNTIME_CASCADE, "platform/runtime/cascade.yaml", "platform"),
+    ResourceDescriptor(WorkspaceResourceKind.PLATFORM_RUNTIME_REALTIME, "platform/runtime/realtime.yaml", "platform"),
     ResourceDescriptor(
         PlatformResourceKind.SYSTEM_PROMPT, "platform/system_prompt.md", "platform"
     ),

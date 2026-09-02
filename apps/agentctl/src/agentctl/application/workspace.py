@@ -44,6 +44,7 @@ class PublishReport:
     published: tuple[str, ...]
     failed: str | None = None
     not_attempted: tuple[str, ...] = ()
+    not_dirty: tuple[str, ...] = ()
 
 
 def _requires_local_preflight(resource_id: ResourceId) -> bool:
@@ -227,7 +228,7 @@ def push_many(root: Path, store: StateStore, targets: tuple[WorkspaceTarget, ...
     return PushReport(tuple(saved))
 
 
-def publish(root: Path, store: StateStore, remote: RemoteAuthoringAdapter, tenant: str) -> Any:
+def publish(root: Path, store: StateStore, remote: RemoteAuthoringAdapter, tenant: str) -> PublishReport:
     for item in statuses(root, store, remote, tenant):
         if not _requires_local_preflight(item.resource_id):
             continue
@@ -240,7 +241,18 @@ def publish(root: Path, store: StateStore, remote: RemoteAuthoringAdapter, tenan
             continue
         if item.local in {"missing", "invalid"} or item.synchronization != "clean":
             raise CommandError(f"publish_has_unpushed_changes: {item.resource_id}", 2)
-    return remote.publish_all(tenant)
+    items = statuses(root, store, remote, tenant)
+    dirty = [item for item in items if item.publication == "unpublished"]
+    not_dirty = tuple(f"{tenant}:{item.resource_id.kind.value}" for item in items if item.publication != "unpublished")
+    published: list[str] = []
+    for index, item in enumerate(dirty):
+        name = f"{tenant}:{item.resource_id.kind.value}"
+        try:
+            remote.publish_component(item.resource_id)
+        except CommandError:
+            return PublishReport(tuple(published), name, tuple(f"{tenant}:{pending.resource_id.kind.value}" for pending in dirty[index + 1:]), not_dirty)
+        published.append(name)
+    return PublishReport(tuple(published), not_dirty=not_dirty)
 
 
 def publish_many(root: Path, store: StateStore, targets: tuple[WorkspaceTarget, ...]) -> PublishReport:
@@ -258,14 +270,25 @@ def publish_many(root: Path, store: StateStore, targets: tuple[WorkspaceTarget, 
             if item.local in {"missing", "invalid"} or item.synchronization != "clean":
                 raise CommandError(f"publish_has_unpushed_changes: {item.resource_id}", 2)
     published: list[str] = []
-    for index, target in enumerate(targets):
-        try:
-            result = target.remote.publish_all(target.name)
-        except CommandError:
-            return PublishReport(tuple(published), target.name, tuple(item.name for item in targets[index + 1 :]))
-        if result is not None:
-            published.append(target.name)
-    return PublishReport(tuple(published))
+    not_dirty: list[str] = []
+    for target_index, target in enumerate(targets):
+        all_items = statuses(root, store, target.remote, target.name)
+        items = [item for item in all_items if item.publication == "unpublished"]
+        not_dirty.extend(f"{target.name}:{item.resource_id.kind.value}" for item in all_items if item.publication != "unpublished")
+        for index, item in enumerate(items):
+            try:
+                target.remote.publish_component(item.resource_id)
+            except CommandError:
+                remaining = tuple(f"{target.name}:{pending.resource_id.kind.value}" for pending in items[index + 1:])
+                later = tuple(
+                    f"{later_target.name}:{later_item.resource_id.kind.value}"
+                    for later_target in targets[target_index + 1:]
+                    for later_item in statuses(root, store, later_target.remote, later_target.name)
+                    if later_item.publication == "unpublished"
+                )
+                return PublishReport(tuple(published), f"{target.name}:{item.resource_id.kind.value}", remaining + later, tuple(not_dirty))
+            published.append(f"{target.name}:{item.resource_id.kind.value}")
+    return PublishReport(tuple(published), not_dirty=tuple(not_dirty))
 
 
 def statuses_many(root: Path, store: StateStore, targets: tuple[WorkspaceTarget, ...]) -> list[ResourceStatus]:

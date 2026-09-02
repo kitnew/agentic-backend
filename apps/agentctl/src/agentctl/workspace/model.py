@@ -16,6 +16,22 @@ class ResourceKind(StrEnum):
     POST_CALL = "post_call"
 
 
+class WorkspaceResourceKind(StrEnum):
+    AGENT = "workspace_agent"
+    RUNTIME_ARCHITECTURE = "workspace_runtime_architecture"
+    RUNTIME_SPEECH = "workspace_runtime_speech"
+    PROMPT_PROFILE_SELECTION = "workspace_prompt_profile_selection"
+    PROMPT_TENANT = "workspace_prompt_tenant"
+    KNOWLEDGE = "workspace_knowledge"
+    CAPABILITIES = "workspace_capabilities"
+    POST_CALL = "workspace_post_call"
+    PLATFORM_RUNTIME_LLM = "platform_runtime_llm"
+    PLATFORM_RUNTIME_STT = "platform_runtime_stt"
+    PLATFORM_RUNTIME_TTS = "platform_runtime_tts"
+    PLATFORM_RUNTIME_CASCADE = "platform_runtime_cascade"
+    PLATFORM_RUNTIME_REALTIME = "platform_runtime_realtime"
+
+
 class PlatformResourceKind(StrEnum):
     SYSTEM_PROMPT = "system_prompt"
     PROFILE_PROMPT = "profile_prompt"
@@ -33,12 +49,12 @@ class DraftResourceKind(StrEnum):
 class ResourceId:
     scope: str
     owner: str
-    kind: ResourceKind | PlatformResourceKind | LiveResourceKind | DraftResourceKind
+    kind: ResourceKind | WorkspaceResourceKind | PlatformResourceKind | LiveResourceKind | DraftResourceKind
     qualifier: str | None = None
 
     def __str__(self) -> str:
         if self.scope == "platform":
-            parts = (self.scope, self.kind.value)
+            parts: tuple[str, ...] = (self.scope, self.kind.value)
             return ":".join((*parts, self.qualifier) if self.qualifier else parts)
         parts = (self.scope, self.owner, self.kind.value)
         return ":".join((*parts, self.qualifier) if self.qualifier else parts)
@@ -111,6 +127,19 @@ def resource_path(root: Path, resource_id: ResourceId) -> Path:
     if resource_id.scope == "platform":
         if resource_id.kind is ResourceKind.RUNTIME:
             return root / "platform" / "runtime.yaml"
+        if resource_id.kind in {
+            WorkspaceResourceKind.RUNTIME_ARCHITECTURE,
+            WorkspaceResourceKind.RUNTIME_SPEECH,
+        }:
+            return root / "platform" / "runtime" / f"{resource_id.kind.value.removeprefix('workspace_runtime_')}.yaml"
+        if resource_id.kind in {
+            WorkspaceResourceKind.PLATFORM_RUNTIME_LLM,
+            WorkspaceResourceKind.PLATFORM_RUNTIME_STT,
+            WorkspaceResourceKind.PLATFORM_RUNTIME_TTS,
+            WorkspaceResourceKind.PLATFORM_RUNTIME_CASCADE,
+            WorkspaceResourceKind.PLATFORM_RUNTIME_REALTIME,
+        }:
+            return root / "platform" / "runtime" / f"{resource_id.kind.value.removeprefix('platform_runtime_')}.yaml"
         if resource_id.kind is PlatformResourceKind.SYSTEM_PROMPT:
             return root / "platform" / "system_prompt.md"
         if resource_id.kind is PlatformResourceKind.PROFILE_PROMPT:
@@ -133,4 +162,12 @@ def resource_path(root: Path, resource_id: ResourceId) -> Path:
         ResourceKind.KNOWLEDGE: base / "knowledge",
         ResourceKind.CAPABILITIES: base / "capabilities.yaml",
         ResourceKind.POST_CALL: base / "post_call.yaml",
+        WorkspaceResourceKind.AGENT: base / "agent.yaml",
+        WorkspaceResourceKind.RUNTIME_ARCHITECTURE: base / "runtime" / "architecture.yaml",
+        WorkspaceResourceKind.RUNTIME_SPEECH: base / "runtime" / "speech.yaml",
+        WorkspaceResourceKind.PROMPT_PROFILE_SELECTION: base / "prompt" / "profile_selection.yaml",
+        WorkspaceResourceKind.PROMPT_TENANT: base / "prompt" / "tenant.md",
+        WorkspaceResourceKind.KNOWLEDGE: base / "knowledge.md",
+        WorkspaceResourceKind.CAPABILITIES: base / "capabilities.yaml",
+        WorkspaceResourceKind.POST_CALL: base / "post_call.yaml",
     }[resource_id.kind]

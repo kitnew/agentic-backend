@@ -8,17 +8,22 @@ from agentctl.workspace.model import (
     PlatformResourceKind,
     ResourceId,
     ResourceKind,
+    WorkspaceResourceKind,
     resource_path,
 )
 
 
 def from_local(resource_id: ResourceId, value: Any) -> Any:
+    if resource_id.kind is WorkspaceResourceKind.PROMPT_TENANT:
+        return {"content": value}
     if resource_id.kind in {
         ResourceKind.PROMPT,
         PlatformResourceKind.SYSTEM_PROMPT,
         PlatformResourceKind.PROFILE_PROMPT,
     }:
         return {"text": value}
+    if resource_id.kind is WorkspaceResourceKind.KNOWLEDGE:
+        return {"content": value}
     if resource_id.kind is ResourceKind.KNOWLEDGE:
         return {"content": value.get("knowledge.md", "")}
     return value
@@ -26,10 +31,18 @@ def from_local(resource_id: ResourceId, value: Any) -> Any:
 
 def to_local(root: Path, resource_id: ResourceId, value: Any) -> dict[Path, str] | None:
     path = resource_path(root, resource_id)
+    if resource_id.kind is WorkspaceResourceKind.PROMPT_TENANT:
+        if not isinstance(value, dict) or not isinstance(value.get("content"), str):
+            raise CommandError(f"invalid prompt projection: {path}", 2)
+        return {path: value["content"].replace("\r\n", "\n")}
     if resource_id.kind is ResourceKind.PROMPT:
         if not isinstance(value, dict) or not isinstance(value.get("text"), str):
             raise CommandError(f"invalid prompt projection: {path}", 2)
         return {path: value["text"].replace("\r\n", "\n")}
+    if resource_id.kind is WorkspaceResourceKind.KNOWLEDGE:
+        if not isinstance(value, dict) or not isinstance(value.get("content"), str):
+            raise CommandError(f"invalid knowledge projection: {path}", 2)
+        return {path: value["content"].replace("\r\n", "\n")}
     if resource_id.kind is ResourceKind.KNOWLEDGE:
         if not isinstance(value, dict) or not isinstance(value.get("content"), str):
             raise CommandError(f"invalid knowledge projection: {path}", 2)

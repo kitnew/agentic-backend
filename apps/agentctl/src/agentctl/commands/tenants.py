@@ -74,4 +74,3 @@ def run_tenant_show(settings: Settings, slug: str) -> None:
     print(f"Display name: {tenant.display_name}")
     print(f"Business type: {tenant.business_type}")
     print(f"Status: {tenant.status.value}")
-    print(f"Active release: {tenant.active_release_id or 'none'}")

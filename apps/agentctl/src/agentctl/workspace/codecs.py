@@ -11,6 +11,7 @@ from agentctl.workspace.model import (
     PlatformResourceKind,
     ResourceId,
     ResourceKind,
+    WorkspaceResourceKind,
     resource_path,
 )
 from agentctl.workspace.projections import from_local, to_local
@@ -27,6 +28,12 @@ def _yaml_load(path: Path) -> Any:
 
 def load(root: Path, resource_id: ResourceId) -> LocalResource:
     path = resource_path(root, resource_id)
+    if resource_id.kind is WorkspaceResourceKind.KNOWLEDGE:
+        value = _yaml_load(path) if path.suffix == ".yaml" else (
+            {"content": path.read_text(encoding="utf-8").replace("\r\n", "\n")}
+            if path.exists() else None
+        )
+        return LocalResource(value, path.exists(), isinstance(value, dict) or value is None)
     if resource_id.kind is ResourceKind.KNOWLEDGE:
         if not path.exists():
             return LocalResource(None, False)
@@ -38,7 +45,7 @@ def load(root: Path, resource_id: ResourceId) -> LocalResource:
             if item.is_file()
         }
         return LocalResource(from_local(resource_id, files), True)
-    if resource_id.kind is ResourceKind.PROMPT:
+    if resource_id.kind in {ResourceKind.PROMPT, WorkspaceResourceKind.PROMPT_TENANT}:
         if not path.exists():
             return LocalResource(None, False)
         return LocalResource(
@@ -58,9 +65,11 @@ def dump(root: Path, resource_id: ResourceId, value: Any) -> dict[Path, str]:
     projection = to_local(root, resource_id, value)
     if projection is not None:
         return projection
+    if resource_id.kind is WorkspaceResourceKind.KNOWLEDGE:
+        return {path: value.get("content", "") if isinstance(value, dict) else str(value or "")}
     if resource_id.kind is ResourceKind.KNOWLEDGE:
         raise CommandError(f"invalid knowledge projection: {path}", 2)
-    if resource_id.kind in {PlatformResourceKind.SYSTEM_PROMPT, PlatformResourceKind.PROFILE_PROMPT}:
+    if resource_id.kind in {PlatformResourceKind.SYSTEM_PROMPT, PlatformResourceKind.PROFILE_PROMPT, WorkspaceResourceKind.PROMPT_TENANT}:
         return {path: str(value).replace("\r\n", "\n")}
     return {path: yaml.safe_dump(value or {}, allow_unicode=True, sort_keys=False)}
 

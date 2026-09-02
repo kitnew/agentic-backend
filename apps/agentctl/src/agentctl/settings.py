@@ -13,12 +13,15 @@ class Settings:
     api_url: str
     token: str
     state_dir: Path
+    control_plane_url: str | None = None
+    control_plane_token: str | None = None
 
     @classmethod
     def load(
         cls,
         api_url: str | None = None,
         state_dir: str | None = None,
+        control_plane_url: str | None = None,
     ) -> Settings:
         raw_url = api_url or os.environ.get("AGENTCTL_API_URL")
         if not raw_url:
@@ -50,4 +53,8 @@ class Settings:
             api_url=raw_url.rstrip("/"),
             token=token,
             state_dir=Path(raw_state_dir).expanduser(),
+            control_plane_url=(
+                control_plane_url or os.environ.get("AGENTCTL_CONTROL_PLANE_URL")
+            ),
+            control_plane_token=os.environ.get("AGENTCTL_CONTROL_PLANE_TOKEN"),
         )
