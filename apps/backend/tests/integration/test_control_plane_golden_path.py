@@ -13,12 +13,12 @@ import pytest
 import pytest_asyncio
 import uvicorn
 import yaml
+from agentctl import main as agentctl
 from backend_core.bootstrap.app import create_app
 from backend_core.bootstrap.settings import Settings
 from backend_core.modules.tenants.release_repository import TenantReleaseRepository
 from backend_core.platform.database import Database
 from backend_core.runtime.bundle_store import RuntimeBundleStore
-from control_plane import main as agentctl
 
 ADMIN_TOKEN = "test-admin-token-with-at-least-32-characters"
 

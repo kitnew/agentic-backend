@@ -152,18 +152,6 @@ run_migration() {
   '
 }
 
-run_baseline_adoption() {
-  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
-    exec python -m backend_core.platform.database.bootstrap --adopt
-  '
-}
-
-run_schema_check() {
-  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
-    exec python -m backend_core.platform.database.bootstrap --check
-  '
-}
-
 database_init() {
   check_compose
   ensure_postgres
@@ -175,8 +163,6 @@ database_init() {
 database_prepare() {
   ensure_postgres
   ensure_database
-  printf 'Checking Backend Alembic baseline adoption.\n'
-  run_baseline_adoption
   printf 'Applying Backend Alembic revisions.\n'
   run_migration
 }
@@ -365,12 +351,6 @@ control_plane_ready_doctor() {
     >/dev/null 2>&1
 }
 
-schema_doctor() {
-  service_running backend || return 1
-  compose exec -T backend sh -ec \
-    'exec python -m backend_core.platform.database.bootstrap --check' >/dev/null 2>&1
-}
-
 minio_doctor() {
   service_running minio || return 1
   compose exec -T minio curl -fsS http://localhost:9000/minio/health/ready >/dev/null 2>&1
@@ -437,7 +417,6 @@ doctor() {
   fi
 
   doctor_check required "PostgreSQL" postgres_doctor
-  doctor_check required "PostgreSQL schema" schema_doctor
   doctor_check required "Redis" redis_doctor
   doctor_check required "NATS" nats_doctor
   doctor_check required "MinIO" minio_doctor

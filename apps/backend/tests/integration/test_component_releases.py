@@ -1,13 +1,9 @@
-import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
-from backend_core.modules.calls.errors import (
-    CallSessionTelephonyNotReadyError,
-    HumanHandoffError,
-)
+from backend_core.modules.calls.errors import HumanHandoffError
 from backend_core.modules.calls.models import (
     CallChannel,
     CallDirection,
@@ -15,10 +11,7 @@ from backend_core.modules.calls.models import (
     CallSessionStatus,
 )
 from backend_core.modules.calls.repository import CallSessionRepository
-from backend_core.modules.calls.service import (
-    MANUAL_TEST_CALLER_PHONE,
-    CallSessionService,
-)
+from backend_core.modules.calls.service import CallSessionService
 from backend_core.modules.conversations.models import Conversation
 from backend_core.modules.conversations.repository import ConversationRepository
 from backend_core.modules.integrations.models import (
@@ -71,11 +64,7 @@ from contracts.runtime_bundle import (
     RuntimeHandoffDestination,
     RuntimeTelephony,
 )
-from contracts.voice import (
-    HumanHandoffRequest,
-    InboundSipClaimRequest,
-    VoiceAgentPrompt,
-)
+from contracts.voice import HumanHandoffRequest, VoiceAgentPrompt
 from contracts.voice_runtime import (
     EffectiveVoiceRuntime,
     LLMRuntimeSettings,
@@ -587,111 +576,6 @@ async def test_publish_rejects_a_stale_draft_snapshot(
                     [DraftExpectation(TenantComponent.PROMPT, draft.id, stale_version)],
                     _bundle_factory(tenant_id),
                 )
-    finally:
-        await database.close()
-
-
-@pytest.mark.asyncio
-async def test_publish_and_web_call_creation_pin_one_atomic_release(
-    migrated_database_url: str,
-) -> None:
-    database = Database(migrated_database_url)
-    try:
-        tenant_id, _, _ = await _publish_ready_tenant(
-            database, slug="web-race-hotel", phone_number=None
-        )
-        async with database.transaction() as session:
-            repository = TenantReleaseRepository(session)
-            draft = await repository.save_draft(
-                component=TenantComponent.PROMPT,
-                tenant_id=tenant_id,
-                payload={"text": "changed"},
-                expected_version=None,
-            )
-            expectation = DraftExpectation(TenantComponent.PROMPT, draft.id, draft.version)
-
-        async def publish() -> None:
-            async with database.transaction() as session:
-                await TenantReleaseUseCases(TenantReleaseRepository(session)).publish(
-                    tenant_id,
-                    [expectation],
-                    _bundle_factory(tenant_id),
-                )
-
-        async def create_call():
-            async with database.transaction() as session:
-                return await _call_service(session).create_manual(tenant_id)
-
-        _, (call, created) = await asyncio.gather(publish(), create_call())
-        assert created
-        assert call.caller_phone_e164 == MANUAL_TEST_CALLER_PHONE
-        assert call.tenant_release_id is not None
-        assert call.runtime_bundle_id is not None
-
-        async with database.transaction() as session:
-            pinned = await session.get(TenantRelease, call.tenant_release_id)
-        assert pinned is not None
-        assert pinned.release_number in (1, 2)
-        assert call.runtime_bundle_id == pinned.runtime_bundle_id
-    finally:
-        await database.close()
-
-
-@pytest.mark.asyncio
-async def test_telephony_publish_race_fails_closed_or_pins_old_inbound_release(
-    migrated_database_url: str,
-) -> None:
-    database = Database(migrated_database_url)
-    phone_number = "+421551234569"
-    try:
-        tenant_id, first_release_id, first_bundle_id = await _publish_ready_tenant(
-            database, slug="sip-race-hotel", phone_number=phone_number
-        )
-        async with database.transaction() as session:
-            repository = TenantReleaseRepository(session)
-            draft = await repository.save_draft(
-                component=TenantComponent.TELEPHONY,
-                tenant_id=tenant_id,
-                payload={"phone_number": phone_number},
-                expected_version=None,
-            )
-            expectation = DraftExpectation(
-                TenantComponent.TELEPHONY, draft.id, draft.version
-            )
-
-        async def publish() -> None:
-            async with database.transaction() as session:
-                await TenantReleaseUseCases(TenantReleaseRepository(session)).publish(
-                    tenant_id,
-                    [expectation],
-                    _bundle_factory(tenant_id),
-                )
-
-        async def claim():
-            try:
-                async with database.transaction() as session:
-                    return await _call_service(session).claim_inbound_sip(
-                        InboundSipClaimRequest(
-                            sip_call_id="sip-race",
-                            trunk_id="trunk",
-                            dispatch_rule_id="rule",
-                            caller_number="+421551234568",
-                            called_number=phone_number,
-                            room_name="sip-race-room",
-                            participant_identity="sip-race-participant",
-                        )
-                    )
-            except CallSessionTelephonyNotReadyError:
-                return None
-
-        _, result = await asyncio.gather(publish(), claim())
-        if result is not None:
-            call, created = result
-            assert created
-            assert (call.tenant_release_id, call.runtime_bundle_id) == (
-                first_release_id,
-                first_bundle_id,
-            )
     finally:
         await database.close()
 

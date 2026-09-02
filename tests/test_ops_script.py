@@ -145,17 +145,15 @@ def test_update_migrates_empty_database_and_ignores_optional_checks(
 
     assert result.returncode == 0, result.stderr
     output = result.stdout + result.stderr
-    assert "Checking Backend Alembic baseline adoption." in output
     assert "[WARN] Prometheus [OPTIONAL]" in output
     assert "Result: healthy (optional checks degraded)" in output
     commands = docker_log(tmp_path)
-    adopt = commands.index("python -m backend_core.platform.database.bootstrap --adopt")
     migrate = commands.index("alembic -c apps/backend/alembic.ini upgrade head")
     optional_start = commands.index(
         "up -d --remove-orphans prometheus tempo otel-collector grafana"
     )
     stack_start = commands.index("up -d --wait --wait-timeout 180 --remove-orphans")
-    assert adopt < migrate < optional_start < stack_start
+    assert migrate < optional_start < stack_start
 
 
 def test_production_db_reset_requires_non_tty_confirmation(tmp_path: Path) -> None:
