@@ -125,10 +125,10 @@ def validate_capability(semantic_key: str, profile: TenantCapabilityProfile) -> 
     _validate_constraints(
         profile.agent_input_schema, profile.bindings, profile.input_constraints
     )
-    _validate_expression(profile.execution.path)
-    _validate_expression(profile.execution.query)
-    _validate_expression(profile.execution.request)
-    _validate_expression(profile.execution.response)
+    validate_mapping_expressions(profile.execution.path)
+    validate_mapping_expressions(profile.execution.query)
+    validate_mapping_expressions(profile.execution.request)
+    validate_mapping_expressions(profile.execution.response)
     if profile.result_schema is not None:
         try:
             Draft202012Validator.check_schema(profile.result_schema)
@@ -217,7 +217,7 @@ def _walk_schema(value: Any) -> None:
             _walk_schema(item)
 
 
-def _validate_expression(value: Any) -> None:
+def validate_mapping_expressions(value: Any) -> None:
     if isinstance(value, ExpressionNode):
         jsonata.Jsonata(value.expr)
     elif isinstance(value, dict):
@@ -225,10 +225,10 @@ def _validate_expression(value: Any) -> None:
             jsonata.Jsonata(value["$expr"])
         else:
             for item in value.values():
-                _validate_expression(item)
+                validate_mapping_expressions(item)
     elif isinstance(value, list):
         for item in value:
-            _validate_expression(item)
+            validate_mapping_expressions(item)
 
 
 def normalize_canonical_input(

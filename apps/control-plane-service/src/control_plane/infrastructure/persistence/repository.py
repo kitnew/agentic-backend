@@ -43,6 +43,7 @@ from control_plane.domain.managed_resources import (
     RealtimeCapabilities,
     STTCapabilities,
 )
+from control_plane.domain.post_call import TenantPostCallConfig
 from control_plane.domain.runtime_components import (
     CascadeExecutionDefaults,
     ProviderVADCommitPolicy,
@@ -336,6 +337,9 @@ class SqlAlchemyComponentRepository:
         if isinstance(value, TenantCapabilitiesConfig):
             await self._validate_capability_activation(session, address, value)
             return
+        if isinstance(value, TenantPostCallConfig):
+            await self._validate_post_call_activation(session, address, value)
+            return
         if isinstance(value, RealtimeExecutionDefaults):
             await self._validate_realtime_activation(session, value)
             return
@@ -378,39 +382,53 @@ class SqlAlchemyComponentRepository:
         for profile in value.capabilities.values():
             if isinstance(profile, bool) or not profile.enabled:
                 continue
-            connection = await session.get(
-                IntegrationConnectionRow,
-                profile.execution.integration_connection_ref.value,
+            await SqlAlchemyComponentRepository._validate_http_integration_activation(
+                session, address, profile.execution.integration_connection_ref.value
             )
-            if connection is None:
-                raise ManagedResourceNotFound(
-                    "referenced integration connection not found"
-                )
-            if connection.tenant_id != address.scope.key:
-                raise InvalidComponentValue(
-                    "referenced integration connection belongs to another tenant"
-                )
-            if connection.integration_kind != "http" or not connection.enabled:
-                raise InvalidComponentValue(
-                    "referenced integration connection is not enabled HTTP"
-                )
-            from contracts.integration import HttpConnectionConfiguration
 
-            config = HttpConnectionConfiguration.model_validate(connection.config)
-            if config.authentication.type == "api_key_header" and connection.credential_id is None:
-                raise InvalidComponentValue("HTTP API-key connection has no credential")
-            if config.authentication.type == "none" and connection.credential_id is not None:
-                raise InvalidComponentValue("HTTP no-auth connection has a credential")
-            if connection.credential_id is not None:
-                credential = await session.get(CredentialRow, connection.credential_id)
-                if (
-                    credential is None
-                    or credential.status == "revoked"
-                    or credential.active_version_id is None
-                ):
-                    raise InvalidComponentValue(
-                        "referenced integration credential is not usable"
-                    )
+    @staticmethod
+    async def _validate_post_call_activation(
+        session: AsyncSession,
+        address: ComponentAddress,
+        value: TenantPostCallConfig,
+    ) -> None:
+        for action in value.actions:
+            await SqlAlchemyComponentRepository._validate_http_integration_activation(
+                session, address, action.execution.integration_connection_ref.value
+            )
+
+    @staticmethod
+    async def _validate_http_integration_activation(
+        session: AsyncSession, address: ComponentAddress, connection_id: UUID
+    ) -> None:
+        connection = await session.get(IntegrationConnectionRow, connection_id)
+        if connection is None:
+            raise ManagedResourceNotFound("referenced integration connection not found")
+        if connection.tenant_id != address.scope.key:
+            raise InvalidComponentValue(
+                "referenced integration connection belongs to another tenant"
+            )
+        if connection.integration_kind != "http" or not connection.enabled:
+            raise InvalidComponentValue(
+                "referenced integration connection is not enabled HTTP"
+            )
+        from contracts.integration import HttpConnectionConfiguration
+
+        config = HttpConnectionConfiguration.model_validate(connection.config)
+        if config.authentication.type == "api_key_header" and connection.credential_id is None:
+            raise InvalidComponentValue("HTTP API-key connection has no credential")
+        if config.authentication.type == "none" and connection.credential_id is not None:
+            raise InvalidComponentValue("HTTP no-auth connection has a credential")
+        if connection.credential_id is not None:
+            credential = await session.get(CredentialRow, connection.credential_id)
+            if (
+                credential is None
+                or credential.status == "revoked"
+                or credential.active_version_id is None
+            ):
+                raise InvalidComponentValue(
+                    "referenced integration credential is not usable"
+                )
 
     async def _validate_realtime_activation(
         self, session: AsyncSession, value: RealtimeExecutionDefaults
