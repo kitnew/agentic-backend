@@ -17,6 +17,7 @@ from control_plane.application.runtime_materialization import (
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.components import ComponentRegistry
+from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.domain.providers import ProviderRegistry, default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.infrastructure.encryption import CredentialCipher
@@ -57,6 +58,7 @@ def create_app(
     if registry is None:
         registry = ComponentRegistry()
         register_runtime_components(registry)
+        register_prompt_components(registry)
     provider_registry = provider_registry or default_provider_registry()
     components = (
         ComponentService(
