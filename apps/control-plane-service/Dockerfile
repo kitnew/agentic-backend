@@ -21,6 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --package control-plane-service --no-install-workspace
 
 COPY apps/control-plane-service apps/control-plane-service
+COPY packages/contracts packages/contracts
 COPY packages/observability packages/observability
 
 RUN --mount=type=cache,target=/root/.cache/uv \
