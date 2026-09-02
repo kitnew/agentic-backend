@@ -25,6 +25,8 @@ from control_plane.domain.managed_resources import (
     CredentialStatus,
     CredentialVersion,
     DeploymentKind,
+    IntegrationConnection,
+    IntegrationConnectionRef,
     LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
@@ -37,6 +39,7 @@ from control_plane.infrastructure.encryption import CredentialCipher
 
 from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
+from .models import IntegrationConnection as IntegrationConnectionRow
 from .models import ModelDeployment as ModelDeploymentRow
 from .models import OutboxMessage
 from .models import ProviderConnection as ProviderConnectionRow
@@ -308,6 +311,130 @@ class SqlAlchemyManagedResourceRepository:
             ).all()
             return [self._connection(row) for row in rows]
 
+    async def create_integration_connection(
+        self,
+        tenant_id: str,
+        key: str,
+        config: dict[str, object],
+        credential_ref: CredentialRef | None,
+        enabled: bool,
+        actor: str,
+    ) -> IntegrationConnection:
+        async with self._transaction() as session:
+            if credential_ref is not None:
+                self._require_usable_credential(
+                    await self._credential_row(session, credential_ref, lock=enabled),
+                    enabled,
+                )
+            row = IntegrationConnectionRow(
+                tenant_id=tenant_id,
+                key=key,
+                integration_kind="http",
+                config=config,
+                credential_id=credential_ref.value if credential_ref else None,
+                enabled=enabled,
+                generation=1,
+                created_by=actor,
+                updated_by=actor,
+            )
+            session.add(row)
+            await session.flush()
+            self._event(
+                session, "integration_connection", row.id, "created", row.generation
+            )
+            await session.flush()
+            await session.refresh(row)
+            return self._integration_connection(row)
+
+    async def update_integration_connection(
+        self,
+        ref: IntegrationConnectionRef,
+        config: dict[str, object],
+        credential_ref: CredentialRef | None,
+        expected_generation: int,
+        actor: str,
+    ) -> IntegrationConnection:
+        async with self._transaction() as session:
+            row = await self._integration_connection_row(session, ref, lock=True)
+            self._check_generation(row.generation, expected_generation)
+            if credential_ref is not None:
+                self._require_usable_credential(
+                    await self._credential_row(
+                        session, credential_ref, lock=row.enabled
+                    ),
+                    row.enabled,
+                )
+            row.config, row.credential_id = (
+                config,
+                credential_ref.value if credential_ref else None,
+            )
+            row.generation += 1
+            row.updated_at, row.updated_by = func.now(), actor
+            self._event(
+                session, "integration_connection", row.id, "updated", row.generation
+            )
+            await session.flush()
+            await session.refresh(row)
+            return self._integration_connection(row)
+
+    async def set_integration_connection_enabled(
+        self,
+        ref: IntegrationConnectionRef,
+        enabled: bool,
+        expected_generation: int,
+        actor: str,
+    ) -> IntegrationConnection:
+        async with self._transaction() as session:
+            row = await self._integration_connection_row(session, ref, lock=True)
+            self._check_generation(row.generation, expected_generation)
+            if row.enabled == enabled:
+                raise ManagedResourceConflict(
+                    f"integration connection is already {'enabled' if enabled else 'disabled'}"
+                )
+            if enabled and row.credential_id is not None:
+                self._require_usable_credential(
+                    await self._credential_row(
+                        session, CredentialRef(row.credential_id), lock=True
+                    ),
+                    True,
+                )
+            row.enabled, row.generation = enabled, row.generation + 1
+            row.updated_at, row.updated_by = func.now(), actor
+            self._event(
+                session,
+                "integration_connection",
+                row.id,
+                "enabled" if enabled else "disabled",
+                row.generation,
+            )
+            await session.flush()
+            await session.refresh(row)
+            return self._integration_connection(row)
+
+    async def get_integration_connection(
+        self, ref: IntegrationConnectionRef
+    ) -> IntegrationConnection:
+        async with self._sessions() as session:
+            return self._integration_connection(
+                await self._integration_connection_row(session, ref)
+            )
+
+    async def list_integration_connections(
+        self, tenant_id: str | None = None
+    ) -> Sequence[IntegrationConnection]:
+        async with self._sessions() as session:
+            statement = select(IntegrationConnectionRow).order_by(
+                IntegrationConnectionRow.tenant_id, IntegrationConnectionRow.key
+            )
+            if tenant_id is not None:
+                statement = statement.where(
+                    IntegrationConnectionRow.tenant_id == tenant_id
+                )
+            return [
+                self._integration_connection(row)
+                for row in (await session.scalars(statement)).all()
+            ]
+
     async def create_deployment(
         self,
         key: str,
@@ -329,19 +456,28 @@ class SqlAlchemyManagedResourceRepository:
                 deployment_kind=kind.value,
                 deployment_config=config,
                 llm_capabilities=(
-                    {"supports_temperature": llm_capabilities.supports_temperature,
-                     "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort}
-                    if llm_capabilities else None
+                    {
+                        "supports_temperature": llm_capabilities.supports_temperature,
+                        "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort,
+                    }
+                    if llm_capabilities
+                    else None
                 ),
                 realtime_capabilities=(
-                    {"supports_server_vad": realtime_capabilities.supports_server_vad,
-                     "supports_semantic_vad": realtime_capabilities.supports_semantic_vad}
-                    if realtime_capabilities else None
+                    {
+                        "supports_server_vad": realtime_capabilities.supports_server_vad,
+                        "supports_semantic_vad": realtime_capabilities.supports_semantic_vad,
+                    }
+                    if realtime_capabilities
+                    else None
                 ),
                 stt_capabilities=(
-                    {"supports_cascade": stt_capabilities.supports_cascade,
-                     "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription}
-                    if stt_capabilities else None
+                    {
+                        "supports_cascade": stt_capabilities.supports_cascade,
+                        "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription,
+                    }
+                    if stt_capabilities
+                    else None
                 ),
                 enabled=enabled,
                 generation=1,
@@ -350,9 +486,7 @@ class SqlAlchemyManagedResourceRepository:
             )
             session.add(row)
             await session.flush()
-            self._event(
-                session, "model_deployment", row.id, "created", row.generation
-            )
+            self._event(session, "model_deployment", row.id, "created", row.generation)
             await session.flush()
             await session.refresh(row)
             return self._deployment(row)
@@ -376,26 +510,33 @@ class SqlAlchemyManagedResourceRepository:
             row.connection_id = connection_ref.value
             row.deployment_config = config
             row.llm_capabilities = (
-                {"supports_temperature": llm_capabilities.supports_temperature,
-                 "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort}
-                if llm_capabilities else None
+                {
+                    "supports_temperature": llm_capabilities.supports_temperature,
+                    "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort,
+                }
+                if llm_capabilities
+                else None
             )
             row.realtime_capabilities = (
-                {"supports_server_vad": realtime_capabilities.supports_server_vad,
-                 "supports_semantic_vad": realtime_capabilities.supports_semantic_vad}
-                if realtime_capabilities else None
+                {
+                    "supports_server_vad": realtime_capabilities.supports_server_vad,
+                    "supports_semantic_vad": realtime_capabilities.supports_semantic_vad,
+                }
+                if realtime_capabilities
+                else None
             )
             row.stt_capabilities = (
-                {"supports_cascade": stt_capabilities.supports_cascade,
-                 "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription}
-                if stt_capabilities else None
+                {
+                    "supports_cascade": stt_capabilities.supports_cascade,
+                    "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription,
+                }
+                if stt_capabilities
+                else None
             )
             row.generation += 1
             row.updated_at = func.now()
             row.updated_by = actor
-            self._event(
-                session, "model_deployment", row.id, "updated", row.generation
-            )
+            self._event(session, "model_deployment", row.id, "updated", row.generation)
             await session.flush()
             await session.refresh(row)
             return self._deployment(row)
@@ -472,6 +613,18 @@ class SqlAlchemyManagedResourceRepository:
             raise ManagedResourceNotFound(f"model deployment {ref.value} not found")
         return row
 
+    async def _integration_connection_row(
+        self, session: AsyncSession, ref: IntegrationConnectionRef, lock: bool = False
+    ) -> IntegrationConnectionRow:
+        row = await session.get(
+            IntegrationConnectionRow, ref.value, with_for_update=lock
+        )
+        if row is None:
+            raise ManagedResourceNotFound(
+                f"integration connection {ref.value} not found"
+            )
+        return row
+
     async def _require_usable_connection(
         self, session: AsyncSession, row: ProviderConnectionRow, required: bool
     ) -> None:
@@ -511,7 +664,12 @@ class SqlAlchemyManagedResourceRepository:
     @staticmethod
     def _event(
         session: AsyncSession,
-        resource_type: Literal["credential", "provider_connection", "model_deployment"],
+        resource_type: Literal[
+            "credential",
+            "provider_connection",
+            "model_deployment",
+            "integration_connection",
+        ],
         resource_id: UUID,
         action: Literal[
             "created", "updated", "enabled", "disabled", "rotated", "revoked"
@@ -578,6 +736,23 @@ class SqlAlchemyManagedResourceRepository:
         )
 
     @staticmethod
+    def _integration_connection(row: IntegrationConnectionRow) -> IntegrationConnection:
+        return IntegrationConnection(
+            IntegrationConnectionRef(row.id),
+            row.tenant_id,
+            row.key,
+            row.integration_kind,
+            dict(row.config),
+            CredentialRef(row.credential_id) if row.credential_id else None,
+            row.enabled,
+            row.generation,
+            row.created_at,
+            row.created_by,
+            row.updated_at,
+            row.updated_by,
+        )
+
+    @staticmethod
     def _deployment(row: ModelDeploymentRow) -> ModelDeployment:
         return ModelDeployment(
             ModelDeploymentRef(row.id),
@@ -590,7 +765,9 @@ class SqlAlchemyManagedResourceRepository:
                 if row.llm_capabilities is not None
                 else None
             ),
-            RealtimeCapabilities(**row.realtime_capabilities) if row.realtime_capabilities else None,
+            RealtimeCapabilities(**row.realtime_capabilities)
+            if row.realtime_capabilities
+            else None,
             STTCapabilities(**row.stt_capabilities) if row.stt_capabilities else None,
             row.enabled,
             row.generation,

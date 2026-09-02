@@ -16,6 +16,11 @@ class ProviderConnectionRef:
 
 
 @dataclass(frozen=True, slots=True)
+class IntegrationConnectionRef:
+    value: UUID
+
+
+@dataclass(frozen=True, slots=True)
 class ModelDeploymentRef:
     value: UUID
 
@@ -81,6 +86,22 @@ class ProviderConnection:
     provider_kind: str
     credential_ref: CredentialRef
     connection_config: dict[str, Any]
+    enabled: bool
+    generation: int
+    created_at: datetime
+    created_by: str
+    updated_at: datetime
+    updated_by: str
+
+
+@dataclass(frozen=True, slots=True)
+class IntegrationConnection:
+    ref: IntegrationConnectionRef
+    tenant_id: str
+    key: str
+    integration_kind: str
+    config: dict[str, Any]
+    credential_ref: CredentialRef | None
     enabled: bool
     generation: int
     created_at: datetime

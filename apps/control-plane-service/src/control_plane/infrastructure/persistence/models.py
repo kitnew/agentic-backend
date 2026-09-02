@@ -230,6 +230,39 @@ class ProviderConnection(Base):
     updated_by: Mapped[str] = mapped_column(String(255))
 
 
+class IntegrationConnection(Base):
+    __tablename__ = "integration_connections"
+    __table_args__ = (
+        CheckConstraint(
+            "integration_kind = 'http'", name="ck_integration_connection_kind"
+        ),
+        CheckConstraint("generation >= 1", name="ck_integration_connection_generation"),
+        UniqueConstraint(
+            "tenant_id", "key", name="uq_integration_connection_tenant_key"
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(255))
+    key: Mapped[str] = mapped_column(String(255))
+    integration_kind: Mapped[str] = mapped_column(String(16))
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    credential_id: Mapped[UUID | None] = mapped_column(
+        Uuid, ForeignKey(f"{SCHEMA}.credentials.id")
+    )
+    enabled: Mapped[bool]
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_by: Mapped[str] = mapped_column(String(255))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
 class ModelDeployment(Base):
     __tablename__ = "model_deployments"
     __table_args__ = (
@@ -269,7 +302,9 @@ class RuntimeExecutionSnapshot(Base):
             "architecture IN ('cascade', 'realtime')",
             name="ck_runtime_execution_snapshot_architecture",
         ),
-        Index("ix_runtime_execution_snapshot_tenant_created", "tenant_id", "created_at"),
+        Index(
+            "ix_runtime_execution_snapshot_tenant_created", "tenant_id", "created_at"
+        ),
         {"schema": SCHEMA},
     )
 

@@ -229,6 +229,25 @@ def upgrade() -> None:
         schema=SCHEMA,
     )
     op.create_table(
+        "integration_connections",
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("tenant_id", sa.String(255), nullable=False),
+        sa.Column("key", sa.String(255), nullable=False),
+        sa.Column("integration_kind", sa.String(16), nullable=False),
+        sa.Column("config", postgresql.JSONB(), nullable=False),
+        sa.Column("credential_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.credentials.id")),
+        sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_by", sa.String(255), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_by", sa.String(255), nullable=False),
+        sa.CheckConstraint("integration_kind = 'http'", name="ck_integration_connection_kind"),
+        sa.CheckConstraint("generation >= 1", name="ck_integration_connection_generation"),
+        sa.UniqueConstraint("tenant_id", "key", name="uq_integration_connection_tenant_key"),
+        schema=SCHEMA,
+    )
+    op.create_table(
         "runtime_execution_snapshots",
         sa.Column("snapshot_id", sa.Uuid(), primary_key=True),
         sa.Column("tenant_id", sa.String(255), nullable=False),
@@ -247,6 +266,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_runtime_execution_snapshot_tenant_created", table_name="runtime_execution_snapshots", schema=SCHEMA)
     op.drop_table("runtime_execution_snapshots", schema=SCHEMA)
+    op.drop_table("integration_connections", schema=SCHEMA)
     op.drop_table("model_deployments", schema=SCHEMA)
     op.drop_table("provider_connections", schema=SCHEMA)
     op.drop_constraint("fk_credential_active_version", "credentials", schema=SCHEMA, type_="foreignkey")

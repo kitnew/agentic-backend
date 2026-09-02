@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from control_plane.domain.capabilities import TenantCapabilitiesConfig
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinition,
@@ -53,6 +54,8 @@ from control_plane.domain.runtime_components import (
 from .models import ConfigurationComponent as ComponentRow
 from .models import ConfigurationComponentDraft as DraftRow
 from .models import ConfigurationComponentRevision as RevisionRow
+from .models import Credential as CredentialRow
+from .models import IntegrationConnection as IntegrationConnectionRow
 from .models import ModelDeployment as ModelDeploymentRow
 from .models import OutboxMessage
 from .models import ProviderConnection as ProviderConnectionRow
@@ -163,7 +166,7 @@ class SqlAlchemyComponentRepository:
             if draft.version != expected_draft_version:
                 raise DraftVersionConflict("draft version changed")
             typed = self._validate(draft.schema_version, draft.value, definition)
-            await self._validate_activation(session, typed, definition)
+            await self._validate_activation(session, address, typed, definition)
             current_number = await session.scalar(
                 select(func.coalesce(func.max(RevisionRow.revision_number), 0)).where(
                     RevisionRow.component_id == component.id
@@ -215,7 +218,7 @@ class SqlAlchemyComponentRepository:
             if target is None:
                 raise RevisionNotFound(str(revision_number))
             typed = self._validate(target.schema_version, target.value, definition)
-            await self._validate_activation(session, typed, definition)
+            await self._validate_activation(session, address, typed, definition)
             current_number = await session.scalar(
                 select(func.max(RevisionRow.revision_number)).where(
                     RevisionRow.component_id == component.id
@@ -310,7 +313,8 @@ class SqlAlchemyComponentRepository:
             dict(row.deployment_config),
             LLMCapabilities(**row.llm_capabilities) if row.llm_capabilities else None,
             RealtimeCapabilities(**row.realtime_capabilities)
-            if row.realtime_capabilities else None,
+            if row.realtime_capabilities
+            else None,
             STTCapabilities(**row.stt_capabilities) if row.stt_capabilities else None,
             row.enabled,
             row.generation,
@@ -322,9 +326,16 @@ class SqlAlchemyComponentRepository:
         definition.validate_deployment(value, deployment)
 
     async def _validate_activation(
-        self, session: AsyncSession, value: Any, definition: ComponentDefinition[Any]
+        self,
+        session: AsyncSession,
+        address: ComponentAddress,
+        value: Any,
+        definition: ComponentDefinition[Any],
     ) -> None:
         await self._validate_deployment(session, value, definition)
+        if isinstance(value, TenantCapabilitiesConfig):
+            await self._validate_capability_activation(session, address, value)
+            return
         if isinstance(value, RealtimeExecutionDefaults):
             await self._validate_realtime_activation(session, value)
             return
@@ -357,6 +368,50 @@ class SqlAlchemyComponentRepository:
                 "selected STT deployment does not support provider_vad"
             )
 
+    @staticmethod
+    async def _validate_capability_activation(
+        session: AsyncSession,
+        address: ComponentAddress,
+        value: TenantCapabilitiesConfig,
+    ) -> None:
+        # Resource reads belong to persistence, never the component definition.
+        for profile in value.capabilities.values():
+            if isinstance(profile, bool) or not profile.enabled:
+                continue
+            connection = await session.get(
+                IntegrationConnectionRow,
+                profile.execution.integration_connection_ref.value,
+            )
+            if connection is None:
+                raise ManagedResourceNotFound(
+                    "referenced integration connection not found"
+                )
+            if connection.tenant_id != address.scope.key:
+                raise InvalidComponentValue(
+                    "referenced integration connection belongs to another tenant"
+                )
+            if connection.integration_kind != "http" or not connection.enabled:
+                raise InvalidComponentValue(
+                    "referenced integration connection is not enabled HTTP"
+                )
+            from contracts.integration import HttpConnectionConfiguration
+
+            config = HttpConnectionConfiguration.model_validate(connection.config)
+            if config.authentication.type == "api_key_header" and connection.credential_id is None:
+                raise InvalidComponentValue("HTTP API-key connection has no credential")
+            if config.authentication.type == "none" and connection.credential_id is not None:
+                raise InvalidComponentValue("HTTP no-auth connection has a credential")
+            if connection.credential_id is not None:
+                credential = await session.get(CredentialRow, connection.credential_id)
+                if (
+                    credential is None
+                    or credential.status == "revoked"
+                    or credential.active_version_id is None
+                ):
+                    raise InvalidComponentValue(
+                        "referenced integration credential is not usable"
+                    )
+
     async def _validate_realtime_activation(
         self, session: AsyncSession, value: RealtimeExecutionDefaults
     ) -> None:
@@ -367,7 +422,9 @@ class SqlAlchemyComponentRepository:
             ModelDeploymentRow, value.input_transcription.deployment_ref
         )
         if transcription is None:
-            raise ManagedResourceNotFound("referenced transcription deployment not found")
+            raise ManagedResourceNotFound(
+                "referenced transcription deployment not found"
+            )
         if realtime.deployment_kind != DeploymentKind.REALTIME.value:
             raise InvalidComponentValue(
                 "realtime deployment must have deployment_kind=realtime"
@@ -383,7 +440,8 @@ class SqlAlchemyComponentRepository:
 
         capabilities = (
             RealtimeCapabilities(**realtime.realtime_capabilities)
-            if realtime.realtime_capabilities else None
+            if realtime.realtime_capabilities
+            else None
         )
         if capabilities is None:
             raise InvalidComponentValue("realtime deployment has no capabilities")
@@ -392,11 +450,14 @@ class SqlAlchemyComponentRepository:
         else:
             supported, strategy = capabilities.supports_semantic_vad, "semantic_vad"
         if not supported:
-            raise InvalidComponentValue(f"realtime deployment does not support {strategy}")
+            raise InvalidComponentValue(
+                f"realtime deployment does not support {strategy}"
+            )
 
         transcription_capabilities = (
             STTCapabilities(**transcription.stt_capabilities)
-            if transcription.stt_capabilities else None
+            if transcription.stt_capabilities
+            else None
         )
         if (
             transcription_capabilities is None

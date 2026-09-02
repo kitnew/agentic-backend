@@ -6,6 +6,8 @@ from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
     DeploymentKind,
+    IntegrationConnection,
+    IntegrationConnectionRef,
     LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
@@ -55,6 +57,36 @@ class ManagedResourceRepository(Protocol):
         self, ref: ProviderConnectionRef
     ) -> ProviderConnection: ...
     async def list_connections(self) -> Sequence[ProviderConnection]: ...
+    async def create_integration_connection(
+        self,
+        tenant_id: str,
+        key: str,
+        config: dict[str, object],
+        credential_ref: CredentialRef | None,
+        enabled: bool,
+        actor: str,
+    ) -> IntegrationConnection: ...
+    async def update_integration_connection(
+        self,
+        ref: IntegrationConnectionRef,
+        config: dict[str, object],
+        credential_ref: CredentialRef | None,
+        expected_generation: int,
+        actor: str,
+    ) -> IntegrationConnection: ...
+    async def set_integration_connection_enabled(
+        self,
+        ref: IntegrationConnectionRef,
+        enabled: bool,
+        expected_generation: int,
+        actor: str,
+    ) -> IntegrationConnection: ...
+    async def get_integration_connection(
+        self, ref: IntegrationConnectionRef
+    ) -> IntegrationConnection: ...
+    async def list_integration_connections(
+        self, tenant_id: str | None = None
+    ) -> Sequence[IntegrationConnection]: ...
     async def create_deployment(
         self,
         key: str,
@@ -79,7 +111,11 @@ class ManagedResourceRepository(Protocol):
         stt_capabilities: STTCapabilities | None = None,
     ) -> ModelDeployment: ...
     async def set_deployment_enabled(
-        self, ref: ModelDeploymentRef, enabled: bool, expected_generation: int, actor: str
+        self,
+        ref: ModelDeploymentRef,
+        enabled: bool,
+        expected_generation: int,
+        actor: str,
     ) -> ModelDeployment: ...
     async def get_deployment(self, ref: ModelDeploymentRef) -> ModelDeployment: ...
     async def list_deployments(self) -> Sequence[ModelDeployment]: ...
@@ -156,6 +192,74 @@ class ManagedResourceService:
     async def list_connections(self) -> Sequence[ProviderConnection]:
         return await self._repository.list_connections()
 
+    async def create_integration_connection(
+        self,
+        tenant_id: str,
+        key: str,
+        config: object,
+        credential_ref: CredentialRef | None,
+        enabled: bool,
+        actor: str,
+    ) -> IntegrationConnection:
+        return await self._repository.create_integration_connection(
+            tenant_id,
+            key,
+            self._validate_http_connection(config, credential_ref),
+            credential_ref,
+            enabled,
+            actor,
+        )
+
+    async def update_integration_connection(
+        self,
+        ref: IntegrationConnectionRef,
+        config: object,
+        credential_ref: CredentialRef | None,
+        expected_generation: int,
+        actor: str,
+    ) -> IntegrationConnection:
+        return await self._repository.update_integration_connection(
+            ref,
+            self._validate_http_connection(config, credential_ref),
+            credential_ref,
+            expected_generation,
+            actor,
+        )
+
+    async def set_integration_connection_enabled(
+        self,
+        ref: IntegrationConnectionRef,
+        enabled: bool,
+        expected_generation: int,
+        actor: str,
+    ) -> IntegrationConnection:
+        return await self._repository.set_integration_connection_enabled(
+            ref, enabled, expected_generation, actor
+        )
+
+    async def get_integration_connection(
+        self, ref: IntegrationConnectionRef
+    ) -> IntegrationConnection:
+        return await self._repository.get_integration_connection(ref)
+
+    async def list_integration_connections(
+        self, tenant_id: str | None = None
+    ) -> Sequence[IntegrationConnection]:
+        return await self._repository.list_integration_connections(tenant_id)
+
+    @staticmethod
+    def _validate_http_connection(
+        config: object, credential_ref: CredentialRef | None
+    ) -> dict[str, object]:
+        from contracts.integration import HttpConnectionConfiguration
+
+        validated = HttpConnectionConfiguration.model_validate(config)
+        if (validated.authentication.type == "none") != (credential_ref is None):
+            raise InvalidManagedResource(
+                "credential_ref must match HTTP authentication mode"
+            )
+        return validated.model_dump(mode="json")
+
     async def create_deployment(
         self,
         key: str,
@@ -176,8 +280,15 @@ class ManagedResourceService:
             kind, llm_capabilities, realtime_capabilities, stt_capabilities
         )
         return await self._repository.create_deployment(
-            key, connection_ref, kind, validated, enabled, actor, llm_capabilities,
-            realtime_capabilities, stt_capabilities,
+            key,
+            connection_ref,
+            kind,
+            validated,
+            enabled,
+            actor,
+            llm_capabilities,
+            realtime_capabilities,
+            stt_capabilities,
         )
 
     async def update_deployment(
@@ -203,8 +314,14 @@ class ManagedResourceService:
             stt_capabilities,
         )
         return await self._repository.update_deployment(
-            ref, connection_ref, validated, expected_generation, actor, llm_capabilities,
-            realtime_capabilities, stt_capabilities,
+            ref,
+            connection_ref,
+            validated,
+            expected_generation,
+            actor,
+            llm_capabilities,
+            realtime_capabilities,
+            stt_capabilities,
         )
 
     @staticmethod
@@ -231,7 +348,11 @@ class ManagedResourceService:
             )
 
     async def set_deployment_enabled(
-        self, ref: ModelDeploymentRef, enabled: bool, expected_generation: int, actor: str
+        self,
+        ref: ModelDeploymentRef,
+        enabled: bool,
+        expected_generation: int,
+        actor: str,
     ) -> ModelDeployment:
         return await self._repository.set_deployment_enabled(
             ref, enabled, expected_generation, actor

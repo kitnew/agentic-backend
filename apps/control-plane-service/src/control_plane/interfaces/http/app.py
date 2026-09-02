@@ -37,6 +37,8 @@ from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
     DeploymentKind,
+    IntegrationConnection,
+    IntegrationConnectionRef,
     LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
@@ -102,6 +104,25 @@ class ProviderConnectionUpdate(BaseModel):
 
 class GeneratedActorRequest(ActorRequest):
     expected_generation: int = Field(ge=1)
+
+
+class IntegrationConnectionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    tenant_id: str = Field(min_length=1, max_length=255)
+    key: str = Field(min_length=1, max_length=255)
+    integration_kind: str = "http"
+    config: dict[str, object]
+    credential_ref: UUID | None = None
+    enabled: bool = False
+    actor: str = Field(min_length=1, max_length=255)
+
+
+class IntegrationConnectionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    config: dict[str, object]
+    credential_ref: UUID | None = None
+    expected_generation: int = Field(ge=1)
+    actor: str = Field(min_length=1, max_length=255)
 
 
 class LLMCapabilitiesWrite(BaseModel):
@@ -244,6 +265,7 @@ def create_http_app(
         async def resolve_runtime(request: Request, tenant_id: str) -> Any:
             resolver: RuntimeResolver = request.app.state.runtime_resolver
             return jsonable_encoder(await resolver.resolve_runtime(tenant_id))
+
     if runtime_materialization is not None:
 
         @app.post(
@@ -251,12 +273,16 @@ def create_http_app(
             status_code=status.HTTP_201_CREATED,
         )
         async def materialize_runtime(request: Request, tenant_id: str) -> Any:
-            service: RuntimeMaterializationService = request.app.state.runtime_materialization
+            service: RuntimeMaterializationService = (
+                request.app.state.runtime_materialization
+            )
             return jsonable_encoder(await service.materialize_runtime(tenant_id))
 
         @app.get("/v1/runtime/execution-snapshots/{snapshot_id}")
         async def get_runtime_snapshot(request: Request, snapshot_id: UUID) -> Any:
-            service: RuntimeMaterializationService = request.app.state.runtime_materialization
+            service: RuntimeMaterializationService = (
+                request.app.state.runtime_materialization
+            )
             snapshot = await service.get_snapshot(snapshot_id)
             if snapshot is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -392,6 +418,23 @@ def _connection_response(value: ProviderConnection) -> dict[str, object]:
     }
 
 
+def _integration_connection_response(value: IntegrationConnection) -> dict[str, object]:
+    return {
+        "id": value.ref.value,
+        "tenant_id": value.tenant_id,
+        "key": value.key,
+        "integration_kind": value.integration_kind,
+        "config": value.config,
+        "credential_ref": value.credential_ref.value if value.credential_ref else None,
+        "enabled": value.enabled,
+        "generation": value.generation,
+        "created_at": value.created_at,
+        "created_by": value.created_by,
+        "updated_at": value.updated_at,
+        "updated_by": value.updated_by,
+    }
+
+
 def _deployment_response(value: ModelDeployment) -> dict[str, object]:
     return {
         "id": value.ref.value,
@@ -412,14 +455,16 @@ def _deployment_response(value: ModelDeployment) -> dict[str, object]:
                 "supports_server_vad": value.realtime_capabilities.supports_server_vad,
                 "supports_semantic_vad": value.realtime_capabilities.supports_semantic_vad,
             }
-            if value.realtime_capabilities else None
+            if value.realtime_capabilities
+            else None
         ),
         "stt_capabilities": (
             {
                 "supports_cascade": value.stt_capabilities.supports_cascade,
                 "supports_realtime_input_transcription": value.stt_capabilities.supports_realtime_input_transcription,
             }
-            if value.stt_capabilities else None
+            if value.stt_capabilities
+            else None
         ),
         "enabled": value.enabled,
         "generation": value.generation,
@@ -486,6 +531,72 @@ def _managed_resource_router() -> APIRouter:
         )
         return jsonable_encoder(_connection_response(value))
 
+    @router.post("/integration-connections", status_code=status.HTTP_201_CREATED)
+    async def create_integration_connection(
+        request: Request, body: IntegrationConnectionCreate
+    ) -> Any:
+        if body.integration_kind != "http":
+            raise InvalidManagedResource("only integration_kind=http is supported")
+        value = await _managed(request).create_integration_connection(
+            body.tenant_id,
+            body.key,
+            body.config,
+            CredentialRef(body.credential_ref) if body.credential_ref else None,
+            body.enabled,
+            body.actor,
+        )
+        return jsonable_encoder(_integration_connection_response(value))
+
+    @router.put("/integration-connections/{resource_id}")
+    async def update_integration_connection(
+        request: Request, resource_id: UUID, body: IntegrationConnectionUpdate
+    ) -> Any:
+        value = await _managed(request).update_integration_connection(
+            IntegrationConnectionRef(resource_id),
+            body.config,
+            CredentialRef(body.credential_ref) if body.credential_ref else None,
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_integration_connection_response(value))
+
+    @router.post("/integration-connections/{resource_id}/{operation}")
+    async def set_integration_connection_enabled(
+        request: Request, resource_id: UUID, operation: str, body: GeneratedActorRequest
+    ) -> Any:
+        if operation not in {"enable", "disable"}:
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        value = await _managed(request).set_integration_connection_enabled(
+            IntegrationConnectionRef(resource_id),
+            operation == "enable",
+            body.expected_generation,
+            body.actor,
+        )
+        return jsonable_encoder(_integration_connection_response(value))
+
+    @router.get("/integration-connections/{resource_id}")
+    async def get_integration_connection(request: Request, resource_id: UUID) -> Any:
+        return jsonable_encoder(
+            _integration_connection_response(
+                await _managed(request).get_integration_connection(
+                    IntegrationConnectionRef(resource_id)
+                )
+            )
+        )
+
+    @router.get("/integration-connections")
+    async def list_integration_connections(
+        request: Request, tenant_id: str | None = None
+    ) -> Any:
+        return jsonable_encoder(
+            [
+                _integration_connection_response(value)
+                for value in await _managed(request).list_integration_connections(
+                    tenant_id
+                )
+            ]
+        )
+
     @router.put("/provider-connections/{resource_id}")
     async def update_connection(
         request: Request, resource_id: UUID, body: ProviderConnectionUpdate
@@ -542,11 +653,14 @@ def _managed_resource_router() -> APIRouter:
             body.enabled,
             body.actor,
             LLMCapabilities(**body.llm_capabilities.model_dump())
-            if body.llm_capabilities else None,
+            if body.llm_capabilities
+            else None,
             RealtimeCapabilities(**body.realtime_capabilities.model_dump())
-            if body.realtime_capabilities else None,
+            if body.realtime_capabilities
+            else None,
             STTCapabilities(**body.stt_capabilities.model_dump())
-            if body.stt_capabilities else None,
+            if body.stt_capabilities
+            else None,
         )
         return jsonable_encoder(_deployment_response(value))
 
@@ -561,11 +675,14 @@ def _managed_resource_router() -> APIRouter:
             body.expected_generation,
             body.actor,
             LLMCapabilities(**body.llm_capabilities.model_dump())
-            if body.llm_capabilities else None,
+            if body.llm_capabilities
+            else None,
             RealtimeCapabilities(**body.realtime_capabilities.model_dump())
-            if body.realtime_capabilities else None,
+            if body.realtime_capabilities
+            else None,
             STTCapabilities(**body.stt_capabilities.model_dump())
-            if body.stt_capabilities else None,
+            if body.stt_capabilities
+            else None,
         )
         return jsonable_encoder(_deployment_response(value))
 
