@@ -9,14 +9,7 @@ from backend_core.modules.conversations.router import (
 from backend_core.modules.conversations.router import (
     internal_router as conversation_internal_router,
 )
-from backend_core.modules.integrations.router import router as integrations_router
 from backend_core.modules.tenants import router as tenants_router
-from backend_core.modules.tenants.authoring_router import router as authoring_router
-from backend_core.modules.tenants.component_router import router as component_router
-from backend_core.modules.tenants.discovery_router import router as discovery_router
-from backend_core.modules.tenants.platform_component_router import (
-    router as platform_component_router,
-)
 from backend_core.modules.tenants.router import (
     internal_router,
     telephony_platform_router,
@@ -36,15 +29,10 @@ from fastapi import APIRouter
 
 admin_router = APIRouter()
 admin_router.include_router(tenants_router)
-admin_router.include_router(component_router)
-admin_router.include_router(authoring_router)
-admin_router.include_router(discovery_router)
-admin_router.include_router(platform_component_router)
 admin_router.include_router(telephony_platform_router)
 admin_router.include_router(voice_admin_router)
 admin_router.include_router(call_admin_router)
 admin_router.include_router(conversation_admin_router)
-admin_router.include_router(integrations_router)
 
 router = APIRouter()
 

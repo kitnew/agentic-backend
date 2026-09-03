@@ -26,6 +26,18 @@ services:
       retries: 10
     networks: [application]
 
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-m", "8222"]
+    volumes:
+      - nats-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [application]
+
   backend:
     build:
       context: ../..
@@ -34,6 +46,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/backend
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
       INTERNAL_API_AUDIENCE: ${INTERNAL_API_AUDIENCE:-backend-core}
+      CONTROL_PLANE_API_AUDIENCE: ${CONTROL_PLANE_API_AUDIENCE:-control-plane-service}
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-http://control-plane-service:8000}
+      BACKEND_CORE_SERVICE_SECRET: ${BACKEND_CORE_SERVICE_SECRET:?set BACKEND_CORE_SERVICE_SECRET}
       VOICE_AGENT_SERVICE_SECRET: ${VOICE_AGENT_SERVICE_SECRET:?set VOICE_AGENT_SERVICE_SECRET}
       JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
       INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:?set INTEGRATION_ENCRYPTION_KEY}
@@ -79,6 +94,37 @@ services:
       retries: 5
     networks: [application]
 
+  control-plane-service:
+    build:
+      context: ../..
+      dockerfile: apps/control-plane-service/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD}@postgres:5432/backend
+      CONTROL_PLANE_ENCRYPTION_KEY: ${CONTROL_PLANE_ENCRYPTION_KEY:?set CONTROL_PLANE_ENCRYPTION_KEY}
+      CONTROL_PLANE_ENCRYPTION_KEY_ID: ${CONTROL_PLANE_ENCRYPTION_KEY_ID:-bootstrap}
+      CONTROL_PLANE_MANAGEMENT_TOKEN: ${CONTROL_PLANE_MANAGEMENT_TOKEN:?set CONTROL_PLANE_MANAGEMENT_TOKEN}
+      BACKEND_CORE_SERVICE_SECRET: ${BACKEND_CORE_SERVICE_SECRET:?set BACKEND_CORE_SERVICE_SECRET}
+      VOICE_AGENT_SERVICE_SECRET: ${VOICE_AGENT_SERVICE_SECRET:?set VOICE_AGENT_SERVICE_SECRET}
+      JOB_WORKER_SERVICE_SECRET: ${JOB_WORKER_SERVICE_SECRET:?set JOB_WORKER_SERVICE_SECRET}
+      NATS_URL: ${NATS_URL:-nats://nats:4222}
+      OTEL_ENABLED: ${OTEL_ENABLED:-false}
+      OTEL_SERVICE_NAME: control-plane-service
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_PROPAGATORS: ${OTEL_PROPAGATORS:-tracecontext}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://localhost:8000/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [application]
+
   voice-agent:
     build:
       context: ../..
@@ -89,6 +135,7 @@ services:
       LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:?set LIVEKIT_API_SECRET}
       LIVEKIT_AGENT_NAME: ${LIVEKIT_AGENT_NAME:?set LIVEKIT_AGENT_NAME}
       BACKEND_CORE_URL: ${BACKEND_CORE_URL:-http://backend:8000}
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-http://control-plane-service:8000}
       INTERNAL_API_AUDIENCE: ${INTERNAL_API_AUDIENCE:-backend-core}
       BACKEND_HTTP_TIMEOUT_SECONDS: ${BACKEND_HTTP_TIMEOUT_SECONDS:-10}
       VOICE_AGENT_SERVICE_SECRET: ${VOICE_AGENT_SERVICE_SECRET:?set VOICE_AGENT_SERVICE_SECRET}
@@ -98,11 +145,6 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
       OTEL_PROPAGATORS: ${OTEL_PROPAGATORS:-tracecontext}
-      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:?set ELEVENLABS_API_KEY}
-      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:?set AZURE_OPENAI_API_KEY}
-      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:?set AZURE_OPENAI_ENDPOINT}
-      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:?set AZURE_OPENAI_DEPLOYMENT}
-      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:?set AZURE_OPENAI_API_VERSION}
       PROVIDER_TIMEOUT_SECONDS: ${PROVIDER_TIMEOUT_SECONDS:-10}
       PROVIDER_RETRY_LIMIT: ${PROVIDER_RETRY_LIMIT:-3}
       PARTICIPANT_WAIT_TIMEOUT_SECONDS: ${PARTICIPANT_WAIT_TIMEOUT_SECONDS:-300}
@@ -152,6 +194,9 @@ services:
     networks: [application]
 
   admin-web:
+    environment:
+      ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+      CONTROL_PLANE_MANAGEMENT_TOKEN: ${CONTROL_PLANE_MANAGEMENT_TOKEN:?set CONTROL_PLANE_MANAGEMENT_TOKEN}
     build:
       context: ../..
       dockerfile: apps/admin-web/Dockerfile
@@ -168,3 +213,4 @@ networks:
 volumes:
   postgres-data:
   redis-data:
+  nats-data:

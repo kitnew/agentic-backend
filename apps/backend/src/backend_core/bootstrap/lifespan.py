@@ -16,12 +16,6 @@ from backend_core.bootstrap.instrumentation import (
 )
 from backend_core.modules.calls.reconciliation import CallRuntimeReconciler
 from backend_core.modules.calls.repository import CallSessionRepository
-from backend_core.modules.tenants.platform_release_repository import (
-    PlatformReleaseRepository,
-)
-from backend_core.modules.tenants.platform_release_service import (
-    PlatformReleaseUseCases,
-)
 from backend_core.modules.tenants.telephony import PlatformTelephonyReconciler
 from backend_core.platform.messaging import (
     FINALIZATION_EVENT_GROUP,
@@ -30,6 +24,7 @@ from backend_core.platform.messaging import (
 )
 from backend_core.platform.outbox import OutboxDispatcher
 from backend_core.platform.stream_consumer import RedisStreamConsumer
+from backend_core.runtime.execution_context import ExecutionContextReader
 from backend_core.runtime.finalization.recording import RecordingCoordinator
 from backend_core.runtime.finalization.service import FinalizationService
 
@@ -58,10 +53,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
     app.state.outbox_tracer = tracer
     app.state.core_metrics = metrics
-    async with app.state.database.transaction() as session:
-        await PlatformReleaseUseCases(
-            PlatformReleaseRepository(session)
-        ).ensure_initial_drafts()
     if metrics is not None:
         async with app.state.database.transaction() as session:
             metrics.set_active_calls(
@@ -130,6 +121,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         tracer,
                     ),
                     tracer,
+                    ExecutionContextReader(app.state.control_plane),
+                    app.state.control_plane,
                 )
                 if event.message_type == "call.ended":
                     await finalization.start(event)
@@ -154,6 +147,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                         tracer,
                     ),
                     tracer,
+                    ExecutionContextReader(app.state.control_plane),
+                    app.state.control_plane,
                 ).handle_result(envelope, result)
 
         consumers = [
@@ -196,6 +191,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.database,
                 app.state.livekit,
                 app.state.settings,
+                app.state.control_plane,
                 tracer=tracer,
                 metrics=metrics,
             ).run(app.state.settings.telephony_reconciliation_interval_seconds)
@@ -205,6 +201,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        await app.state.control_plane.aclose()
         if reconciliation_task is not None:
             reconciliation_task.cancel()
             with suppress(asyncio.CancelledError):

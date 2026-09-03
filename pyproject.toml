@@ -3,19 +3,22 @@ name = "agent-platform-workspace"
 version = "0.1.0"
 requires-python = ">=3.14"
 dependencies = [
-    "control-plane",
+    "agentctl",
+    "control-plane-service",
 ]
 
 [tool.uv]
 package = false
 
 [tool.uv.sources]
-control-plane = { workspace = true }
+agentctl = { workspace = true }
+control-plane-service = { workspace = true }
 
 [tool.uv.workspace]
 members = [
     "apps/backend",
-    "apps/control-plane",
+    "apps/agentctl",
+    "apps/control-plane-service",
     "apps/job-worker",
     "apps/voice-agent",
     "packages/admin-client",

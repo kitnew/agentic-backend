@@ -53,8 +53,7 @@ def invocation(
         tool_call_id="tool-call",
         semantic_key=semantic_key,
         semantic_version=1,
-        tenant_release_id=uuid4(),
-        runtime_bundle_id=uuid4(),
+        execution_snapshot_id=uuid4(),
         status=CapabilityInvocationStatus.QUEUED,
         canonical_input={},
         execution_plan={
@@ -145,7 +144,7 @@ async def test_matching_typed_result_completes_invocation(
 ) -> None:
     current = invocation(plan_type)
     repository = InvocationRepository(current)
-    service = CapabilityInvocationService(repository, None, None, None, None, None)
+    service = CapabilityInvocationService(repository, None, None, None, None)
 
     completed = await service.record_result(report(current, result))
 
@@ -173,7 +172,7 @@ async def test_configured_http_result_is_the_validated_agent_result() -> None:
         data={"status": "created"},
     )
     service = CapabilityInvocationService(
-        InvocationRepository(current), None, None, None, None, None
+        InvocationRepository(current), None, None, None, None
     )
 
     completed = await report_result(report(current, result), service)
@@ -209,7 +208,7 @@ async def test_check_availability_uses_validated_canonical_result() -> None:
         data={"status": "available", "available_rooms": 2},
     )
     service = CapabilityInvocationService(
-        InvocationRepository(current), None, None, None, None, None
+        InvocationRepository(current), None, None, None, None
     )
 
     completed = await service.record_result(report(current, result))
@@ -240,7 +239,7 @@ async def test_backend_rejects_http_result_that_violates_result_schema() -> None
         data={"status": "wrong"},
     )
     service = CapabilityInvocationService(
-        InvocationRepository(current), None, None, None, None, None
+        InvocationRepository(current), None, None, None, None
     )
 
     with pytest.raises(CapabilityValidationError, match="violates result_schema"):
@@ -295,7 +294,7 @@ def test_declarative_capability_uses_provider_data() -> None:
 async def test_result_plan_mismatch_and_wrong_job_are_rejected() -> None:
     current = invocation("google_sheets.append_values.v1")
     service = CapabilityInvocationService(
-        InvocationRepository(current), None, None, None, None, None
+        InvocationRepository(current), None, None, None, None
     )
     webhook = HttpRequestResult(
         result_type="http.request.v1",
@@ -335,7 +334,7 @@ async def test_failed_result_persists_typed_error_and_terminal_replay_is_harmles
 
     metrics = Metrics()
     service = CapabilityInvocationService(
-        InvocationRepository(current), None, None, None, None, None, metrics=metrics
+        InvocationRepository(current), None, None, None, None, metrics=metrics
     )
     failed = report(
         current,

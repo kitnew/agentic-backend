@@ -33,7 +33,7 @@ from voice_agent.observability import (
     setup_voice_telemetry,
     shutdown_voice_telemetry,
 )
-from voice_agent.providers import create_agent_session
+from voice_agent.providers import create_agent_session, create_realtime_session
 from voice_agent.settings import VoiceAgentSettings
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,12 @@ def log_user_transcript(event: object) -> None:
 def log_runtime_binding(
     settings: VoiceAgentSettings, context: VoiceAgentRuntimeContext
 ) -> None:
+    if context.voice_runtime is None:
+        logger.info(
+            "Realtime runtime binding resolved",
+            extra={"call_session_id": str(context.call_session_id)},
+        )
+        return
     runtime = context.voice_runtime
     logger.info(
         "Voice runtime binding resolved",
@@ -61,8 +67,6 @@ def log_runtime_binding(
             "voice_runtime_revision_id": str(context.voice_runtime_revision_id),
             "llm_provider": runtime.llm.provider,
             "llm_logical_model": runtime.llm.model,
-            "azure_deployment": settings.azure_openai_deployment,
-            "azure_api_version": settings.azure_openai_api_version,
             "stt_provider": runtime.stt.provider,
             "stt_model": runtime.stt.model,
             "tts_provider": runtime.tts.provider,
@@ -474,12 +478,32 @@ async def run_job(
             ).hexdigest()
         )
         telemetry = current_voice_telemetry()
-        session = create_agent_session(
-            settings,
-            context.voice_runtime,
-            prompt_cache_key,
-            telemetry.metrics if telemetry is not None else None,
-        )
+        secrets = {}
+        if context.execution_snapshot_id is not None:
+            slots = (
+                ("model", "input_transcription")
+                if context.architecture == "realtime"
+                else ("stt", "llm", "tts")
+            )
+            secrets = {
+                slot: await backend.runtime_secret(context.execution_snapshot_id, slot)
+                for slot in slots
+            }
+        if context.architecture == "realtime":
+            if context.snapshot_runtime is None:
+                raise ValueError("realtime execution snapshot is missing runtime")
+            session = create_realtime_session(settings, context.snapshot_runtime, secrets)
+        else:
+            if context.voice_runtime is None:
+                raise ValueError("cascade execution snapshot is missing runtime")
+            session = create_agent_session(
+                settings,
+                context.voice_runtime,
+                prompt_cache_key,
+                telemetry.metrics if telemetry is not None else None,
+                secrets,
+                context.snapshot_runtime,
+            )
         persistence = ConversationPersistence(backend, call_id)
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()
@@ -561,7 +585,10 @@ async def run_job(
         await backend.activate(call_id)
         if not closed.done():
             try:
-                await session.say(context.greeting)
+                await session.generate_reply(
+                    instructions=context.greeting,
+                    input_modality="audio",
+                )
             except Exception:
                 if not closed.done():
                     raise

@@ -8,6 +8,12 @@ server {
     proxy_pass http://backend:8000;
   }
 
+  location /control-plane/ {
+    proxy_set_header Authorization "Bearer ${CONTROL_PLANE_MANAGEMENT_TOKEN}";
+    proxy_set_header Host $host;
+    proxy_pass http://control-plane-service:8000/v1/;
+  }
+
   location / {
     try_files $uri $uri/ /index.html;
   }

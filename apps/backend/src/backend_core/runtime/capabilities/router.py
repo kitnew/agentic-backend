@@ -17,23 +17,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.conversations.repository import ConversationRepository
-from backend_core.modules.integrations.crypto import IntegrationSecretCipher
-from backend_core.modules.integrations.repository import IntegrationConnectionRepository
-from backend_core.modules.integrations.service import (
-    CapabilityIntegrationResolver,
-    IntegrationConnectionError,
-    IntegrationConnectionService,
-)
-from backend_core.modules.tenants.repository import TenantRepository
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
-from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.capabilities.domain import CapabilityValidationError
+from backend_core.runtime.capabilities.integration import (
+    CapabilityIntegrationResolver,
+    IntegrationConnectionError,
+)
 from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
 from backend_core.runtime.capabilities.service import (
     CapabilityInvocationService,
     invocation_response,
 )
+from backend_core.runtime.execution_context import ExecutionContextReader
 
 logger = logging.getLogger(__name__)
 voice_router = APIRouter(prefix="/internal/v1/calls", tags=["internal:capabilities"])
@@ -49,13 +45,13 @@ def build_service(
     session: AsyncSession,
     tracer: Tracer | None = None,
     metrics: CoreMetrics | None = None,
+    execution_context: ExecutionContextReader | None = None,
 ) -> CapabilityInvocationService:
     return CapabilityInvocationService(
         CapabilityInvocationRepository(session),
         CallSessionRepository(session),
         ConversationRepository(session),
-        IntegrationConnectionRepository(session),
-        RuntimeBundleStore(session),
+        execution_context,
         tracer,
         metrics,
     )
@@ -63,7 +59,10 @@ def build_service(
 
 def service(session: DatabaseSession, request: Request) -> CapabilityInvocationService:
     return build_service(
-        session, request.app.state.outbox_tracer, request.app.state.core_metrics
+        session,
+        request.app.state.outbox_tracer,
+        request.app.state.core_metrics,
+        ExecutionContextReader(request.app.state.control_plane),
     )
 
 
@@ -73,16 +72,9 @@ Service = Annotated[CapabilityInvocationService, Depends(service)]
 def integration_resolver(
     session: DatabaseSession, request: Request
 ) -> CapabilityIntegrationResolver:
-    connections = IntegrationConnectionRepository(session)
-    integrations = IntegrationConnectionService(
-        TenantRepository(session),
-        connections,
-        IntegrationSecretCipher(
-            request.app.state.settings.integration_encryption_key.get_secret_value()
-        ),
-    )
     return CapabilityIntegrationResolver(
-        CapabilityInvocationRepository(session), connections, integrations
+        CapabilityInvocationRepository(session),
+        request.app.state.control_plane,
     )
 
 
@@ -196,14 +188,14 @@ async def integration_material(
     job_id: UUID,
     integrations: IntegrationResolver,
     call_id: UUID | None = None,
-    runtime_bundle_id: UUID | None = None,
+    execution_snapshot_id: UUID | None = None,
 ) -> RuntimeIntegrationMaterial:
     try:
         return await integrations.resolve(
             invocation_id,
             job_id,
             call_id=call_id,
-            runtime_bundle_id=runtime_bundle_id,
+            execution_snapshot_id=execution_snapshot_id,
         )
     except IntegrationConnectionError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error

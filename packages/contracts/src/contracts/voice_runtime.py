@@ -50,6 +50,7 @@ def validate_llm_behavior(
 class LLMRuntimeSettings(_RuntimeModel):
     provider: Literal["azure_openai"]
     model: Identifier
+    max_completion_tokens: int = Field(gt=0)
     temperature: Annotated[FiniteFloat, Field(ge=0, le=2)] | None = None
     reasoning_effort: ReasoningEffort | None = None
 
@@ -66,13 +67,6 @@ class ServerVADRuntimeSettings(_RuntimeModel):
     min_silence_ms: int = Field(gt=0, le=60_000)
 
 
-class InterimPreflightRuntimeSettings(_RuntimeModel):
-    enabled: bool = False
-    min_transcript_chars: int = Field(default=20, ge=3, le=500)
-    min_growth_chars: int = Field(default=12, ge=1, le=500)
-    max_generations_per_turn: int = Field(default=2, ge=1, le=5)
-
-
 class LocalVADCommitRuntimeSettings(_RuntimeModel):
     enabled: bool = False
 
@@ -83,9 +77,6 @@ class STTRuntimeSettings(_RuntimeModel):
     server_vad: ServerVADRuntimeSettings
     local_vad_commit: LocalVADCommitRuntimeSettings = Field(
         default_factory=lambda: LocalVADCommitRuntimeSettings(enabled=True)
-    )
-    interim_preflight: InterimPreflightRuntimeSettings = Field(
-        default_factory=InterimPreflightRuntimeSettings
     )
 
 
@@ -132,12 +123,27 @@ class TurnRuntimeSettings(_RuntimeModel):
         return self
 
 
+class InterruptionRuntimeSettings(_RuntimeModel):
+    enabled: bool
+    min_duration_seconds: Annotated[FiniteFloat, Field(ge=0, le=60)]
+    min_words: int = Field(ge=0)
+    false_interruption_timeout_seconds: Annotated[FiniteFloat, Field(ge=0, le=60)]
+    resume_after_false_interruption: bool
+
+
+class ResponseSchedulingRuntimeSettings(_RuntimeModel):
+    preemptive_generation: bool
+    preemptive_tts: bool
+
+
 class PlatformRuntimePolicy(_RuntimeModel):
     llm: LLMRuntimeSettings
     stt: STTRuntimeSettings
     tts: TTSRuntimeSettings
     local_vad: LocalVADRuntimeSettings
     turn: TurnRuntimeSettings
+    interruption: InterruptionRuntimeSettings
+    response_scheduling: ResponseSchedulingRuntimeSettings
 
 
 class TenantTTSRuntimeOverride(_RuntimeModel):
@@ -159,12 +165,6 @@ class TenantSTTRuntimeOverride(_RuntimeModel):
     keyterms: list[STTKeyterm] = Field(default_factory=list, max_length=50)
 
     _canonical_keyterms = field_validator("keyterms")(_canonicalize_keyterms)
-
-
-class TenantRuntimeOverride(_RuntimeModel):
-    llm: TenantLLMRuntimeOverride | None = None
-    stt: TenantSTTRuntimeOverride | None = None
-    tts: TenantTTSRuntimeOverride | None = None
 
 
 class EffectiveVoiceRuntime(PlatformRuntimePolicy):

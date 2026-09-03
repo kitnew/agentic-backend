@@ -1,0 +1,42 @@
+[project]
+name = "control-plane-service"
+version = "0.1.0"
+description = "Agentic Backend Control Plane service"
+authors = [
+    { name = "Nikita Chernysh", email = "h3s0y4mchik@gmail.com" }
+]
+requires-python = ">=3.14.6"
+dependencies = [
+    "agentic-observability",
+    "alembic>=1.18.4",
+    "asyncpg>=0.31.0",
+    "contracts",
+    "cryptography>=50.0.0",
+    "fastapi>=0.140.13",
+    "httpx>=0.28.1",
+    "jsonata-python==0.7.0",
+    "jsonschema>=4.25.1",
+    "nats-py>=2.12.0",
+    "opentelemetry-api>=1.39.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.39.1",
+    "opentelemetry-instrumentation-fastapi>=0.60b1",
+    "opentelemetry-sdk>=1.39.1",
+    "pydantic-settings>=2.14.2",
+    "pyjwt>=2.13.0",
+    "sqlalchemy>=2.0.51",
+    "uvicorn[standard]>=0.51.0",
+]
+
+[tool.uv.sources]
+agentic-observability = { workspace = true }
+contracts = { workspace = true }
+
+[tool.uv.build-backend]
+module-name = "control_plane"
+
+[project.scripts]
+control-plane-service = "control_plane.main:main"
+
+[build-system]
+requires = ["uv_build>=0.11.28,<0.12.0"]
+build-backend = "uv_build"

@@ -4,10 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.tenants.models import PlatformTelephony, Tenant
-from backend_core.modules.tenants.release_models import (
-    ActivePhoneClaim,
-    TenantTelephonyProvisioning,
-)
+from backend_core.modules.tenants.telephony_models import TenantTelephonyProvisioning
 
 
 class TenantRepository:
@@ -56,20 +53,22 @@ class TelephonyRepository:
             await self._session.flush()
         return state
 
-    async def active_phone_claims(self) -> list[ActivePhoneClaim]:
-        return list(await self._session.scalars(select(ActivePhoneClaim)))
-
     async def provisioning(self) -> list[TenantTelephonyProvisioning]:
         return list(await self._session.scalars(select(TenantTelephonyProvisioning)))
 
-    async def provisioning_for(
-        self, tenant_id: UUID
-    ) -> TenantTelephonyProvisioning | None:
+    async def provisioning_for(self, tenant_id: UUID, assignment_id: UUID | None = None) -> TenantTelephonyProvisioning | None:
+        if assignment_id is None:
+            return await self._session.scalar(select(TenantTelephonyProvisioning).where(TenantTelephonyProvisioning.tenant_id == tenant_id))
         return await self._session.scalar(
             select(TenantTelephonyProvisioning).where(
-                TenantTelephonyProvisioning.tenant_id == tenant_id
+                TenantTelephonyProvisioning.tenant_id == tenant_id,
+                TenantTelephonyProvisioning.phone_assignment_id == assignment_id,
             )
         )
 
     async def flush(self) -> None:
+        await self._session.flush()
+
+    async def add(self, value: TenantTelephonyProvisioning) -> None:
+        self._session.add(value)
         await self._session.flush()

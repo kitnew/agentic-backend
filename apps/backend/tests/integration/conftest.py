@@ -19,13 +19,14 @@ BACKEND_ROOT = Path(__file__).parents[2]
 ADMIN_TOKEN = "test-admin-token-with-at-least-32-characters"
 VOICE_AGENT_SECRET = "test-voice-agent-secret-with-at-least-32-characters"
 JOB_WORKER_SECRET = "test-job-worker-secret-with-at-least-32-characters"
+BACKEND_CORE_SERVICE_SECRET = "test-backend-core-service-secret-with-at-least-32-characters"
 
 
 def dsn(url: URL) -> str:
     return url.render_as_string(hide_password=False)
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def isolated_database_url() -> AsyncIterator[str]:
     raw_admin_url = os.getenv("TEST_DATABASE_ADMIN_URL")
     if not raw_admin_url:
@@ -55,7 +56,7 @@ async def isolated_database_url() -> AsyncIterator[str]:
         await admin_connection.close()
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def migrated_database_url(
     isolated_database_url: str,
 ) -> AsyncIterator[str]:
@@ -77,6 +78,8 @@ def app_settings(migrated_database_url: str) -> Settings:
             "database_url": migrated_database_url,
             "admin_api_token": ADMIN_TOKEN,
             "internal_api_audience": "backend-core",
+            "backend_core_service_secret": BACKEND_CORE_SERVICE_SECRET,
+            "control_plane_url": "http://control-plane-service:8000",
             "voice_agent_service_secret": VOICE_AGENT_SECRET,
             "job_worker_service_secret": JOB_WORKER_SECRET,
             "integration_encryption_key": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",

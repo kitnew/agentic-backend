@@ -15,6 +15,10 @@ services:
     restart: unless-stopped
     logging: *service-logging
 
+  nats:
+    restart: unless-stopped
+    logging: *service-logging
+
   backend:
     restart: unless-stopped
     stop_grace_period: 30s
@@ -28,6 +32,19 @@ services:
       SIP_PROVIDER_USERNAME: ${SIP_PROVIDER_USERNAME:?set SIP_PROVIDER_USERNAME}
       SIP_PROVIDER_PASSWORD: ${SIP_PROVIDER_PASSWORD:?set SIP_PROVIDER_PASSWORD}
     networks: [application, edge]
+
+  control-plane-service:
+    restart: unless-stopped
+    stop_grace_period: 30s
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    logging: *service-logging
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
 
   voice-agent:
     restart: unless-stopped
@@ -70,6 +87,7 @@ services:
         VITE_GRAFANA_URL: ${ADMIN_WEB_GRAFANA_URL:?set ADMIN_WEB_GRAFANA_URL}
     environment:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+      CONTROL_PLANE_MANAGEMENT_TOKEN: ${CONTROL_PLANE_MANAGEMENT_TOKEN:?set CONTROL_PLANE_MANAGEMENT_TOKEN}
     restart: unless-stopped
     read_only: true
     tmpfs:
@@ -299,6 +317,7 @@ services:
       ADMIN_WEB_BASIC_AUTH_USER: ${ADMIN_WEB_BASIC_AUTH_USER:?set ADMIN_WEB_BASIC_AUTH_USER}
       ADMIN_WEB_BASIC_AUTH_HASH: ${ADMIN_WEB_BASIC_AUTH_HASH:?set ADMIN_WEB_BASIC_AUTH_HASH}
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+      CONTROL_PLANE_MANAGEMENT_TOKEN: ${CONTROL_PLANE_MANAGEMENT_TOKEN:?set CONTROL_PLANE_MANAGEMENT_TOKEN}
     ports:
       - "80:80"
       - "443:443"

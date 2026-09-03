@@ -35,11 +35,6 @@ class CapabilityInvocation(Base):
             ("conversations.tenant_id", "conversations.id"),
             name="fk_capability_invocations_conversation_same_tenant",
         ),
-        ForeignKeyConstraint(
-            ("tenant_id", "tenant_release_id", "runtime_bundle_id"),
-            ("tenant_releases.tenant_id", "tenant_releases.id", "tenant_releases.runtime_bundle_id"),
-            name="fk_capability_invocations_release_bundle_same_tenant",
-        ),
         UniqueConstraint(
             "tenant_id",
             "call_id",
@@ -57,8 +52,7 @@ class CapabilityInvocation(Base):
     tool_call_id: Mapped[str] = mapped_column(String(255))
     semantic_key: Mapped[str] = mapped_column(String(128))
     semantic_version: Mapped[int] = mapped_column(Integer)
-    tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
-    runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    execution_snapshot_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     status: Mapped[CapabilityInvocationStatus] = mapped_column(
         Enum(
             CapabilityInvocationStatus,
@@ -105,11 +99,6 @@ class CapabilityConfirmation(Base):
             ("call_sessions.tenant_id", "call_sessions.id"),
             name="fk_capability_confirmations_call_same_tenant",
         ),
-        ForeignKeyConstraint(
-            ("tenant_id", "tenant_release_id", "runtime_bundle_id"),
-            ("tenant_releases.tenant_id", "tenant_releases.id", "tenant_releases.runtime_bundle_id"),
-            name="fk_capability_confirmations_release_bundle_same_tenant",
-        ),
         UniqueConstraint(
             "tenant_id",
             "call_id",
@@ -125,8 +114,7 @@ class CapabilityConfirmation(Base):
     tool_call_id: Mapped[str] = mapped_column(String(255))
     semantic_key: Mapped[str] = mapped_column(String(128))
     semantic_version: Mapped[int] = mapped_column(Integer)
-    tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
-    runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    execution_snapshot_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     canonical_input: Mapped[dict[str, object]] = mapped_column(JSONB)
     agent_input: Mapped[dict[str, object]] = mapped_column(JSONB)
     payload_hash: Mapped[str] = mapped_column(String(64))

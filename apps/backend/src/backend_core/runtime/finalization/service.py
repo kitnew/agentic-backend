@@ -15,7 +15,6 @@ from contracts import (
     MaterializeArtifactRepresentation,
     MessageEnvelope,
     PostCallActionInput,
-    RuntimeBundlePayload,
     RuntimePostCallAction,
     RuntimePostCallInput,
     command_envelope,
@@ -27,13 +26,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend_core.application.messaging import CommandBus
 from backend_core.modules.calls.models import CallSession
 from backend_core.modules.conversations.models import Conversation, ConversationMessage
-from backend_core.modules.integrations.models import (
-    IntegrationConnection,
-    IntegrationConnectionStatus,
-    IntegrationProvider,
-)
-from backend_core.runtime.bundle_store import RuntimeBundleStore
+from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.runtime.capabilities.mapping import evaluate_query, evaluate_template
+from backend_core.runtime.execution_context import ExecutionContextReader
 from backend_core.runtime.finalization.models import (
     ArtifactRepresentation,
     CallFinalization,
@@ -58,10 +53,21 @@ class FinalizationService:
         session: AsyncSession,
         commands: CommandBus,
         tracer: Tracer | None = None,
+        execution_context: ExecutionContextReader | None = None,
+        control_plane: ControlPlaneClient | None = None,
     ) -> None:
         self._session = session
         self._commands = commands
+        self._control_plane = control_plane
         self._tracer = tracer
+        self._execution_context = execution_context
+
+    async def control_plane_material(self, tenant_id: UUID, connection_id: UUID):
+        if self._control_plane is None:
+            raise FinalizationError("integration material unavailable")
+        return await self._control_plane.integration_execution_material(
+            tenant_id, connection_id
+        )
 
     async def start(self, event: MessageEnvelope) -> CallFinalization:
         with domain_span(
@@ -280,16 +286,6 @@ class FinalizationService:
         ):
             raise FinalizationError("finalization context not found")
         action = self._action(await self._actions(call), action_id)
-        connection = await self._session.get(
-            IntegrationConnection, action.execution.connection_id
-        )
-        if (
-            connection is None
-            or connection.tenant_id != call.tenant_id
-            or connection.status is not IntegrationConnectionStatus.ACTIVE
-            or connection.provider is not IntegrationProvider.HTTP
-        ):
-            raise FinalizationError("post-call connection unavailable")
         inputs: dict[str, object] = {}
         available_bodies: set[UUID] = set()
         for name, requested in action.inputs.items():
@@ -314,7 +310,7 @@ class FinalizationService:
             path = evaluate_template(path, context)
         query = evaluate_query(action.execution.query, context)
         return HttpRequestPlanV1(
-            integration_id=connection.id,
+            integration_id=action.execution.connection_id,
             operation_id=command_id,
             method=action.execution.method,
             path=path,
@@ -773,8 +769,10 @@ class FinalizationService:
         )
         if conversation is None:
             raise FinalizationError("conversation not found")
-        bundle = await self._bundle_payload(call)
-        agent_id, agent_name = bundle.agent_profile, bundle.agent_display_name
+        snapshot = await self._execution_context.snapshot(call)
+        agent = snapshot.agent or {}
+        agent_id = agent.get("agent_profile")
+        agent_name = agent.get("display_name")
         return {
             "call_id": str(call.id),
             "call": {
@@ -825,20 +823,10 @@ class FinalizationService:
     async def _actions(
         self, call: CallSession
     ) -> list[RuntimePostCallAction]:
-        return (await self._bundle_payload(call)).post_call_actions
-
-    async def _bundle_payload(
-        self, call: CallSession
-    ) -> RuntimeBundlePayload:
-        bundle = await RuntimeBundleStore(self._session).get(
-            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
-        )
-        if bundle is None:
-            raise FinalizationError("pinned runtime bundle unavailable")
         try:
-            return RuntimeBundlePayload.model_validate(bundle.payload)
-        except Exception as error:
-            raise FinalizationError("pinned runtime bundle unavailable") from error
+            return await self._execution_context.post_call_actions(call)
+        except (AttributeError, ValueError) as error:
+            raise FinalizationError("execution snapshot unavailable") from error
 
     @staticmethod
     def _fail(finalization: CallFinalization, error: str) -> None:

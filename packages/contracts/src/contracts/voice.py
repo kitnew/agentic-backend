@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -63,6 +63,9 @@ class InboundSipClaimResponse(_VoiceModel):
 
 class HandoffDestinationDefinition(_VoiceModel):
     description: str = Field(min_length=1, max_length=1000)
+    ref: UUID | None = None
+    key: str | None = None
+    generation: int | None = Field(default=None, ge=1)
 
 
 class HumanHandoffRequest(_VoiceModel):
@@ -86,11 +89,15 @@ class VoiceAgentPrompt(_VoiceModel):
 
 class VoiceAgentRuntimeContext(_VoiceModel):
     call_session_id: UUID
-    voice_runtime: EffectiveVoiceRuntime
+    execution_snapshot_id: UUID
+    architecture: Literal["cascade", "realtime"] = "cascade"
+    voice_runtime: EffectiveVoiceRuntime | None = None
+    snapshot_runtime: dict[str, Any] | None = None
     room_name: str = Field(min_length=1, max_length=255)
     locale: str = Field(min_length=1, max_length=35)
     timezone: str = Field(min_length=1, max_length=64)
     agent_display_name: str = Field(min_length=1, max_length=100)
+    agent_profile: str = Field(default="default", min_length=1, max_length=100)
     greeting: str = Field(min_length=1, max_length=1000)
     conversation_scope: str = Field(min_length=1, max_length=64)
     prompt: VoiceAgentPrompt
@@ -99,8 +106,6 @@ class VoiceAgentRuntimeContext(_VoiceModel):
         default_factory=dict
     )
     voice_runtime_revision_id: UUID
-    tenant_release_id: UUID
-    runtime_bundle_id: UUID
 
 
 class CallLifecycleResponse(_VoiceModel):

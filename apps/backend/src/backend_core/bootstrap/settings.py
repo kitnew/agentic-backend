@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     database_url: PostgresDsn
+    control_plane_url: Annotated[str, Field(min_length=1)] = "http://control-plane-service:8000"
+    control_plane_api_audience: Annotated[str, Field(min_length=1)] = "control-plane-service"
+    backend_core_service_secret: Secret
     admin_api_token: Secret
     internal_api_audience: Annotated[str, Field(min_length=1)] = "backend-core"
     voice_agent_service_secret: Secret

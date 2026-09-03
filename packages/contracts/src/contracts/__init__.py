@@ -45,6 +45,7 @@ from contracts.domain_catalog import (
     PostCallArtifactDescriptor,
     PostCallDiscoveryResponse,
 )
+from contracts.execution_snapshot import ExecutionSnapshot
 from contracts.http_operation import (
     ExpressionNode,
     HttpBodyBinding,
@@ -59,6 +60,17 @@ from contracts.integration import (
     HttpConnectionConfiguration,
     HttpConnectionSecurity,
 )
+from contracts.integration_events import (
+    COMPONENT_PUBLISHED_EVENT_TYPE,
+    COMPONENT_PUBLISHED_SUBJECT,
+    MANAGED_RESOURCE_CHANGED_EVENT_TYPE,
+    MANAGED_RESOURCE_CHANGED_SUBJECT,
+    ComponentScope,
+    ConfigurationComponentPublishedPayloadV1,
+    ConfigurationComponentPublishedV1,
+    ManagedResourceChangedPayloadV1,
+    ManagedResourceChangedV1,
+)
 from contracts.messaging import (
     CallEventPayload,
     CommandError,
@@ -70,10 +82,7 @@ from contracts.messaging import (
     command_envelope,
     parse_command,
 )
-from contracts.runtime_bundle import (
-    RuntimeBundle,
-    RuntimeBundlePayload,
-    RuntimeBundleProvenance,
+from contracts.runtime_execution import (
     RuntimeCapabilityBinding,
     RuntimeCapabilityDateRangeConstraint,
     RuntimeCapabilityInputConstraint,
@@ -83,10 +92,9 @@ from contracts.runtime_bundle import (
     RuntimeHttpExecution,
     RuntimePostCallAction,
     RuntimePostCallInput,
-    RuntimeTelephony,
     canonical_json_bytes,
-    runtime_bundle_content_hash,
 )
+from contracts.telephony import PhoneAssignment
 from contracts.tenant_components import (
     AgentIdentityConfig,
     CapabilityBusinessPolicy,
@@ -130,7 +138,6 @@ from contracts.voice_runtime import (
     ServerVADRuntimeSettings,
     STTRuntimeSettings,
     TenantLLMRuntimeOverride,
-    TenantRuntimeOverride,
     TenantSTTRuntimeOverride,
     TenantTTSRuntimeOverride,
     TTSRuntimeSettings,
@@ -141,6 +148,10 @@ __all__ = [
     "CANONICAL_FIELDS",
     "CANONICAL_FIELD_DESCRIPTIONS",
     "CANONICAL_FIELD_NORMALIZERS",
+    "COMPONENT_PUBLISHED_EVENT_TYPE",
+    "COMPONENT_PUBLISHED_SUBJECT",
+    "MANAGED_RESOURCE_CHANGED_EVENT_TYPE",
+    "MANAGED_RESOURCE_CHANGED_SUBJECT",
     "AgentIdentityConfig",
     "AppendConversationMessage",
     "CalculatorRequest",
@@ -160,6 +171,9 @@ __all__ = [
     "CatalogDescriptor",
     "CommandError",
     "CommandResult",
+    "ComponentScope",
+    "ConfigurationComponentPublishedPayloadV1",
+    "ConfigurationComponentPublishedV1",
     "ConversationMessageResponse",
     "ConversationMessageRole",
     "ConversationPersistenceStatus",
@@ -169,6 +183,7 @@ __all__ = [
     "EffectiveVoiceRuntime",
     "ExecutePostCallAction",
     "ExecutionPlan",
+    "ExecutionSnapshot",
     "ExpressionNode",
     "GenerateCallSummary",
     "GoogleSheetsAppendExecution",
@@ -200,6 +215,8 @@ __all__ = [
     "LiveKitJobMetadata",
     "LocalVADCommitRuntimeSettings",
     "LocalVADRuntimeSettings",
+    "ManagedResourceChangedPayloadV1",
+    "ManagedResourceChangedV1",
     "ManagedWebhookBodyBinding",
     "ManagedWebhookCapability",
     "ManagedWebhookFailureResponse",
@@ -211,14 +228,12 @@ __all__ = [
     "ManagedWebhookSuccessResponse",
     "MaterializeArtifactRepresentation",
     "MessageEnvelope",
+    "PhoneAssignment",
     "PlatformRuntimePolicy",
     "PostCallAction",
     "PostCallActionInput",
     "PostCallArtifactDescriptor",
     "PostCallDiscoveryResponse",
-    "RuntimeBundle",
-    "RuntimeBundlePayload",
-    "RuntimeBundleProvenance",
     "RuntimeCapabilityBinding",
     "RuntimeCapabilityDateRangeConstraint",
     "RuntimeCapabilityDefinition",
@@ -230,7 +245,6 @@ __all__ = [
     "RuntimeIntegrationMaterial",
     "RuntimePostCallAction",
     "RuntimePostCallInput",
-    "RuntimeTelephony",
     "STTRuntimeSettings",
     "ServerVADRuntimeSettings",
     "TTSRuntimeSettings",
@@ -241,7 +255,6 @@ __all__ = [
     "TenantKnowledgeConfig",
     "TenantLLMRuntimeOverride",
     "TenantPromptConfig",
-    "TenantRuntimeOverride",
     "TenantSTTRuntimeOverride",
     "TenantTTSRuntimeOverride",
     "TenantTelephonyConfig",
@@ -255,5 +268,4 @@ __all__ = [
     "canonical_json_bytes",
     "command_envelope",
     "parse_command",
-    "runtime_bundle_content_hash",
 ]

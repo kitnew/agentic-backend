@@ -38,14 +38,13 @@ def test_job_and_result_contracts_round_trip() -> None:
         job_id=uuid4(),
         capability_invocation_id=uuid4(),
         call_id=uuid4(),
-        tenant_release_id=uuid4(),
-        runtime_bundle_id=uuid4(),
+        execution_snapshot_id=uuid4(),
         execution_plan=plan(),
         created_at=now,
         expires_at=now + timedelta(minutes=10),
     )
     assert IntegrationJob.model_validate_json(job.model_dump_json()) == job
-    assert job.model_copy(update={"attempt": 2}).runtime_bundle_id == job.runtime_bundle_id
+    assert job.model_copy(update={"attempt": 2}).execution_snapshot_id == job.execution_snapshot_id
     report = WorkerResultReport(
         job_id=job.job_id,
         capability_invocation_id=job.capability_invocation_id,

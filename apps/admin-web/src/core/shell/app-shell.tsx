@@ -26,13 +26,16 @@ type TenantNavigationItem = {
 const tenantNavigation: readonly TenantNavigationItem[] = [
   { label: "Overview", suffix: "" },
   { label: "Runtime", suffix: "/runtime" },
+  { label: "Speech Overrides", suffix: "/runtime/speech" },
   { label: "Agent", suffix: "/agent" },
   { label: "Prompt", suffix: "/prompt" },
+  { label: "Prompt Profile Selection", suffix: "/prompt/profile-selection" },
   { label: "Knowledge Base", suffix: "/knowledge-base" },
-  { label: "Capabilities", suffix: "/capabilities", disabled: true },
-  { label: "Integrations", suffix: "/integrations", disabled: true },
-  { label: "Post-call", suffix: "/post-call", disabled: true },
-  { label: "Telephony", suffix: "/telephony", disabled: true },
+  { label: "Capabilities", suffix: "/capabilities" },
+  { label: "Integrations", suffix: "/integrations" },
+  { label: "Post-call", suffix: "/post-call" },
+  { label: "Handoff", suffix: "/handoff" },
+  { label: "Telephony", suffix: "/telephony" },
   { label: "Playground", suffix: "/playground" },
 ] as const;
 

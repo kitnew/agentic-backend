@@ -7,8 +7,8 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
-    ForeignKeyConstraint,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -43,11 +43,7 @@ class CallSessionStatus(StrEnum):
 class CallSession(Base):
     __tablename__ = "call_sessions"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ("tenant_id", "tenant_release_id", "runtime_bundle_id"),
-            ("tenant_releases.tenant_id", "tenant_releases.id", "tenant_releases.runtime_bundle_id"),
-            name="fk_call_sessions_release_bundle_same_tenant",
-        ),
+        CheckConstraint("execution_snapshot_id IS NOT NULL", name="ck_call_sessions_snapshot_required"),
         UniqueConstraint(
             "provider",
             "provider_call_id",
@@ -110,8 +106,9 @@ class CallSession(Base):
             name="fk_call_sessions_tenant_id_tenants",
         ),
     )
-    tenant_release_id: Mapped[UUID] = mapped_column(Uuid)
-    runtime_bundle_id: Mapped[UUID] = mapped_column(Uuid)
+    phone_assignment_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    phone_assignment_generation: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    execution_snapshot_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     channel: Mapped[CallChannel] = mapped_column(
         Enum(
             CallChannel,

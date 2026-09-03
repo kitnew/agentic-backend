@@ -96,8 +96,8 @@ tenant Publish command.
 sip.trunkPhoneNumber
   → tenant_telephony.phone_number
   → phone claim and shared LiveKit inbound trunk
-  → published release/runtime bundle
-  → CallSession release and bundle pins
+  → published Control Plane components
+  → immutable RuntimeExecutionSnapshot
   → Voice Agent
 
 handoff semantic key

@@ -1010,8 +1010,8 @@ class BackendClient:
                 params={
                     "job_id": str(job_id),
                     "call_id": str(job.call_id) if job.call_id else None,
-                    "runtime_bundle_id": str(job.runtime_bundle_id)
-                    if job.runtime_bundle_id
+                    "execution_snapshot_id": str(job.execution_snapshot_id)
+                    if job.execution_snapshot_id
                     else None,
                 },
                 headers={"Authorization": f"Bearer {self._token()}"},

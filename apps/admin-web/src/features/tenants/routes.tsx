@@ -1,8 +1,10 @@
-import { DeferredFeaturePage } from "../deferred/deferred-feature-page";
+import { IntegrationsPage } from "../integrations/page";
 import {
   TenantAuthoringEditorPage,
   TenantComponentOverviewPage,
+  TenantJsonComponentPage,
 } from "./component-pages";
+import { HandoffPage } from "./handoff-page";
 import { TenantsPage } from "./pages";
 
 export const routes = [
@@ -17,6 +19,23 @@ export const routes = [
     path: "/tenants/$tenantId/runtime",
     component: () => (
       <TenantAuthoringEditorPage component="runtime" title="Runtime" />
+    ),
+  },
+  {
+    id: "tenant-speech",
+    path: "/tenants/$tenantId/runtime/speech",
+    component: () => (
+      <TenantAuthoringEditorPage component="speech" title="Speech Overrides" />
+    ),
+  },
+  {
+    id: "tenant-profile-selection",
+    path: "/tenants/$tenantId/prompt/profile-selection",
+    component: () => (
+      <TenantAuthoringEditorPage
+        component="profile"
+        title="Prompt Profile Selection"
+      />
     ),
   },
   {
@@ -36,21 +55,26 @@ export const routes = [
   {
     id: "tenant-capabilities",
     path: "/tenants/$tenantId/capabilities",
-    component: () => <DeferredFeaturePage title="Capabilities" />,
+    component: () => <TenantJsonComponentPage component="capabilities" />,
   },
   {
     id: "tenant-integrations",
     path: "/tenants/$tenantId/integrations",
-    component: () => <DeferredFeaturePage title="Integrations" />,
+    component: IntegrationsPage,
   },
   {
     id: "tenant-integration-detail",
     path: "/tenants/$tenantId/integrations/$integrationKey",
-    component: () => <DeferredFeaturePage title="Integrations" />,
+    component: IntegrationsPage,
   },
   {
     id: "tenant-post-call",
     path: "/tenants/$tenantId/post-call",
-    component: () => <DeferredFeaturePage title="Post-call" />,
+    component: () => <TenantJsonComponentPage component="post_call" />,
+  },
+  {
+    id: "tenant-handoff",
+    path: "/tenants/$tenantId/handoff",
+    component: HandoffPage,
   },
 ];

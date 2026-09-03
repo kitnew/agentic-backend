@@ -1,33 +1,11 @@
-llm:
-  model: gpt-5.6-terra
-  provider: azure_openai
-  temperature: null
-  reasoning_effort: none
-stt:
-  model: scribe_v2_realtime
-  provider: elevenlabs
-  server_vad:
-    min_speech_ms: 100
-    min_silence_ms: 350
-    activity_threshold: 0.35
-    silence_threshold_seconds: 0.35
-  local_vad_commit:
+realtime:
+  deployment_ref: b63881eb-b40d-4040-9839-591fb16cd63f
+  input_transcription:
+    deployment_ref: db7a4722-42d2-4e09-a86b-012ea972f89a
+  default_voice: marin
+  turn_completion:
+    strategy: server_vad
+    activation_threshold: 0.5
+    silence_duration_ms: 200
+  interruption:
     enabled: true
-  interim_preflight:
-    enabled: false
-    min_growth_chars: 12
-    min_transcript_chars: 20
-    max_generations_per_turn: 2
-tts:
-  model: eleven_flash_v2_5
-  provider: elevenlabs
-  voice_id: 9Nd358gE1qQp0pDh8FgP
-  min_sentence_chars: 20
-turn:
-  detection: stt
-  max_endpointing_delay_seconds: 0.7
-  min_endpointing_delay_seconds: 0.1
-local_vad:
-  min_speech_seconds: 0.05
-  min_silence_seconds: 0.25
-  activation_threshold: 0.5

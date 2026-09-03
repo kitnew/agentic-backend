@@ -1,7 +1,44 @@
-import type {
-  LLMRuntimeSettingsReasoningEffort,
-  PlatformRuntimePolicy,
-} from "../../core/api/generated/models";
+export type LLMRuntimeSettingsReasoningEffort =
+  | "none"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
+export type PlatformRuntimePolicy = {
+  llm: {
+    provider: "azure_openai";
+    model: string;
+    reasoning_effort?: LLMRuntimeSettingsReasoningEffort | null;
+    temperature?: number | null;
+  };
+  stt: {
+    provider: "elevenlabs";
+    model: string;
+    server_vad: {
+      silence_threshold_seconds: number;
+      activity_threshold: number;
+      min_speech_ms: number;
+      min_silence_ms: number;
+    };
+  };
+  local_vad: {
+    min_speech_seconds: number;
+    min_silence_seconds: number;
+    activation_threshold: number;
+  };
+  turn: {
+    detection: "stt";
+    min_endpointing_delay_seconds: number;
+    max_endpointing_delay_seconds: number;
+  };
+  tts: {
+    provider: "elevenlabs";
+    model: string;
+    voice_id: string;
+    min_sentence_chars?: number;
+  };
+};
 
 type OptionalMode = "omitted" | "null" | "value";
 
@@ -12,10 +49,6 @@ export type PlatformRuntimeForm = {
   temperatureMode: OptionalMode;
   temperature: string;
   sttModel: string;
-  interimPreflightEnabled: "enabled" | "disabled";
-  interimPreflightMinChars: string;
-  interimPreflightMinGrowth: string;
-  interimPreflightMaxGenerations: string;
   serverSilenceThreshold: string;
   serverActivityThreshold: string;
   serverMinSpeech: string;
@@ -43,18 +76,6 @@ export function toPlatformRuntimeForm(
     temperatureMode: optionalMode(policy.llm.temperature),
     temperature: policy.llm.temperature?.toString() ?? "",
     sttModel: policy.stt.model,
-    interimPreflightEnabled: policy.stt.interim_preflight?.enabled
-      ? "enabled"
-      : "disabled",
-    interimPreflightMinChars: (
-      policy.stt.interim_preflight?.min_transcript_chars ?? 20
-    ).toString(),
-    interimPreflightMinGrowth: (
-      policy.stt.interim_preflight?.min_growth_chars ?? 12
-    ).toString(),
-    interimPreflightMaxGenerations: (
-      policy.stt.interim_preflight?.max_generations_per_turn ?? 2
-    ).toString(),
     serverSilenceThreshold:
       policy.stt.server_vad.silence_threshold_seconds.toString(),
     serverActivityThreshold:
@@ -110,21 +131,6 @@ export function toPlatformRuntimePolicy(
     stt: {
       provider: "elevenlabs",
       model: required(form.sttModel, "STT model"),
-      interim_preflight: {
-        enabled: form.interimPreflightEnabled === "enabled",
-        min_transcript_chars: integer(
-          form.interimPreflightMinChars,
-          "Interim preflight minimum transcript characters",
-        ),
-        min_growth_chars: integer(
-          form.interimPreflightMinGrowth,
-          "Interim preflight minimum growth characters",
-        ),
-        max_generations_per_turn: integer(
-          form.interimPreflightMaxGenerations,
-          "Interim preflight maximum generations",
-        ),
-      },
       server_vad: {
         silence_threshold_seconds: number(
           form.serverSilenceThreshold,

@@ -43,7 +43,6 @@ from backend_core.modules.calls.service import CallSessionService
 from backend_core.modules.conversations.router import build_conversation_service
 from backend_core.modules.integrations.crypto import derive_observability_key
 from backend_core.modules.tenants.errors import TenantNotFoundError
-from backend_core.modules.tenants.release_repository import TenantReleaseRepository
 from backend_core.modules.tenants.repository import (
     TelephonyRepository,
     TenantRepository,
@@ -51,7 +50,6 @@ from backend_core.modules.tenants.repository import (
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import Database, DatabaseSession
 from backend_core.platform.messaging import TransactionalOutboxBus
-from backend_core.runtime.bundle_store import RuntimeBundleStore
 
 router = APIRouter(prefix="/internal/v1/call-sessions", tags=["internal:calls"])
 admin_router = APIRouter(
@@ -76,6 +74,7 @@ def build_call_session_service(
     tracer: Tracer | None = None,
     metrics: CoreMetrics | None = None,
     privacy_key: bytes | None = None,
+    control_plane=None,
 ) -> CallSessionService:
     return CallSessionService(
         CallSessionRepository(session),
@@ -83,8 +82,7 @@ def build_call_session_service(
         TenantRepository(session),
         build_conversation_service(session),
         TransactionalOutboxBus(session, event_stream, command_stream, tracer),
-        TenantReleaseRepository(session),
-        RuntimeBundleStore(session),
+        control_plane,
         tracer,
         metrics,
         privacy_key,
@@ -103,6 +101,7 @@ def get_call_session_service(
         derive_observability_key(
             request.app.state.settings.integration_encryption_key.get_secret_value()
         ),
+        request.app.state.control_plane,
     )
 
 
@@ -194,7 +193,7 @@ def call_http_exception(error: Exception) -> HTTPException:
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "tenant_configuration_not_runtime_ready",
-                "message": "tenant needs an active release and runtime bundle",
+                "message": "tenant has no published runtime snapshot",
             },
         )
     return HTTPException(
@@ -336,6 +335,7 @@ async def create_test_voice_session(
                 session,
                 tracer=request.app.state.outbox_tracer,
                 metrics=request.app.state.core_metrics,
+                control_plane=request.app.state.control_plane,
             ).create_manual(
                 data.tenant_id,
                 idempotency_key=idempotency_key,

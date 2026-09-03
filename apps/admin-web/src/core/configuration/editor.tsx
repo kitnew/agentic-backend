@@ -167,6 +167,26 @@ export function EditorActions({
             loadingLabel: saving ? "Saving…" : "Checking…",
             onClick: requestSave,
           }}
+          secondaryActions={
+            onPublish && (
+              <Button
+                disabled={
+                  dirty ||
+                  !hasDraft ||
+                  saving ||
+                  publishing ||
+                  conflict ||
+                  remoteChanged
+                }
+                loading={publishing}
+                loadingLabel="Publishing…"
+                onClick={() => void onPublish().catch(() => undefined)}
+                variant="outline"
+              >
+                Publish
+              </Button>
+            )
+          }
           status={status}
           title={title}
         />

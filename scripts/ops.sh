@@ -8,7 +8,9 @@ DEPLOY_COMPOSE="$COMPOSE_DIR/docker-compose.deploy.yml"
 REQUIRED_STACK_SERVICES=(
   postgres
   redis
+  nats
   backend
+  control-plane-service
   voice-agent
   job-worker
   admin-web
@@ -144,41 +146,9 @@ ensure_database() {
   compose exec -T postgres sh -ec 'createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
 }
 
-database_table_count() {
-  compose exec -T postgres sh -ec '
-    psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atqc \
-      "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = '\''public'\'' AND tablename <> '\''alembic_version'\''"
-  ' | tr -d '\r\n'
-}
-
-database_has_application_tables() {
-  local count
-  count="$(database_table_count)"
-  [[ "$count" =~ ^[0-9]+$ ]] || die "could not read PostgreSQL table count"
-  (( count > 0 ))
-}
-
-has_alembic_revisions() {
-  local versions="$ROOT/apps/backend/migrations/versions"
-  [[ -d "$versions" ]] || return 1
-  find "$versions" -maxdepth 1 -type f -name '*.py' -print -quit | grep -q .
-}
-
 run_migration() {
   compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
     exec alembic -c apps/backend/alembic.ini upgrade head
-  '
-}
-
-run_schema_bootstrap() {
-  compose run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec '
-    exec python -m backend_core.platform.database.bootstrap
-  '
-}
-
-run_schema_check() {
-  compose run --rm --no-deps --user root --entrypoint /bin/sh backend -ec '
-    exec python -m backend_core.platform.database.bootstrap --check
   '
 }
 
@@ -186,23 +156,15 @@ database_init() {
   check_compose
   ensure_postgres
   ensure_database
-  printf 'Bootstrapping SQLAlchemy metadata; this is not an Alembic upgrade.\n'
-  run_schema_bootstrap
+  printf 'Applying Backend Alembic revisions.\n'
+  run_migration
 }
 
 database_prepare() {
   ensure_postgres
   ensure_database
-  if has_alembic_revisions; then
-    printf 'Applying Alembic revisions.\n'
-    run_migration
-  elif database_has_application_tables; then
-    printf 'No Alembic revisions found; checking the existing SQLAlchemy schema.\n'
-    run_schema_check
-  else
-    printf 'No Alembic revisions or application tables found; bootstrapping schema.\n'
-    run_schema_bootstrap
-  fi
+  printf 'Applying Backend Alembic revisions.\n'
+  run_migration
 }
 
 database_reset() {
@@ -233,7 +195,7 @@ database_reset() {
   fi
 
   printf 'Stopping services that may use PostgreSQL.\n'
-  compose stop backend job-worker voice-agent
+  compose stop backend control-plane-service job-worker voice-agent
   printf 'Dropping PostgreSQL database: %s\n' "$database_name"
   compose exec -T postgres sh -ec \
     "psql -v ON_ERROR_STOP=1 -U \"\$POSTGRES_USER\" -d postgres -c 'DROP DATABASE \"$database_name\" WITH (FORCE);'"
@@ -328,7 +290,7 @@ restore() {
   check_compose
   ensure_postgres
   compose exec -T postgres sh -ec 'exec pg_restore --list -' <"$backup_file" >/dev/null
-  compose stop backend
+  compose stop backend control-plane-service
   compose stop job-worker voice-agent
   compose exec -T postgres sh -ec 'exec pg_restore --clean --if-exists --exit-on-error --no-owner --no-privileges -U "$POSTGRES_USER" -d "$POSTGRES_DB" -' <"$backup_file"
   run_migration
@@ -356,6 +318,11 @@ redis_doctor() {
   compose exec -T redis redis-cli ping 2>/dev/null | grep -Fxq PONG
 }
 
+nats_doctor() {
+  service_running nats || return 1
+  compose exec -T nats wget -q -O /dev/null http://localhost:8222/healthz >/dev/null 2>&1
+}
+
 backend_health_doctor() {
   service_running backend || return 1
   compose exec -T backend python -c \
@@ -370,10 +337,18 @@ backend_ready_doctor() {
     >/dev/null 2>&1
 }
 
-schema_doctor() {
-  service_running backend || return 1
-  compose exec -T backend sh -ec \
-    'exec python -m backend_core.platform.database.bootstrap --check' >/dev/null 2>&1
+control_plane_health_doctor() {
+  service_running control-plane-service || return 1
+  compose exec -T control-plane-service python -c \
+    "from urllib.request import urlopen; raise SystemExit(urlopen('http://127.0.0.1:8000/health', timeout=3).status != 200)" \
+    >/dev/null 2>&1
+}
+
+control_plane_ready_doctor() {
+  service_running control-plane-service || return 1
+  compose exec -T control-plane-service python -c \
+    "from urllib.request import urlopen; raise SystemExit(urlopen('http://127.0.0.1:8000/ready', timeout=3).status != 200)" \
+    >/dev/null 2>&1
 }
 
 minio_doctor() {
@@ -442,12 +417,15 @@ doctor() {
   fi
 
   doctor_check required "PostgreSQL" postgres_doctor
-  doctor_check required "PostgreSQL schema" schema_doctor
   doctor_check required "Redis" redis_doctor
+  doctor_check required "NATS" nats_doctor
   doctor_check required "MinIO" minio_doctor
   doctor_check required "Backend container" service_running backend
   doctor_check required "Backend health endpoint" backend_health_doctor
   doctor_check required "Backend readiness endpoint" backend_ready_doctor
+  doctor_check required "Control Plane container" service_running control-plane-service
+  doctor_check required "Control Plane health endpoint" control_plane_health_doctor
+  doctor_check required "Control Plane readiness endpoint" control_plane_ready_doctor
   doctor_check required "Worker" service_running job-worker
   doctor_check required "Voice agent" service_running voice-agent
   doctor_check required "Admin Web" service_running admin-web
@@ -533,9 +511,7 @@ case "$COMMAND" in
   migrate)
     [[ $# -eq 0 ]] || usage
     check_compose
-    ensure_postgres
-    ensure_database
-    run_migration
+    database_prepare
     ;;
   db-init)
     [[ $# -eq 0 ]] || usage
