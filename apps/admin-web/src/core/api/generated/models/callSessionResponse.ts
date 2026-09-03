@@ -18,6 +18,7 @@ export interface CallSessionResponse {
   created_at: string;
   direction: CallDirection;
   ended_at: string | null;
+  execution_snapshot_id: string;
   failure_reason: string | null;
   handoff_destination: string | null;
   handoff_participant_identity: string | null;
@@ -29,7 +30,6 @@ export interface CallSessionResponse {
   provider_call_id: string;
   provider_dispatch_id: string | null;
   room_name: string;
-  runtime_bundle_id: string;
   sip_call_id: string | null;
   sip_call_id_full: string | null;
   sip_dispatch_rule_id: string | null;
@@ -37,5 +37,4 @@ export interface CallSessionResponse {
   started_at: string | null;
   status: CallSessionStatus;
   tenant_id: string;
-  tenant_release_id: string;
 }

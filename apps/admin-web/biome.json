@@ -1,7 +1,13 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.8/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "includes": ["**", "!src/core/api/generated"] },
+  "files": {
+    "includes": [
+      "**",
+      "!src/core/api/generated",
+      "!src/core/api/control-plane/generated"
+    ]
+  },
   "formatter": { "indentStyle": "space" },
   "css": { "parser": { "tailwindDirectives": true } }
 }

@@ -29,6 +29,7 @@ class CallSessionResponse:
         created_at (datetime.datetime):
         direction (CallDirection):
         ended_at (datetime.datetime | None):
+        execution_snapshot_id (UUID):
         failure_reason (None | str):
         handoff_destination (None | str):
         handoff_participant_identity (None | str):
@@ -40,7 +41,6 @@ class CallSessionResponse:
         provider_call_id (str):
         provider_dispatch_id (None | str):
         room_name (str):
-        runtime_bundle_id (UUID):
         sip_call_id (None | str):
         sip_call_id_full (None | str):
         sip_dispatch_rule_id (None | str):
@@ -48,7 +48,6 @@ class CallSessionResponse:
         started_at (datetime.datetime | None):
         status (CallSessionStatus):
         tenant_id (UUID):
-        tenant_release_id (UUID):
     """
 
     called_phone_e164: None | str
@@ -60,6 +59,7 @@ class CallSessionResponse:
     created_at: datetime.datetime
     direction: CallDirection
     ended_at: datetime.datetime | None
+    execution_snapshot_id: UUID
     failure_reason: None | str
     handoff_destination: None | str
     handoff_participant_identity: None | str
@@ -71,7 +71,6 @@ class CallSessionResponse:
     provider_call_id: str
     provider_dispatch_id: None | str
     room_name: str
-    runtime_bundle_id: UUID
     sip_call_id: None | str
     sip_call_id_full: None | str
     sip_dispatch_rule_id: None | str
@@ -79,7 +78,6 @@ class CallSessionResponse:
     started_at: datetime.datetime | None
     status: CallSessionStatus
     tenant_id: UUID
-    tenant_release_id: UUID
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -113,6 +111,8 @@ class CallSessionResponse:
         else:
             ended_at = self.ended_at
 
+        execution_snapshot_id = str(self.execution_snapshot_id)
+
         failure_reason: None | str
         failure_reason = self.failure_reason
 
@@ -142,8 +142,6 @@ class CallSessionResponse:
 
         room_name = self.room_name
 
-        runtime_bundle_id = str(self.runtime_bundle_id)
-
         sip_call_id: None | str
         sip_call_id = self.sip_call_id
 
@@ -166,8 +164,6 @@ class CallSessionResponse:
 
         tenant_id = str(self.tenant_id)
 
-        tenant_release_id = str(self.tenant_release_id)
-
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
@@ -181,6 +177,7 @@ class CallSessionResponse:
                 "created_at": created_at,
                 "direction": direction,
                 "ended_at": ended_at,
+                "execution_snapshot_id": execution_snapshot_id,
                 "failure_reason": failure_reason,
                 "handoff_destination": handoff_destination,
                 "handoff_participant_identity": handoff_participant_identity,
@@ -192,7 +189,6 @@ class CallSessionResponse:
                 "provider_call_id": provider_call_id,
                 "provider_dispatch_id": provider_dispatch_id,
                 "room_name": room_name,
-                "runtime_bundle_id": runtime_bundle_id,
                 "sip_call_id": sip_call_id,
                 "sip_call_id_full": sip_call_id_full,
                 "sip_dispatch_rule_id": sip_dispatch_rule_id,
@@ -200,7 +196,6 @@ class CallSessionResponse:
                 "started_at": started_at,
                 "status": status,
                 "tenant_id": tenant_id,
-                "tenant_release_id": tenant_release_id,
             }
         )
 
@@ -274,6 +269,8 @@ class CallSessionResponse:
 
         ended_at = _parse_ended_at(d.pop("ended_at"))
 
+        execution_snapshot_id = UUID(d.pop("execution_snapshot_id"))
+
         def _parse_failure_reason(data: object) -> None | str:
             if data is None:
                 return data
@@ -339,8 +336,6 @@ class CallSessionResponse:
 
         room_name = d.pop("room_name")
 
-        runtime_bundle_id = UUID(d.pop("runtime_bundle_id"))
-
         def _parse_sip_call_id(data: object) -> None | str:
             if data is None:
                 return data
@@ -390,8 +385,6 @@ class CallSessionResponse:
 
         tenant_id = UUID(d.pop("tenant_id"))
 
-        tenant_release_id = UUID(d.pop("tenant_release_id"))
-
         call_session_response = cls(
             called_phone_e164=called_phone_e164,
             called_phone_raw=called_phone_raw,
@@ -402,6 +395,7 @@ class CallSessionResponse:
             created_at=created_at,
             direction=direction,
             ended_at=ended_at,
+            execution_snapshot_id=execution_snapshot_id,
             failure_reason=failure_reason,
             handoff_destination=handoff_destination,
             handoff_participant_identity=handoff_participant_identity,
@@ -413,7 +407,6 @@ class CallSessionResponse:
             provider_call_id=provider_call_id,
             provider_dispatch_id=provider_dispatch_id,
             room_name=room_name,
-            runtime_bundle_id=runtime_bundle_id,
             sip_call_id=sip_call_id,
             sip_call_id_full=sip_call_id_full,
             sip_dispatch_rule_id=sip_dispatch_rule_id,
@@ -421,7 +414,6 @@ class CallSessionResponse:
             started_at=started_at,
             status=status,
             tenant_id=tenant_id,
-            tenant_release_id=tenant_release_id,
         )
 
         call_session_response.additional_properties = d

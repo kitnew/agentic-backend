@@ -3,11 +3,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { responseData } from "../api/client";
 import type { ApiError } from "../api/errors";
-import type {
-  AuthoringIssue,
-  AuthoringPlan,
-  AuthoringState,
-} from "../api/generated/models";
+
+type AuthoringIssue = { code: string; message: string; path?: string | null };
+type AuthoringPlan = {
+  valid: boolean;
+  errors?: AuthoringIssue[];
+  warnings?: AuthoringIssue[];
+};
+type AuthoringState = {
+  value?: unknown;
+  etag?: string | null;
+  source: "draft" | "published" | "empty";
+};
 
 type AuthoringRequest<T> = (
   value: T,

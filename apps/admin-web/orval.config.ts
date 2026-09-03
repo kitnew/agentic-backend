@@ -11,4 +11,15 @@ export default defineConfig({
       clean: true,
     },
   },
+  controlPlane: {
+    input:
+      "../../packages/admin-client/openapi/control-plane-browser.openapi.json",
+    output: {
+      client: "fetch",
+      mode: "tags-split",
+      target: "src/core/api/control-plane/generated/control-plane.ts",
+      schemas: "src/core/api/control-plane/generated/models",
+      clean: true,
+    },
+  },
 });

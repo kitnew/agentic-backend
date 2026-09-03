@@ -13,7 +13,7 @@ pnpm api:check
 pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build && pnpm e2e
 ```
 
-`api:generate` reads `../../packages/admin-client/openapi/admin.openapi.json`; never edit `src/core/api/generated/` by hand. `api:check` regenerates it and fails on a diff. `pnpm dev` runs Vite in `dev` mode: its server-side proxy reads `ADMIN_API_TOKEN` from `../../infrastructure/compose/.env.dev` and adds it only to proxied `/admin/*` requests. The browser never receives that value.
+`api:generate` reads the Backend and Control Plane OpenAPI snapshots; never edit either generated client tree by hand. `api:check` regenerates both and fails on a diff. CP browser paths use `/control-plane/*`; the proxy rewrites them to CP `/v1/*` and injects `CONTROL_PLANE_MANAGEMENT_TOKEN` server-side. Backend remains the owner of `/admin/*` tenant identity, sessions, and operational views. The browser never receives either management token.
 
 ## Architecture
 

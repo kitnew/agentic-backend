@@ -4,6 +4,7 @@ import {
   PlatformRuntimePage,
   PlatformSystemPromptPage,
 } from "./pages";
+import { PlatformProvidersPage } from "./providers-page";
 
 export const routes = [
   { id: "platform", path: "/platform", component: PlatformOverviewPage },
@@ -21,5 +22,10 @@ export const routes = [
     id: "platform-profile-prompt",
     path: "/platform/profile-prompt",
     component: PlatformProfilePromptPage,
+  },
+  {
+    id: "platform-providers",
+    path: "/platform/providers",
+    component: PlatformProvidersPage,
   },
 ];

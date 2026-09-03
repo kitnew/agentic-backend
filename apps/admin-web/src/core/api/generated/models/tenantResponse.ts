@@ -7,7 +7,6 @@
 import type { TenantStatus } from './tenantStatus';
 
 export interface TenantResponse {
-  active_release_id: string | null;
   business_type: string;
   created_at: string;
   display_name: string;

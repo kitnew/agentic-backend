@@ -1,4 +1,4 @@
-import type { PlatformRuntimePolicy } from "../src/core/api/generated/models";
+import type { PlatformRuntimePolicy } from "../src/features/platform/runtime-form";
 
 export const runtimePolicy: PlatformRuntimePolicy = {
   llm: {
@@ -10,12 +10,6 @@ export const runtimePolicy: PlatformRuntimePolicy = {
   stt: {
     provider: "elevenlabs",
     model: "scribe",
-    interim_preflight: {
-      enabled: false,
-      min_transcript_chars: 20,
-      min_growth_chars: 12,
-      max_generations_per_turn: 2,
-    },
     server_vad: {
       silence_threshold_seconds: 0.8,
       activity_threshold: 0.5,

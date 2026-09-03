@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 from uuid import UUID
 
 from attrs import define as _attrs_define
@@ -18,7 +18,6 @@ T = TypeVar("T", bound="TenantResponse")
 class TenantResponse:
     """
     Attributes:
-        active_release_id (None | UUID):
         business_type (str):
         created_at (datetime.datetime):
         display_name (str):
@@ -28,7 +27,6 @@ class TenantResponse:
         updated_at (datetime.datetime):
     """
 
-    active_release_id: None | UUID
     business_type: str
     created_at: datetime.datetime
     display_name: str
@@ -39,12 +37,6 @@ class TenantResponse:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        active_release_id: None | str
-        if isinstance(self.active_release_id, UUID):
-            active_release_id = str(self.active_release_id)
-        else:
-            active_release_id = self.active_release_id
-
         business_type = self.business_type
 
         created_at = self.created_at.isoformat()
@@ -63,7 +55,6 @@ class TenantResponse:
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "active_release_id": active_release_id,
                 "business_type": business_type,
                 "created_at": created_at,
                 "display_name": display_name,
@@ -79,22 +70,6 @@ class TenantResponse:
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         d = dict(src_dict)
-
-        def _parse_active_release_id(data: object) -> None | UUID:
-            if data is None:
-                return data
-            try:
-                if not isinstance(data, str):
-                    raise TypeError()
-                active_release_id_type_0 = UUID(data)
-
-                return active_release_id_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(None | UUID, data)
-
-        active_release_id = _parse_active_release_id(d.pop("active_release_id"))
-
         business_type = d.pop("business_type")
 
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
@@ -110,7 +85,6 @@ class TenantResponse:
         updated_at = datetime.datetime.fromisoformat(d.pop("updated_at"))
 
         tenant_response = cls(
-            active_release_id=active_release_id,
             business_type=business_type,
             created_at=created_at,
             display_name=display_name,
