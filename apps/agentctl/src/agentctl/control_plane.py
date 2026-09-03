@@ -15,6 +15,7 @@ class ComponentState:
     working: dict[str, Any] | None
     active: dict[str, Any] | None
     draft_version: int | None
+    active_revision_id: UUID | None = None
 
 
 class ControlPlaneClient:
@@ -78,6 +79,7 @@ class ControlPlaneClient:
             None if working is None else working["value"],
             None if active is None else active["value"],
             None if draft is None else draft["version"],
+            None if active is None else UUID(str(active["revision_id"])),
         )
 
     def save_component(

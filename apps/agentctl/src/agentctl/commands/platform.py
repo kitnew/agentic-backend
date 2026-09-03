@@ -50,6 +50,7 @@ def _prompt(settings: Settings, action: str, kind: str, path: Path, *, profile_k
                 kind,
                 {"content": value},
                 draft_version=state.draft_version,
+                active_revision_id=state.active_revision_id,
                 profile_key=profile_key,
             )
             print("Saved Control Plane draft.")
@@ -112,6 +113,7 @@ def run_platform_runtime(settings: Settings, action: str, *, force: bool = False
                     RUNTIME_KINDS[name],
                     payload,
                     draft_version=states[name].draft_version,
+                    active_revision_id=states[name].active_revision_id,
                 )
             print("Saved Control Plane runtime draft.")
         elif action == "publish":

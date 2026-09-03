@@ -60,6 +60,7 @@ class GeneratedPlatformRemoteAdapter:
             state.working,
             state.active,
             None if state.draft_version is None else f'"{state.draft_version}"',
+            getattr(state, "active_revision_id", None),
         )
 
     def plan(self, resource_id: ResourceId, value: Any) -> PlanResult:
@@ -69,12 +70,21 @@ class GeneratedPlatformRemoteAdapter:
     def save(
         self, resource_id: ResourceId, value: Any, etag: str | None
     ) -> RemoteAuthoringState:
+        state = self.client.get_component(
+            self._kind(resource_id),
+            profile_key=(
+                resource_id.qualifier
+                if resource_id.kind is PlatformResourceKind.PROFILE_PROMPT
+                else None
+            ),
+        )
         version = None if etag is None else int(etag.strip('"'))
         payload = value if isinstance(value, dict) else {"content": value}
         self.client.save_component(
             self._kind(resource_id),
             payload,
             draft_version=version,
+            active_revision_id=state.active_revision_id,
             profile_key=(
                 resource_id.qualifier
                 if resource_id.kind is PlatformResourceKind.PROFILE_PROMPT
@@ -124,17 +134,20 @@ class GeneratedRemoteAuthoringAdapter:
             state.working,
             state.active,
             None if state.draft_version is None else f'"{state.draft_version}"',
+            getattr(state, "active_revision_id", None),
         )
 
     def plan(self, resource_id: ResourceId, value: Any) -> PlanResult:
         return PlanResult(self.get_state(resource_id).working_value != value, [], [], [])
 
     def save(self, resource_id: ResourceId, value: Any, etag: str | None) -> RemoteAuthoringState:
+        state = self.client.get_component(self._kind(resource_id), tenant_id=self.tenant_id)
         self.client.save_component(
             self._kind(resource_id),
             value,
             tenant_id=self.tenant_id,
             draft_version=None if etag is None else int(etag.strip('"')),
+            active_revision_id=state.active_revision_id,
         )
         return self.get_state(resource_id)
 

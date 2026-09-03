@@ -5,6 +5,7 @@ from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 
 class ResourceKind(StrEnum):
@@ -72,6 +73,7 @@ class RemoteAuthoringState:
     working_value: Any | None
     published_value: Any | None = None
     write_etag: str | None = None
+    active_revision_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -63,7 +63,13 @@ def run_tenant_components(settings: Settings, action: str, slug: str, *, force: 
         for name, value in sections.items():
             state = client.get_component(KINDS[name], tenant_id=tenant.id)
             if action == "push":
-                client.save_component(KINDS[name], value, tenant_id=tenant.id, draft_version=state.draft_version)
+                client.save_component(
+                    KINDS[name],
+                    value,
+                    tenant_id=tenant.id,
+                    draft_version=state.draft_version,
+                    active_revision_id=state.active_revision_id,
+                )
                 print(f"{name}: saved draft")
             elif action == "publish":
                 if state.draft_version is not None:
