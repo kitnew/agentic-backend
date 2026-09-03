@@ -56,12 +56,11 @@ The Make scenario receives the generic envelope, uses `operation_id` for its hid
 
 ## Tenant A configuration
 
-Use the published prompt-bundle revision and connection ID returned by the APIs:
+Use the published Control Plane component revisions and connection ID returned by the APIs:
 
 ```json
 {
   "schema_version": 2,
-  "prompt_bundle_revision_id": "00000000-0000-0000-0000-000000000010",
   "localization": {"default_locale": "en", "timezone": "Europe/Bratislava"},
   "agent": {"display_name": "Reservations", "greeting": "How may I help?"},
   "conversation": {"scope": "property_only"},
@@ -113,7 +112,6 @@ Tenant B uses the same semantic capability and handler. Only its profile differs
 ```json
 {
   "schema_version": 2,
-  "prompt_bundle_revision_id": "00000000-0000-0000-0000-000000000011",
   "localization": {"default_locale": "en", "timezone": "Europe/Bratislava"},
   "agent": {"display_name": "Booking Requests", "greeting": "How may I help?"},
   "conversation": {"scope": "property_only"},

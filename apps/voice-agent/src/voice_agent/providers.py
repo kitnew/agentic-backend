@@ -75,7 +75,7 @@ def create_agent_session(
             "min_silence_duration_ms": runtime.stt.server_vad.min_silence_ms,
         }
     provider_stt = elevenlabs.STT(
-        api_key=secrets["stt"] if snapshot_runtime is not None else _env_secret(settings.elevenlabs_api_key),
+        api_key=secrets["stt"],
         model=runtime.stt.model,
         language_code=stt_language,
         keyterms=keyterms,
@@ -91,29 +91,26 @@ def create_agent_session(
         min_silence_duration=runtime.local_vad.min_silence_seconds,
         activation_threshold=runtime.local_vad.activation_threshold,
     )
-    if snapshot_runtime is not None:
-        deployment = _runtime_value(snapshot_runtime, "llm", "deployment_name")
-        endpoint = _runtime_value(snapshot_runtime, "llm", "endpoint")
-        api_version = _runtime_value(snapshot_runtime, "llm", "api_version")
-        if not deployment or not endpoint or not api_version:
-            raise ValueError("snapshot LLM configuration is unavailable")
-    else:
-        deployment = _env_value(settings.azure_openai_deployment)
-        endpoint = _env_value(settings.azure_openai_endpoint)
-        api_version = _env_value(settings.azure_openai_api_version)
+    if snapshot_runtime is None:
+        raise ValueError("snapshot LLM configuration is unavailable")
+    deployment = _runtime_value(snapshot_runtime, "llm", "deployment_name")
+    endpoint = _runtime_value(snapshot_runtime, "llm", "endpoint")
+    api_version = _runtime_value(snapshot_runtime, "llm", "api_version")
+    if not deployment or not endpoint or not api_version:
+        raise ValueError("snapshot LLM configuration is unavailable")
     llm_provider = openai.LLM.with_azure(
         model=runtime.llm.model,
         azure_deployment=deployment,
         azure_endpoint=azure_endpoint(endpoint),
         api_version=api_version,
-        api_key=secrets["llm"] if snapshot_runtime is not None else _env_secret(settings.azure_openai_api_key),
+        api_key=secrets["llm"],
         prompt_cache_key=prompt_cache_key,
         timeout=httpx.Timeout(settings.provider_timeout_seconds),
         max_completion_tokens=256,
         **llm_behavior_options(runtime),  # type: ignore[arg-type]
     )
     tts = elevenlabs.TTS(
-        api_key=secrets["tts"] if snapshot_runtime is not None else _env_secret(settings.elevenlabs_api_key),
+        api_key=secrets["tts"],
         model=runtime.tts.model,
         voice_id=runtime.tts.voice_id,
         language=tts_language,
@@ -201,15 +198,3 @@ def _runtime_value(runtime: dict[str, Any] | None, component: str, key: str) -> 
     deployment = resource.get("deployment", {}).get("deployment_config", {})
     connection = resource.get("connection", {}).get("connection_config", {})
     return deployment.get(key) or connection.get(key)
-
-
-def _env_value(value: str | None) -> str:
-    if not value:
-        raise ValueError("snapshot provider configuration is unavailable")
-    return value
-
-
-def _env_secret(value) -> str:
-    if value is None:
-        raise ValueError("snapshot provider secret is unavailable")
-    return value.get_secret_value()

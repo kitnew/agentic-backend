@@ -42,7 +42,6 @@ from voice_agent.providers import (
 )
 from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_endpointing import LocalVadCommitSTT
-from voice_agent.stt_preflight import InterimPreflightSTT
 
 
 def settings(**overrides: object) -> VoiceAgentSettings:
@@ -54,11 +53,6 @@ def settings(**overrides: object) -> VoiceAgentSettings:
         "backend_core_url": "http://backend:8000",
         "internal_api_audience": "backend-core",
         "voice_agent_service_secret": "v" * 32,
-        "elevenlabs_api_key": "eleven-key",
-        "azure_openai_api_key": "azure-key",
-        "azure_openai_endpoint": "https://test.openai.azure.com",
-        "azure_openai_deployment": "deployment",
-        "azure_openai_api_version": "2025-01-01-preview",
     }
     values.update(overrides)
     return VoiceAgentSettings.model_validate(values)
@@ -67,6 +61,7 @@ def settings(**overrides: object) -> VoiceAgentSettings:
 def runtime_context() -> VoiceAgentRuntimeContext:
     return VoiceAgentRuntimeContext(
         call_session_id=uuid4(),
+        execution_snapshot_id=uuid4(),
         voice_runtime_revision_id=uuid4(),
         voice_runtime=runtime_settings(),
         room_name="call_test",
@@ -96,12 +91,6 @@ def runtime_settings(**overrides: object) -> EffectiveVoiceRuntime:
         "stt": {
             "provider": "elevenlabs",
             "model": "scribe_v2_realtime",
-            "interim_preflight": {
-                "enabled": False,
-                "min_transcript_chars": 20,
-                "min_growth_chars": 12,
-                "max_generations_per_turn": 2,
-            },
             "server_vad": {
                 "silence_threshold_seconds": 0.35,
                 "activity_threshold": 0.35,
@@ -674,7 +663,11 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
 
     monkeypatch.setattr(openai.LLM, "with_azure", capture_azure)
     session = create_agent_session(
-        settings(), runtime_settings(), "voice-agent-prompt:test"
+        settings(),
+        runtime_settings(),
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+        snapshot_runtime={"llm": {"resource": {"deployment": {"deployment_config": {"deployment_name": "deployment", "api_version": "2025-01-01-preview"}}, "connection": {"connection_config": {"endpoint": "https://test.openai.azure.com"}}}}},
     )
     try:
         assert isinstance(session.stt, elevenlabs.STT)
@@ -738,6 +731,8 @@ async def test_provider_factory_enables_manual_scribe_commit_without_changing_tu
         settings(),
         EffectiveVoiceRuntime.model_validate(payload),
         "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+        snapshot_runtime={"llm": {"resource": {"deployment": {"deployment_config": {"deployment_name": "deployment", "api_version": "2025-01-01-preview"}}, "connection": {"connection_config": {"endpoint": "https://test.openai.azure.com"}}}}},
     )
     try:
         assert isinstance(session.stt, LocalVadCommitSTT)
@@ -771,6 +766,8 @@ async def test_provider_factory_passes_tenant_keyterms_to_elevenlabs() -> None:
             }
         ),
         "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+        snapshot_runtime={"llm": {"resource": {"deployment": {"deployment_config": {"deployment_name": "deployment", "api_version": "2025-01-01-preview"}}, "connection": {"connection_config": {"endpoint": "https://test.openai.azure.com"}}}}},
     )
     try:
         assert session.stt._opts.keyterms == ["Kováčska", "Penzión Grand"]
@@ -786,12 +783,6 @@ async def test_provider_factory_passes_low_latency_tts_and_stt_candidates() -> N
         stt={
             "provider": "elevenlabs",
             "model": "scribe_v2_realtime",
-            "interim_preflight": {
-                "enabled": True,
-                "min_transcript_chars": 20,
-                "min_growth_chars": 12,
-                "max_generations_per_turn": 2,
-            },
             "server_vad": {
                 "silence_threshold_seconds": 0.25,
                 "activity_threshold": 0.35,
@@ -806,9 +797,14 @@ async def test_provider_factory_passes_low_latency_tts_and_stt_candidates() -> N
             "min_sentence_chars": 12,
         },
     )
-    session = create_agent_session(settings(), runtime, "voice-agent-prompt:test")
+    session = create_agent_session(
+        settings(),
+        runtime,
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+        snapshot_runtime={"llm": {"resource": {"deployment": {"deployment_config": {"deployment_name": "deployment", "api_version": "2025-01-01-preview"}}, "connection": {"connection_config": {"endpoint": "https://test.openai.azure.com"}}}}},
+    )
     try:
-        assert not isinstance(session.stt, InterimPreflightSTT)
         provider_stt = session.stt
         assert isinstance(provider_stt, elevenlabs.STT)
         assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.25
@@ -832,6 +828,8 @@ async def test_provider_factory_uses_runtime_logical_azure_model() -> None:
             }
         ),
         "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+        snapshot_runtime={"llm": {"resource": {"deployment": {"deployment_config": {"deployment_name": "deployment", "api_version": "2025-01-01-preview"}}, "connection": {"connection_config": {"endpoint": "https://test.openai.azure.com"}}}}},
     )
     try:
         assert session.llm._opts.model == "model-b"
@@ -869,6 +867,9 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
 
         async def runtime_context(self, call_id):
             return context
+
+        async def runtime_secret(self, snapshot_id, slot):
+            return f"{slot}-secret"
 
         async def activate(self, call_id) -> None:
             self.activated = True
@@ -945,6 +946,9 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
             order.append("runtime-context")
             assert call_id == context.call_session_id
             return context
+
+        async def runtime_secret(self, snapshot_id, slot):
+            return f"{slot}-secret"
 
         async def observe(self, call_id, observation_type: str) -> None:
             return None
@@ -1043,6 +1047,9 @@ async def test_successful_handoff_relinquishes_without_completing_call(
 
         async def runtime_context(self, call_id):
             return context
+
+        async def runtime_secret(self, snapshot_id, slot):
+            return f"{slot}-secret"
 
         async def observe(
             self,
@@ -1147,6 +1154,9 @@ async def test_session_close_terminalizes_while_session_is_alive(
 
         async def runtime_context(self, call_id):
             return context
+
+        async def runtime_secret(self, snapshot_id, slot):
+            return f"{slot}-secret"
 
         async def observe(self, call_id, observation_type: str) -> None:
             return None

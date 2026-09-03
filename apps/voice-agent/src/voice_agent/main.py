@@ -67,8 +67,6 @@ def log_runtime_binding(
             "voice_runtime_revision_id": str(context.voice_runtime_revision_id),
             "llm_provider": runtime.llm.provider,
             "llm_logical_model": runtime.llm.model,
-            "azure_deployment": settings.azure_openai_deployment,
-            "azure_api_version": settings.azure_openai_api_version,
             "stt_provider": runtime.stt.provider,
             "stt_model": runtime.stt.model,
             "tts_provider": runtime.tts.provider,

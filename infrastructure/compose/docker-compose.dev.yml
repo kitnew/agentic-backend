@@ -128,8 +128,13 @@ services:
   admin-web:
     environment:
       ADMIN_API_TOKEN: ${ADMIN_API_TOKEN:?set ADMIN_API_TOKEN}
+      CONTROL_PLANE_MANAGEMENT_TOKEN: ${CONTROL_PLANE_MANAGEMENT_TOKEN:?set CONTROL_PLANE_MANAGEMENT_TOKEN}
     ports:
       - "127.0.0.1:${ADMIN_WEB_PORT:-3000}:8080"
+
+  control-plane-service:
+    ports:
+      - "127.0.0.1:${CONTROL_PLANE_PORT:-8001}:8000"
 
 volumes:
   prometheus-data:
