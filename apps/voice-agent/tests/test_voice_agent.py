@@ -36,7 +36,6 @@ from voice_agent.main import (
     run_job,
 )
 from voice_agent.providers import (
-    _turn_detection,
     azure_endpoint,
     create_agent_session,
     create_realtime_session,
@@ -197,34 +196,19 @@ def test_realtime_factory_uses_snapshot_runtime_values(
                 },
                 "language": "sk",
             },
-            "turn_completion": {"strategy": "semantic_vad", "eagerness": "high"},
-            "interruption": {"enabled": False},
         },
         {"model": "secret"},
     )
     assert captured["azure_deployment"] == "realtime-deployment"
-    assert captured["base_url"] == "https://realtime.example"
+    assert captured["base_url"] == "https://realtime.example/openai"
     assert captured["api_version"] == "2026-02-01"
     assert captured["voice"] == "custom-voice"
     assert captured["input_audio_transcription"] == {
         "model": "transcribe-model",
         "language": "sk",
     }
-    assert captured["turn_detection"] == {
-        "type": "semantic_vad",
-        "eagerness": "high",
-        "interrupt_response": False,
-    }
+    assert "turn_detection" not in captured
     assert session["vad"] is None
-
-
-def test_realtime_turn_detection_does_not_supply_policy_defaults() -> None:
-    with pytest.raises(KeyError):
-        _turn_detection({"strategy": "server_vad"})
-    with pytest.raises(KeyError):
-        _turn_detection({"strategy": "semantic_vad"})
-    with pytest.raises(ValueError):
-        _turn_detection({"strategy": "unknown"})
 
 
 @pytest.mark.asyncio
@@ -1069,7 +1053,7 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
         async def start(self, agent, *, room, record) -> None:
             return None
 
-        async def say(self, text) -> None:
+        async def generate_reply(self, *, instructions, input_modality) -> None:
             raise AssertionError("must not greet")
 
         async def aclose(self) -> None:
@@ -1154,7 +1138,7 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
             self.record = record
             order.append("session-start")
 
-        async def say(self, text) -> None:
+        async def generate_reply(self, *, instructions, input_modality) -> None:
             callback = self.callbacks["close"]
             callback(SimpleNamespace(reason=agents.CloseReason.TASK_COMPLETED))
 
@@ -1269,7 +1253,7 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         async def start(self, agent, *, room, record) -> None:
             return None
 
-        async def say(self, text) -> None:
+        async def generate_reply(self, *, instructions, input_modality) -> None:
             callback = self.callbacks["close"]
             callback(SimpleNamespace(reason=agents.CloseReason.USER_INITIATED))
 
@@ -1361,7 +1345,7 @@ async def test_session_close_terminalizes_while_session_is_alive(
         async def start(self, agent, *, room, record) -> None:
             return None
 
-        async def say(self, text) -> None:
+        async def generate_reply(self, *, instructions, input_modality) -> None:
             self.greeted.set()
 
         async def aclose(self) -> None:

@@ -585,7 +585,10 @@ async def run_job(
         await backend.activate(call_id)
         if not closed.done():
             try:
-                await session.say(context.greeting)
+                await session.generate_reply(
+                    instructions=context.greeting,
+                    input_modality="audio",
+                )
             except Exception:
                 if not closed.done():
                     raise

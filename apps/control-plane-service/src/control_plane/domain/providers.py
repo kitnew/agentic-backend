@@ -12,6 +12,7 @@ class ProviderConfig(BaseModel):
 
 class AzureOpenAIConnectionConfig(ProviderConfig):
     endpoint: AnyHttpUrl
+    api_version: str | None = Field(default=None, min_length=1)
 
 
 class ElevenLabsConnectionConfig(ProviderConfig):

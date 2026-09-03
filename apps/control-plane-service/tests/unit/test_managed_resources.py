@@ -53,7 +53,10 @@ def test_provider_registry_validates_current_provider_shapes() -> None:
 
     assert azure.validate_connection(
         {"endpoint": "https://example.openai.azure.com"}
-    ) == {"endpoint": "https://example.openai.azure.com/"}
+    ) == {
+        "endpoint": "https://example.openai.azure.com/",
+        "api_version": None,
+    }
     assert (
         azure.validate_deployment(
             DeploymentKind.LLM,

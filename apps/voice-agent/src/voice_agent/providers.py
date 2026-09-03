@@ -178,42 +178,24 @@ def create_realtime_session(
         model=deployment.get("model", "gpt-realtime"),
         voice=_required_string(runtime, "voice"),
         azure_deployment=_required_string(deployment, "deployment_name"),
-        base_url=_required_string(connection, "endpoint"),
+        base_url=f"{azure_endpoint(_required_string(connection, 'endpoint'))}/openai",
         api_version=deployment.get("api_version") or connection.get("api_version"),
         api_key=secrets["model"],
         input_audio_transcription={
             "model": _required_string(transcription_config, "model", "deployment_name"),
             "language": _required_string(runtime["input_transcription"], "language"),
         },
-        turn_detection=_turn_detection(
-            runtime["turn_completion"], runtime["interruption"]["enabled"]
-        ),
         conn_options=agents.APIConnectOptions(
             timeout=settings.provider_timeout_seconds,
             max_retry=settings.provider_retry_limit,
         ),
     )
-    return agents.AgentSession(llm=realtime_model, vad=None, tools=[])
-
-
-def _turn_detection(
-    value: dict[str, Any], interruption_enabled: bool = True
-) -> dict[str, Any]:
-    strategy = value["strategy"]
-    if strategy == "semantic_vad":
-        return {
-            "type": "semantic_vad",
-            "eagerness": value["eagerness"],
-            "interrupt_response": interruption_enabled,
-        }
-    if strategy != "server_vad":
-        raise ValueError("invalid realtime turn completion strategy")
-    return {
-        "type": "server_vad",
-        "threshold": value["activation_threshold"],
-        "silence_duration_ms": value["silence_duration_ms"],
-        "interrupt_response": interruption_enabled,
-    }
+    return agents.AgentSession(
+        llm=realtime_model,
+        vad=None,
+        turn_detection=None,
+        tools=[],
+    )
 
 
 def _required_string(
