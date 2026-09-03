@@ -47,7 +47,6 @@ class TenantResponse(BaseModel):
     display_name: str
     business_type: str
     status: TenantStatus
-    active_release_id: UUID | None
     created_at: datetime
     updated_at: datetime
 

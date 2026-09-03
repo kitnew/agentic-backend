@@ -14,22 +14,15 @@ from contracts import (
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
     IntegrationJob,
-    RuntimeBundlePayload,
     RuntimeCapabilityBinding,
     WorkerResultReport,
 )
 from opentelemetry.trace import Tracer
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from backend_core.modules.calls.models import CallSessionStatus
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.conversations.repository import ConversationRepository
-from backend_core.modules.integrations.models import (
-    IntegrationConnectionStatus,
-    provider_for_plan_type,
-)
-from backend_core.modules.integrations.repository import IntegrationConnectionRepository
-from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.capabilities.domain import (
     CapabilityValidationError,
     compile_plan,
@@ -60,90 +53,36 @@ class CapabilityInvocationService:
         invocations: CapabilityInvocationRepository,
         calls: CallSessionRepository,
         conversations: ConversationRepository,
-        connections: IntegrationConnectionRepository,
-        bundles: RuntimeBundleStore,
-        execution_context: ExecutionContextReader | None = None,
+        execution_context: ExecutionContextReader,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
         self._invocations = invocations
         self._calls = calls
         self._conversations = conversations
-        self._connections = connections
-        self._bundles = bundles
         self._execution_context = execution_context
         self._tracer = tracer
         self._metrics = metrics
 
-    @staticmethod
-    def _requested_bundle_capability(
-        bindings: list[RuntimeCapabilityBinding], requested: str
-    ) -> RuntimeCapabilityBinding:
-        for binding in bindings:
-            if requested in {binding.semantic_key, binding.tool_name}:
-                return binding
-        raise CapabilityValidationError(
-            "capability_not_found", "Capability is not available"
-        )
-
-    async def _bundle(self, call: Any) -> tuple[RuntimeBundlePayload, UUID, UUID]:
-        bundle = await self._bundles.get(
-            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
-        )
-        if bundle is None:
-            raise CapabilityValidationError(
-                "configuration_invalid", "Pinned runtime bundle is unavailable"
-            )
-        try:
-            return (
-                RuntimeBundlePayload.model_validate(bundle.payload),
-                call.tenant_release_id,
-                bundle.id,
-            )
-        except ValidationError as error:
-            raise CapabilityValidationError(
-                "configuration_invalid", "Pinned runtime bundle is unavailable"
-            ) from error
-
     async def _validate_request(
         self, call_id: UUID, request: CapabilityInvocationRequest
-    ) -> tuple[Any, UUID | None, UUID | None, UUID, RuntimeCapabilityBinding, dict[str, object]]:
+    ) -> tuple[Any, UUID, RuntimeCapabilityBinding, dict[str, object]]:
         call = await self._calls.get(call_id)
         if call is None:
             raise CapabilityValidationError("call_not_found", "Call does not exist")
-        if not await self._bundles.tenant_active(call.tenant_id):
-            raise CapabilityValidationError("tenant_inactive", "Tenant is not active")
         if call.status is not CallSessionStatus.CONNECTED:
             raise CapabilityValidationError(
                 "call_not_active", "Call does not allow capability execution"
             )
-        if getattr(call, "execution_snapshot_id", None) is not None:
-            if self._execution_context is None:
-                raise CapabilityValidationError(
-                    "configuration_invalid", "Execution snapshot reader is unavailable"
-                )
-            try:
-                runtime_profile = await self._execution_context.capability(
-                    call, request.capability
-                )
-            except ValueError as error:
-                raise CapabilityValidationError(
-                    "configuration_invalid", "Execution snapshot is unavailable"
-                ) from error
+        try:
+            runtime_profile = await self._execution_context.capability(call, request.capability)
             payload_timezone = (await self._execution_context.snapshot(call)).agent or {}
             timezone = str(payload_timezone.get("timezone", "UTC"))
-            release_id, bundle_id, pin_id = (
-                call.tenant_release_id,
-                call.runtime_bundle_id,
-                call.execution_snapshot_id,
-            )
-        else:
-            payload, release_id, bundle_id = await self._bundle(call)
-            pin_id = bundle_id
-            runtime_profile = self._requested_bundle_capability(
-                payload.capability_bindings, request.capability
-            )
-            timezone = payload.timezone
+        except ValueError as error:
+            raise CapabilityValidationError(
+                "configuration_invalid", "Execution snapshot is unavailable"
+            ) from error
+        pin_id = call.execution_snapshot_id
         if not runtime_profile.enabled:
             raise CapabilityValidationError(
                 "capability_disabled", "Capability is disabled"
@@ -168,26 +107,12 @@ class CapabilityInvocationService:
                 "metadata.caller_phone",
             )
         assert pin_id is not None
-        return (
-            call,
-            release_id,
-            bundle_id,
-            pin_id,
-            runtime_profile,
-            canonical,
-        )
+        return call, pin_id, runtime_profile, canonical
 
     async def prepare_confirmation(
         self, call_id: UUID, request: CapabilityInvocationRequest
     ) -> CapabilityConfirmationResponse:
-        (
-            call,
-            release_id,
-            bundle_id,
-            pin_id,
-            profile,
-            canonical,
-        ) = await self._validate_request(call_id, request)
+        call, pin_id, profile, canonical = await self._validate_request(call_id, request)
         policy = profile.policy
         if not policy.requires_final_confirmation:
             raise CapabilityValidationError(
@@ -231,8 +156,6 @@ class CapabilityInvocationService:
             tool_call_id=request.tool_call_id,
             semantic_key=profile.semantic_key,
             semantic_version=profile.semantic_version,
-            tenant_release_id=release_id,
-            runtime_bundle_id=bundle_id,
             execution_snapshot_id=call.execution_snapshot_id,
             canonical_input=canonical,
             agent_input=request.agent_input,
@@ -342,14 +265,7 @@ class CapabilityInvocationService:
                 },
             )
             return existing, False
-        (
-            call,
-            release_id,
-            bundle_id,
-            _pin_id,
-            profile,
-            canonical,
-        ) = await self._validate_request(call_id, request)
+        call, _pin_id, profile, canonical = await self._validate_request(call_id, request)
         semantic_key = profile.semantic_key
         policy = profile.policy
         if policy.requires_final_confirmation and not skip_confirmation:
@@ -364,25 +280,9 @@ class CapabilityInvocationService:
                 "call_id": str(call.id),
                 "semantic_key": profile.semantic_key,
                 "semantic_version": profile.semantic_version,
-                "runtime_bundle_id": str(bundle_id) if bundle_id else None,
+                "execution_snapshot_id": str(call.execution_snapshot_id),
             },
         )
-        if getattr(call, "execution_snapshot_id", None) is None:
-            connection = await self._connections.get(
-                call.tenant_id, profile.execution.connection_id
-            )
-            if connection is None:
-                raise CapabilityValidationError(
-                    "connection_not_found", "Integration connection was not found"
-                )
-            if (
-                connection.status is not IntegrationConnectionStatus.ACTIVE
-                or connection.provider
-                is not provider_for_plan_type(profile.execution.plan_type)
-            ):
-                raise CapabilityValidationError(
-                    "connection_disabled", "Integration connection is unavailable"
-                )
         conversation = await self._conversations.get_for_call(call.id)
         if conversation is None:
             raise CapabilityValidationError(
@@ -406,8 +306,6 @@ class CapabilityInvocationService:
             job_id=job_id,
             capability_invocation_id=invocation_id,
             call_id=call.id,
-            tenant_release_id=release_id,
-            runtime_bundle_id=bundle_id,
             execution_snapshot_id=call.execution_snapshot_id,
             execution_plan=plan,
             created_at=now,
@@ -421,8 +319,6 @@ class CapabilityInvocationService:
             tool_call_id=request.tool_call_id,
             semantic_key=profile.semantic_key,
             semantic_version=profile.semantic_version,
-            tenant_release_id=release_id,
-            runtime_bundle_id=bundle_id,
             execution_snapshot_id=call.execution_snapshot_id,
             canonical_input=canonical,
             execution_plan=plan.model_dump(mode="json"),
@@ -462,7 +358,7 @@ class CapabilityInvocationService:
                     "job_id": str(job_id),
                     "semantic_key": profile.semantic_key,
                     "semantic_version": profile.semantic_version,
-                    "runtime_bundle_id": str(bundle_id) if bundle_id else None,
+                    "execution_snapshot_id": str(call.execution_snapshot_id),
                     "plan_type": plan.plan_type,
                 },
             )
@@ -556,7 +452,7 @@ class CapabilityInvocationService:
                 "job_id": str(invocation.job_id),
                 "semantic_key": invocation.semantic_key,
                 "semantic_version": invocation.semantic_version,
-                "runtime_bundle_id": str(invocation.runtime_bundle_id),
+                "execution_snapshot_id": str(invocation.execution_snapshot_id),
                 "status": invocation.status.value,
                 "attempt": report.attempt,
                 "latency_ms": round(

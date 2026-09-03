@@ -10,13 +10,10 @@ from contracts import (
     HumanHandoffRequest,
     HumanHandoffResponse,
     InboundSipClaimRequest,
-    RuntimeBundlePayload,
-    RuntimeBundleProvenance,
     RuntimeHandoffDestination,
     VoiceAgentRuntimeContext,
 )
 from opentelemetry.trace import Tracer
-from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from backend_core.application.messaging import EventBus
@@ -44,7 +41,6 @@ from backend_core.modules.conversations.errors import (
 from backend_core.modules.conversations.service import ConversationService
 from backend_core.modules.tenants.errors import TenantNotFoundError
 from backend_core.modules.tenants.models import TenantStatus
-from backend_core.modules.tenants.release_repository import TenantReleaseRepository
 from backend_core.modules.tenants.repository import (
     TelephonyRepository,
     TenantRepository,
@@ -52,7 +48,6 @@ from backend_core.modules.tenants.repository import (
 from backend_core.modules.tenants.schemas import normalize_e164
 from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.platform.livekit import LiveKitAdapter
-from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.execution_context import ExecutionContextReader
 
 logger = logging.getLogger(__name__)
@@ -67,12 +62,10 @@ class CallSessionService:
         tenants: TenantRepository,
         conversations: ConversationService,
         events: EventBus,
-        releases: TenantReleaseRepository,
-        bundles: RuntimeBundleStore,
+        control_plane: ControlPlaneClient,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
         privacy_key: bytes | None = None,
-        control_plane: ControlPlaneClient | None = None,
     ) -> None:
         self._calls = calls
         self._routes = routes
@@ -82,16 +75,10 @@ class CallSessionService:
         self._tracer = tracer
         self._metrics = metrics
         self._privacy_key = privacy_key
-        self._releases = releases
-        self._bundles = bundles
         self._control_plane = control_plane
-        self._execution_context = (
-            ExecutionContextReader(control_plane) if control_plane is not None else None
-        )
+        self._execution_context = ExecutionContextReader(control_plane)
 
     async def _snapshot(self, tenant_id: UUID):
-        if self._control_plane is None:
-            raise CallSessionConfigUnavailableError
         snapshot = await self._control_plane.materialize_execution_snapshot(tenant_id)
         if snapshot.tenant_id != str(tenant_id):
             raise CallSessionConfigUnavailableError
@@ -111,13 +98,6 @@ class CallSessionService:
         if self._privacy_key is None:
             return f"{value[:2]}…{value[-2:]}"
         return hmac.new(self._privacy_key, value.encode(), sha256).hexdigest()[:16]
-
-    @staticmethod
-    def _require_runtime_bundle(bundle_payload: dict[str, object]) -> None:
-        try:
-            RuntimeBundlePayload.model_validate(bundle_payload)
-        except ValidationError as error:
-            raise CallSessionConfigUnavailableError from error
 
     async def create(
         self,
@@ -141,7 +121,7 @@ class CallSessionService:
         if existing is not None:
             return existing, False
         called_number = normalize_e164(data.called_number)
-        if called_number is None or self._control_plane is None:
+        if called_number is None:
             raise CallSessionRouteUnavailableError
         try:
             assignment = await self._control_plane.resolve_phone_number(called_number)
@@ -222,8 +202,6 @@ class CallSessionService:
             )
             return existing, False
 
-        if self._control_plane is None:
-            raise CallSessionRouteUnavailableError
         try:
             assignment = await self._control_plane.resolve_phone_number(called_number)
             tenant = await self._tenants.get_for_update(assignment.tenant_id)
@@ -430,39 +408,10 @@ class CallSessionService:
         call_id: UUID,
     ) -> VoiceAgentRuntimeContext:
         call = await self.get(call_id)
-        if call.execution_snapshot_id is not None and self._execution_context is not None:
-            try:
-                return await self._execution_context.read(call)
-            except (ValueError, RuntimeError) as error:
-                raise CallSessionConfigUnavailableError from error
-        if call.tenant_release_id is None or call.runtime_bundle_id is None:
-            raise CallSessionConfigUnavailableError
-        bundle = await self._bundles.get(
-            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
-        )
-        if bundle is None:
-            raise CallSessionConfigUnavailableError
         try:
-            payload = RuntimeBundlePayload.model_validate(bundle.payload)
-            provenance = RuntimeBundleProvenance.model_validate(bundle.provenance)
-        except ValidationError as error:
+            return await self._execution_context.read(call)
+        except (ValueError, RuntimeError) as error:
             raise CallSessionConfigUnavailableError from error
-        return VoiceAgentRuntimeContext(
-            call_session_id=call.id,
-            tenant_release_id=call.tenant_release_id,
-            runtime_bundle_id=call.runtime_bundle_id,
-            voice_runtime_revision_id=provenance.runtime_revision_id,
-            voice_runtime=payload.voice_runtime,
-            room_name=call.room_name,
-            locale=payload.locale,
-            timezone=payload.timezone,
-            agent_display_name=payload.agent_display_name,
-            greeting=payload.greeting,
-            conversation_scope=payload.conversation_scope,
-            prompt=payload.prompt,
-            capabilities=payload.capabilities,
-            handoff_destinations=payload.handoff_destinations,
-        )
 
     async def transfer_to_human(
         self,
@@ -579,23 +528,7 @@ class CallSessionService:
                 }
             except (ValueError, KeyError, TypeError, RuntimeError) as error:
                 raise HumanHandoffError("telephony_not_ready") from error
-        if call.tenant_release_id is None or call.runtime_bundle_id is None:
-            raise HumanHandoffError("telephony_not_ready")
-        bundle = await self._bundles.get(
-            call.tenant_id, call.tenant_release_id, call.runtime_bundle_id
-        )
-        if bundle is None:
-            raise HumanHandoffError("telephony_not_ready")
-        try:
-            payload = RuntimeBundlePayload.model_validate(bundle.payload)
-            provenance = RuntimeBundleProvenance.model_validate(bundle.provenance)
-        except ValidationError as error:
-            raise HumanHandoffError("telephony_not_ready") from error
-        if not await self._bundles.telephony_ready(
-            call.tenant_id, provenance.telephony_revision_id
-        ):
-            raise HumanHandoffError("telephony_not_ready")
-        return payload.telephony.caller_number, payload.telephony.handoff_destinations
+        raise HumanHandoffError("telephony_not_ready")
 
     async def relinquish_agent(
         self,

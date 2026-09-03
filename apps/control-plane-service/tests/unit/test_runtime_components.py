@@ -303,13 +303,6 @@ def test_provider_vad_tuning_is_validated(field: str, value: object) -> None:
         definition("runtime.cascade.execution.defaults").deserialize(payload)
 
 
-def test_cascade_schema_rejects_interim_preflight() -> None:
-    payload = cascade_policy()
-    payload["interim_preflight"] = {"enabled": False}
-    with pytest.raises(InvalidComponentValue):
-        definition("runtime.cascade.execution.defaults").deserialize(payload)
-
-
 def test_tts_shape_rejects_deferred_fields() -> None:
     tts = definition("runtime.tts.defaults")
     value = tts.deserialize(

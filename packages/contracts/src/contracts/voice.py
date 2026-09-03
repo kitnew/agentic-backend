@@ -89,7 +89,7 @@ class VoiceAgentPrompt(_VoiceModel):
 
 class VoiceAgentRuntimeContext(_VoiceModel):
     call_session_id: UUID
-    execution_snapshot_id: UUID | None = None
+    execution_snapshot_id: UUID
     architecture: Literal["cascade", "realtime"] = "cascade"
     voice_runtime: EffectiveVoiceRuntime | None = None
     snapshot_runtime: dict[str, Any] | None = None
@@ -106,8 +106,6 @@ class VoiceAgentRuntimeContext(_VoiceModel):
         default_factory=dict
     )
     voice_runtime_revision_id: UUID
-    tenant_release_id: UUID | None = None
-    runtime_bundle_id: UUID | None = None
 
 
 class CallLifecycleResponse(_VoiceModel):

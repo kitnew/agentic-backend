@@ -17,18 +17,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.conversations.repository import ConversationRepository
-from backend_core.modules.integrations.crypto import IntegrationSecretCipher
-from backend_core.modules.integrations.repository import IntegrationConnectionRepository
-from backend_core.modules.integrations.service import (
-    CapabilityIntegrationResolver,
-    IntegrationConnectionError,
-    IntegrationConnectionService,
-)
-from backend_core.modules.tenants.repository import TenantRepository
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
-from backend_core.runtime.bundle_store import RuntimeBundleStore
 from backend_core.runtime.capabilities.domain import CapabilityValidationError
+from backend_core.runtime.capabilities.integration import (
+    CapabilityIntegrationResolver,
+    IntegrationConnectionError,
+)
 from backend_core.runtime.capabilities.repository import CapabilityInvocationRepository
 from backend_core.runtime.capabilities.service import (
     CapabilityInvocationService,
@@ -56,8 +51,6 @@ def build_service(
         CapabilityInvocationRepository(session),
         CallSessionRepository(session),
         ConversationRepository(session),
-        IntegrationConnectionRepository(session),
-        RuntimeBundleStore(session),
         execution_context,
         tracer,
         metrics,
@@ -79,18 +72,8 @@ Service = Annotated[CapabilityInvocationService, Depends(service)]
 def integration_resolver(
     session: DatabaseSession, request: Request
 ) -> CapabilityIntegrationResolver:
-    connections = IntegrationConnectionRepository(session)
-    integrations = IntegrationConnectionService(
-        TenantRepository(session),
-        connections,
-        IntegrationSecretCipher(
-            request.app.state.settings.integration_encryption_key.get_secret_value()
-        ),
-    )
     return CapabilityIntegrationResolver(
         CapabilityInvocationRepository(session),
-        connections,
-        integrations,
         request.app.state.control_plane,
     )
 
@@ -205,7 +188,6 @@ async def integration_material(
     job_id: UUID,
     integrations: IntegrationResolver,
     call_id: UUID | None = None,
-    runtime_bundle_id: UUID | None = None,
     execution_snapshot_id: UUID | None = None,
 ) -> RuntimeIntegrationMaterial:
     try:
@@ -213,7 +195,6 @@ async def integration_material(
             invocation_id,
             job_id,
             call_id=call_id,
-            runtime_bundle_id=runtime_bundle_id,
             execution_snapshot_id=execution_snapshot_id,
         )
     except IntegrationConnectionError as error:

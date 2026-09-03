@@ -36,10 +36,10 @@ class ExecutionContextReader:
         try:
             runtime = _effective_runtime(snapshot.runtime, str(agent["locale"]))
             prompt = VoiceAgentPrompt(
-                system_prompt=str(_nested(prompts, "system", "content", "")),
-                profile_prompt=str(_nested(prompts, "profile", "content", "")),
-                tenant_prompt=str(_nested(prompts, "tenant", "content", "")),
-                knowledge_context=str(_nested(execution, "knowledge", "content", "")),
+                system_prompt=str(_nested(prompts, "system", "content")),
+                profile_prompt=str(_nested(prompts, "profile", "content")),
+                tenant_prompt=str(_nested(prompts, "tenant", "content")),
+                knowledge_context=str(_nested(execution, "knowledge", "content")),
             )
             capabilities = [
                 RuntimeCapabilityDefinition.model_validate(_capability(item))
@@ -74,8 +74,6 @@ class ExecutionContextReader:
                 capabilities=capabilities,
                 handoff_destinations=handoff,
                 voice_runtime_revision_id=UUID(str(agent["component"]["revision_id"])),
-                tenant_release_id=call.tenant_release_id,
-                runtime_bundle_id=call.runtime_bundle_id,
             )
         except (KeyError, TypeError, ValueError, ValidationError) as error:
             raise ValueError("execution snapshot is invalid") from error
@@ -161,7 +159,12 @@ def _effective_runtime(value: dict[str, Any], locale: str) -> EffectiveVoiceRunt
     commit = policy["stt_commit"]
     tuning = commit.get("provider_vad", {})
     return EffectiveVoiceRuntime.model_validate({
-        "llm": {"provider": connection(llm), "model": deployment(llm).get("model", deployment(llm).get("deployment_name", "")), **llm["parameters"]},
+        "llm": {
+            "provider": connection(llm),
+            "model": deployment(llm).get("model", deployment(llm).get("deployment_name", "")),
+            "temperature": llm["parameters"].get("temperature"),
+            "reasoning_effort": llm["parameters"].get("reasoning_effort"),
+        },
         "stt": {"provider": connection(stt), "model": deployment(stt).get("model_id", deployment(stt).get("model", "")), "keyterms": stt["speech_hints"]["keyterms"]["values"], "server_vad": {"silence_threshold_seconds": tuning.get("silence_threshold_seconds", 0.5), "activity_threshold": tuning.get("threshold", 0.5), "min_speech_ms": tuning.get("min_speech_ms", 100), "min_silence_ms": tuning.get("min_silence_ms", 250)}, "local_vad_commit": {"enabled": commit["strategy"] == "local_vad"}},
         "tts": {"provider": connection(tts), "model": deployment(tts).get("model_id", deployment(tts).get("model", "")), "voice_id": tts["voice"], "min_sentence_chars": tts["defaults"]["min_sentence_chars"]},
         "local_vad": policy["speech_activity"],

@@ -82,10 +82,7 @@ from contracts.messaging import (
     command_envelope,
     parse_command,
 )
-from contracts.runtime_bundle import (
-    RuntimeBundle,
-    RuntimeBundlePayload,
-    RuntimeBundleProvenance,
+from contracts.runtime_execution import (
     RuntimeCapabilityBinding,
     RuntimeCapabilityDateRangeConstraint,
     RuntimeCapabilityInputConstraint,
@@ -95,9 +92,7 @@ from contracts.runtime_bundle import (
     RuntimeHttpExecution,
     RuntimePostCallAction,
     RuntimePostCallInput,
-    RuntimeTelephony,
     canonical_json_bytes,
-    runtime_bundle_content_hash,
 )
 from contracts.telephony import PhoneAssignment
 from contracts.tenant_components import (
@@ -143,7 +138,6 @@ from contracts.voice_runtime import (
     ServerVADRuntimeSettings,
     STTRuntimeSettings,
     TenantLLMRuntimeOverride,
-    TenantRuntimeOverride,
     TenantSTTRuntimeOverride,
     TenantTTSRuntimeOverride,
     TTSRuntimeSettings,
@@ -240,9 +234,6 @@ __all__ = [
     "PostCallActionInput",
     "PostCallArtifactDescriptor",
     "PostCallDiscoveryResponse",
-    "RuntimeBundle",
-    "RuntimeBundlePayload",
-    "RuntimeBundleProvenance",
     "RuntimeCapabilityBinding",
     "RuntimeCapabilityDateRangeConstraint",
     "RuntimeCapabilityDefinition",
@@ -254,7 +245,6 @@ __all__ = [
     "RuntimeIntegrationMaterial",
     "RuntimePostCallAction",
     "RuntimePostCallInput",
-    "RuntimeTelephony",
     "STTRuntimeSettings",
     "ServerVADRuntimeSettings",
     "TTSRuntimeSettings",
@@ -265,7 +255,6 @@ __all__ = [
     "TenantKnowledgeConfig",
     "TenantLLMRuntimeOverride",
     "TenantPromptConfig",
-    "TenantRuntimeOverride",
     "TenantSTTRuntimeOverride",
     "TenantTTSRuntimeOverride",
     "TenantTelephonyConfig",
@@ -279,5 +268,4 @@ __all__ = [
     "canonical_json_bytes",
     "command_envelope",
     "parse_command",
-    "runtime_bundle_content_hash",
 ]

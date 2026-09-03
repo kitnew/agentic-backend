@@ -7,7 +7,6 @@ from backend_core.modules.tenants.errors import (
     TenantNotFoundError,
     TenantSlugConflictError,
 )
-from backend_core.modules.tenants.release_repository import TenantReleaseRepository
 from backend_core.modules.tenants.repository import (
     TelephonyRepository,
     TenantRepository,
@@ -46,7 +45,7 @@ telephony_platform_router = APIRouter(
 
 
 def tenant_service(session: DatabaseSession) -> TenantService:
-    return TenantService(TenantRepository(session), TenantReleaseRepository(session))
+    return TenantService(TenantRepository(session))
 
 
 TenantServiceDependency = Annotated[TenantService, Depends(tenant_service)]
@@ -91,7 +90,7 @@ async def tenant_telephony_status(
     if await TenantRepository(session).get(tenant_id) is None:
         raise HTTPException(status_code=404, detail="tenant not found")
     return await TenantTelephonyStatusService(
-        TelephonyRepository(session), TenantReleaseRepository(session)
+        TelephonyRepository(session)
     ).show(tenant_id)
 
 

@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend_core.modules.tenants.models import PlatformTelephony, Tenant
-from backend_core.modules.tenants.release_models import TenantTelephonyProvisioning
+from backend_core.modules.tenants.telephony_models import TenantTelephonyProvisioning
 
 
 class TenantRepository:

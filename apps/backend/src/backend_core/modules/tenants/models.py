@@ -36,12 +36,6 @@ class TelephonyProvisioningStatus(StrEnum):
 class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (
-        ForeignKeyConstraint(
-            ("id", "active_release_id"),
-            ("tenant_releases.tenant_id", "tenant_releases.id"),
-            name="fk_tenants_active_release_same_tenant",
-            use_alter=True,
-        ),
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
@@ -57,7 +51,6 @@ class Tenant(Base):
         default=TenantStatus.ACTIVE,
         server_default=TenantStatus.ACTIVE.value,
     )
-    active_release_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -67,7 +60,7 @@ class Tenant(Base):
 
     @property
     def is_available_in_runtime(self) -> bool:
-        return self.status is TenantStatus.ACTIVE and self.active_release_id is not None
+        return self.status is TenantStatus.ACTIVE
 
 
 class PlatformTelephony(Base):

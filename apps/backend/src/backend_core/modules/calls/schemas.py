@@ -67,8 +67,7 @@ class CallSessionResponse(BaseModel):
 
     id: UUID
     tenant_id: UUID
-    tenant_release_id: UUID | None
-    runtime_bundle_id: UUID | None
+    execution_snapshot_id: UUID
     channel: CallChannel
     direction: CallDirection
     provider: str

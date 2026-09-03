@@ -155,7 +155,7 @@ class OutboxDispatcher:
                         "semantic_version": invocation.semantic_version
                         if invocation is not None
                         else None,
-                        "runtime_bundle_id": str(invocation.runtime_bundle_id)
+                        "execution_snapshot_id": str(invocation.execution_snapshot_id)
                         if invocation is not None
                         else None,
                         "plan_type": invocation.execution_plan.get("plan_type")

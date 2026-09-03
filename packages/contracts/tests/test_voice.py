@@ -12,9 +12,8 @@ from pydantic import ValidationError
 def runtime_context() -> dict[str, object]:
     return {
         "call_session_id": str(uuid4()),
+        "execution_snapshot_id": str(uuid4()),
         "voice_runtime_revision_id": str(uuid4()),
-        "tenant_release_id": str(uuid4()),
-        "runtime_bundle_id": str(uuid4()),
         "voice_runtime": {
             "locale": "sk-SK",
             "llm": {"provider": "azure_openai", "model": "model-a", "temperature": 0},

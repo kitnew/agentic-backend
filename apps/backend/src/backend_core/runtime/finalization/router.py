@@ -6,14 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from backend_core.modules.calls.models import CallSession
-from backend_core.modules.integrations.crypto import IntegrationSecretCipher
-from backend_core.modules.integrations.models import IntegrationProvider
-from backend_core.modules.integrations.repository import IntegrationConnectionRepository
-from backend_core.modules.integrations.service import (
-    IntegrationConnectionError,
-    IntegrationConnectionService,
-)
-from backend_core.modules.tenants.repository import TenantRepository
 from backend_core.platform.auth import require_internal_scope
 from backend_core.platform.database import DatabaseSession
 from backend_core.platform.messaging import TransactionalOutboxBus
@@ -62,24 +54,6 @@ def service(session: DatabaseSession, request: Request) -> FinalizationService:
 
 Service = Annotated[FinalizationService, Depends(service)]
 
-
-def integration_service(
-    session: DatabaseSession, request: Request
-) -> IntegrationConnectionService:
-    return IntegrationConnectionService(
-        TenantRepository(session),
-        IntegrationConnectionRepository(session),
-        IntegrationSecretCipher(
-            request.app.state.settings.integration_encryption_key.get_secret_value()
-        ),
-    )
-
-
-IntegrationService = Annotated[
-    IntegrationConnectionService, Depends(integration_service)
-]
-
-
 @router.get(
     "/{call_id}/finalization-context",
     dependencies=[Depends(require_internal_scope("finalization-context:read"))],
@@ -127,7 +101,6 @@ async def post_call_action_material(
     finalization_id: UUID,
     command_id: UUID,
     finalization: Service,
-    integrations: IntegrationService,
     session: DatabaseSession,
 ) -> RuntimeIntegrationMaterial:
     try:
@@ -137,18 +110,11 @@ async def post_call_action_material(
         call = await session.get(CallSession, call_id)
         if call is None:
             raise FinalizationError("call not found")
-        if call.execution_snapshot_id is not None:
-            return await finalization.control_plane_material(
-                call.tenant_id, plan.integration_id
-            )
-        view = await integrations.get_by_id(call.tenant_id, plan.integration_id)
-        if view.connection.provider is not IntegrationProvider.HTTP:
-            raise IntegrationConnectionError("connection_provider_mismatch")
-        return integrations.material(view.connection, view.credential)
+        return await finalization.control_plane_material(
+            call.tenant_id, plan.integration_id
+        )
     except FinalizationError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error
-    except IntegrationConnectionError as error:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
 
 
 @router.get(
