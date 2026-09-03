@@ -50,6 +50,7 @@ def validate_llm_behavior(
 class LLMRuntimeSettings(_RuntimeModel):
     provider: Literal["azure_openai"]
     model: Identifier
+    max_completion_tokens: int = Field(gt=0)
     temperature: Annotated[FiniteFloat, Field(ge=0, le=2)] | None = None
     reasoning_effort: ReasoningEffort | None = None
 
@@ -122,12 +123,27 @@ class TurnRuntimeSettings(_RuntimeModel):
         return self
 
 
+class InterruptionRuntimeSettings(_RuntimeModel):
+    enabled: bool
+    min_duration_seconds: Annotated[FiniteFloat, Field(ge=0, le=60)]
+    min_words: int = Field(ge=0)
+    false_interruption_timeout_seconds: Annotated[FiniteFloat, Field(ge=0, le=60)]
+    resume_after_false_interruption: bool
+
+
+class ResponseSchedulingRuntimeSettings(_RuntimeModel):
+    preemptive_generation: bool
+    preemptive_tts: bool
+
+
 class PlatformRuntimePolicy(_RuntimeModel):
     llm: LLMRuntimeSettings
     stt: STTRuntimeSettings
     tts: TTSRuntimeSettings
     local_vad: LocalVADRuntimeSettings
     turn: TurnRuntimeSettings
+    interruption: InterruptionRuntimeSettings
+    response_scheduling: ResponseSchedulingRuntimeSettings
 
 
 class TenantTTSRuntimeOverride(_RuntimeModel):

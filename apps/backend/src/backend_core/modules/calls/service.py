@@ -48,7 +48,10 @@ from backend_core.modules.tenants.repository import (
 from backend_core.modules.tenants.schemas import normalize_e164
 from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.platform.livekit import LiveKitAdapter
-from backend_core.runtime.execution_context import ExecutionContextReader
+from backend_core.runtime.execution_context import (
+    ExecutionContextReader,
+    RuntimeContextUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 MANUAL_TEST_CALLER_PHONE = "+15555550100"
@@ -88,7 +91,8 @@ class CallSessionService:
     def _require_snapshot_assignment(snapshot, assignment, phone_number: str) -> None:
         value = snapshot.execution.get("phone_assignment")
         if not isinstance(value, dict) or (
-            str(value.get("assignment_id", value.get("id"))) != str(assignment.assignment_id)
+            str(value.get("assignment_id", value.get("id")))
+            != str(assignment.assignment_id)
             or str(value.get("generation")) != str(assignment.generation)
             or value.get("phone_number") != phone_number
         ):
@@ -132,8 +136,15 @@ class CallSessionService:
             if self._metrics is not None:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
-        provisioning = await self._routes.provisioning_for(tenant.id, assignment.assignment_id)
-        if provisioning is None or provisioning.status != "ready" or provisioning.desired_generation != assignment.generation or provisioning.applied_generation != assignment.generation:
+        provisioning = await self._routes.provisioning_for(
+            tenant.id, assignment.assignment_id
+        )
+        if (
+            provisioning is None
+            or provisioning.status != "ready"
+            or provisioning.desired_generation != assignment.generation
+            or provisioning.applied_generation != assignment.generation
+        ):
             raise CallSessionTelephonyNotReadyError
         snapshot = await self._snapshot(tenant.id)
         if snapshot.tenant_id != str(tenant.id):
@@ -211,8 +222,15 @@ class CallSessionService:
             if self._metrics is not None:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
-        provisioning = await self._routes.provisioning_for(tenant.id, assignment.assignment_id)
-        if provisioning is None or provisioning.status != "ready" or provisioning.desired_generation != assignment.generation or provisioning.applied_generation != assignment.generation:
+        provisioning = await self._routes.provisioning_for(
+            tenant.id, assignment.assignment_id
+        )
+        if (
+            provisioning is None
+            or provisioning.status != "ready"
+            or provisioning.desired_generation != assignment.generation
+            or provisioning.applied_generation != assignment.generation
+        ):
             raise CallSessionTelephonyNotReadyError
         snapshot = await self._snapshot(tenant.id)
         if snapshot.tenant_id != str(tenant.id):
@@ -410,7 +428,7 @@ class CallSessionService:
         call = await self.get(call_id)
         try:
             return await self._execution_context.read(call)
-        except (ValueError, RuntimeError) as error:
+        except RuntimeContextUnavailableError as error:
             raise CallSessionConfigUnavailableError from error
 
     async def transfer_to_human(
@@ -510,10 +528,15 @@ class CallSessionService:
                 if not isinstance(phone, str):
                     raise HumanHandoffError("telephony_not_ready")
                 assignments = await self._control_plane.list_enabled_phone_assignments()
-                current = next((item for item in assignments if item.tenant_id == call.tenant_id), None)
+                current = next(
+                    (item for item in assignments if item.tenant_id == call.tenant_id),
+                    None,
+                )
                 if current is None:
                     raise HumanHandoffError("telephony_not_ready")
-                provisioning = await self._routes.provisioning_for(call.tenant_id, current.assignment_id)
+                provisioning = await self._routes.provisioning_for(
+                    call.tenant_id, current.assignment_id
+                )
                 if (
                     provisioning is None
                     or provisioning.status != "ready"

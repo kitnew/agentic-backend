@@ -1,7 +1,7 @@
 from backend_core.runtime.execution_context import _effective_runtime
 
 
-def test_effective_runtime_ignores_snapshot_only_llm_parameters() -> None:
+def test_effective_runtime_preserves_snapshot_llm_and_execution_parameters() -> None:
     runtime = {
         "architecture": "cascade",
         "llm": {
@@ -43,6 +43,17 @@ def test_effective_runtime_ignores_snapshot_only_llm_parameters() -> None:
                     "min_delay_seconds": 0.1,
                     "max_delay_seconds": 0.7,
                 },
+                "interruption": {
+                    "enabled": False,
+                    "min_duration_seconds": 0.23,
+                    "min_words": 4,
+                    "false_interruption_timeout_seconds": 1.7,
+                    "resume_after_false_interruption": False,
+                },
+                "response_scheduling": {
+                    "preemptive_generation": False,
+                    "preemptive_tts": False,
+                },
             }
         },
     }
@@ -51,3 +62,6 @@ def test_effective_runtime_ignores_snapshot_only_llm_parameters() -> None:
 
     assert result is not None
     assert result.llm.model == "gpt-5"
+    assert result.llm.max_completion_tokens == 1024
+    assert result.interruption.enabled is False
+    assert result.response_scheduling.preemptive_generation is False

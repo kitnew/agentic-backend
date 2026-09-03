@@ -106,7 +106,7 @@ def create_agent_session(
         api_key=secrets["llm"],
         prompt_cache_key=prompt_cache_key,
         timeout=httpx.Timeout(settings.provider_timeout_seconds),
-        max_completion_tokens=256,
+        max_completion_tokens=runtime.llm.max_completion_tokens,
         **llm_behavior_options(runtime),  # type: ignore[arg-type]
     )
     tts = elevenlabs.TTS(
@@ -138,8 +138,15 @@ def create_agent_session(
                 "max_delay": runtime.turn.max_endpointing_delay_seconds,
             },
             "preemptive_generation": {
-                "enabled": True,
-                "preemptive_tts": True,
+                "enabled": runtime.response_scheduling.preemptive_generation,
+                "preemptive_tts": runtime.response_scheduling.preemptive_tts,
+            },
+            "interruption": {
+                "enabled": runtime.interruption.enabled,
+                "min_duration": runtime.interruption.min_duration_seconds,
+                "min_words": runtime.interruption.min_words,
+                "false_interruption_timeout": runtime.interruption.false_interruption_timeout_seconds,
+                "resume_false_interruption": runtime.interruption.resume_after_false_interruption,
             },
         },
         llm=llm_provider,
@@ -167,16 +174,20 @@ def create_realtime_session(
     connection = model["resource"]["connection"]["connection_config"]
     transcription_config = transcription["resource"]["deployment"]["deployment_config"]
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
-        model=deployment.get("model", deployment.get("deployment_name", "gpt-realtime")),
-        voice=runtime["voice"],
-        azure_deployment=deployment.get("deployment_name"),
-        base_url=connection.get("endpoint"),
+        # The realtime deployment contract intentionally has no logical model field.
+        model=deployment.get("model", "gpt-realtime"),
+        voice=_required_string(runtime, "voice"),
+        azure_deployment=_required_string(deployment, "deployment_name"),
+        base_url=_required_string(connection, "endpoint"),
+        api_version=deployment.get("api_version") or connection.get("api_version"),
         api_key=secrets["model"],
         input_audio_transcription={
-            "model": transcription_config.get("model", transcription_config.get("deployment_name")),
-            "language": runtime["input_transcription"].get("language"),
+            "model": _required_string(transcription_config, "model", "deployment_name"),
+            "language": _required_string(runtime["input_transcription"], "language"),
         },
-        turn_detection=_turn_detection(runtime["turn_completion"]),
+        turn_detection=_turn_detection(
+            runtime["turn_completion"], runtime["interruption"]["enabled"]
+        ),
         conn_options=agents.APIConnectOptions(
             timeout=settings.provider_timeout_seconds,
             max_retry=settings.provider_retry_limit,
@@ -185,13 +196,40 @@ def create_realtime_session(
     return agents.AgentSession(llm=realtime_model, vad=None, tools=[])
 
 
-def _turn_detection(value: dict[str, Any]) -> dict[str, Any]:
-    if value.get("strategy") == "semantic_vad":
-        return {"type": "semantic_vad", "eagerness": value.get("eagerness", "auto")}
-    return {"type": "server_vad", "threshold": value.get("activation_threshold", 0.5), "silence_duration_ms": value.get("silence_duration_ms", 200)}
+def _turn_detection(
+    value: dict[str, Any], interruption_enabled: bool = True
+) -> dict[str, Any]:
+    strategy = value["strategy"]
+    if strategy == "semantic_vad":
+        return {
+            "type": "semantic_vad",
+            "eagerness": value["eagerness"],
+            "interrupt_response": interruption_enabled,
+        }
+    if strategy != "server_vad":
+        raise ValueError("invalid realtime turn completion strategy")
+    return {
+        "type": "server_vad",
+        "threshold": value["activation_threshold"],
+        "silence_duration_ms": value["silence_duration_ms"],
+        "interrupt_response": interruption_enabled,
+    }
 
 
-def _runtime_value(runtime: dict[str, Any] | None, component: str, key: str) -> str | None:
+def _required_string(
+    value: dict[str, Any], key: str, fallback_key: str | None = None
+) -> str:
+    result = value.get(key)
+    if result is None and fallback_key is not None:
+        result = value.get(fallback_key)
+    if not isinstance(result, str) or not result:
+        raise ValueError(f"missing realtime execution field: {key}")
+    return result
+
+
+def _runtime_value(
+    runtime: dict[str, Any] | None, component: str, key: str
+) -> str | None:
     if not runtime:
         return None
     resource = runtime.get(component, {}).get("resource", {})
