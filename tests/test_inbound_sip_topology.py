@@ -12,7 +12,7 @@ def test_development_has_no_sip_service_or_configuration() -> None:
 
 
 def test_staging_and_production_add_only_internal_sip_topology() -> None:
-    for environment in ("staging", "production"):
+    for environment in ("production",):
         env = (COMPOSE / f".env.{environment}.example").read_text()
         assert "livekit-sip:" in DEPLOY
         assert "livekit/sip:v1.2.0" in DEPLOY

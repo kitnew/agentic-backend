@@ -16,7 +16,10 @@ def deployment_env_files() -> Iterator[None]:
     for environment in ("staging", "production"):
         path = COMPOSE / f".env.{environment}"
         if not path.exists():
-            path.write_text((COMPOSE / f".env.{environment}.example").read_text())
+            example = COMPOSE / f".env.{environment}.example"
+            if not example.exists():
+                example = COMPOSE / ".env.production.example"
+            path.write_text(example.read_text())
             created.append(path)
     yield
     for path in created:
@@ -132,10 +135,7 @@ def test_db_init_starts_postgres_and_runs_backend_migrations(tmp_path: Path) -> 
     postgres = commands.index("up -d --wait --wait-timeout 180 postgres")
     migrate = commands.index("alembic -c apps/backend/alembic.ini upgrade head")
     assert postgres < migrate
-    assert (
-        "run --rm --build --no-deps --user root --entrypoint /bin/sh backend -ec"
-        in commands
-    )
+    assert "run --rm --no-deps --user root --entrypoint /bin/sh backend -ec" in commands
 
 
 def test_update_migrates_empty_database_and_ignores_optional_checks(

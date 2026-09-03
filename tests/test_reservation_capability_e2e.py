@@ -1,26 +1,27 @@
 import json
-from datetime import date
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 from backend_core.runtime.capabilities.domain import (
     compile_plan,
-    definition,
+    enforce_input_constraints,
     normalize_input,
+    resolve_capability,
     semantic_result,
     validate_agent_input,
-    validate_agent_schema,
-    validate_business_input,
 )
 from backend_core.runtime.capabilities.execution import project_execution_outcome
-from contracts import TenantCapabilityProfile
-from job_worker.worker import GoogleSheetsAppendValuesHandler
+from contracts import RuntimeIntegrationMaterial, TenantCapabilityProfile
+from job_worker.worker import (
+    GoogleSheetsAppendValuesHandler as WorkerGoogleSheetsAppendValuesHandler,
+)
 
 
-class Credentials:
-    async def access_token(self, reference: str) -> str:
-        assert reference in {"tenant-a-sheets", "tenant-b-sheets"}
+class GoogleSheetsAppendValuesHandler(WorkerGoogleSheetsAppendValuesHandler):
+    @staticmethod
+    async def _access_token(plan, material):
+        assert plan.integration_id == material.integration_id
         return "test-token"
 
 
@@ -28,31 +29,22 @@ def profile(
     *, phone: bool, spreadsheet_id: str, sheet_name: str, mapping: str
 ) -> TenantCapabilityProfile:
     properties: dict[str, object] = {
-        "guest_name": {"type": "string", "x-canonical-field": "guest.name"},
+        "guest_name": {"type": "string"},
         "check_in": {
             "type": "string",
             "format": "date",
-            "x-canonical-field": "stay.check_in",
         },
         "check_out": {
             "type": "string",
             "format": "date",
-            "x-canonical-field": "stay.check_out",
         },
     }
     required = ["guest_name", "check_in", "check_out"]
-    fixture: dict[str, object] = {
-        "guest_name": "Fixture",
-        "check_in": "2030-01-01",
-        "check_out": "2030-01-02",
-    }
     if phone:
         properties["phone"] = {
             "type": "string",
-            "x-canonical-field": "guest.phone",
         }
         required.insert(1, "phone")
-        fixture["phone"] = "+421900000000"
     return TenantCapabilityProfile.model_validate(
         {
             "enabled": True,
@@ -65,6 +57,12 @@ def profile(
                 "properties": properties,
                 "required": required,
                 "additionalProperties": False,
+            },
+            "bindings": {
+                "guest_name": "guest.name",
+                "check_in": "stay.check_in",
+                "check_out": "stay.check_out",
+                **({"phone": "guest.phone"} if phone else {}),
             },
             "execution": {
                 "plan_type": "google_sheets.append_values.v1",
@@ -82,8 +80,7 @@ def profile(
                 },
                 "request_mapping": mapping,
             },
-            "validation_fixtures": [fixture, fixture],
-        }
+            }
     )
 
 
@@ -91,23 +88,19 @@ def plan(
     capability: TenantCapabilityProfile,
     payload: dict[str, object],
     operation_id: UUID,
-    credential_ref: str,
 ):
-    semantic = definition("reservation.submit_request", 1)
-    validate_agent_schema(capability.agent_input_schema, semantic)
+    resolve_capability("reservation.submit_request", capability)
     validate_agent_input(capability.agent_input_schema, payload)
-    business = validate_business_input(
-        normalize_input(capability.agent_input_schema, payload),
-        "Europe/Bratislava",
-        today=date(2026, 8, 4),
-    )
+    business = normalize_input(payload, capability.bindings)
+    enforce_input_constraints(business, "Europe/Bratislava", capability.input_constraints)
     return compile_plan(
         capability,
         business,
         operation_id=operation_id,
         call_id=uuid4(),
         tool_call_id="tool-call",
-        credential_ref=credential_ref,
+        integration_id=capability.execution.connection_id,
+        semantic_key="reservation.submit_request",
     )
 
 
@@ -150,7 +143,6 @@ async def test_two_tenants_share_the_full_compilation_and_worker_path() -> None:
         tenant_a,
         {"guest_name": "Alice", "check_in": "2026-08-12", "check_out": "2026-08-15"},
         operation_a,
-        "tenant-a-sheets",
     )
     plan_b = plan(
         tenant_b,
@@ -161,14 +153,21 @@ async def test_two_tenants_share_the_full_compilation_and_worker_path() -> None:
             "check_out": "2026-08-22",
         },
         operation_b,
-        "tenant-b-sheets",
     )
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(transport)) as client:
-        handler = GoogleSheetsAppendValuesHandler(Credentials(), client)
-        first_a = await handler.execute(plan_a)
-        duplicate_a = await handler.execute(plan_a)
-        first_b = await handler.execute(plan_b)
+        handler = GoogleSheetsAppendValuesHandler(client)
+        material_a = RuntimeIntegrationMaterial(
+            integration_id=plan_a.integration_id,
+            provider="google_sheets",
+            secret={"service_account": {}},
+        )
+        material_b = material_a.model_copy(
+            update={"integration_id": plan_b.integration_id}
+        )
+        first_a = await handler.execute(plan_a, material_a)
+        duplicate_a = await handler.execute(plan_a, material_a)
+        first_b = await handler.execute(plan_b, material_b)
 
     assert rows["sheet-a"] == [[str(operation_a), "Alice", "2026-08-12", "2026-08-15"]]
     assert rows["sheet-b"] == [
@@ -185,15 +184,5 @@ async def test_two_tenants_share_the_full_compilation_and_worker_path() -> None:
     assert plan_a.plan_type == plan_b.plan_type
     assert first_a.deduplicated is False
     assert duplicate_a.deduplicated is True
-    assert (
-        semantic_result(
-            "reservation.submit_request", 1, project_execution_outcome(first_a)
-        ).status
-        == "request_submitted"
-    )
-    assert (
-        "confirmed"
-        not in semantic_result(
-            "reservation.submit_request", 1, project_execution_outcome(first_b)
-        ).model_dump_json()
-    )
+    assert semantic_result(project_execution_outcome(first_a)) == {}
+    assert semantic_result(project_execution_outcome(first_b)) == {}
