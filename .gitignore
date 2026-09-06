@@ -248,8 +248,10 @@ __marimo__/
 .idea/
 
 # Agents
-AGENTS.md
 .codebase-memory
 
 *.env*
 !**/.env.*.example
+
+# Agentctl Definitions
+definitions/
