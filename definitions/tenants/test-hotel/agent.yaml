@@ -1,6 +1,0 @@
-display_name: Test Hotel Assistant
-agent_profile: hotel_assistant
-greeting: Hello, how can I help you?
-conversation_scope: property_only
-locale: en-US
-timezone: Europe/Bucharest
