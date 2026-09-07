@@ -14,29 +14,19 @@ from control_plane.domain.managed_resources import (
     CredentialRef,
     CredentialStatus,
     CredentialVersion,
-    DeploymentKind,
     HandoffDestination,
     HandoffDestinationRef,
     IntegrationConnection,
     IntegrationConnectionRef,
-    LLMCapabilities,
-    ModelDeployment,
-    ModelDeploymentRef,
     PhoneNumberAssignment,
     PhoneNumberAssignmentRef,
-    ProviderConnection,
-    ProviderConnectionRef,
-    RealtimeCapabilities,
-    STTCapabilities,
 )
 
 from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
 from .models import HandoffDestination as HandoffDestinationRow
 from .models import IntegrationConnection as IntegrationConnectionRow
-from .models import ModelDeployment as ModelDeploymentRow
 from .models import PhoneNumberAssignment as PhoneNumberAssignmentRow
-from .models import ProviderConnection as ProviderConnectionRow
 
 
 class SqlAlchemyManagedResourceRepository:
@@ -79,97 +69,6 @@ class SqlAlchemyManagedResourceRepository:
                 )
                 for row in rows
             ]
-
-    async def create_connection(
-        self,
-        key: str,
-        provider_kind: str,
-        credential_ref: CredentialRef,
-        config: dict[str, object],
-        enabled: bool,
-        actor: str,
-    ) -> ProviderConnection:
-        async with self._transaction() as session:
-            credential = await self._credential_row(session, credential_ref, lock=True)
-            self._require_usable_credential(credential, enabled)
-            row = ProviderConnectionRow(
-                key=key,
-                provider_kind=provider_kind,
-                credential_id=credential_ref.value,
-                connection_config=config,
-                enabled=enabled,
-                generation=1,
-                created_by=actor,
-                updated_by=actor,
-            )
-            session.add(row)
-            await session.flush()
-            await session.flush()
-            await session.refresh(row)
-            return self._connection(row)
-
-    async def update_connection(
-        self,
-        connection_ref: ProviderConnectionRef,
-        credential_ref: CredentialRef,
-        config: dict[str, object],
-        expected_generation: int,
-        actor: str,
-    ) -> ProviderConnection:
-        async with self._transaction() as session:
-            row = await self._connection_row(session, connection_ref, lock=True)
-            self._check_generation(row.generation, expected_generation)
-            credential = await self._credential_row(session, credential_ref, lock=True)
-            self._require_usable_credential(credential, row.enabled)
-            row.credential_id = credential_ref.value
-            row.connection_config = config
-            row.generation += 1
-            row.updated_at = func.now()
-            row.updated_by = actor
-            await session.flush()
-            await session.refresh(row)
-            return self._connection(row)
-
-    async def set_connection_enabled(
-        self,
-        connection_ref: ProviderConnectionRef,
-        enabled: bool,
-        expected_generation: int,
-        actor: str,
-    ) -> ProviderConnection:
-        async with self._transaction() as session:
-            row = await self._connection_row(session, connection_ref, lock=True)
-            self._check_generation(row.generation, expected_generation)
-            if row.enabled == enabled:
-                raise ManagedResourceConflict(
-                    f"provider connection is already {'enabled' if enabled else 'disabled'}"
-                )
-            credential = await self._credential_row(
-                session, CredentialRef(row.credential_id), lock=True
-            )
-            self._require_usable_credential(credential, enabled)
-            row.enabled = enabled
-            row.generation += 1
-            row.updated_at = func.now()
-            row.updated_by = actor
-            await session.flush()
-            await session.refresh(row)
-            return self._connection(row)
-
-    async def get_connection(
-        self, connection_ref: ProviderConnectionRef
-    ) -> ProviderConnection:
-        async with self._sessions() as session:
-            return self._connection(await self._connection_row(session, connection_ref))
-
-    async def list_connections(self) -> Sequence[ProviderConnection]:
-        async with self._sessions() as session:
-            rows = (
-                await session.scalars(
-                    select(ProviderConnectionRow).order_by(ProviderConnectionRow.key)
-                )
-            ).all()
-            return [self._connection(row) for row in rows]
 
     async def create_integration_connection(
         self,
@@ -433,173 +332,12 @@ class SqlAlchemyManagedResourceRepository:
                 for row in (await session.scalars(statement)).all()
             ]
 
-    async def create_deployment(
-        self,
-        key: str,
-        connection_ref: ProviderConnectionRef,
-        kind: DeploymentKind,
-        config: dict[str, object],
-        enabled: bool,
-        actor: str,
-        llm_capabilities: LLMCapabilities | None = None,
-        realtime_capabilities: RealtimeCapabilities | None = None,
-        stt_capabilities: STTCapabilities | None = None,
-    ) -> ModelDeployment:
-        async with self._transaction() as session:
-            connection = await self._connection_row(session, connection_ref, lock=True)
-            await self._require_usable_connection(session, connection, enabled)
-            row = ModelDeploymentRow(
-                key=key,
-                connection_id=connection_ref.value,
-                deployment_kind=kind.value,
-                deployment_config=config,
-                llm_capabilities=(
-                    {
-                        "supports_temperature": llm_capabilities.supports_temperature,
-                        "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort,
-                    }
-                    if llm_capabilities
-                    else None
-                ),
-                realtime_capabilities=(
-                    {
-                        "supports_server_vad": realtime_capabilities.supports_server_vad,
-                        "supports_semantic_vad": realtime_capabilities.supports_semantic_vad,
-                    }
-                    if realtime_capabilities
-                    else None
-                ),
-                stt_capabilities=(
-                    {
-                        "supports_cascade": stt_capabilities.supports_cascade,
-                        "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription,
-                    }
-                    if stt_capabilities
-                    else None
-                ),
-                enabled=enabled,
-                generation=1,
-                created_by=actor,
-                updated_by=actor,
-            )
-            session.add(row)
-            await session.flush()
-            await session.flush()
-            await session.refresh(row)
-            return self._deployment(row)
-
-    async def update_deployment(
-        self,
-        deployment_ref: ModelDeploymentRef,
-        connection_ref: ProviderConnectionRef,
-        config: dict[str, object],
-        expected_generation: int,
-        actor: str,
-        llm_capabilities: LLMCapabilities | None = None,
-        realtime_capabilities: RealtimeCapabilities | None = None,
-        stt_capabilities: STTCapabilities | None = None,
-    ) -> ModelDeployment:
-        async with self._transaction() as session:
-            row = await self._deployment_row(session, deployment_ref, lock=True)
-            self._check_generation(row.generation, expected_generation)
-            connection = await self._connection_row(session, connection_ref, lock=True)
-            await self._require_usable_connection(session, connection, row.enabled)
-            row.connection_id = connection_ref.value
-            row.deployment_config = config
-            row.llm_capabilities = (
-                {
-                    "supports_temperature": llm_capabilities.supports_temperature,
-                    "supports_reasoning_effort": llm_capabilities.supports_reasoning_effort,
-                }
-                if llm_capabilities
-                else None
-            )
-            row.realtime_capabilities = (
-                {
-                    "supports_server_vad": realtime_capabilities.supports_server_vad,
-                    "supports_semantic_vad": realtime_capabilities.supports_semantic_vad,
-                }
-                if realtime_capabilities
-                else None
-            )
-            row.stt_capabilities = (
-                {
-                    "supports_cascade": stt_capabilities.supports_cascade,
-                    "supports_realtime_input_transcription": stt_capabilities.supports_realtime_input_transcription,
-                }
-                if stt_capabilities
-                else None
-            )
-            row.generation += 1
-            row.updated_at = func.now()
-            row.updated_by = actor
-            await session.flush()
-            await session.refresh(row)
-            return self._deployment(row)
-
-    async def set_deployment_enabled(
-        self,
-        deployment_ref: ModelDeploymentRef,
-        enabled: bool,
-        expected_generation: int,
-        actor: str,
-    ) -> ModelDeployment:
-        async with self._transaction() as session:
-            row = await self._deployment_row(session, deployment_ref, lock=True)
-            self._check_generation(row.generation, expected_generation)
-            if row.enabled == enabled:
-                raise ManagedResourceConflict(
-                    f"model deployment is already {'enabled' if enabled else 'disabled'}"
-                )
-            connection = await self._connection_row(
-                session, ProviderConnectionRef(row.connection_id), lock=True
-            )
-            await self._require_usable_connection(session, connection, enabled)
-            row.enabled = enabled
-            row.generation += 1
-            row.updated_at = func.now()
-            row.updated_by = actor
-            await session.flush()
-            await session.refresh(row)
-            return self._deployment(row)
-
-    async def get_deployment(
-        self, deployment_ref: ModelDeploymentRef
-    ) -> ModelDeployment:
-        async with self._sessions() as session:
-            return self._deployment(await self._deployment_row(session, deployment_ref))
-
-    async def list_deployments(self) -> Sequence[ModelDeployment]:
-        async with self._sessions() as session:
-            rows = (
-                await session.scalars(
-                    select(ModelDeploymentRow).order_by(ModelDeploymentRow.key)
-                )
-            ).all()
-            return [self._deployment(row) for row in rows]
-
     async def _credential_row(
         self, session: AsyncSession, ref: CredentialRef, lock: bool = False
     ) -> CredentialRow:
         row = await session.get(CredentialRow, ref.value, with_for_update=lock)
         if row is None:
             raise ManagedResourceNotFound(f"credential {ref.value} not found")
-        return row
-
-    async def _connection_row(
-        self, session: AsyncSession, ref: ProviderConnectionRef, lock: bool = False
-    ) -> ProviderConnectionRow:
-        row = await session.get(ProviderConnectionRow, ref.value, with_for_update=lock)
-        if row is None:
-            raise ManagedResourceNotFound(f"provider connection {ref.value} not found")
-        return row
-
-    async def _deployment_row(
-        self, session: AsyncSession, ref: ModelDeploymentRef, lock: bool = False
-    ) -> ModelDeploymentRow:
-        row = await session.get(ModelDeploymentRow, ref.value, with_for_update=lock)
-        if row is None:
-            raise ManagedResourceNotFound(f"model deployment {ref.value} not found")
         return row
 
     async def _integration_connection_row(
@@ -634,23 +372,6 @@ class SqlAlchemyManagedResourceRepository:
             )
         return row
 
-    async def _require_usable_connection(
-        self, session: AsyncSession, row: ProviderConnectionRow, required: bool
-    ) -> None:
-        if required and not row.enabled:
-            raise InvalidManagedResource(
-                "enabled deployment requires enabled connection"
-            )
-        credential = await self._credential_row(
-            session, CredentialRef(row.credential_id), lock=required
-        )
-        self._require_usable_credential(credential, required)
-
-    @staticmethod
-    def _require_usable_credential(row: CredentialRow, required: bool) -> None:
-        if required and row.status == CredentialStatus.REVOKED:
-            raise InvalidManagedResource("enabled resource requires active credential")
-
     @staticmethod
     def _check_generation(current: int, expected: int) -> None:
         if current != expected:
@@ -659,20 +380,9 @@ class SqlAlchemyManagedResourceRepository:
             )
 
     @staticmethod
-    def _connection(row: ProviderConnectionRow) -> ProviderConnection:
-        return ProviderConnection(
-            ProviderConnectionRef(row.id),
-            row.key,
-            row.provider_kind,
-            CredentialRef(row.credential_id),
-            dict(row.connection_config),
-            row.enabled,
-            row.generation,
-            row.created_at,
-            row.created_by,
-            row.updated_at,
-            row.updated_by,
-        )
+    def _require_usable_credential(row: CredentialRow, required: bool) -> None:
+        if required and row.status == CredentialStatus.REVOKED:
+            raise InvalidManagedResource("enabled resource requires active credential")
 
     @staticmethod
     def _integration_connection(row: IntegrationConnectionRow) -> IntegrationConnection:
@@ -715,31 +425,6 @@ class SqlAlchemyManagedResourceRepository:
             PhoneNumberAssignmentRef(row.id),
             row.tenant_id,
             row.phone_number,
-            row.enabled,
-            row.generation,
-            row.created_at,
-            row.created_by,
-            row.updated_at,
-            row.updated_by,
-        )
-
-    @staticmethod
-    def _deployment(row: ModelDeploymentRow) -> ModelDeployment:
-        return ModelDeployment(
-            ModelDeploymentRef(row.id),
-            row.key,
-            ProviderConnectionRef(row.connection_id),
-            DeploymentKind(row.deployment_kind),
-            dict(row.deployment_config),
-            (
-                LLMCapabilities(**row.llm_capabilities)
-                if row.llm_capabilities is not None
-                else None
-            ),
-            RealtimeCapabilities(**row.realtime_capabilities)
-            if row.realtime_capabilities
-            else None,
-            STTCapabilities(**row.stt_capabilities) if row.stt_capabilities else None,
             row.enabled,
             row.generation,
             row.created_at,

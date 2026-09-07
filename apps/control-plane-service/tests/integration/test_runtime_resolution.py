@@ -2,8 +2,8 @@ from typing import cast
 
 import pytest
 from control_plane.application.components import ComponentService
-from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
+from control_plane.application.providers import ProviderService
 from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
 )
@@ -20,14 +20,12 @@ from control_plane.domain.managed_resources import (
     LLMCapabilities,
     RealtimeCapabilities,
     STTCapabilities,
+    TTSCapabilities,
 )
-from control_plane.domain.providers import default_provider_registry
+from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.domain.runtime_resolution import ResolvedCascadeRuntime
 from control_plane.infrastructure.persistence.database import Database
-from control_plane.infrastructure.persistence.managed_resources import (
-    SqlAlchemyManagedResourceRepository,
-)
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
@@ -38,7 +36,12 @@ from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
 )
 
-from .credential_helpers import create_platform_credential
+from .credential_helpers import (
+    create_model_deployment,
+    create_platform_credential,
+    create_provider_connection,
+    provider_service,
+)
 
 
 def services(database: Database):
@@ -49,47 +52,50 @@ def services(database: Database):
             registry,
             cast(ComponentRepository, SqlAlchemyComponentRepository(database.sessions)),
         ),
-        ManagedResourceService(
-            default_provider_registry(),
-            SqlAlchemyManagedResourceRepository(database.sessions),
-        ),
+        provider_service(database),
     )
 
 
 async def deployment(
     database: Database,
-    resources: ManagedResourceService,
+    resources: ProviderService,
     kind: DeploymentKind,
     key: str,
     capabilities: LLMCapabilities | None = None,
 ):
     credential = await create_platform_credential(database, f"{key}-credential")
     provider = "azure_openai" if kind is DeploymentKind.LLM else "elevenlabs"
-    connection = await resources.create_connection(
+    connection = await create_provider_connection(
+        resources,
         f"{key}-connection",
         provider,
         credential.ref,
         {"endpoint": "https://example.openai.azure.com"}
         if provider == "azure_openai"
         else {},
-        True,
-        "test",
     )
     config = (
         {"deployment_name": key, "model": key, "api_version": "2026-01-01"}
         if kind is DeploymentKind.LLM
         else {"model_id": key}
     )
-    return await resources.create_deployment(
+    selected_capabilities = (
+        capabilities
+        if kind is DeploymentKind.LLM
+        else RealtimeCapabilities(True, True)
+        if kind is DeploymentKind.REALTIME
+        else STTCapabilities(True, False)
+        if kind is DeploymentKind.STT
+        else TTSCapabilities()
+    )
+    assert selected_capabilities is not None
+    return await create_model_deployment(
+        resources,
         key,
         connection.ref,
         kind,
         config,
-        True,
-        "test",
-        capabilities,
-        RealtimeCapabilities(True, True) if kind is DeploymentKind.REALTIME else None,
-        STTCapabilities(True, False) if kind is DeploymentKind.STT else None,
+        selected_capabilities,
     )
 
 
@@ -126,7 +132,7 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
     register_runtime_components(registry)
     resolver = RuntimeResolver(
         registry,
-        default_provider_registry(),
+        ProviderKindRegistry(),
         SqlAlchemyRuntimeResolutionReader(database.sessions),
     )
 
@@ -199,7 +205,7 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     reader = SqlAlchemyRuntimeResolutionReader(database.sessions)
-    resolver = RuntimeResolver(registry, default_provider_registry(), reader)
+    resolver = RuntimeResolver(registry, ProviderKindRegistry(), reader)
     materializer = ExecutionSnapshotService(
         database.sessions,
         resolver,

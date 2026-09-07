@@ -14,7 +14,12 @@ from control_plane.domain.components import (
     ScopeType,
 )
 from control_plane.domain.components.errors import InvalidComponentValue
-from control_plane.domain.managed_resources import DeploymentKind, ModelDeployment
+from control_plane.domain.managed_resources import (
+    DeploymentKind,
+    LLMCapabilities,
+    ModelDeployment,
+    STTCapabilities,
+)
 
 
 class _RuntimeComponent(BaseModel):
@@ -180,8 +185,8 @@ def _deployment(value: object, expected: DeploymentKind) -> ModelDeployment:
 
 def _validate_llm(config: LLMDefaults, value: object) -> None:
     deployment = _deployment(value, DeploymentKind.LLM)
-    capabilities = deployment.llm_capabilities
-    if capabilities is None:
+    capabilities = deployment.capabilities
+    if not isinstance(capabilities, LLMCapabilities):
         raise InvalidComponentValue("llm deployment has no capabilities")
     if config.temperature is not None and not capabilities.supports_temperature:
         raise InvalidComponentValue("deployment does not support temperature")
@@ -195,8 +200,8 @@ def _validate_llm(config: LLMDefaults, value: object) -> None:
 def _validate_stt(config: STTDefaults, value: object) -> None:
     deployment = _deployment(value, DeploymentKind.STT)
     if (
-        deployment.stt_capabilities is None
-        or not deployment.stt_capabilities.supports_cascade
+        not isinstance(deployment.capabilities, STTCapabilities)
+        or not deployment.capabilities.supports_cascade
     ):
         raise InvalidComponentValue("deployment does not support cascade STT usage")
 

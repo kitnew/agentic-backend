@@ -8,6 +8,12 @@ from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
     CredentialScope,
+    DeploymentCapabilities,
+    DeploymentKind,
+    ModelDeployment,
+    ModelDeploymentRef,
+    ProviderConnection,
+    ProviderConnectionRef,
 )
 
 
@@ -84,3 +90,58 @@ class CredentialRepository(Protocol):
         self, credential: Credential, secret: str, actor: str
     ) -> Credential: ...
     async def revoke(self, credential: Credential, actor: str) -> Credential: ...
+    async def has_enabled_provider_connections(self, ref: CredentialRef) -> bool: ...
+
+
+class ProviderRepository(Protocol):
+    async def create_connection(
+        self,
+        key: str,
+        provider_kind: str,
+        credential_ref: CredentialRef,
+        config: dict[str, object],
+        actor: str,
+    ) -> ProviderConnection: ...
+    async def update_connection(
+        self,
+        connection: ProviderConnection,
+        credential_ref: CredentialRef,
+        config: dict[str, object],
+        actor: str,
+    ) -> ProviderConnection: ...
+    async def set_connection_enabled(
+        self, connection: ProviderConnection, enabled: bool, actor: str
+    ) -> ProviderConnection: ...
+    async def get_connection(
+        self, ref: ProviderConnectionRef, *, lock: bool = False
+    ) -> ProviderConnection: ...
+    async def list_connections(self) -> Sequence[ProviderConnection]: ...
+    async def create_deployment(
+        self,
+        key: str,
+        connection_ref: ProviderConnectionRef,
+        kind: DeploymentKind,
+        config: dict[str, object],
+        capabilities: DeploymentCapabilities,
+        actor: str,
+    ) -> ModelDeployment: ...
+    async def update_deployment(
+        self,
+        deployment: ModelDeployment,
+        connection_ref: ProviderConnectionRef,
+        config: dict[str, object],
+        capabilities: DeploymentCapabilities,
+        actor: str,
+    ) -> ModelDeployment: ...
+    async def set_deployment_enabled(
+        self, deployment: ModelDeployment, enabled: bool, actor: str
+    ) -> ModelDeployment: ...
+    async def get_deployment(
+        self, ref: ModelDeploymentRef, *, lock: bool = False
+    ) -> ModelDeployment: ...
+    async def list_deployments(self) -> Sequence[ModelDeployment]: ...
+    async def has_enabled_deployments(self, ref: ProviderConnectionRef) -> bool: ...
+    async def get_credential(
+        self, ref: CredentialRef, *, lock: bool = False
+    ) -> Credential: ...
+    async def credential_secret(self, credential: Credential) -> str: ...

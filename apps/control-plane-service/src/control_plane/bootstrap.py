@@ -17,6 +17,7 @@ from control_plane.application.execution_materialization import (
 from control_plane.application.execution_resolver import ExecutionResolver
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
+from control_plane.application.providers import ProviderService
 from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
 )
@@ -27,7 +28,7 @@ from control_plane.domain.components import ComponentDefinitionRegistry
 from control_plane.domain.knowledge_components import register_knowledge_components
 from control_plane.domain.post_call import register_post_call_components
 from control_plane.domain.prompt_components import register_prompt_components
-from control_plane.domain.providers import ProviderRegistry, default_provider_registry
+from control_plane.domain.registries import DeploymentKindRegistry, ProviderKindRegistry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence import Database
@@ -40,6 +41,9 @@ from control_plane.infrastructure.persistence.credential_transactions import (
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
 )
+from control_plane.infrastructure.persistence.provider_transactions import (
+    provider_command_scope,
+)
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
@@ -49,6 +53,7 @@ from control_plane.infrastructure.persistence.runtime_execution_snapshots import
 from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
 )
+from control_plane.infrastructure.provider_validation import HttpProviderValidator
 from control_plane.interfaces.http import create_http_app
 from control_plane.runtime import ServiceLifecycle
 from control_plane.settings import Settings
@@ -58,7 +63,7 @@ def create_app(
     settings: Settings | None = None,
     database: Database | None = None,
     registry: ComponentDefinitionRegistry | None = None,
-    provider_registry: ProviderRegistry | None = None,
+    provider_registry: ProviderKindRegistry | None = None,
 ) -> FastAPI:
     settings = settings or Settings()  # type: ignore[call-arg]
     database = database or Database(str(settings.database_url))
@@ -72,7 +77,7 @@ def create_app(
         register_capability_components(registry)
         register_post_call_components(registry)
         registry.freeze()
-    provider_registry = provider_registry or default_provider_registry()
+    provider_registry = provider_registry or ProviderKindRegistry()
     components = (
         ComponentService(
             registry,
@@ -95,9 +100,16 @@ def create_app(
         else None
     )
     managed_resources = (
-        ManagedResourceService(
+        ManagedResourceService(SqlAlchemyManagedResourceRepository(database.sessions))
+        if isinstance(database, Database)
+        else None
+    )
+    providers = (
+        ProviderService(
+            provider_command_scope(database.sessions, cipher),
             provider_registry,
-            SqlAlchemyManagedResourceRepository(database.sessions),
+            DeploymentKindRegistry(),
+            HttpProviderValidator(),
         )
         if isinstance(database, Database)
         else None
@@ -144,6 +156,7 @@ def create_app(
         runtime_materialization,
         execution_materialization,
         credentials,
+        providers,
     )
     app.state.settings = settings
     app.state.database = database

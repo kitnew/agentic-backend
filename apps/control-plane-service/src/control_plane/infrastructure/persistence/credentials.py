@@ -19,6 +19,7 @@ from control_plane.infrastructure.encryption import CredentialCipher
 
 from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
+from .models import ProviderConnection as ProviderConnectionRow
 
 
 class SqlAlchemyCredentialRepository:
@@ -127,6 +128,19 @@ class SqlAlchemyCredentialRepository:
         if number is None:
             raise ManagedResourceConflict("credential has no active secret version")
         return self._credential(row, number)
+
+    async def has_enabled_provider_connections(self, ref: CredentialRef) -> bool:
+        return (
+            await self._session.scalar(
+                select(ProviderConnectionRow.id)
+                .where(
+                    ProviderConnectionRow.credential_id == ref.value,
+                    ProviderConnectionRow.enabled.is_(True),
+                )
+                .limit(1)
+            )
+            is not None
+        )
 
     async def _row(self, ref: CredentialRef) -> CredentialRow:
         row = await self._session.get(CredentialRow, ref.value)

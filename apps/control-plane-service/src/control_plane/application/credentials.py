@@ -116,6 +116,10 @@ class CredentialService:
             self._check_precondition(current, expected_token)
             if current.status is CredentialStatus.REVOKED:
                 raise ManagedResourceConflict("credential is already revoked")
+            if await repository.has_enabled_provider_connections(current.ref):
+                raise ManagedResourceConflict(
+                    "credential is referenced by an enabled provider connection"
+                )
             credential = await repository.revoke(current, principal)
             await replays.add(
                 principal,

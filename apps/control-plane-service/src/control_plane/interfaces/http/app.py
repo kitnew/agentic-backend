@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
@@ -7,7 +8,7 @@ from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, 
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool
 
 from control_plane import SERVICE_NAME
 from control_plane.application.command_support import IdempotencyKeyReused
@@ -18,6 +19,7 @@ from control_plane.application.execution_materialization import (
     RuntimeSecretSlot,
 )
 from control_plane.application.managed_resources import ManagedResourceService
+from control_plane.application.providers import ProviderService
 from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
 )
@@ -62,6 +64,7 @@ from control_plane.domain.managed_resources import (
     RealtimeCapabilities,
     STTCapabilities,
     TenantCredentialScope,
+    TTSCapabilities,
 )
 from control_plane.domain.runtime_resolution import RuntimeResolutionError
 from control_plane.interfaces.http.service_auth import (
@@ -133,11 +136,12 @@ class CredentialResponse(BaseModel):
 
 
 class ProviderConnectionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     key: str = Field(min_length=1, max_length=255)
     provider_kind: str = Field(min_length=1, max_length=64)
     credential_ref: UUID
     connection_config: dict[str, object]
-    enabled: bool = False
 
 
 class ProviderConnectionUpdate(BaseModel):
@@ -145,7 +149,19 @@ class ProviderConnectionUpdate(BaseModel):
 
     credential_ref: UUID
     connection_config: dict[str, object]
-    expected_generation: int = Field(ge=1)
+
+
+class ProviderConnectionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    key: str
+    provider_kind: str
+    credential_ref: UUID
+    connection_config: dict[str, object]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class GeneratedActorRequest(BaseModel):
@@ -212,29 +228,52 @@ class HandoffMaterialRequest(BaseModel):
 
 
 class LLMCapabilitiesWrite(BaseModel):
-    supports_temperature: bool
-    supports_reasoning_effort: bool
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["llm"]
+    supports_temperature: StrictBool
+    supports_reasoning_effort: StrictBool
 
 
 class RealtimeCapabilitiesWrite(BaseModel):
-    supports_server_vad: bool
-    supports_semantic_vad: bool
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["realtime"]
+    supports_server_vad: StrictBool
+    supports_semantic_vad: StrictBool
 
 
 class STTCapabilitiesWrite(BaseModel):
-    supports_cascade: bool
-    supports_realtime_input_transcription: bool
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["stt"]
+    supports_cascade: StrictBool
+    supports_realtime_input_transcription: StrictBool
+
+
+class TTSCapabilitiesWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["tts"]
+
+
+CapabilitiesWrite = Annotated[
+    LLMCapabilitiesWrite
+    | RealtimeCapabilitiesWrite
+    | STTCapabilitiesWrite
+    | TTSCapabilitiesWrite,
+    Field(discriminator="kind"),
+]
 
 
 class ModelDeploymentCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     key: str = Field(min_length=1, max_length=255)
     connection_ref: UUID
     deployment_kind: DeploymentKind
     deployment_config: dict[str, object]
-    llm_capabilities: LLMCapabilitiesWrite | None = None
-    realtime_capabilities: RealtimeCapabilitiesWrite | None = None
-    stt_capabilities: STTCapabilitiesWrite | None = None
-    enabled: bool = False
+    capabilities: CapabilitiesWrite
 
 
 class ModelDeploymentUpdate(BaseModel):
@@ -242,10 +281,30 @@ class ModelDeploymentUpdate(BaseModel):
 
     connection_ref: UUID
     deployment_config: dict[str, object]
-    llm_capabilities: LLMCapabilitiesWrite | None = None
-    realtime_capabilities: RealtimeCapabilitiesWrite | None = None
-    stt_capabilities: STTCapabilitiesWrite | None = None
-    expected_generation: int = Field(ge=1)
+    capabilities: CapabilitiesWrite
+
+
+class ModelDeploymentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    key: str
+    connection_ref: UUID
+    deployment_kind: DeploymentKind
+    deployment_config: dict[str, object]
+    capabilities: CapabilitiesWrite
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProviderValidationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    valid: bool
+    usable: bool
+    code: str | None = None
+    message: str | None = None
 
 
 def create_http_app(
@@ -256,6 +315,7 @@ def create_http_app(
     runtime_materialization: ExecutionSnapshotService | None = None,
     execution_materialization: ExecutionMaterializationService | None = None,
     credentials: CredentialService | None = None,
+    providers: ProviderService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.settings = None
@@ -266,6 +326,7 @@ def create_http_app(
     app.state.runtime_materialization = runtime_materialization
     app.state.execution_materialization = execution_materialization
     app.state.credentials = credentials
+    app.state.providers = providers
 
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
@@ -425,6 +486,8 @@ def create_http_app(
         app.include_router(_managed_resource_router(), prefix="/v1/managed-resources")
     if credentials is not None:
         app.include_router(_credential_router(), prefix="/management/v1")
+    if providers is not None:
+        app.include_router(_provider_router(), prefix="/management/v1/providers")
     if runtime_resolver is not None:
 
         @app.get("/v1/runtime/resolve/tenant/{tenant_id}")
@@ -787,6 +850,10 @@ def _managed(request: Request) -> ManagedResourceService:
     return request.app.state.managed_resources
 
 
+def _provider(request: Request) -> ProviderService:
+    return request.app.state.providers
+
+
 def _credential(request: Request) -> CredentialService:
     return request.app.state.credentials
 
@@ -836,11 +903,8 @@ def _connection_response(value: ProviderConnection) -> dict[str, object]:
         "credential_ref": value.credential_ref.value,
         "connection_config": value.connection_config,
         "enabled": value.enabled,
-        "generation": value.generation,
         "created_at": value.created_at,
-        "created_by": value.created_by,
         "updated_at": value.updated_at,
-        "updated_by": value.updated_by,
     }
 
 
@@ -894,43 +958,53 @@ def _phone_number_assignment_response(
 
 
 def _deployment_response(value: ModelDeployment) -> dict[str, object]:
+    capabilities = value.capabilities
+    capability_payload: dict[str, object] = {"kind": capabilities.kind}
+    if isinstance(capabilities, LLMCapabilities):
+        capability_payload.update(
+            supports_temperature=capabilities.supports_temperature,
+            supports_reasoning_effort=capabilities.supports_reasoning_effort,
+        )
+    elif isinstance(capabilities, RealtimeCapabilities):
+        capability_payload.update(
+            supports_server_vad=capabilities.supports_server_vad,
+            supports_semantic_vad=capabilities.supports_semantic_vad,
+        )
+    elif isinstance(capabilities, STTCapabilities):
+        capability_payload.update(
+            supports_cascade=capabilities.supports_cascade,
+            supports_realtime_input_transcription=(
+                capabilities.supports_realtime_input_transcription
+            ),
+        )
     return {
         "id": value.ref.value,
         "key": value.key,
         "connection_ref": value.connection_ref.value,
         "deployment_kind": value.deployment_kind,
         "deployment_config": value.deployment_config,
-        "llm_capabilities": (
-            {
-                "supports_temperature": value.llm_capabilities.supports_temperature,
-                "supports_reasoning_effort": value.llm_capabilities.supports_reasoning_effort,
-            }
-            if value.llm_capabilities
-            else None
-        ),
-        "realtime_capabilities": (
-            {
-                "supports_server_vad": value.realtime_capabilities.supports_server_vad,
-                "supports_semantic_vad": value.realtime_capabilities.supports_semantic_vad,
-            }
-            if value.realtime_capabilities
-            else None
-        ),
-        "stt_capabilities": (
-            {
-                "supports_cascade": value.stt_capabilities.supports_cascade,
-                "supports_realtime_input_transcription": value.stt_capabilities.supports_realtime_input_transcription,
-            }
-            if value.stt_capabilities
-            else None
-        ),
+        "capabilities": capability_payload,
         "enabled": value.enabled,
-        "generation": value.generation,
         "created_at": value.created_at,
-        "created_by": value.created_by,
         "updated_at": value.updated_at,
-        "updated_by": value.updated_by,
     }
+
+
+def _provider_etag(
+    service: ProviderService, value: ProviderConnection | ModelDeployment
+) -> str:
+    return f'"{service.concurrency_token(value)}"'
+
+
+def _capabilities(value: CapabilitiesWrite):
+    payload = value.model_dump(exclude={"kind"})
+    if isinstance(value, LLMCapabilitiesWrite):
+        return LLMCapabilities(**payload)
+    if isinstance(value, RealtimeCapabilitiesWrite):
+        return RealtimeCapabilities(**payload)
+    if isinstance(value, STTCapabilitiesWrite):
+        return STTCapabilities(**payload)
+    return TTSCapabilities()
 
 
 def _credential_router() -> APIRouter:
@@ -1045,22 +1119,284 @@ def _credential_router() -> APIRouter:
     return router
 
 
-def _managed_resource_router() -> APIRouter:
+def _provider_router() -> APIRouter:
     router = APIRouter()
+    read_auth = Depends(require_management_permission("resources:read"))
+    write_auth = Depends(require_management_permission("resources:write"))
 
-    @router.post("/provider-connections", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/connections",
+        status_code=status.HTTP_201_CREATED,
+        response_model=ProviderConnectionResponse,
+    )
     async def create_connection(
-        request: Request, body: ProviderConnectionCreate
-    ) -> Any:
-        value = await _managed(request).create_connection(
+        request: Request,
+        body: ProviderConnectionCreate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, _ = _command_headers(request, precondition=False)
+        service = _provider(request)
+        value = await service.create_connection(
             body.key,
             body.provider_kind,
             CredentialRef(body.credential_ref),
             body.connection_config,
-            body.enabled,
-            _management_actor(request),
+            principal.subject,
+            idempotency_key,
         )
-        return jsonable_encoder(_connection_response(value))
+        return JSONResponse(
+            jsonable_encoder(_connection_response(value)),
+            status_code=status.HTTP_201_CREATED,
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.get(
+        "/connections", response_model=list[ProviderConnectionResponse]
+    )
+    async def list_connections(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(
+            [_connection_response(value) for value in await _provider(request).list_connections()]
+        )
+
+    @router.get(
+        "/connections/{resource_id}", response_model=ProviderConnectionResponse
+    )
+    async def get_connection(
+        request: Request,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service = _provider(request)
+        value = await service.get_connection(ProviderConnectionRef(resource_id))
+        return JSONResponse(
+            jsonable_encoder(_connection_response(value)),
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.put(
+        "/connections/{resource_id}", response_model=ProviderConnectionResponse
+    )
+    async def update_connection(
+        request: Request,
+        resource_id: UUID,
+        body: ProviderConnectionUpdate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(
+            request, precondition=True
+        )
+        service = _provider(request)
+        value = await service.update_connection(
+            ProviderConnectionRef(resource_id),
+            CredentialRef(body.credential_ref),
+            body.connection_config,
+            expected_token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_connection_response(value)),
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.post(
+        "/connections/{resource_id}/enable", response_model=ProviderConnectionResponse
+    )
+    async def enable_connection(
+        request: Request,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await connection_lifecycle(request, resource_id, principal, True)
+
+    @router.post(
+        "/connections/{resource_id}/disable", response_model=ProviderConnectionResponse
+    )
+    async def disable_connection(
+        request: Request,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await connection_lifecycle(request, resource_id, principal, False)
+
+    async def connection_lifecycle(
+        request: Request,
+        resource_id: UUID,
+        principal: ManagementPrincipal,
+        enabled: bool,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(
+            request, precondition=True
+        )
+        service = _provider(request)
+        command = service.enable_connection if enabled else service.disable_connection
+        value = await command(
+            ProviderConnectionRef(resource_id),
+            expected_token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_connection_response(value)),
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.post(
+        "/connections/{resource_id}/validate",
+        response_model=ProviderValidationResponse,
+    )
+    async def validate_connection(
+        request: Request,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = write_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            await _provider(request).validate_connection(
+                ProviderConnectionRef(resource_id)
+            )
+        )
+
+    @router.post(
+        "/deployments",
+        status_code=status.HTTP_201_CREATED,
+        response_model=ModelDeploymentResponse,
+    )
+    async def create_deployment(
+        request: Request,
+        body: ModelDeploymentCreate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, _ = _command_headers(request, precondition=False)
+        service = _provider(request)
+        value = await service.create_deployment(
+            body.key,
+            ProviderConnectionRef(body.connection_ref),
+            body.deployment_kind,
+            body.deployment_config,
+            _capabilities(body.capabilities),
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_deployment_response(value)),
+            status_code=status.HTTP_201_CREATED,
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.get("/deployments", response_model=list[ModelDeploymentResponse])
+    async def list_deployments(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(
+            [_deployment_response(value) for value in await _provider(request).list_deployments()]
+        )
+
+    @router.get(
+        "/deployments/{resource_id}", response_model=ModelDeploymentResponse
+    )
+    async def get_deployment(
+        request: Request,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service = _provider(request)
+        value = await service.get_deployment(ModelDeploymentRef(resource_id))
+        return JSONResponse(
+            jsonable_encoder(_deployment_response(value)),
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.put(
+        "/deployments/{resource_id}", response_model=ModelDeploymentResponse
+    )
+    async def update_deployment(
+        request: Request,
+        resource_id: UUID,
+        body: ModelDeploymentUpdate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(
+            request, precondition=True
+        )
+        service = _provider(request)
+        value = await service.update_deployment(
+            ModelDeploymentRef(resource_id),
+            ProviderConnectionRef(body.connection_ref),
+            body.deployment_config,
+            _capabilities(body.capabilities),
+            expected_token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_deployment_response(value)),
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.post(
+        "/deployments/{resource_id}/enable", response_model=ModelDeploymentResponse
+    )
+    async def enable_deployment(
+        request: Request,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await deployment_lifecycle(request, resource_id, principal, True)
+
+    @router.post(
+        "/deployments/{resource_id}/disable", response_model=ModelDeploymentResponse
+    )
+    async def disable_deployment(
+        request: Request,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await deployment_lifecycle(request, resource_id, principal, False)
+
+    async def deployment_lifecycle(
+        request: Request,
+        resource_id: UUID,
+        principal: ManagementPrincipal,
+        enabled: bool,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(
+            request, precondition=True
+        )
+        service = _provider(request)
+        command = service.enable_deployment if enabled else service.disable_deployment
+        value = await command(
+            ModelDeploymentRef(resource_id),
+            expected_token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_deployment_response(value)),
+            headers={"ETag": _provider_etag(service, value)},
+        )
+
+    @router.post(
+        "/deployments/{resource_id}/validate",
+        response_model=ProviderValidationResponse,
+    )
+    async def validate_deployment(
+        request: Request,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = write_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            await _provider(request).validate_deployment(
+                ModelDeploymentRef(resource_id)
+            )
+        )
+
+    return router
+
+
+def _managed_resource_router() -> APIRouter:
+    router = APIRouter()
 
     @router.post("/integration-connections", status_code=status.HTTP_201_CREATED)
     async def create_integration_connection(
@@ -1270,126 +1606,6 @@ def _managed_resource_router() -> APIRouter:
                 for value in await _managed(request).list_phone_number_assignments(
                     tenant_id
                 )
-            ]
-        )
-
-    @router.put("/provider-connections/{resource_id}")
-    async def update_connection(
-        request: Request, resource_id: UUID, body: ProviderConnectionUpdate
-    ) -> Any:
-        value = await _managed(request).update_connection(
-            ProviderConnectionRef(resource_id),
-            CredentialRef(body.credential_ref),
-            body.connection_config,
-            body.expected_generation,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_connection_response(value))
-
-    @router.post("/provider-connections/{resource_id}/{operation}")
-    async def set_connection_enabled(
-        request: Request,
-        resource_id: UUID,
-        operation: str,
-        body: GeneratedActorRequest,
-    ) -> Any:
-        if operation not in {"enable", "disable"}:
-            raise HTTPException(status.HTTP_404_NOT_FOUND)
-        value = await _managed(request).set_connection_enabled(
-            ProviderConnectionRef(resource_id),
-            operation == "enable",
-            body.expected_generation,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_connection_response(value))
-
-    @router.get("/provider-connections/{resource_id}")
-    async def get_connection(request: Request, resource_id: UUID) -> Any:
-        value = await _managed(request).get_connection(
-            ProviderConnectionRef(resource_id)
-        )
-        return jsonable_encoder(_connection_response(value))
-
-    @router.get("/provider-connections")
-    async def list_connections(request: Request) -> Any:
-        return jsonable_encoder(
-            [
-                _connection_response(value)
-                for value in await _managed(request).list_connections()
-            ]
-        )
-
-    @router.post("/model-deployments", status_code=status.HTTP_201_CREATED)
-    async def create_deployment(request: Request, body: ModelDeploymentCreate) -> Any:
-        value = await _managed(request).create_deployment(
-            body.key,
-            ProviderConnectionRef(body.connection_ref),
-            body.deployment_kind,
-            body.deployment_config,
-            body.enabled,
-            _management_actor(request),
-            LLMCapabilities(**body.llm_capabilities.model_dump())
-            if body.llm_capabilities
-            else None,
-            RealtimeCapabilities(**body.realtime_capabilities.model_dump())
-            if body.realtime_capabilities
-            else None,
-            STTCapabilities(**body.stt_capabilities.model_dump())
-            if body.stt_capabilities
-            else None,
-        )
-        return jsonable_encoder(_deployment_response(value))
-
-    @router.put("/model-deployments/{resource_id}")
-    async def update_deployment(
-        request: Request, resource_id: UUID, body: ModelDeploymentUpdate
-    ) -> Any:
-        value = await _managed(request).update_deployment(
-            ModelDeploymentRef(resource_id),
-            ProviderConnectionRef(body.connection_ref),
-            body.deployment_config,
-            body.expected_generation,
-            _management_actor(request),
-            LLMCapabilities(**body.llm_capabilities.model_dump())
-            if body.llm_capabilities
-            else None,
-            RealtimeCapabilities(**body.realtime_capabilities.model_dump())
-            if body.realtime_capabilities
-            else None,
-            STTCapabilities(**body.stt_capabilities.model_dump())
-            if body.stt_capabilities
-            else None,
-        )
-        return jsonable_encoder(_deployment_response(value))
-
-    @router.post("/model-deployments/{resource_id}/{operation}")
-    async def set_deployment_enabled(
-        request: Request,
-        resource_id: UUID,
-        operation: str,
-        body: GeneratedActorRequest,
-    ) -> Any:
-        if operation not in {"enable", "disable"}:
-            raise HTTPException(status.HTTP_404_NOT_FOUND)
-        value = await _managed(request).set_deployment_enabled(
-            ModelDeploymentRef(resource_id),
-            operation == "enable",
-            body.expected_generation,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_deployment_response(value))
-
-    @router.get("/model-deployments/{resource_id}")
-    async def get_deployment(request: Request, resource_id: UUID) -> Any:
-        value = await _managed(request).get_deployment(ModelDeploymentRef(resource_id))
-        return jsonable_encoder(_deployment_response(value))
-
-    @router.get("/model-deployments")
-    async def list_deployments(request: Request) -> Any:
-        return jsonable_encoder(
-            [
-                _deployment_response(value)
-                for value in await _managed(request).list_deployments()
             ]
         )
 

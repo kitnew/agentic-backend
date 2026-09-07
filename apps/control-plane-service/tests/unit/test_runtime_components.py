@@ -22,6 +22,7 @@ from control_plane.domain.managed_resources import (
     ProviderConnectionRef,
     RealtimeCapabilities,
     STTCapabilities,
+    TTSCapabilities,
 )
 from control_plane.domain.runtime_components import register_runtime_components
 
@@ -39,9 +40,7 @@ def deployment(
         ProviderConnectionRef(uuid4()),
         kind,
         {},
-        capabilities,
-        realtime,
-        stt,
+        capabilities or realtime or stt or TTSCapabilities(),
         True,
         1,
         now,

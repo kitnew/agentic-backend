@@ -25,6 +25,7 @@ def control_plane_openapi() -> dict[str, Any]:
         SchemaLifecycle(),  # type: ignore[arg-type]
         components=object(),  # type: ignore[arg-type]
         managed_resources=object(),  # type: ignore[arg-type]
+        providers=object(),  # type: ignore[arg-type]
     )
     schema = app.openapi()
     # FastAPI does not carry parameters declared by an APIRouter prefix into

@@ -15,7 +15,6 @@ from control_plane.domain.managed_resource_errors import (
     ManagedResourceConflict,
 )
 from control_plane.domain.managed_resources import PhoneNumberAssignment
-from control_plane.domain.providers import default_provider_registry
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -31,10 +30,7 @@ from sqlalchemy import func, select
 
 
 def managed(database: Database) -> ManagedResourceService:
-    return ManagedResourceService(
-        default_provider_registry(),
-        SqlAlchemyManagedResourceRepository(database.sessions),
-    )
+    return ManagedResourceService(SqlAlchemyManagedResourceRepository(database.sessions))
 
 
 def components(database: Database) -> ComponentService:

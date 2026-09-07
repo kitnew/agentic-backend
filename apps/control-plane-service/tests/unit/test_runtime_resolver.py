@@ -33,9 +33,10 @@ from control_plane.domain.managed_resources import (
     ProviderConnectionRef,
     RealtimeCapabilities,
     STTCapabilities,
+    TTSCapabilities,
 )
 from control_plane.domain.prompt_components import register_prompt_components
-from control_plane.domain.providers import default_provider_registry
+from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.domain.runtime_execution_snapshot import (
     content_hash,
@@ -163,9 +164,7 @@ def deployment(
         ProviderConnectionRef(IDS[f"{connection_name}_connection"]),
         kind,
         config,
-        llm,
-        realtime,
-        stt,
+        llm or realtime or stt or TTSCapabilities(),
         True,
         5,
         NOW,
@@ -290,7 +289,7 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
 def resolver(value: RuntimeResolutionState) -> RuntimeResolver:
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
-    return RuntimeResolver(registry, default_provider_registry(), Reader(value))
+    return RuntimeResolver(registry, ProviderKindRegistry(), Reader(value))
 
 
 def execution_resolver(
@@ -343,7 +342,7 @@ def execution_resolver(
     enriched = replace(value, components=components)
     return ExecutionResolver(
         registry,
-        RuntimeResolver(registry, default_provider_registry(), Reader(enriched)),
+        RuntimeResolver(registry, ProviderKindRegistry(), Reader(enriched)),
     ), enriched
 
 
@@ -565,7 +564,7 @@ async def test_cascade_revalidates_live_resources(mutation: str, reason) -> None
     else:
         deployments[IDS["cascade_stt"]] = replace(
             deployments[IDS["cascade_stt"]],
-            stt_capabilities=STTCapabilities(False, False),
+            capabilities=STTCapabilities(False, False),
         )
 
     with pytest.raises(RuntimeResolutionError) as captured:
@@ -673,12 +672,12 @@ async def test_realtime_revalidates_live_compatibility(mutation: str, reason) ->
     elif mutation == "vad_capability":
         deployments[IDS["realtime"]] = replace(
             deployments[IDS["realtime"]],
-            realtime_capabilities=RealtimeCapabilities(False, True),
+            capabilities=RealtimeCapabilities(False, True),
         )
     elif mutation == "transcription_capability":
         deployments[IDS["realtime_stt"]] = replace(
             deployments[IDS["realtime_stt"]],
-            stt_capabilities=STTCapabilities(False, False),
+            capabilities=STTCapabilities(False, False),
         )
     elif mutation == "connection_disabled":
         connections = dict(value.connections)
@@ -720,7 +719,7 @@ async def test_realtime_semantic_vad_capability_is_revalidated() -> None:
     deployments = dict(value.deployments)
     deployments[IDS["realtime"]] = replace(
         deployments[IDS["realtime"]],
-        realtime_capabilities=RealtimeCapabilities(True, False),
+        capabilities=RealtimeCapabilities(True, False),
     )
 
     with pytest.raises(RuntimeResolutionError) as captured:

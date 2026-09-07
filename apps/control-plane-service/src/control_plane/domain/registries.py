@@ -2,6 +2,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, ValidationError
+
+from control_plane.domain.managed_resource_errors import InvalidManagedResource
+from control_plane.domain.managed_resources import DeploymentKind
+
 
 class UnknownRegistryKey(ValueError):
     pass
@@ -9,6 +14,33 @@ class UnknownRegistryKey(ValueError):
 
 class IncompatibleRegistryReference(ValueError):
     pass
+
+
+class _ProviderConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class _AzureOpenAIConnectionConfig(_ProviderConfig):
+    endpoint: AnyHttpUrl
+    api_version: str | None = Field(default=None, min_length=1)
+
+
+class _EmptyConnectionConfig(_ProviderConfig):
+    pass
+
+
+class _AzureOpenAILLMDeploymentConfig(_ProviderConfig):
+    deployment_name: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    api_version: str = Field(min_length=1)
+
+
+class _AzureOpenAIDeploymentConfig(_ProviderConfig):
+    deployment_name: str = Field(min_length=1)
+
+
+class _ModelDeploymentConfig(_ProviderConfig):
+    model_id: str = Field(min_length=1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +109,26 @@ class ProviderKindRegistry:
         ),
     )
 
+    _connection_schemas: Mapping[str, type[_ProviderConfig]] = MappingProxyType(
+        {
+            "azure_openai": _AzureOpenAIConnectionConfig,
+            "elevenlabs": _EmptyConnectionConfig,
+            "deepgram": _EmptyConnectionConfig,
+        }
+    )
+    _deployment_schemas: Mapping[
+        tuple[str, DeploymentKind], type[_ProviderConfig]
+    ] = MappingProxyType(
+        {
+            ("azure_openai", DeploymentKind.LLM): _AzureOpenAILLMDeploymentConfig,
+            ("azure_openai", DeploymentKind.REALTIME): _AzureOpenAIDeploymentConfig,
+            ("azure_openai", DeploymentKind.STT): _AzureOpenAIDeploymentConfig,
+            ("elevenlabs", DeploymentKind.STT): _ModelDeploymentConfig,
+            ("elevenlabs", DeploymentKind.TTS): _ModelDeploymentConfig,
+            ("deepgram", DeploymentKind.STT): _ModelDeploymentConfig,
+        }
+    )
+
     def resolve(self, key: str) -> RegistryEntry:
         for entry in self.entries:
             if entry.key == key:
@@ -94,6 +146,34 @@ class ProviderKindRegistry:
                 f"provider {provider_key} does not support {deployment_key}"
             )
         return entry
+
+    def validate_connection(
+        self, provider_kind: str, value: object
+    ) -> dict[str, object]:
+        try:
+            self.resolve(provider_kind)
+        except UnknownRegistryKey as error:
+            raise InvalidManagedResource(str(error)) from error
+        return self._validate(self._connection_schemas[provider_kind], value)
+
+    def validate_deployment(
+        self, provider_kind: str, deployment_kind: DeploymentKind, value: object
+    ) -> dict[str, object]:
+        try:
+            self.resolve_for_deployment(provider_kind, deployment_kind.value)
+            schema = self._deployment_schemas[(provider_kind, deployment_kind)]
+        except (UnknownRegistryKey, IncompatibleRegistryReference, KeyError) as error:
+            raise InvalidManagedResource(str(error)) from error
+        return self._validate(schema, value)
+
+    @staticmethod
+    def _validate(
+        schema: type[_ProviderConfig], value: object
+    ) -> dict[str, object]:
+        try:
+            return schema.model_validate(value).model_dump(mode="json")
+        except ValidationError as error:
+            raise InvalidManagedResource(str(error)) from error
 
 
 class DeploymentKindRegistry:

@@ -66,18 +66,31 @@ class DeploymentKind(StrEnum):
 class LLMCapabilities:
     supports_temperature: bool
     supports_reasoning_effort: bool
+    kind: Literal["llm"] = field(default="llm", init=False)
 
 
 @dataclass(frozen=True, slots=True)
 class RealtimeCapabilities:
     supports_server_vad: bool
     supports_semantic_vad: bool
+    kind: Literal["realtime"] = field(default="realtime", init=False)
 
 
 @dataclass(frozen=True, slots=True)
 class STTCapabilities:
     supports_cascade: bool
     supports_realtime_input_transcription: bool
+    kind: Literal["stt"] = field(default="stt", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class TTSCapabilities:
+    kind: Literal["tts"] = field(default="tts", init=False)
+
+
+DeploymentCapabilities = (
+    LLMCapabilities | RealtimeCapabilities | STTCapabilities | TTSCapabilities
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,15 +156,37 @@ class ModelDeployment:
     connection_ref: ProviderConnectionRef
     deployment_kind: DeploymentKind
     deployment_config: dict[str, Any]
-    llm_capabilities: LLMCapabilities | None
-    realtime_capabilities: RealtimeCapabilities | None
-    stt_capabilities: STTCapabilities | None
+    capabilities: DeploymentCapabilities
     enabled: bool
     generation: int
     created_at: datetime
     created_by: str
     updated_at: datetime
     updated_by: str
+
+
+def capabilities_from_payload(value: dict[str, Any]) -> DeploymentCapabilities:
+    kind = value.get("kind")
+    if not isinstance(kind, str):
+        raise TypeError("invalid deployment capabilities")
+    fields = {key: item for key, item in value.items() if key != "kind"}
+    try:
+        return {
+            "llm": LLMCapabilities,
+            "realtime": RealtimeCapabilities,
+            "stt": STTCapabilities,
+            "tts": TTSCapabilities,
+        }[kind](**fields)
+    except (KeyError, TypeError) as error:
+        raise ValueError("invalid deployment capabilities") from error
+
+
+def capabilities_payload(value: DeploymentCapabilities) -> dict[str, object]:
+    payload: dict[str, object] = {"kind": value.kind}
+    for name in value.__dataclass_fields__:
+        if name != "kind":
+            payload[name] = getattr(value, name)
+    return payload
 
 
 @dataclass(frozen=True, slots=True)

@@ -12,13 +12,11 @@ from pydantic import BaseModel, TypeAdapter
 from control_plane.domain.managed_resources import (
     CredentialRef,
     DeploymentKind,
-    LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
     ProviderConnection,
     ProviderConnectionRef,
-    RealtimeCapabilities,
-    STTCapabilities,
+    capabilities_from_payload,
 )
 from control_plane.domain.runtime_components import (
     CascadeExecutionDefaults,
@@ -190,15 +188,7 @@ def _resource(value: Mapping[str, Any]) -> ResolvedProviderResource:
             ProviderConnectionRef(_uuid(deployment["connection_ref"])),
             DeploymentKind(deployment["deployment_kind"]),
             deployment["deployment_config"],
-            LLMCapabilities(**deployment["llm_capabilities"])
-            if deployment["llm_capabilities"]
-            else None,
-            RealtimeCapabilities(**deployment["realtime_capabilities"])
-            if deployment["realtime_capabilities"]
-            else None,
-            STTCapabilities(**deployment["stt_capabilities"])
-            if deployment["stt_capabilities"]
-            else None,
+            capabilities_from_payload(deployment["capabilities"]),
             deployment["enabled"],
             deployment["generation"],
             datetime.fromisoformat(deployment["created_at"]),

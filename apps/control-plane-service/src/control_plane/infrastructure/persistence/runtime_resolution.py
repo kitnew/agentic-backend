@@ -21,15 +21,13 @@ from control_plane.domain.managed_resources import (
     CredentialRef,
     CredentialStatus,
     DeploymentKind,
-    LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
     PlatformCredentialScope,
     ProviderConnection,
     ProviderConnectionRef,
-    RealtimeCapabilities,
-    STTCapabilities,
     TenantCredentialScope,
+    capabilities_from_payload,
 )
 
 from .models import ConfigurationComponent as ComponentRow
@@ -288,11 +286,7 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
             ProviderConnectionRef(row.connection_id),
             DeploymentKind(row.deployment_kind),
             dict(row.deployment_config),
-            LLMCapabilities(**row.llm_capabilities) if row.llm_capabilities else None,
-            RealtimeCapabilities(**row.realtime_capabilities)
-            if row.realtime_capabilities
-            else None,
-            STTCapabilities(**row.stt_capabilities) if row.stt_capabilities else None,
+            capabilities_from_payload(dict(row.capabilities)),
             row.enabled,
             row.generation,
             row.created_at,

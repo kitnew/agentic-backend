@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import pytest
 from control_plane.application.components import ComponentService
-from control_plane.application.managed_resources import ManagedResourceService
+from control_plane.application.providers import ProviderService
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinitionRegistry,
@@ -17,32 +17,30 @@ from control_plane.domain.managed_resources import (
     LLMCapabilities,
     RealtimeCapabilities,
     STTCapabilities,
+    TTSCapabilities,
 )
-from control_plane.domain.providers import default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.infrastructure.persistence.database import Database
-from control_plane.infrastructure.persistence.managed_resources import (
-    SqlAlchemyManagedResourceRepository,
-)
 from control_plane.infrastructure.persistence.models import (
     ConfigurationComponentRevision,
-    ProviderConnection,
 )
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
 from sqlalchemy import func, select
 
-from .credential_helpers import create_platform_credential
+from .credential_helpers import (
+    create_model_deployment,
+    create_platform_credential,
+    create_provider_connection,
+    provider_service,
+)
 
 
-def services(database: Database) -> tuple[ComponentService, ManagedResourceService]:
+def services(database: Database) -> tuple[ComponentService, ProviderService]:
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
-    resources = ManagedResourceService(
-        default_provider_registry(),
-        SqlAlchemyManagedResourceRepository(database.sessions),
-    )
+    resources = provider_service(database)
     return ComponentService(
         registry, SqlAlchemyComponentRepository(database.sessions)
     ), resources
@@ -50,20 +48,19 @@ def services(database: Database) -> tuple[ComponentService, ManagedResourceServi
 
 async def deployment(
     database: Database,
-    resources: ManagedResourceService,
+    resources: ProviderService,
     kind: DeploymentKind,
     key: str,
     capabilities: LLMCapabilities | None = None,
 ):
     credential = await create_platform_credential(database, f"{key}-credential")
     if kind in {DeploymentKind.LLM, DeploymentKind.REALTIME}:
-        connection = await resources.create_connection(
+        connection = await create_provider_connection(
+            resources,
             f"{key}-connection",
             "azure_openai",
             credential.ref,
             {"endpoint": "https://example.openai.azure.com"},
-            True,
-            "test",
         )
         config = (
             {"deployment_name": key, "model": key, "api_version": "2025-01-01-preview"}
@@ -71,20 +68,27 @@ async def deployment(
             else {"deployment_name": key}
         )
     else:
-        connection = await resources.create_connection(
-            f"{key}-connection", "elevenlabs", credential.ref, {}, True, "test"
+        connection = await create_provider_connection(
+            resources, f"{key}-connection", "elevenlabs", credential.ref, {}
         )
         config = {"model_id": key}
-    return await resources.create_deployment(
+    selected_capabilities = (
+        capabilities
+        if kind is DeploymentKind.LLM
+        else RealtimeCapabilities(True, True)
+        if kind is DeploymentKind.REALTIME
+        else STTCapabilities(True, False)
+        if kind is DeploymentKind.STT
+        else TTSCapabilities()
+    )
+    assert selected_capabilities is not None
+    return await create_model_deployment(
+        resources,
         key,
         connection.ref,
         kind,
         config,
-        True,
-        "test",
-        capabilities,
-        RealtimeCapabilities(True, True) if kind is DeploymentKind.REALTIME else None,
-        STTCapabilities(True, False) if kind is DeploymentKind.STT else None,
+        selected_capabilities,
     )
 
 
@@ -321,9 +325,10 @@ async def test_runtime_rollback_revalidates_current_deployment(
             terra.ref,
             terra.connection_ref,
             terra.deployment_config,
-            terra.generation,
-            "test",
             LLMCapabilities(True, False),
+            resources.concurrency_token(terra),
+            "test",
+            str(uuid4()),
         )
         second_draft = await components.save_draft(
             address,
@@ -390,10 +395,23 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
             cascade_address, provider_draft.version, "test"
         )
 
-        async with database.sessions.begin() as session:
-            connection = await session.get(ProviderConnection, stt.connection_ref.value)
-            assert connection is not None
-            connection.provider_kind = "unsupported_stt"
+        azure_credential = await create_platform_credential(database, "azure-stt")
+        azure_connection = await create_provider_connection(
+            resources,
+            "azure-stt",
+            "azure_openai",
+            azure_credential.ref,
+            {"endpoint": "https://example.openai.azure.com"},
+        )
+        stt = await resources.update_deployment(
+            stt.ref,
+            azure_connection.ref,
+            {"deployment_name": "cascade-scribe"},
+            stt.capabilities,
+            resources.concurrency_token(stt),
+            "test",
+            str(uuid4()),
+        )
 
         local_draft = await components.save_draft(
             cascade_address,
@@ -462,34 +480,32 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
     )
     try:
         credential = await create_platform_credential(database, "realtime")
-        first = await resources.create_connection(
+        first = await create_provider_connection(
+            resources,
             "azure-realtime",
             "azure_openai",
             credential.ref,
             {"endpoint": "https://first.openai.azure.com"},
-            True,
-            "test",
         )
-        second = await resources.create_connection(
+        second = await create_provider_connection(
+            resources,
             "azure-realtime-other",
             "azure_openai",
             credential.ref,
             {"endpoint": "https://second.openai.azure.com"},
-            True,
-            "test",
         )
 
         async def realtime(
             key: str, capabilities: RealtimeCapabilities, enabled: bool = True
         ):
-            return await resources.create_deployment(
+            return await create_model_deployment(
+                resources,
                 key,
                 first.ref,
                 DeploymentKind.REALTIME,
                 {"deployment_name": key},
-                enabled,
-                "test",
-                realtime_capabilities=capabilities,
+                capabilities,
+                enabled=enabled,
             )
 
         async def transcription(
@@ -498,14 +514,14 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
             enabled: bool = True,
             other: bool = False,
         ):
-            return await resources.create_deployment(
+            return await create_model_deployment(
+                resources,
                 key,
                 second.ref if other else first.ref,
                 DeploymentKind.STT,
                 {"deployment_name": key},
-                enabled,
-                "test",
-                stt_capabilities=capabilities,
+                capabilities,
+                enabled=enabled,
             )
 
         model = await realtime("realtime-good", RealtimeCapabilities(True, True))
@@ -634,9 +650,10 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
             model.ref,
             model.connection_ref,
             model.deployment_config,
-            model.generation,
+            RealtimeCapabilities(True, False),
+            resources.concurrency_token(model),
             "test",
-            realtime_capabilities=RealtimeCapabilities(True, False),
+            str(uuid4()),
         )
         async with database.sessions() as session:
             revision_count = await session.scalar(

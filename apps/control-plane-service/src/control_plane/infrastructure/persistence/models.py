@@ -334,6 +334,14 @@ class PhoneNumberAssignment(Base):
 class ModelDeployment(Base):
     __tablename__ = "model_deployments"
     __table_args__ = (
+        CheckConstraint(
+            "deployment_kind IN ('llm', 'realtime', 'stt', 'tts')",
+            name="ck_model_deployment_kind",
+        ),
+        CheckConstraint(
+            "capabilities ->> 'kind' = deployment_kind",
+            name="ck_model_deployment_capability_kind",
+        ),
         CheckConstraint("generation >= 1", name="ck_model_deployment_generation"),
         {"schema": SCHEMA},
     )
@@ -345,9 +353,7 @@ class ModelDeployment(Base):
     )
     deployment_kind: Mapped[str] = mapped_column(String(32))
     deployment_config: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    llm_capabilities: Mapped[dict[str, bool] | None] = mapped_column(JSONB)
-    realtime_capabilities: Mapped[dict[str, bool] | None] = mapped_column(JSONB)
-    stt_capabilities: Mapped[dict[str, bool] | None] = mapped_column(JSONB)
+    capabilities: Mapped[dict[str, Any]] = mapped_column(JSONB)
     enabled: Mapped[bool]
     generation: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(

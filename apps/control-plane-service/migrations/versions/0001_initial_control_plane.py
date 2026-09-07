@@ -257,6 +257,26 @@ def upgrade() -> None:
         sa.CheckConstraint("generation >= 1", name="ck_provider_connection_generation"),
         schema=SCHEMA,
     )
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_provider_connection_identity_change() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.id IS DISTINCT FROM NEW.id
+             OR OLD.key IS DISTINCT FROM NEW.key
+             OR OLD.provider_kind IS DISTINCT FROM NEW.provider_kind THEN
+            RAISE EXCEPTION 'provider connection identity is immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER provider_connection_identity_immutable "
+        "BEFORE UPDATE OF id, key, provider_kind ON control_plane.provider_connections "
+        "FOR EACH ROW EXECUTE FUNCTION control_plane.reject_provider_connection_identity_change()"
+    )
     op.create_table(
         "model_deployments",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -264,17 +284,43 @@ def upgrade() -> None:
         sa.Column("connection_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.provider_connections.id"), nullable=False),
         sa.Column("deployment_kind", sa.String(32), nullable=False),
         sa.Column("deployment_config", postgresql.JSONB(), nullable=False),
-        sa.Column("llm_capabilities", postgresql.JSONB()),
-        sa.Column("realtime_capabilities", postgresql.JSONB()),
-        sa.Column("stt_capabilities", postgresql.JSONB()),
+        sa.Column("capabilities", postgresql.JSONB(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("created_by", sa.String(255), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_by", sa.String(255), nullable=False),
+        sa.CheckConstraint(
+            "deployment_kind IN ('llm', 'realtime', 'stt', 'tts')",
+            name="ck_model_deployment_kind",
+        ),
+        sa.CheckConstraint(
+            "capabilities ->> 'kind' = deployment_kind",
+            name="ck_model_deployment_capability_kind",
+        ),
         sa.CheckConstraint("generation >= 1", name="ck_model_deployment_generation"),
         schema=SCHEMA,
+    )
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_model_deployment_identity_change() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.id IS DISTINCT FROM NEW.id
+             OR OLD.key IS DISTINCT FROM NEW.key
+             OR OLD.deployment_kind IS DISTINCT FROM NEW.deployment_kind THEN
+            RAISE EXCEPTION 'model deployment identity is immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER model_deployment_identity_immutable "
+        "BEFORE UPDATE OF id, key, deployment_kind ON control_plane.model_deployments "
+        "FOR EACH ROW EXECUTE FUNCTION control_plane.reject_model_deployment_identity_change()"
     )
     op.create_table(
         "integration_connections",
@@ -366,7 +412,11 @@ def downgrade() -> None:
     op.drop_table("phone_number_assignments", schema=SCHEMA)
     op.drop_table("handoff_destinations", schema=SCHEMA)
     op.drop_table("integration_connections", schema=SCHEMA)
+    op.execute("DROP TRIGGER model_deployment_identity_immutable ON control_plane.model_deployments")
+    op.execute("DROP FUNCTION control_plane.reject_model_deployment_identity_change()")
     op.drop_table("model_deployments", schema=SCHEMA)
+    op.execute("DROP TRIGGER provider_connection_identity_immutable ON control_plane.provider_connections")
+    op.execute("DROP FUNCTION control_plane.reject_provider_connection_identity_change()")
     op.drop_table("provider_connections", schema=SCHEMA)
     op.execute("DROP TRIGGER credential_version_immutable ON control_plane.credential_versions")
     op.execute("DROP FUNCTION control_plane.reject_credential_version_mutation()")

@@ -20,8 +20,10 @@ from control_plane.domain.managed_resources import (
     DeploymentKind,
     ModelDeployment,
     ProviderConnection,
+    RealtimeCapabilities,
+    STTCapabilities,
 )
-from control_plane.domain.providers import ProviderRegistry
+from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.domain.runtime_components import (
     ArchitectureKind,
     ArchitecturePolicy,
@@ -107,7 +109,7 @@ class RuntimeResolver:
     def __init__(
         self,
         registry: ComponentDefinitionRegistry,
-        providers: ProviderRegistry,
+        providers: ProviderKindRegistry,
         reader: RuntimeResolutionReader,
     ) -> None:
         self._registry = registry
@@ -248,8 +250,8 @@ class RuntimeResolver:
             policy.value.input_transcription.deployment_ref,
             DeploymentKind.STT,
         )
-        capabilities = model.deployment.realtime_capabilities
-        if capabilities is None:
+        capabilities = model.deployment.capabilities
+        if not isinstance(capabilities, RealtimeCapabilities):
             self._reject(
                 ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
                 deployment_ref=model.deployment.ref.value,
@@ -267,9 +269,9 @@ class RuntimeResolver:
                 deployment_ref=model.deployment.ref.value,
                 capability=capability,
             )
-        transcription_capabilities = transcription.deployment.stt_capabilities
+        transcription_capabilities = transcription.deployment.capabilities
         if (
-            transcription_capabilities is None
+            not isinstance(transcription_capabilities, STTCapabilities)
             or not transcription_capabilities.supports_realtime_input_transcription
         ):
             self._reject(
@@ -364,10 +366,13 @@ class RuntimeResolver:
                 state="missing_active_version",
             )
         try:
-            provider = self._providers.resolve(connection.provider_kind)
-            provider.validate_connection(connection.connection_config)
-            provider.validate_deployment(kind, deployment.deployment_config)
-        except InvalidManagedResource as error:
+            self._providers.validate_connection(
+                connection.provider_kind, connection.connection_config
+            )
+            self._providers.validate_deployment(
+                connection.provider_kind, kind, deployment.deployment_config
+            )
+        except (InvalidManagedResource, ValueError) as error:
             self._reject(
                 ResolutionFailureReason.INCOMPATIBLE_PROVIDER,
                 deployment_ref=deployment.ref.value,

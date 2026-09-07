@@ -12,7 +12,6 @@ from control_plane.domain.components import (
 )
 from control_plane.domain.components.errors import InvalidComponentValue
 from control_plane.domain.managed_resource_errors import ManagedResourceNotFound
-from control_plane.domain.providers import default_provider_registry
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -29,10 +28,7 @@ def services(database: Database) -> tuple[ComponentService, ManagedResourceServi
     register_capability_components(registry)
     return (
         ComponentService(registry, SqlAlchemyComponentRepository(database.sessions)),
-        ManagedResourceService(
-            default_provider_registry(),
-            SqlAlchemyManagedResourceRepository(database.sessions),
-        ),
+        ManagedResourceService(SqlAlchemyManagedResourceRepository(database.sessions)),
     )
 
 

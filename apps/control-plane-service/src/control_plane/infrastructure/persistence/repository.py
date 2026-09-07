@@ -27,12 +27,12 @@ from control_plane.domain.components.errors import (
 from control_plane.domain.managed_resource_errors import ManagedResourceNotFound
 from control_plane.domain.managed_resources import (
     DeploymentKind,
-    LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
     ProviderConnectionRef,
     RealtimeCapabilities,
     STTCapabilities,
+    capabilities_from_payload,
 )
 from control_plane.domain.post_call import TenantPostCallConfig
 from control_plane.domain.runtime_components import (
@@ -267,11 +267,7 @@ class SqlAlchemyComponentRepository:
             ProviderConnectionRef(row.connection_id),
             DeploymentKind(row.deployment_kind),
             dict(row.deployment_config),
-            LLMCapabilities(**row.llm_capabilities) if row.llm_capabilities else None,
-            RealtimeCapabilities(**row.realtime_capabilities)
-            if row.realtime_capabilities
-            else None,
-            STTCapabilities(**row.stt_capabilities) if row.stt_capabilities else None,
+            capabilities_from_payload(dict(row.capabilities)),
             row.enabled,
             row.generation,
             row.created_at,
@@ -417,12 +413,8 @@ class SqlAlchemyComponentRepository:
         if not transcription.enabled:
             raise InvalidComponentValue("input transcription deployment is disabled")
 
-        capabilities = (
-            RealtimeCapabilities(**realtime.realtime_capabilities)
-            if realtime.realtime_capabilities
-            else None
-        )
-        if capabilities is None:
+        capabilities = capabilities_from_payload(dict(realtime.capabilities))
+        if not isinstance(capabilities, RealtimeCapabilities):
             raise InvalidComponentValue("realtime deployment has no capabilities")
         if isinstance(value.turn_completion, ServerVADTurnCompletion):
             supported, strategy = capabilities.supports_server_vad, "server_vad"
@@ -433,13 +425,11 @@ class SqlAlchemyComponentRepository:
                 f"realtime deployment does not support {strategy}"
             )
 
-        transcription_capabilities = (
-            STTCapabilities(**transcription.stt_capabilities)
-            if transcription.stt_capabilities
-            else None
+        transcription_capabilities = capabilities_from_payload(
+            dict(transcription.capabilities)
         )
         if (
-            transcription_capabilities is None
+            not isinstance(transcription_capabilities, STTCapabilities)
             or not transcription_capabilities.supports_realtime_input_transcription
         ):
             raise InvalidComponentValue(

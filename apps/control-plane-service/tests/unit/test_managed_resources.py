@@ -8,7 +8,7 @@ from control_plane.domain.managed_resources import (
     DeploymentKind,
     ModelDeploymentRef,
 )
-from control_plane.domain.providers import default_provider_registry
+from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.interfaces.http.app import (
     ModelDeploymentUpdate,
@@ -47,18 +47,18 @@ def test_resource_identity_fields_cannot_be_supplied_to_updates() -> None:
 
 
 def test_provider_registry_validates_current_provider_shapes() -> None:
-    registry = default_provider_registry()
-    azure = registry.resolve("azure_openai")
-    elevenlabs = registry.resolve("elevenlabs")
+    registry = ProviderKindRegistry()
 
-    assert azure.validate_connection(
+    assert registry.validate_connection(
+        "azure_openai",
         {"endpoint": "https://example.openai.azure.com"}
     ) == {
         "endpoint": "https://example.openai.azure.com/",
         "api_version": None,
     }
     assert (
-        azure.validate_deployment(
+        registry.validate_deployment(
+            "azure_openai",
             DeploymentKind.LLM,
             {
                 "deployment_name": "chat-prod",
@@ -68,26 +68,26 @@ def test_provider_registry_validates_current_provider_shapes() -> None:
         )["deployment_name"]
         == "chat-prod"
     )
-    assert azure.validate_deployment(
-        DeploymentKind.REALTIME, {"deployment_name": "realtime-prod"}
+    assert registry.validate_deployment(
+        "azure_openai", DeploymentKind.REALTIME, {"deployment_name": "realtime-prod"}
     ) == {"deployment_name": "realtime-prod"}
-    assert azure.validate_deployment(
-        DeploymentKind.STT, {"deployment_name": "whisper-prod"}
+    assert registry.validate_deployment(
+        "azure_openai", DeploymentKind.STT, {"deployment_name": "whisper-prod"}
     ) == {"deployment_name": "whisper-prod"}
-    assert elevenlabs.validate_connection({}) == {}
-    assert elevenlabs.validate_deployment(
-        DeploymentKind.STT, {"model_id": "scribe_v2_realtime"}
+    assert registry.validate_connection("elevenlabs", {}) == {}
+    assert registry.validate_deployment(
+        "elevenlabs", DeploymentKind.STT, {"model_id": "scribe_v2_realtime"}
     ) == {"model_id": "scribe_v2_realtime"}
-    assert elevenlabs.validate_deployment(
-        DeploymentKind.TTS, {"model_id": "eleven_flash_v2_5"}
+    assert registry.validate_deployment(
+        "elevenlabs", DeploymentKind.TTS, {"model_id": "eleven_flash_v2_5"}
     ) == {"model_id": "eleven_flash_v2_5"}
 
     with pytest.raises(InvalidManagedResource, match="unknown provider"):
-        registry.resolve("unknown")
+        registry.validate_connection("unknown", {})
     with pytest.raises(InvalidManagedResource):
-        elevenlabs.validate_connection({"endpoint": "https://example.com"})
+        registry.validate_connection("elevenlabs", {"endpoint": "https://example.com"})
     with pytest.raises(InvalidManagedResource, match="does not support llm"):
-        elevenlabs.validate_deployment(DeploymentKind.LLM, {"model_id": "x"})
+        registry.validate_deployment("elevenlabs", DeploymentKind.LLM, {"model_id": "x"})
 
 
 def test_credential_cipher_uses_authenticated_resource_bound_encryption() -> None:
