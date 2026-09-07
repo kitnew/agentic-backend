@@ -1,14 +1,11 @@
 import asyncio
 import base64
-import json
 from contextlib import asynccontextmanager
 from typing import Any
 from uuid import uuid4
 
 import pytest
-from contracts import ManagedResourceChangedV1
 from control_plane.application.managed_resources import ManagedResourceService
-from control_plane.application.ports.messaging import OutboundMessage
 from control_plane.domain.managed_resource_errors import (
     InvalidManagedResource,
     ManagedResourceConflict,
@@ -21,15 +18,11 @@ from control_plane.domain.managed_resources import (
 )
 from control_plane.domain.providers import default_provider_registry
 from control_plane.infrastructure.encryption import CredentialCipher
-from control_plane.infrastructure.messaging.outbox import OutboxRelay
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
 )
-from control_plane.infrastructure.persistence.models import (
-    CredentialVersion,
-    OutboxMessage,
-)
+from control_plane.infrastructure.persistence.models import CredentialVersion
 from control_plane.infrastructure.persistence.models import (
     ModelDeployment as ModelDeploymentRow,
 )
@@ -53,36 +46,6 @@ def resources(
     return ManagedResourceService(default_provider_registry(), repository), repository
 
 
-class RecordingPublisher:
-    def __init__(self) -> None:
-        self.messages: list[OutboundMessage] = []
-
-    async def publish(self, message: OutboundMessage) -> None:
-        self.messages.append(message)
-        if len(self.messages) == 1:
-            raise RuntimeError("temporary failure")
-
-
-class BlockingPublisher:
-    def __init__(self) -> None:
-        self.started = asyncio.Event()
-        self.release = asyncio.Event()
-        self.messages: list[OutboundMessage] = []
-
-    async def publish(self, message: OutboundMessage) -> None:
-        self.messages.append(message)
-        self.started.set()
-        await self.release.wait()
-
-
-class CollectingPublisher:
-    def __init__(self) -> None:
-        self.messages: list[OutboundMessage] = []
-
-    async def publish(self, message: OutboundMessage) -> None:
-        self.messages.append(message)
-
-
 @pytest.mark.asyncio
 async def test_credentials_are_encrypted_rotated_and_terminal(
     migrated_database_url: str, caplog: pytest.LogCaptureFixture
@@ -97,23 +60,10 @@ async def test_credentials_are_encrypted_rotated_and_terminal(
 
         async with database.sessions() as session:
             stored = await session.scalar(select(CredentialVersion))
-            event = await session.scalar(select(OutboxMessage))
-            assert stored is not None and event is not None
+            assert stored is not None
             assert secret.encode() not in stored.ciphertext
             assert stored.key_id == "bootstrap"
             assert stored.algorithm == CredentialCipher.ALGORITHM
-            assert secret not in json.dumps(event.payload)
-
-        publisher = RecordingPublisher()
-        relay = OutboxRelay(database.sessions, publisher)
-        assert await relay.relay_once()
-        assert await relay.relay_once()
-        assert publisher.messages[0].message_id == publisher.messages[1].message_id
-        published = ManagedResourceChangedV1.model_validate_json(
-            publisher.messages[1].payload
-        )
-        assert published.payload.action == "created"
-        assert secret not in publisher.messages[1].payload.decode()
 
         rotations = await asyncio.gather(
             service.rotate_credential(created.ref, "second-secret", "bob"),
@@ -132,26 +82,6 @@ async def test_credentials_are_encrypted_rotated_and_terminal(
             value.version_number
             for value in await repository.list_credential_versions(created.ref)
         ] == [1, 2, 3]
-        async with database.sessions() as session:
-            events = (
-                await session.scalars(
-                    select(OutboxMessage)
-                    .where(
-                        OutboxMessage.ordering_key
-                        == f"managed:credential:{created.ref.value}"
-                    )
-                    .order_by(OutboxMessage.ordering_sequence)
-                )
-            ).all()
-        assert [
-            (
-                ManagedResourceChangedV1.model_validate(event.payload).payload.action,
-                ManagedResourceChangedV1.model_validate(
-                    event.payload
-                ).payload.resource_generation,
-            )
-            for event in events
-        ] == [("created", 1), ("rotated", 2), ("rotated", 3), ("revoked", 4)]
         with pytest.raises(ManagedResourceConflict, match="cannot be rotated"):
             await service.rotate_credential(created.ref, "fourth", "dave")
         assert secret not in caplog.text
@@ -229,10 +159,6 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
         await service.revoke_credential(credential.ref, "security")
         assert (await service.get_connection(connection.ref)).enabled is False
         assert (await service.get_deployment(deployment.ref)).enabled is False
-        async with database.sessions() as session:
-            before = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
         with pytest.raises(InvalidManagedResource, match="active credential"):
             await service.set_connection_enabled(connection.ref, True, 2, "bob")
         with pytest.raises(InvalidManagedResource, match="active credential"):
@@ -241,10 +167,6 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
             )
 
         async with database.sessions() as session:
-            assert (
-                await session.scalar(select(func.count()).select_from(OutboxMessage))
-                == before
-            )
             connection_rows = await session.scalar(
                 select(func.count()).select_from(ProviderConnectionRow)
             )
@@ -263,51 +185,6 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
                     {"id": uuid4(), "credential_id": uuid4()},
                 )
     finally:
-        await database.close()
-
-
-@pytest.mark.asyncio
-async def test_managed_outbox_preserves_resource_order_but_not_global_order(
-    migrated_database_url: str,
-) -> None:
-    database = Database(migrated_database_url)
-    service, _ = resources(database)
-    first_publisher = BlockingPublisher()
-    second_publisher = CollectingPublisher()
-    first = OutboxRelay(database.sessions, first_publisher)
-    second = OutboxRelay(database.sessions, second_publisher)
-    try:
-        credential = await service.create_credential("ordered", "first", "alice")
-        await service.rotate_credential(credential.ref, "second", "alice")
-
-        in_flight = asyncio.create_task(first.relay_once())
-        await first_publisher.started.wait()
-        assert not await second.relay_once()
-        first_publisher.release.set()
-        assert await in_flight
-        assert await second.relay_once()
-        actions = [
-            ManagedResourceChangedV1.model_validate_json(message.payload).payload.action
-            for message in [*first_publisher.messages, *second_publisher.messages]
-        ]
-        assert actions == ["created", "rotated"]
-
-        other = await service.create_credential("independent", "third", "bob")
-        assert other.generation == 1
-        await service.create_credential("also-independent", "fourth", "bob")
-        first_publisher.started.clear()
-        first_publisher.release.clear()
-        in_flight = asyncio.create_task(first.relay_once())
-        await first_publisher.started.wait()
-        assert await second.relay_once()
-        first_publisher.release.set()
-        assert await in_flight
-        assert (
-            second_publisher.messages[-1].message_id
-            != first_publisher.messages[-1].message_id
-        )
-    finally:
-        first_publisher.release.set()
         await database.close()
 
 

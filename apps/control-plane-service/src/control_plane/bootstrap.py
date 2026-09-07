@@ -29,8 +29,10 @@ from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.domain.providers import ProviderRegistry, default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.infrastructure.encryption import CredentialCipher
-from control_plane.infrastructure.messaging import NatsMessagePublisher, OutboxRelay
 from control_plane.infrastructure.persistence import Database
+from control_plane.infrastructure.persistence.command_transactions import (
+    component_command_scope,
+)
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
 )
@@ -51,17 +53,11 @@ from control_plane.settings import Settings
 def create_app(
     settings: Settings | None = None,
     database: Database | None = None,
-    nats: NatsMessagePublisher | None = None,
     registry: ComponentDefinitionRegistry | None = None,
-    relay: OutboxRelay | None = None,
     provider_registry: ProviderRegistry | None = None,
 ) -> FastAPI:
     settings = settings or Settings()  # type: ignore[call-arg]
     database = database or Database(str(settings.database_url))
-    nats = nats or NatsMessagePublisher(settings.nats_url)
-    relay = relay or OutboxRelay(
-        database.sessions, nats, settings.outbox_poll_interval_seconds
-    )
     telemetry = _configure_observability(settings)
     if registry is None:
         registry = ComponentDefinitionRegistry()
@@ -80,6 +76,7 @@ def create_app(
                 ComponentRepository,
                 SqlAlchemyComponentRepository(database.sessions),
             ),
+            component_command_scope(database.sessions),
         )
         if isinstance(database, Database)
         else None
@@ -136,7 +133,7 @@ def create_app(
         else None
     )
     app = create_http_app(
-        ServiceLifecycle(database, nats, relay, telemetry),
+        ServiceLifecycle(database, telemetry),
         components,
         managed_resources,
         runtime_resolver,
@@ -145,8 +142,6 @@ def create_app(
     )
     app.state.settings = settings
     app.state.database = database
-    app.state.nats = nats
-    app.state.outbox_relay = relay
     app.state.telemetry = telemetry
     app.state.component_registry = registry
     app.state.provider_registry = provider_registry

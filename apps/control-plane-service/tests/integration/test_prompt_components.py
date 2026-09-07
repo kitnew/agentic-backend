@@ -1,5 +1,4 @@
 import pytest
-from contracts import ConfigurationComponentPublishedV1
 from control_plane.application.components import ComponentService
 from control_plane.domain.components import (
     ComponentAddress,
@@ -12,11 +11,9 @@ from control_plane.domain.components import (
 from control_plane.domain.components.errors import RevisionNotFound
 from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.infrastructure.persistence.database import Database
-from control_plane.infrastructure.persistence.models import OutboxMessage
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
-from sqlalchemy import select
 
 
 def service(database: Database) -> ComponentService:
@@ -74,18 +71,6 @@ async def test_prompt_addresses_are_independent_and_use_generic_lifecycle(
         assert (await components.get_active(tenant_b)).value.content == "tenant b"
         assert first_hotel.revision_number == 1
 
-        async with database.sessions() as session:
-            rows = (await session.scalars(select(OutboxMessage))).all()
-        events = [
-            ConfigurationComponentPublishedV1.model_validate(row.payload)
-            for row in rows
-        ]
-        assert len(events) == 7
-        assert {event.payload.component_kind for event in events} == {
-            "prompt.system",
-            "prompt.profile",
-            "prompt.tenant",
-        }
-        assert events[-1].payload.restored_from_revision_id == first_hotel.revision_id
+        assert restored.restored_from_revision_id == first_hotel.revision_id
     finally:
         await database.close()

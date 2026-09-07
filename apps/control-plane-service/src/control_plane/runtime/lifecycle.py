@@ -35,19 +35,6 @@ class DatabaseDependency(RuntimeDependency, Protocol):
     async def schema_compatible(self) -> bool: ...
 
 
-class MessagingDependency(RuntimeDependency, Protocol):
-    async def drain(self) -> None: ...
-
-
-class RelayDependency(Protocol):
-    @property
-    def ready(self) -> bool: ...
-
-    async def start(self) -> None: ...
-
-    async def stop(self) -> None: ...
-
-
 class TelemetryRuntime(Protocol):
     def shutdown(self) -> object: ...
 
@@ -56,13 +43,9 @@ class ServiceLifecycle:
     def __init__(
         self,
         database: DatabaseDependency,
-        nats: MessagingDependency,
-        relay: RelayDependency,
         telemetry: TelemetryRuntime | None = None,
     ) -> None:
         self.database = database
-        self.nats = nats
-        self.relay = relay
         self.telemetry = telemetry
         self.state = LifecycleState.CREATED
 
@@ -81,13 +64,7 @@ class ServiceLifecycle:
             await self.database.connect()
             if not await self.database.schema_compatible():
                 raise RuntimeError("Control Plane schema is not at the migration head")
-            await self.nats.connect()
-            await self.relay.start()
         except Exception:
-            with suppress(Exception):
-                await self.relay.stop()
-            with suppress(Exception):
-                await self.nats.close()
             with suppress(Exception):
                 await self.database.close()
             self.state = LifecycleState.STOPPED
@@ -101,38 +78,24 @@ class ServiceLifecycle:
         self.state = LifecycleState.DRAINING
         logger.info("Control Plane draining")
         try:
-            await self.relay.stop()
+            await self.database.close()
         finally:
-            try:
-                await self.nats.drain()
-            finally:
-                try:
-                    await self.nats.close()
-                finally:
-                    try:
-                        await self.database.close()
-                    finally:
-                        if self.telemetry is not None:
-                            self.telemetry.shutdown()
-                        self.state = LifecycleState.STOPPED
-                        logger.info("Control Plane stopped")
+            if self.telemetry is not None:
+                self.telemetry.shutdown()
+            self.state = LifecycleState.STOPPED
+            logger.info("Control Plane stopped")
 
     async def readiness(self) -> Readiness:
         if self.state != LifecycleState.READY:
             return Readiness(
                 postgres=False,
                 control_plane_schema=False,
-                nats=False,
-                outbox_relay=False,
             )
         postgres = await _check(self.database)
         schema = postgres and await _schema_check(self.database)
-        nats = await _check(self.nats)
         return Readiness(
             postgres=postgres,
             control_plane_schema=schema,
-            nats=nats,
-            outbox_relay=self.relay.ready,
         )
 
 

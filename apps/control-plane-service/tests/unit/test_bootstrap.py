@@ -21,40 +21,9 @@ class Database:
         self.closed = True
 
 
-class Nats:
-    def __init__(self) -> None:
-        self.drained = False
-        self.closed = False
-
-    async def connect(self) -> None:
-        pass
-
-    async def ping(self) -> None:
-        pass
-
-    async def drain(self) -> None:
-        self.drained = True
-
-    async def close(self) -> None:
-        self.closed = True
-
-
-class Relay:
-    def __init__(self) -> None:
-        self.ready = False
-
-    async def start(self) -> None:
-        self.ready = True
-
-    async def stop(self) -> None:
-        self.ready = False
-
-
 @pytest.mark.asyncio
-async def test_bootstrap_wires_lifespan_with_supplied_dependencies() -> None:
+async def test_bootstrap_starts_without_nats_or_outbox_dependencies() -> None:
     database = Database()
-    nats = Nats()
-    relay = Relay()
     app = create_app(
         Settings(
             database_url=PostgresDsn(
@@ -66,8 +35,6 @@ async def test_bootstrap_wires_lifespan_with_supplied_dependencies() -> None:
             backend_core_service_secret="backend-core-test-secret",
         ),
         database,  # type: ignore[arg-type]
-        nats,  # type: ignore[arg-type]
-        relay=relay,  # type: ignore[arg-type]
     )
 
     async with app.router.lifespan_context(app):
@@ -75,5 +42,5 @@ async def test_bootstrap_wires_lifespan_with_supplied_dependencies() -> None:
         assert readiness.ready
 
     assert database.closed
-    assert nats.drained
-    assert nats.closed
+    assert not hasattr(app.state, "nats")
+    assert not hasattr(app.state, "outbox_relay")

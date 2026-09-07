@@ -2,7 +2,6 @@ import asyncio
 import base64
 
 import pytest
-from contracts import ConfigurationComponentPublishedV1, ManagedResourceChangedV1
 from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.components import (
@@ -26,7 +25,6 @@ from control_plane.infrastructure.persistence.managed_resources import (
 from control_plane.infrastructure.persistence.models import (
     ConfigurationComponent,
     ConfigurationComponentRevision,
-    OutboxMessage,
 )
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
@@ -71,18 +69,7 @@ async def test_knowledge_uses_the_generic_independent_revision_lifecycle(
 
         assert restored.revision_number == 3
         assert (await service.get_active(address)).value.content == "# First\nŽ"
-        async with database.sessions() as session:
-            events = (await session.scalars(select(OutboxMessage))).all()
-        published = [
-            ConfigurationComponentPublishedV1.model_validate(event.payload)
-            for event in events
-        ]
-        assert [event.payload.component_kind for event in published] == [
-            "knowledge.tenant"
-        ] * 3
-        assert (
-            published[-1].payload.restored_from_revision_id == revision_one.revision_id
-        )
+        assert restored.restored_from_revision_id == revision_one.revision_id
     finally:
         await database.close()
 
@@ -206,26 +193,7 @@ async def test_handoff_and_phone_assignments_are_live_independent_cas_resources(
             revision_count = await session.scalar(
                 select(func.count()).select_from(ConfigurationComponentRevision)
             )
-            events = (
-                await session.scalars(
-                    select(OutboxMessage).order_by(OutboxMessage.created_at)
-                )
-            ).all()
         assert component_count == revision_count == 0
-        changes = [
-            ManagedResourceChangedV1.model_validate(event.payload).payload
-            for event in events
-        ]
-        assert [(event.resource_type, event.action) for event in changes] == [
-            ("handoff_destination", "created"),
-            ("handoff_destination", "created"),
-            ("handoff_destination", "updated"),
-            ("handoff_destination", "disabled"),
-            ("phone_number_assignment", "created"),
-            ("phone_number_assignment", "disabled"),
-            ("phone_number_assignment", "created"),
-            ("phone_number_assignment", "created"),
-        ]
         assert not hasattr(replacement, "inbound_trunk_id")
     finally:
         await database.close()

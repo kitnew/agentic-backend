@@ -1,15 +1,6 @@
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from typing import Literal
-from uuid import UUID, uuid4
 
-from contracts import (
-    MANAGED_RESOURCE_CHANGED_EVENT_TYPE,
-    MANAGED_RESOURCE_CHANGED_SUBJECT,
-    ManagedResourceChangedPayloadV1,
-    ManagedResourceChangedV1,
-)
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -46,7 +37,6 @@ from .models import CredentialVersion as CredentialVersionRow
 from .models import HandoffDestination as HandoffDestinationRow
 from .models import IntegrationConnection as IntegrationConnectionRow
 from .models import ModelDeployment as ModelDeploymentRow
-from .models import OutboxMessage
 from .models import PhoneNumberAssignment as PhoneNumberAssignmentRow
 from .models import ProviderConnection as ProviderConnectionRow
 
@@ -88,9 +78,6 @@ class SqlAlchemyManagedResourceRepository:
             session.add(version)
             await session.flush()
             row.active_version_id = version.id
-            self._event(
-                session, "credential", row.id, "created", row.generation, row.status
-            )
             await session.flush()
             await session.refresh(row)
             return self._credential(row, 1)
@@ -123,9 +110,6 @@ class SqlAlchemyManagedResourceRepository:
             await session.flush()
             row.active_version_id = version.id
             row.generation += 1
-            self._event(
-                session, "credential", row.id, "rotated", row.generation, row.status
-            )
             await session.flush()
             await session.refresh(row)
             return self._credential(row, number)
@@ -147,9 +131,6 @@ class SqlAlchemyManagedResourceRepository:
                 active.retired_at = func.now()
             row.active_version_id = None
             row.generation += 1
-            self._event(
-                session, "credential", row.id, "revoked", row.generation, row.status
-            )
             await session.flush()
             await session.refresh(row)
             return self._credential(row, None)
@@ -220,9 +201,6 @@ class SqlAlchemyManagedResourceRepository:
             )
             session.add(row)
             await session.flush()
-            self._event(
-                session, "provider_connection", row.id, "created", row.generation
-            )
             await session.flush()
             await session.refresh(row)
             return self._connection(row)
@@ -245,9 +223,6 @@ class SqlAlchemyManagedResourceRepository:
             row.generation += 1
             row.updated_at = func.now()
             row.updated_by = actor
-            self._event(
-                session, "provider_connection", row.id, "updated", row.generation
-            )
             await session.flush()
             await session.refresh(row)
             return self._connection(row)
@@ -274,13 +249,6 @@ class SqlAlchemyManagedResourceRepository:
             row.generation += 1
             row.updated_at = func.now()
             row.updated_by = actor
-            self._event(
-                session,
-                "provider_connection",
-                row.id,
-                "enabled" if enabled else "disabled",
-                row.generation,
-            )
             await session.flush()
             await session.refresh(row)
             return self._connection(row)
@@ -328,9 +296,6 @@ class SqlAlchemyManagedResourceRepository:
             )
             session.add(row)
             await session.flush()
-            self._event(
-                session, "integration_connection", row.id, "created", row.generation
-            )
             await session.flush()
             await session.refresh(row)
             return self._integration_connection(row)
@@ -359,9 +324,6 @@ class SqlAlchemyManagedResourceRepository:
             )
             row.generation += 1
             row.updated_at, row.updated_by = func.now(), actor
-            self._event(
-                session, "integration_connection", row.id, "updated", row.generation
-            )
             await session.flush()
             await session.refresh(row)
             return self._integration_connection(row)
@@ -389,13 +351,6 @@ class SqlAlchemyManagedResourceRepository:
                 )
             row.enabled, row.generation = enabled, row.generation + 1
             row.updated_at, row.updated_by = func.now(), actor
-            self._event(
-                session,
-                "integration_connection",
-                row.id,
-                "enabled" if enabled else "disabled",
-                row.generation,
-            )
             await session.flush()
             await session.refresh(row)
             return self._integration_connection(row)
@@ -446,9 +401,6 @@ class SqlAlchemyManagedResourceRepository:
             )
             session.add(row)
             await session.flush()
-            self._event(
-                session, "handoff_destination", row.id, "created", row.generation
-            )
             await session.flush()
             await session.refresh(row)
             return self._handoff_destination(row)
@@ -467,9 +419,6 @@ class SqlAlchemyManagedResourceRepository:
             row.description, row.phone_number = description, phone_number
             row.generation += 1
             row.updated_at, row.updated_by = func.now(), actor
-            self._event(
-                session, "handoff_destination", row.id, "updated", row.generation
-            )
             await session.flush()
             await session.refresh(row)
             return self._handoff_destination(row)
@@ -490,13 +439,6 @@ class SqlAlchemyManagedResourceRepository:
                 )
             row.enabled, row.generation = enabled, row.generation + 1
             row.updated_at, row.updated_by = func.now(), actor
-            self._event(
-                session,
-                "handoff_destination",
-                row.id,
-                "enabled" if enabled else "disabled",
-                row.generation,
-            )
             await session.flush()
             await session.refresh(row)
             return self._handoff_destination(row)
@@ -539,9 +481,6 @@ class SqlAlchemyManagedResourceRepository:
             )
             session.add(row)
             await session.flush()
-            self._event(
-                session, "phone_number_assignment", row.id, "created", row.generation
-            )
             await session.flush()
             await session.refresh(row)
             return self._phone_number_assignment(row)
@@ -562,13 +501,6 @@ class SqlAlchemyManagedResourceRepository:
                 )
             row.enabled, row.generation = enabled, row.generation + 1
             row.updated_at, row.updated_by = func.now(), actor
-            self._event(
-                session,
-                "phone_number_assignment",
-                row.id,
-                "enabled" if enabled else "disabled",
-                row.generation,
-            )
             await session.flush()
             await session.refresh(row)
             return self._phone_number_assignment(row)
@@ -649,7 +581,6 @@ class SqlAlchemyManagedResourceRepository:
             )
             session.add(row)
             await session.flush()
-            self._event(session, "model_deployment", row.id, "created", row.generation)
             await session.flush()
             await session.refresh(row)
             return self._deployment(row)
@@ -699,7 +630,6 @@ class SqlAlchemyManagedResourceRepository:
             row.generation += 1
             row.updated_at = func.now()
             row.updated_by = actor
-            self._event(session, "model_deployment", row.id, "updated", row.generation)
             await session.flush()
             await session.refresh(row)
             return self._deployment(row)
@@ -726,13 +656,6 @@ class SqlAlchemyManagedResourceRepository:
             row.generation += 1
             row.updated_at = func.now()
             row.updated_by = actor
-            self._event(
-                session,
-                "model_deployment",
-                row.id,
-                "enabled" if enabled else "disabled",
-                row.generation,
-            )
             await session.flush()
             await session.refresh(row)
             return self._deployment(row)
@@ -841,51 +764,6 @@ class SqlAlchemyManagedResourceRepository:
         return await session.scalar(
             select(CredentialVersionRow.version_number).where(
                 CredentialVersionRow.id == row.active_version_id
-            )
-        )
-
-    @staticmethod
-    def _event(
-        session: AsyncSession,
-        resource_type: Literal[
-            "credential",
-            "provider_connection",
-            "model_deployment",
-            "integration_connection",
-            "handoff_destination",
-            "phone_number_assignment",
-        ],
-        resource_id: UUID,
-        action: Literal[
-            "created", "updated", "enabled", "disabled", "rotated", "revoked"
-        ],
-        generation: int,
-        status: str | None = None,
-    ) -> None:
-        event_id = uuid4()
-        occurred_at = datetime.now(UTC)
-        event = ManagedResourceChangedV1(
-            event_id=event_id,
-            occurred_at=occurred_at,
-            payload=ManagedResourceChangedPayloadV1(
-                resource_type=resource_type,
-                resource_id=resource_id,
-                action=action,
-                resource_generation=generation,
-                status=status,
-            ),
-        )
-        session.add(
-            OutboxMessage(
-                id=event_id,
-                event_type=MANAGED_RESOURCE_CHANGED_EVENT_TYPE,
-                subject=MANAGED_RESOURCE_CHANGED_SUBJECT,
-                payload=event.model_dump(mode="json"),
-                component_id=None,
-                revision_number=None,
-                ordering_key=f"managed:{resource_type}:{resource_id}",
-                ordering_sequence=generation,
-                occurred_at=occurred_at,
             )
         )
 

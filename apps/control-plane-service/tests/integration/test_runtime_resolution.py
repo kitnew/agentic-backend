@@ -30,7 +30,6 @@ from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
 )
-from control_plane.infrastructure.persistence.models import OutboxMessage
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
@@ -40,7 +39,6 @@ from control_plane.infrastructure.persistence.runtime_execution_snapshots import
 from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
 )
-from sqlalchemy import func, select
 
 
 def services(database: Database):
@@ -183,23 +181,14 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
             True,
         )
 
-        async with database.sessions() as session:
-            before = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
         first = await resolver.resolve_runtime("runtime-integration")
         second = await resolver.resolve_runtime("runtime-integration")
-        async with database.sessions() as session:
-            after = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
 
         assert first == second
         assert isinstance(first.selected, ResolvedCascadeRuntime)
         assert first.selected.llm.resource.deployment.generation == llm.generation
         assert first.selected.stt.resource.connection.generation == stt.generation
         assert await resources.get_deployment(llm.ref) == llm
-        assert before == after
     finally:
         await database.close()
 
@@ -261,20 +250,11 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
             },
             True,
         )
-        async with database.sessions() as session:
-            before = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
         first = await materializer.materialize_runtime("materialize")
         second = await materializer.materialize_runtime("materialize")
         assert first.snapshot_id != second.snapshot_id
         assert first.content_hash == second.content_hash
         assert await materializer.get_snapshot(first.snapshot_id) == first
         assert "ciphertext" not in str(first).lower()
-        async with database.sessions() as session:
-            after = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
-        assert before == after
     finally:
         await database.close()

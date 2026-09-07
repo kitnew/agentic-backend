@@ -138,26 +138,22 @@ def upgrade() -> None:
         referent_schema=SCHEMA,
     )
     op.create_table(
-        "outbox_messages",
+        "idempotency_replays",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("event_type", sa.String(255), nullable=False),
-        sa.Column("subject", sa.String(255), nullable=False),
-        sa.Column("payload", postgresql.JSONB(), nullable=False),
-        sa.Column("component_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.configuration_components.id", ondelete="CASCADE")),
-        sa.Column("revision_number", sa.Integer()),
-        sa.Column("ordering_key", sa.String(255), nullable=False),
-        sa.Column("ordering_sequence", sa.Integer(), nullable=False),
-        sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("principal", sa.String(255), nullable=False),
+        sa.Column("operation", sa.String(255), nullable=False),
+        sa.Column("idempotency_key", sa.String(255), nullable=False),
+        sa.Column("request_fingerprint", sa.String(64), nullable=False),
+        sa.Column("logical_result", postgresql.JSONB(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("published_at", sa.DateTime(timezone=True)),
-        sa.Column("attempt_count", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("last_error", sa.String(2000)),
-        sa.CheckConstraint("attempt_count >= 0", name="ck_outbox_attempt_count"),
-        sa.UniqueConstraint("ordering_key", "ordering_sequence", name="uq_outbox_ordering"),
+        sa.UniqueConstraint(
+            "principal",
+            "operation",
+            "idempotency_key",
+            name="uq_idempotency_replay_identity",
+        ),
         schema=SCHEMA,
     )
-    op.create_index("ix_outbox_pending", "outbox_messages", ["created_at"], schema=SCHEMA, postgresql_where=sa.text("published_at IS NULL"))
-    op.create_index("ix_outbox_component_revision", "outbox_messages", ["component_id", "revision_number"], schema=SCHEMA)
     op.create_table(
         "credentials",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -324,9 +320,7 @@ def downgrade() -> None:
     op.drop_index("uq_credential_active_version", table_name="credential_versions", schema=SCHEMA)
     op.drop_table("credential_versions", schema=SCHEMA)
     op.drop_table("credentials", schema=SCHEMA)
-    op.drop_index("ix_outbox_component_revision", table_name="outbox_messages", schema=SCHEMA)
-    op.drop_index("ix_outbox_pending", table_name="outbox_messages", schema=SCHEMA)
-    op.drop_table("outbox_messages", schema=SCHEMA)
+    op.drop_table("idempotency_replays", schema=SCHEMA)
     op.drop_constraint(
         "fk_configuration_component_active_revision",
         "configuration_components",

@@ -2,7 +2,6 @@ import base64
 from uuid import uuid4
 
 import pytest
-from contracts import COMPONENT_PUBLISHED_EVENT_TYPE, ConfigurationComponentPublishedV1
 from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.components import (
@@ -29,7 +28,6 @@ from control_plane.infrastructure.persistence.managed_resources import (
 )
 from control_plane.infrastructure.persistence.models import (
     ConfigurationComponentRevision,
-    OutboxMessage,
     ProviderConnection,
 )
 from control_plane.infrastructure.persistence.repository import (
@@ -167,10 +165,6 @@ async def test_runtime_publication_validates_resources_atomically(
                 )
                 == 0
             )
-            assert (
-                await session.scalar(select(func.count()).select_from(OutboxMessage))
-                == 0
-            )
 
         terra = await deployment(
             resources, DeploymentKind.LLM, "terra-prod", LLMCapabilities(False, True)
@@ -270,23 +264,9 @@ async def test_tenant_runtime_components_publish_and_rollback_independently(
         )
 
         async with database.sessions() as session:
-            events = (await session.scalars(select(OutboxMessage))).all()
             revisions = await session.scalar(
                 select(func.count()).select_from(ConfigurationComponentRevision)
             )
-        published = [
-            ConfigurationComponentPublishedV1.model_validate(event.payload)
-            for event in events
-        ]
-        assert all(
-            event.event_type == COMPONENT_PUBLISHED_EVENT_TYPE for event in events
-        )
-        assert [event.payload.component_kind for event in published].count(
-            "runtime.architecture.policy"
-        ) == 3
-        assert [event.payload.component_kind for event in published].count(
-            "runtime.speech.overrides"
-        ) == 1
 
         with pytest.raises(InvalidComponentValue):
             await components.save_draft(
@@ -306,9 +286,6 @@ async def test_tenant_runtime_components_publish_and_rollback_independently(
                 )
                 == revisions
             )
-            assert await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            ) == len(events)
     finally:
         await database.close()
 
@@ -363,9 +340,6 @@ async def test_runtime_rollback_revalidates_current_deployment(
             revisions = await session.scalar(
                 select(func.count()).select_from(ConfigurationComponentRevision)
             )
-            events = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
         with pytest.raises(InvalidComponentValue, match="reasoning_effort"):
             await components.rollback(address, first.revision_number, "test")
         assert (await components.get_active(address)).revision_id == second.revision_id
@@ -375,10 +349,6 @@ async def test_runtime_rollback_revalidates_current_deployment(
                     select(func.count()).select_from(ConfigurationComponentRevision)
                 )
                 == revisions
-            )
-            assert (
-                await session.scalar(select(func.count()).select_from(OutboxMessage))
-                == events
             )
     finally:
         await database.close()
@@ -443,9 +413,6 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
             revisions = await session.scalar(
                 select(func.count()).select_from(ConfigurationComponentRevision)
             )
-            events = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
 
         with pytest.raises(InvalidComponentValue, match="does not support"):
             await components.publish_draft(
@@ -460,10 +427,6 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
                     select(func.count()).select_from(ConfigurationComponentRevision)
                 )
                 == revisions
-            )
-            assert (
-                await session.scalar(select(func.count()).select_from(OutboxMessage))
-                == events
             )
 
         await components.discard_draft(cascade_address, failed_draft.version)
@@ -480,10 +443,6 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
                     select(func.count()).select_from(ConfigurationComponentRevision)
                 )
                 == revisions
-            )
-            assert (
-                await session.scalar(select(func.count()).select_from(OutboxMessage))
-                == events
             )
     finally:
         await database.close()
@@ -582,9 +541,6 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
                 revision_count = await session.scalar(
                     select(func.count()).select_from(ConfigurationComponentRevision)
                 )
-                event_count = await session.scalar(
-                    select(func.count()).select_from(OutboxMessage)
-                )
             with pytest.raises(
                 (InvalidComponentValue, ManagedResourceNotFound), match=match
             ):
@@ -595,12 +551,6 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
                         select(func.count()).select_from(ConfigurationComponentRevision)
                     )
                     == revision_count
-                )
-                assert (
-                    await session.scalar(
-                        select(func.count()).select_from(OutboxMessage)
-                    )
-                    == event_count
                 )
 
         cases = [
@@ -675,23 +625,7 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
         )
         current = await components.publish_draft(address, draft.version, "test")
 
-        async with database.sessions() as session:
-            events = (
-                await session.scalars(
-                    select(OutboxMessage).where(OutboxMessage.component_id.is_not(None))
-                )
-            ).all()
-        assert len(events) == 3
-        assert all(
-            event.event_type == COMPONENT_PUBLISHED_EVENT_TYPE for event in events
-        )
-        assert all(
-            ConfigurationComponentPublishedV1.model_validate(
-                event.payload
-            ).payload.component_kind
-            == "runtime.realtime.execution.defaults"
-            for event in events
-        )
+        assert len(await components.list_revisions(address)) == 3
 
         await resources.update_deployment(
             model.ref,
@@ -705,9 +639,6 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
             revision_count = await session.scalar(
                 select(func.count()).select_from(ConfigurationComponentRevision)
             )
-            event_count = await session.scalar(
-                select(func.count()).select_from(OutboxMessage)
-            )
         with pytest.raises(InvalidComponentValue, match="semantic_vad"):
             await components.rollback(
                 address, semantic_revision.revision_number, "test"
@@ -719,10 +650,6 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
                     select(func.count()).select_from(ConfigurationComponentRevision)
                 )
                 == revision_count
-            )
-            assert (
-                await session.scalar(select(func.count()).select_from(OutboxMessage))
-                == event_count
             )
     finally:
         await database.close()

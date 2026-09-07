@@ -453,6 +453,18 @@ async def test_migration_constraints_and_round_trip(
                 await session.scalar(text("SELECT version_num FROM alembic_version"))
                 == "backend_head"
             )
+            assert (
+                await session.scalar(
+                    text("SELECT to_regclass('control_plane.idempotency_replays')")
+                )
+                == "control_plane.idempotency_replays"
+            )
+            assert (
+                await session.scalar(
+                    text("SELECT to_regclass('control_plane.outbox_messages')")
+                )
+                is None
+            )
         async with database.sessions.begin() as session:
             await session.execute(
                 text("UPDATE control_plane_alembic_version SET version_num = 'stale'")

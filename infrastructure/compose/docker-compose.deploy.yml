@@ -15,10 +15,6 @@ services:
     restart: unless-stopped
     logging: *service-logging
 
-  nats:
-    restart: unless-stopped
-    logging: *service-logging
-
   backend:
     restart: unless-stopped
     stop_grace_period: 30s
@@ -42,8 +38,6 @@ services:
     logging: *service-logging
     depends_on:
       postgres:
-        condition: service_healthy
-      nats:
         condition: service_healthy
 
   voice-agent:

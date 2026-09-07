@@ -26,12 +26,7 @@ class FakeLifecycle:
 @pytest.mark.asyncio
 async def test_health_does_not_require_dependencies() -> None:
     lifecycle = FakeLifecycle(
-        Readiness(
-            postgres=False,
-            control_plane_schema=False,
-            nats=False,
-            outbox_relay=False,
-        )
+        Readiness(postgres=False, control_plane_schema=False)
     )
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
@@ -51,12 +46,7 @@ async def test_health_does_not_require_dependencies() -> None:
 @pytest.mark.asyncio
 async def test_ready_reports_unavailable_dependencies() -> None:
     lifecycle = FakeLifecycle(
-        Readiness(
-            postgres=False,
-            control_plane_schema=False,
-            nats=True,
-            outbox_relay=True,
-        )
+        Readiness(postgres=False, control_plane_schema=False)
     )
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
@@ -70,20 +60,13 @@ async def test_ready_reports_unavailable_dependencies() -> None:
     assert response.json()["detail"]["checks"] == {
         "postgres": False,
         "control_plane_schema": False,
-        "nats": True,
-        "outbox_relay": True,
     }
 
 
 @pytest.mark.asyncio
 async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
     lifecycle = FakeLifecycle(
-        Readiness(
-            postgres=True,
-            control_plane_schema=True,
-            nats=True,
-            outbox_relay=True,
-        )
+        Readiness(postgres=True, control_plane_schema=True)
     )
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
@@ -101,12 +84,7 @@ async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
 async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
     app = create_http_app(
         FakeLifecycle(
-            Readiness(
-                postgres=True,
-                control_plane_schema=True,
-                nats=True,
-                outbox_relay=True,
-            )
+            Readiness(postgres=True, control_plane_schema=True)
         ),
         managed_resources=object(),  # type: ignore[arg-type]
     )
@@ -139,12 +117,7 @@ async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
 @pytest.mark.asyncio
 async def test_ready_rejects_incompatible_control_plane_schema() -> None:
     lifecycle = FakeLifecycle(
-        Readiness(
-            postgres=True,
-            control_plane_schema=False,
-            nats=True,
-            outbox_relay=True,
-        )
+        Readiness(postgres=True, control_plane_schema=False)
     )
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
@@ -158,8 +131,6 @@ async def test_ready_rejects_incompatible_control_plane_schema() -> None:
     assert response.json()["detail"]["checks"] == {
         "postgres": True,
         "control_plane_schema": False,
-        "nats": True,
-        "outbox_relay": True,
     }
 
 
@@ -167,12 +138,7 @@ async def test_ready_rejects_incompatible_control_plane_schema() -> None:
 async def test_management_routes_require_the_separate_management_token() -> None:
     app = create_http_app(
         FakeLifecycle(
-            Readiness(
-                postgres=True,
-                control_plane_schema=True,
-                nats=True,
-                outbox_relay=True,
-            )
+            Readiness(postgres=True, control_plane_schema=True)
         ),
         managed_resources=object(),  # type: ignore[arg-type]
     )
@@ -204,7 +170,7 @@ async def test_management_actor_is_server_derived() -> None:
             seen.append(actor)
             return {}
 
-    app = create_http_app(FakeLifecycle(Readiness(True, True, True, True)), Components())  # type: ignore[arg-type]
+    app = create_http_app(FakeLifecycle(Readiness(True, True)), Components())  # type: ignore[arg-type]
     app.state.settings = SimpleNamespace(
         control_plane_management_token=SimpleNamespace(
             get_secret_value=lambda: "management-secret"
@@ -233,12 +199,11 @@ async def test_readiness_converts_dependency_exceptions_to_unavailable() -> None
         async def ping(self) -> None:
             raise RuntimeError("unavailable")
 
-    relay = type("Relay", (), {"ready": True})()
-    lifecycle = ServiceLifecycle(Dependency(), Dependency(), relay)  # type: ignore[arg-type]
+    lifecycle = ServiceLifecycle(Dependency())  # type: ignore[arg-type]
     lifecycle.state = LifecycleState.READY
 
     assert await lifecycle.readiness() == Readiness(
-        postgres=False, control_plane_schema=False, nats=False, outbox_relay=True
+        postgres=False, control_plane_schema=False
     )
 
 
@@ -249,12 +214,11 @@ async def test_readiness_bounds_dependency_ping(monkeypatch) -> None:
             await asyncio.sleep(1)
 
     monkeypatch.setattr(lifecycle_module, "READINESS_TIMEOUT_SECONDS", 0.001)
-    relay = type("Relay", (), {"ready": True})()
-    lifecycle = ServiceLifecycle(Dependency(), Dependency(), relay)  # type: ignore[arg-type]
+    lifecycle = ServiceLifecycle(Dependency())  # type: ignore[arg-type]
     lifecycle.state = LifecycleState.READY
 
     assert await lifecycle.readiness() == Readiness(
-        postgres=False, control_plane_schema=False, nats=False, outbox_relay=True
+        postgres=False, control_plane_schema=False
     )
 
 
@@ -276,29 +240,7 @@ async def test_lifecycle_starts_and_stops_dependencies_in_order() -> None:
         async def close(self) -> None:
             calls.append("database.close")
 
-    class Nats:
-        async def connect(self) -> None:
-            calls.append("nats.connect")
-
-        async def ping(self) -> None:
-            calls.append("nats.ping")
-
-        async def drain(self) -> None:
-            calls.append("nats.drain")
-
-        async def close(self) -> None:
-            calls.append("nats.close")
-
-    class Relay:
-        ready = True
-
-        async def start(self) -> None:
-            calls.append("relay.start")
-
-        async def stop(self) -> None:
-            calls.append("relay.stop")
-
-    lifecycle = ServiceLifecycle(Database(), Nats(), Relay())
+    lifecycle = ServiceLifecycle(Database())
 
     await lifecycle.start()
     assert lifecycle.state == LifecycleState.READY
@@ -310,20 +252,14 @@ async def test_lifecycle_starts_and_stops_dependencies_in_order() -> None:
     assert calls == [
         "database.connect",
         "database.schema_compatible",
-        "nats.connect",
-        "relay.start",
         "database.ping",
         "database.schema_compatible",
-        "nats.ping",
-        "relay.stop",
-        "nats.drain",
-        "nats.close",
         "database.close",
     ]
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_cleans_up_database_when_nats_start_fails() -> None:
+async def test_lifecycle_cleans_up_database_when_schema_check_fails() -> None:
     calls: list[str] = []
 
     class Database:
@@ -335,45 +271,19 @@ async def test_lifecycle_cleans_up_database_when_nats_start_fails() -> None:
 
         async def schema_compatible(self) -> bool:
             calls.append("database.schema_compatible")
-            return True
+            return False
 
         async def close(self) -> None:
             calls.append("database.close")
 
-    class Nats:
-        async def connect(self) -> None:
-            calls.append("nats.connect")
-            raise RuntimeError("nats unavailable")
+    lifecycle = ServiceLifecycle(Database())
 
-        async def ping(self) -> None:
-            pass
-
-        async def drain(self) -> None:
-            pass
-
-        async def close(self) -> None:
-            calls.append("nats.close")
-
-    class Relay:
-        ready = False
-
-        async def start(self) -> None:
-            calls.append("relay.start")
-
-        async def stop(self) -> None:
-            calls.append("relay.stop")
-
-    lifecycle = ServiceLifecycle(Database(), Nats(), Relay())
-
-    with pytest.raises(RuntimeError, match="nats unavailable"):
+    with pytest.raises(RuntimeError, match="schema is not at the migration head"):
         await lifecycle.start()
 
     assert lifecycle.state == LifecycleState.STOPPED
     assert calls == [
         "database.connect",
         "database.schema_compatible",
-        "nats.connect",
-        "relay.stop",
-        "nats.close",
         "database.close",
     ]

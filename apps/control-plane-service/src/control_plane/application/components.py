@@ -1,11 +1,17 @@
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from control_plane.application.command_support import (
+    IdempotencyKeyReused,
+    request_fingerprint,
+)
 from control_plane.application.ports.repositories import (
     ComponentRepository,
     StoredDraft,
     StoredRevision,
 )
+from control_plane.application.ports.transactions import ComponentCommandScope
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinitionRegistry,
@@ -21,13 +27,20 @@ from control_plane.domain.components.errors import (
     UnsupportedSchemaVersion,
 )
 
+PUBLISH_OPERATION = "versioned_component.publish"
+ROLLBACK_OPERATION = "versioned_component.rollback"
+
 
 class ComponentService:
     def __init__(
-        self, registry: ComponentDefinitionRegistry, repository: ComponentRepository
+        self,
+        registry: ComponentDefinitionRegistry,
+        repository: ComponentRepository,
+        command_scope: ComponentCommandScope | None = None,
     ) -> None:
         self._registry = registry
         self._repository = repository
+        self._command_scope = command_scope
 
     async def save_draft(
         self,
@@ -39,7 +52,7 @@ class ComponentService:
     ) -> ComponentDraft[Any]:
         definition = self._registry.resolve(address)
         typed = definition.deserialize(raw_value)
-        row = await self._repository.save_draft(
+        arguments = (
             address,
             definition.serialize(typed),
             definition.schema_version,
@@ -47,35 +60,126 @@ class ComponentService:
             expected_active_revision_id,
             actor,
         )
+        if self._command_scope is None:
+            row = await self._repository.save_draft(*arguments)
+        else:
+            async with self._command_scope() as (repository, _):
+                row = await repository.save_draft(*arguments)
         return self._draft(address, row)
 
     async def discard_draft(
         self, address: ComponentAddress, expected_draft_version: int
     ) -> None:
         self._registry.resolve(address)
-        await self._repository.discard_draft(address, expected_draft_version)
+        if self._command_scope is None:
+            await self._repository.discard_draft(address, expected_draft_version)
+        else:
+            async with self._command_scope() as (repository, _):
+                await repository.discard_draft(address, expected_draft_version)
 
     async def publish_draft(
-        self, address: ComponentAddress, expected_draft_version: int, actor: str
+        self,
+        address: ComponentAddress,
+        expected_draft_version: int,
+        principal: str,
+        *,
+        idempotency_key: str | None = None,
     ) -> ComponentRevision[Any]:
-        definition = self._registry.resolve(address)
-        return self._revision(
-            address,
-            await self._repository.publish_draft(
-                address, expected_draft_version, actor, definition
-            ),
+        if idempotency_key is None:
+            definition = self._registry.resolve(address)
+            if self._command_scope is None:
+                row = await self._repository.publish_draft(
+                    address, expected_draft_version, principal, definition
+                )
+            else:
+                async with self._command_scope() as (repository, _):
+                    row = await repository.publish_draft(
+                        address, expected_draft_version, principal, definition
+                    )
+            return self._revision(address, row)
+        if self._command_scope is None:
+            raise RuntimeError("idempotent component commands are not configured")
+        fingerprint = request_fingerprint(
+            {
+                "address": self._address_payload(address),
+                "expected_draft_version": expected_draft_version,
+            }
         )
+        async with self._command_scope() as (repository, replays):
+            replay = await replays.get(principal, PUBLISH_OPERATION, idempotency_key)
+            if replay is not None:
+                if replay.request_fingerprint != fingerprint:
+                    raise IdempotencyKeyReused(
+                        "idempotency key reused with a different request"
+                    )
+                return self._replayed_revision(address, replay.logical_result)
+            definition = self._registry.resolve(address)
+            revision = self._revision(
+                address,
+                await repository.publish_draft(
+                    address, expected_draft_version, principal, definition
+                ),
+            )
+            await replays.add(
+                principal,
+                PUBLISH_OPERATION,
+                idempotency_key,
+                fingerprint,
+                self._revision_result(revision),
+            )
+        return revision
 
     async def rollback(
-        self, address: ComponentAddress, revision_number: int, actor: str
+        self,
+        address: ComponentAddress,
+        revision_number: int,
+        principal: str,
+        *,
+        idempotency_key: str | None = None,
     ) -> ComponentRevision[Any]:
-        definition = self._registry.resolve(address)
-        return self._revision(
-            address,
-            await self._repository.rollback(
-                address, revision_number, actor, definition
-            ),
+        if idempotency_key is None:
+            definition = self._registry.resolve(address)
+            if self._command_scope is None:
+                row = await self._repository.rollback(
+                    address, revision_number, principal, definition
+                )
+            else:
+                async with self._command_scope() as (repository, _):
+                    row = await repository.rollback(
+                        address, revision_number, principal, definition
+                    )
+            return self._revision(address, row)
+        if self._command_scope is None:
+            raise RuntimeError("idempotent component commands are not configured")
+        fingerprint = request_fingerprint(
+            {
+                "address": self._address_payload(address),
+                "revision_number": revision_number,
+            }
         )
+        async with self._command_scope() as (repository, replays):
+            replay = await replays.get(principal, ROLLBACK_OPERATION, idempotency_key)
+            if replay is not None:
+                if replay.request_fingerprint != fingerprint:
+                    raise IdempotencyKeyReused(
+                        "idempotency key reused with a different request"
+                    )
+                return self._replayed_revision(address, replay.logical_result)
+            definition = self._registry.resolve(address)
+            revision = self._revision(
+                address,
+                await repository.rollback(
+                    address, revision_number, principal, definition
+                ),
+            )
+            await replays.add(
+                principal,
+                ROLLBACK_OPERATION,
+                idempotency_key,
+                fingerprint,
+                self._revision_result(revision),
+            )
+        return revision
 
     async def get_component(self, address: ComponentAddress) -> ComponentSnapshot[Any]:
         self._registry.resolve(address)
@@ -162,4 +266,53 @@ class ComponentService:
             row.restored_from_revision_id,
             row.created_at,
             row.created_by,
+        )
+
+    @staticmethod
+    def _address_payload(address: ComponentAddress) -> dict[str, str | None]:
+        return {
+            "kind": str(address.kind),
+            "scope_type": address.scope.type.value,
+            "scope_key": address.scope.key,
+        }
+
+    def _revision_result(self, revision: ComponentRevision[Any]) -> dict[str, Any]:
+        definition = self._registry.resolve(revision.address)
+        return {
+            "revision_id": str(revision.revision_id),
+            "revision_number": revision.revision_number,
+            "value": definition.serialize(revision.value),
+            "schema_version": revision.schema_version,
+            "based_on_revision_id": (
+                str(revision.based_on_revision_id)
+                if revision.based_on_revision_id is not None
+                else None
+            ),
+            "restored_from_revision_id": (
+                str(revision.restored_from_revision_id)
+                if revision.restored_from_revision_id is not None
+                else None
+            ),
+            "created_at": revision.created_at.isoformat(),
+            "created_by": revision.created_by,
+        }
+
+    def _replayed_revision(
+        self, address: ComponentAddress, result: dict[str, Any]
+    ) -> ComponentRevision[Any]:
+        definition = self._registry.resolve(address)
+        return ComponentRevision(
+            UUID(result["revision_id"]),
+            address,
+            result["revision_number"],
+            definition.deserialize(result["value"]),
+            result["schema_version"],
+            UUID(result["based_on_revision_id"])
+            if result["based_on_revision_id"] is not None
+            else None,
+            UUID(result["restored_from_revision_id"])
+            if result["restored_from_revision_id"] is not None
+            else None,
+            datetime.fromisoformat(result["created_at"]),
+            result["created_by"],
         )
