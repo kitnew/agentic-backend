@@ -4,6 +4,11 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from control_plane.domain.components import ComponentAddress, ComponentDefinition
+from control_plane.domain.managed_resources import (
+    Credential,
+    CredentialRef,
+    CredentialScope,
+)
 
 
 class StoredDraft(Protocol):
@@ -65,3 +70,17 @@ class ComponentRepository(Protocol):
     async def list_revisions(
         self, address: ComponentAddress, limit: int
     ) -> Sequence[StoredRevision]: ...
+
+
+class CredentialRepository(Protocol):
+    async def create(
+        self, scope: CredentialScope, name: str, secret: str, actor: str
+    ) -> Credential: ...
+    async def get(self, ref: CredentialRef, *, lock: bool = False) -> Credential: ...
+    async def list(
+        self, scope: CredentialScope | None = None
+    ) -> Sequence[Credential]: ...
+    async def rotate(
+        self, credential: Credential, secret: str, actor: str
+    ) -> Credential: ...
+    async def revoke(self, credential: Credential, actor: str) -> Credential: ...

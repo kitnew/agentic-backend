@@ -40,6 +40,15 @@ def request_fingerprint(logical_request: object) -> str:
     return hashlib.sha256(_canonical_bytes(logical_request)).hexdigest()
 
 
+def secret_request_fingerprint(logical_request: object, secret: str) -> str:
+    return request_fingerprint(
+        {
+            "request": logical_request,
+            "secret_sha256": hashlib.sha256(secret.encode()).hexdigest(),
+        }
+    )
+
+
 def opaque_concurrency_token(semantic_state: object) -> str:
     return (
         base64.urlsafe_b64encode(

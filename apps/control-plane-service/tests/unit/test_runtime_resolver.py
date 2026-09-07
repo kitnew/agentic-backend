@@ -28,6 +28,7 @@ from control_plane.domain.managed_resources import (
     LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
+    PlatformCredentialScope,
     ProviderConnection,
     ProviderConnectionRef,
     RealtimeCapabilities,
@@ -104,6 +105,7 @@ def credential(name: str) -> Credential:
     ref = IDS[f"{name}_credential"]
     return Credential(
         CredentialRef(ref),
+        PlatformCredentialScope(),
         name,
         UUID(int=500 + ref.int),
         1,
@@ -291,7 +293,9 @@ def resolver(value: RuntimeResolutionState) -> RuntimeResolver:
     return RuntimeResolver(registry, default_provider_registry(), Reader(value))
 
 
-def execution_resolver(value: RuntimeResolutionState) -> tuple[ExecutionResolver, RuntimeResolutionState]:
+def execution_resolver(
+    value: RuntimeResolutionState,
+) -> tuple[ExecutionResolver, RuntimeResolutionState]:
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     register_agent_components(registry)
@@ -299,11 +303,28 @@ def execution_resolver(value: RuntimeResolutionState) -> tuple[ExecutionResolver
     register_knowledge_components(registry)
     components = dict(value.components)
     for address, raw in (
-        (ComponentAddress(ComponentKind("prompt.system"), PlatformScope()), {"content": "system"}),
-        (ComponentAddress(ComponentKind("prompt.profile"), ProfileScope("default")), {"content": "profile"}),
-        (ComponentAddress(ComponentKind("prompt.profile.selection"), TenantScope(TENANT)), {"profile_key": "default"}),
-        (ComponentAddress(ComponentKind("prompt.tenant"), TenantScope(TENANT)), {"content": "tenant"}),
-        (ComponentAddress(ComponentKind("knowledge.tenant"), TenantScope(TENANT)), {"content": "knowledge"}),
+        (
+            ComponentAddress(ComponentKind("prompt.system"), PlatformScope()),
+            {"content": "system"},
+        ),
+        (
+            ComponentAddress(ComponentKind("prompt.profile"), ProfileScope("default")),
+            {"content": "profile"},
+        ),
+        (
+            ComponentAddress(
+                ComponentKind("prompt.profile.selection"), TenantScope(TENANT)
+            ),
+            {"profile_key": "default"},
+        ),
+        (
+            ComponentAddress(ComponentKind("prompt.tenant"), TenantScope(TENANT)),
+            {"content": "tenant"},
+        ),
+        (
+            ComponentAddress(ComponentKind("knowledge.tenant"), TenantScope(TENANT)),
+            {"content": "knowledge"},
+        ),
         (
             ComponentAddress(ComponentKind("agent.tenant"), TenantScope(TENANT)),
             {
@@ -321,7 +342,8 @@ def execution_resolver(value: RuntimeResolutionState) -> tuple[ExecutionResolver
         )
     enriched = replace(value, components=components)
     return ExecutionResolver(
-        registry, RuntimeResolver(registry, default_provider_registry(), Reader(enriched))
+        registry,
+        RuntimeResolver(registry, default_provider_registry(), Reader(enriched)),
     ), enriched
 
 
@@ -435,9 +457,7 @@ def test_execution_resolution_contains_tenant_agent_context_and_provenance() -> 
     assert isinstance(agent_provenance, ComponentProvenance)
     assert isinstance(selection_provenance, ComponentProvenance)
     assert agent_provenance.component_kind == "agent.tenant"
-    assert selection_provenance.component_kind == (
-        "prompt.profile.selection"
-    )
+    assert selection_provenance.component_kind == ("prompt.profile.selection")
 
 
 def test_execution_resolution_requires_agent_component() -> None:

@@ -1,4 +1,3 @@
-import base64
 from uuid import uuid4
 
 import pytest
@@ -14,7 +13,6 @@ from control_plane.domain.components import (
 from control_plane.domain.components.errors import InvalidComponentValue
 from control_plane.domain.managed_resource_errors import ManagedResourceNotFound
 from control_plane.domain.providers import default_provider_registry
-from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -22,6 +20,8 @@ from control_plane.infrastructure.persistence.managed_resources import (
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
+
+from .credential_helpers import create_platform_credential, credential_service
 
 
 def services(database: Database) -> tuple[ComponentService, ManagedResourceService]:
@@ -31,10 +31,7 @@ def services(database: Database) -> tuple[ComponentService, ManagedResourceServi
         ComponentService(registry, SqlAlchemyComponentRepository(database.sessions)),
         ManagedResourceService(
             default_provider_registry(),
-            SqlAlchemyManagedResourceRepository(
-                database.sessions,
-                CredentialCipher(base64.b64encode(b"0" * 32).decode()),
-            ),
+            SqlAlchemyManagedResourceRepository(database.sessions),
         ),
     )
 
@@ -126,9 +123,7 @@ async def test_credential_lifecycle_never_rewrites_capability_revision(
         ComponentKind("capabilities.tenant"), TenantScope("tenant-b")
     )
     try:
-        credential = await resources.create_credential(
-            "booking-api-key", "secret", "test"
-        )
+        credential = await create_platform_credential(database, "booking-api-key")
         connection = await resources.create_integration_connection(
             "tenant-b",
             "booking-api",
@@ -147,8 +142,20 @@ async def test_credential_lifecycle_never_rewrites_capability_revision(
             address, capability(str(connection.ref.value)), None, None, "test"
         )
         revision = await components.publish_draft(address, draft.version, "test")
-        await resources.rotate_credential(credential.ref, "rotated", "test")
-        await resources.revoke_credential(credential.ref, "test")
+        credentials = credential_service(database)
+        credential = await credentials.rotate(
+            credential.ref,
+            "rotated",
+            credentials.concurrency_token(credential),
+            "test",
+            "rotate-booking-api-key",
+        )
+        await credentials.revoke(
+            credential.ref,
+            credentials.concurrency_token(credential),
+            "test",
+            "revoke-booking-api-key",
+        )
         assert (
             await components.get_active(address)
         ).revision_id == revision.revision_id

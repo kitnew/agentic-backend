@@ -18,4 +18,5 @@ class Settings(BaseSettings):
     backend_core_service_secret: SecretStr
     control_plane_management_token: SecretStr = SecretStr("")
     control_plane_management_actor: str = "agentctl"
+    control_plane_management_scopes: str = "resources:read,credentials:write"
     otel_enabled: bool = False

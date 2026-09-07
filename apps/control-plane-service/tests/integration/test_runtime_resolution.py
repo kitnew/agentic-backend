@@ -1,4 +1,3 @@
-import base64
 from typing import cast
 
 import pytest
@@ -25,7 +24,6 @@ from control_plane.domain.managed_resources import (
 from control_plane.domain.providers import default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.domain.runtime_resolution import ResolvedCascadeRuntime
-from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -40,6 +38,8 @@ from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
 )
 
+from .credential_helpers import create_platform_credential
+
 
 def services(database: Database):
     registry = ComponentDefinitionRegistry()
@@ -51,23 +51,19 @@ def services(database: Database):
         ),
         ManagedResourceService(
             default_provider_registry(),
-            SqlAlchemyManagedResourceRepository(
-                database.sessions,
-                CredentialCipher(base64.b64encode(b"0" * 32).decode()),
-            ),
+            SqlAlchemyManagedResourceRepository(database.sessions),
         ),
     )
 
 
 async def deployment(
+    database: Database,
     resources: ManagedResourceService,
     kind: DeploymentKind,
     key: str,
     capabilities: LLMCapabilities | None = None,
 ):
-    credential = await resources.create_credential(
-        f"{key}-credential", "secret", "test"
-    )
+    credential = await create_platform_credential(database, f"{key}-credential")
     provider = "azure_openai" if kind is DeploymentKind.LLM else "elevenlabs"
     connection = await resources.create_connection(
         f"{key}-connection",
@@ -144,13 +140,14 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
 
     try:
         llm = await deployment(
+            database,
             resources,
             DeploymentKind.LLM,
             "resolver-llm",
             LLMCapabilities(True, True),
         )
-        stt = await deployment(resources, DeploymentKind.STT, "resolver-stt")
-        tts = await deployment(resources, DeploymentKind.TTS, "resolver-tts")
+        stt = await deployment(database, resources, DeploymentKind.STT, "resolver-stt")
+        tts = await deployment(database, resources, DeploymentKind.TTS, "resolver-tts")
         await publish(
             "runtime.llm.defaults",
             {
@@ -220,10 +217,14 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
 
     try:
         llm = await deployment(
-            resources, DeploymentKind.LLM, "snapshot-llm", LLMCapabilities(True, True)
+            database,
+            resources,
+            DeploymentKind.LLM,
+            "snapshot-llm",
+            LLMCapabilities(True, True),
         )
-        stt = await deployment(resources, DeploymentKind.STT, "snapshot-stt")
-        tts = await deployment(resources, DeploymentKind.TTS, "snapshot-tts")
+        stt = await deployment(database, resources, DeploymentKind.STT, "snapshot-stt")
+        tts = await deployment(database, resources, DeploymentKind.TTS, "snapshot-tts")
         await publish(
             "runtime.llm.defaults",
             {"deployment_ref": str(llm.ref.value), "max_completion_tokens": 1024},

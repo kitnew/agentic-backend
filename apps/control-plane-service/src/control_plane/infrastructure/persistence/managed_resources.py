@@ -11,7 +11,6 @@ from control_plane.domain.managed_resource_errors import (
     ManagedResourceNotFound,
 )
 from control_plane.domain.managed_resources import (
-    Credential,
     CredentialRef,
     CredentialStatus,
     CredentialVersion,
@@ -30,7 +29,6 @@ from control_plane.domain.managed_resources import (
     RealtimeCapabilities,
     STTCapabilities,
 )
-from control_plane.infrastructure.encryption import CredentialCipher
 
 from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
@@ -45,10 +43,8 @@ class SqlAlchemyManagedResourceRepository:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        cipher: CredentialCipher,
     ) -> None:
         self._sessions = sessions
-        self._cipher = cipher
 
     @asynccontextmanager
     async def _transaction(self) -> AsyncIterator[AsyncSession]:
@@ -59,99 +55,6 @@ class SqlAlchemyManagedResourceRepository:
             raise ManagedResourceConflict(
                 "managed resource constraint conflict"
             ) from error
-
-    async def create_credential(self, name: str, secret: str, actor: str) -> Credential:
-        async with self._transaction() as session:
-            row = CredentialRow(name=name, status="active", created_by=actor)
-            session.add(row)
-            await session.flush()
-            nonce, ciphertext = self._cipher.encrypt(row.id, 1, secret)
-            version = CredentialVersionRow(
-                credential_id=row.id,
-                version_number=1,
-                key_id=self._cipher.key_id,
-                algorithm=self._cipher.ALGORITHM,
-                nonce=nonce,
-                ciphertext=ciphertext,
-                created_by=actor,
-            )
-            session.add(version)
-            await session.flush()
-            row.active_version_id = version.id
-            await session.flush()
-            await session.refresh(row)
-            return self._credential(row, 1)
-
-    async def rotate_credential(
-        self, credential_ref: CredentialRef, secret: str, actor: str
-    ) -> Credential:
-        async with self._transaction() as session:
-            row = await self._credential_row(session, credential_ref, lock=True)
-            if row.status == CredentialStatus.REVOKED:
-                raise ManagedResourceConflict("revoked credential cannot be rotated")
-            active = await session.get(
-                CredentialVersionRow, row.active_version_id, with_for_update=True
-            )
-            if active is None:
-                raise ManagedResourceConflict("credential has no active version")
-            active.retired_at = func.now()
-            number = active.version_number + 1
-            nonce, ciphertext = self._cipher.encrypt(row.id, number, secret)
-            version = CredentialVersionRow(
-                credential_id=row.id,
-                version_number=number,
-                key_id=self._cipher.key_id,
-                algorithm=self._cipher.ALGORITHM,
-                nonce=nonce,
-                ciphertext=ciphertext,
-                created_by=actor,
-            )
-            session.add(version)
-            await session.flush()
-            row.active_version_id = version.id
-            row.generation += 1
-            await session.flush()
-            await session.refresh(row)
-            return self._credential(row, number)
-
-    async def revoke_credential(
-        self, credential_ref: CredentialRef, actor: str
-    ) -> Credential:
-        async with self._transaction() as session:
-            row = await self._credential_row(session, credential_ref, lock=True)
-            if row.status == CredentialStatus.REVOKED:
-                raise ManagedResourceConflict("credential is already revoked")
-            row.status = CredentialStatus.REVOKED
-            row.revoked_at = func.now()
-            row.revoked_by = actor
-            active = await session.get(
-                CredentialVersionRow, row.active_version_id, with_for_update=True
-            )
-            if active is not None:
-                active.retired_at = func.now()
-            row.active_version_id = None
-            row.generation += 1
-            await session.flush()
-            await session.refresh(row)
-            return self._credential(row, None)
-
-    async def get_credential(self, credential_ref: CredentialRef) -> Credential:
-        async with self._sessions() as session:
-            row = await self._credential_row(session, credential_ref)
-            number = await self._active_version_number(session, row)
-            return self._credential(row, number)
-
-    async def list_credentials(self) -> Sequence[Credential]:
-        async with self._sessions() as session:
-            rows = (
-                await session.scalars(
-                    select(CredentialRow).order_by(CredentialRow.name)
-                )
-            ).all()
-            return [
-                self._credential(row, await self._active_version_number(session, row))
-                for row in rows
-            ]
 
     async def list_credential_versions(
         self, credential_ref: CredentialRef
@@ -754,33 +657,6 @@ class SqlAlchemyManagedResourceRepository:
             raise ManagedResourceConflict(
                 f"expected generation {expected}, current {current}"
             )
-
-    @staticmethod
-    async def _active_version_number(
-        session: AsyncSession, row: CredentialRow
-    ) -> int | None:
-        if row.active_version_id is None:
-            return None
-        return await session.scalar(
-            select(CredentialVersionRow.version_number).where(
-                CredentialVersionRow.id == row.active_version_id
-            )
-        )
-
-    @staticmethod
-    def _credential(row: CredentialRow, number: int | None) -> Credential:
-        return Credential(
-            CredentialRef(row.id),
-            row.name,
-            row.active_version_id,
-            number,
-            CredentialStatus(row.status),
-            row.generation,
-            row.created_at,
-            row.created_by,
-            row.revoked_at,
-            row.revoked_by,
-        )
 
     @staticmethod
     def _connection(row: ProviderConnectionRow) -> ProviderConnection:

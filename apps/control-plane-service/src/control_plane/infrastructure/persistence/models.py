@@ -141,6 +141,11 @@ class Credential(Base):
     __table_args__ = (
         CheckConstraint("status IN ('active', 'revoked')", name="ck_credential_status"),
         CheckConstraint(
+            "(scope_type = 'platform' AND tenant_id IS NULL) OR "
+            "(scope_type = 'tenant' AND tenant_id IS NOT NULL AND tenant_id <> '')",
+            name="ck_credential_scope",
+        ),
+        CheckConstraint(
             "(status = 'active' AND revoked_at IS NULL AND revoked_by IS NULL) OR "
             "(status = 'revoked' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL)",
             name="ck_credential_revocation",
@@ -159,7 +164,9 @@ class Credential(Base):
     )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    name: Mapped[str] = mapped_column(String(255), unique=True)
+    scope_type: Mapped[str] = mapped_column(String(16))
+    tenant_id: Mapped[str | None] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(255))
     active_version_id: Mapped[UUID | None] = mapped_column(Uuid)
     status: Mapped[str] = mapped_column(String(16), default="active")
     generation: Mapped[int] = mapped_column(Integer, default=1)

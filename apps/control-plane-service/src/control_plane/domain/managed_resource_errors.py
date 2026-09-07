@@ -15,3 +15,7 @@ class ManagedResourceConflict(ManagedResourceError):
 
 class InvalidManagedResource(ManagedResourceError):
     code = "invalid_managed_resource"
+
+
+class ManagedResourcePreconditionFailed(ManagedResourceError):
+    code = "precondition_failed"

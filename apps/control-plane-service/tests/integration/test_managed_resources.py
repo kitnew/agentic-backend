@@ -1,10 +1,12 @@
 import asyncio
 import base64
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
 import pytest
+from control_plane.application.credentials import CredentialService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.managed_resource_errors import (
     InvalidManagedResource,
@@ -13,11 +15,15 @@ from control_plane.domain.managed_resource_errors import (
 from control_plane.domain.managed_resources import (
     DeploymentKind,
     ModelDeployment,
+    PlatformCredentialScope,
     ProviderConnection,
     STTCapabilities,
 )
 from control_plane.domain.providers import default_provider_registry
 from control_plane.infrastructure.encryption import CredentialCipher
+from control_plane.infrastructure.persistence.credential_transactions import (
+    credential_command_scope,
+)
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -39,11 +45,18 @@ KEY = base64.b64encode(b"0" * 32).decode()
 
 def resources(
     database: Database,
-) -> tuple[ManagedResourceService, SqlAlchemyManagedResourceRepository]:
-    repository = SqlAlchemyManagedResourceRepository(
-        database.sessions, CredentialCipher(KEY)
+) -> tuple[
+    CredentialService, ManagedResourceService, SqlAlchemyManagedResourceRepository
+]:
+    repository = SqlAlchemyManagedResourceRepository(database.sessions)
+    credentials = CredentialService(
+        credential_command_scope(database.sessions, CredentialCipher(KEY))
     )
-    return ManagedResourceService(default_provider_registry(), repository), repository
+    return (
+        credentials,
+        ManagedResourceService(default_provider_registry(), repository),
+        repository,
+    )
 
 
 @pytest.mark.asyncio
@@ -51,10 +64,12 @@ async def test_credentials_are_encrypted_rotated_and_terminal(
     migrated_database_url: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     database = Database(migrated_database_url)
-    service, repository = resources(database)
+    credentials, _, repository = resources(database)
     secret = "plaintext-secret-never-persist-or-publish"
     try:
-        created = await service.create_credential("azure-prod", secret, "alice")
+        created = await credentials.create(
+            PlatformCredentialScope(), "azure-prod", secret, "alice", "create"
+        )
         assert created.active_secret_version_number == 1
         assert created.generation == 1
 
@@ -65,25 +80,46 @@ async def test_credentials_are_encrypted_rotated_and_terminal(
             assert stored.key_id == "bootstrap"
             assert stored.algorithm == CredentialCipher.ALGORITHM
 
-        rotations = await asyncio.gather(
-            service.rotate_credential(created.ref, "second-secret", "bob"),
-            service.rotate_credential(created.ref, "third-secret", "carol"),
+        second = await credentials.rotate(
+            created.ref,
+            "second-secret",
+            credentials.concurrency_token(created),
+            "bob",
+            "rotate-2",
         )
-        assert {value.ref for value in rotations} == {created.ref}
+        third = await credentials.rotate(
+            created.ref,
+            "third-secret",
+            credentials.concurrency_token(second),
+            "carol",
+            "rotate-3",
+        )
+        assert third.ref == created.ref
         versions = await repository.list_credential_versions(created.ref)
         assert [value.version_number for value in versions] == [1, 2, 3]
         assert sum(value.retired_at is None for value in versions) == 1
-        assert (await service.get_credential(created.ref)).generation == 3
+        assert (await credentials.get(created.ref)).generation == 3
 
-        revoked = await service.revoke_credential(created.ref, "dave")
-        assert revoked.status == "revoked" and revoked.active_version_id is None
+        revoked = await credentials.revoke(
+            created.ref,
+            credentials.concurrency_token(third),
+            "dave",
+            "revoke",
+        )
+        assert revoked.status == "revoked" and revoked.active_version_id is not None
         assert revoked.generation == 4
         assert [
             value.version_number
             for value in await repository.list_credential_versions(created.ref)
         ] == [1, 2, 3]
         with pytest.raises(ManagedResourceConflict, match="cannot be rotated"):
-            await service.rotate_credential(created.ref, "fourth", "dave")
+            await credentials.rotate(
+                created.ref,
+                "fourth",
+                credentials.concurrency_token(revoked),
+                "dave",
+                "rotate-4",
+            )
         assert secret not in caplog.text
     finally:
         await database.close()
@@ -94,9 +130,11 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
     migrated_database_url: str,
 ) -> None:
     database = Database(migrated_database_url)
-    service, _ = resources(database)
+    credentials, service, _ = resources(database)
     try:
-        credential = await service.create_credential("eleven-prod", "secret", "alice")
+        credential = await credentials.create(
+            PlatformCredentialScope(), "eleven-prod", "secret", "alice", "create"
+        )
         connection = await service.create_connection(
             "elevenlabs-prod", "elevenlabs", credential.ref, {}, True, "alice"
         )
@@ -156,7 +194,12 @@ async def test_resource_validation_optimistic_concurrency_and_no_cascade(
             await service.set_deployment_enabled(deployment.ref, False, 2, "bob")
             await service.set_deployment_enabled(deployment.ref, True, 3, "bob")
 
-        await service.revoke_credential(credential.ref, "security")
+        await credentials.revoke(
+            credential.ref,
+            credentials.concurrency_token(credential),
+            "security",
+            "revoke",
+        )
         assert (await service.get_connection(connection.ref)).enabled is False
         assert (await service.get_deployment(deployment.ref)).enabled is False
         with pytest.raises(InvalidManagedResource, match="active credential"):
@@ -193,7 +236,7 @@ async def test_http_lifecycle_and_secret_free_responses(
     migrated_database_url: str,
 ) -> None:
     database = Database(migrated_database_url)
-    service, _ = resources(database)
+    credentials, service, _ = resources(database)
 
     class Lifecycle:
         @asynccontextmanager
@@ -203,21 +246,41 @@ async def test_http_lifecycle_and_secret_free_responses(
     app = create_http_app(
         Lifecycle(),
         managed_resources=service,  # type: ignore[arg-type]
+        credentials=credentials,
+    )
+    app.state.settings = SimpleNamespace(
+        control_plane_management_token=SimpleNamespace(
+            get_secret_value=lambda: "management-secret"
+        ),
+        control_plane_management_actor="admin",
+        control_plane_management_scopes="resources:read,credentials:write",
     )
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
+            client.headers["Authorization"] = "Bearer management-secret"
             response = await client.post(
-                "/v1/managed-resources/credentials",
-                json={"name": "http-azure", "secret": "http-secret", "actor": "admin"},
+                "/management/v1/credentials",
+                headers={"Idempotency-Key": "create-http"},
+                json={
+                    "scope": {"type": "platform"},
+                    "name": "http-azure",
+                    "secret": "http-secret",
+                },
             )
             assert response.status_code == 201
             assert "http-secret" not in response.text
             credential_id = response.json()["id"]
+            credential_etag = response.headers["etag"]
             duplicate = await client.post(
-                "/v1/managed-resources/credentials",
-                json={"name": "http-azure", "secret": "other", "actor": "admin"},
+                "/management/v1/credentials",
+                headers={"Idempotency-Key": "create-http"},
+                json={
+                    "scope": {"type": "platform"},
+                    "name": "http-azure",
+                    "secret": "other",
+                },
             )
             assert duplicate.status_code == 409
             assert "other" not in duplicate.text
@@ -300,32 +363,40 @@ async def test_http_lifecycle_and_secret_free_responses(
             ).status_code == 409
             assert (
                 await client.get(
-                    "/v1/managed-resources/credentials/00000000-0000-0000-0000-000000000000"
+                    "/management/v1/credentials/00000000-0000-0000-0000-000000000000"
                 )
             ).status_code == 404
             response = await client.post(
-                f"/v1/managed-resources/credentials/{credential_id}/rotate",
-                json={"secret": "rotated-http-secret", "actor": "admin"},
+                f"/management/v1/credentials/{credential_id}/rotate",
+                headers={"Idempotency-Key": "rotate-http", "If-Match": credential_etag},
+                json={"secret": "rotated-http-secret"},
             )
             assert response.status_code == 200
-            assert response.json()["active_secret_version_number"] == 2
+            assert response.json()["active_secret_version"] == 2
             response = await client.post(
-                f"/v1/managed-resources/credentials/{credential_id}/revoke",
-                json={"actor": "admin"},
+                f"/management/v1/credentials/{credential_id}/revoke",
+                headers={
+                    "Idempotency-Key": "revoke-http",
+                    "If-Match": response.headers["etag"],
+                },
             )
             assert (
                 response.status_code == 200 and response.json()["status"] == "revoked"
             )
             response = await client.post(
-                f"/v1/managed-resources/credentials/{credential_id}/rotate",
-                json={"secret": "rejected-secret", "actor": "admin"},
+                f"/management/v1/credentials/{credential_id}/rotate",
+                headers={
+                    "Idempotency-Key": "rejected-http",
+                    "If-Match": response.headers["etag"],
+                },
+                json={"secret": "rejected-secret"},
             )
             assert (
                 response.status_code == 409 and "rejected-secret" not in response.text
             )
             assert (
                 "http-secret"
-                not in (await client.get("/v1/managed-resources/credentials")).text
+                not in (await client.get("/management/v1/credentials")).text
             )
     finally:
         await database.close()

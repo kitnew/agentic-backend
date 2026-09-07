@@ -1,8 +1,8 @@
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 
@@ -41,6 +41,20 @@ class CredentialStatus(StrEnum):
     REVOKED = "revoked"
 
 
+@dataclass(frozen=True, slots=True)
+class PlatformCredentialScope:
+    type: Literal["platform"] = field(default="platform", init=False)
+
+
+@dataclass(frozen=True, slots=True)
+class TenantCredentialScope:
+    tenant_id: str
+    type: Literal["tenant"] = field(default="tenant", init=False)
+
+
+CredentialScope = PlatformCredentialScope | TenantCredentialScope
+
+
 class DeploymentKind(StrEnum):
     LLM = "llm"
     REALTIME = "realtime"
@@ -69,6 +83,7 @@ class STTCapabilities:
 @dataclass(frozen=True, slots=True)
 class Credential:
     ref: CredentialRef
+    scope: CredentialScope
     name: str
     active_version_id: UUID | None
     active_secret_version_number: int | None

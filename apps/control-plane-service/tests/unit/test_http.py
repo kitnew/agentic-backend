@@ -25,9 +25,7 @@ class FakeLifecycle:
 
 @pytest.mark.asyncio
 async def test_health_does_not_require_dependencies() -> None:
-    lifecycle = FakeLifecycle(
-        Readiness(postgres=False, control_plane_schema=False)
-    )
+    lifecycle = FakeLifecycle(Readiness(postgres=False, control_plane_schema=False))
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
     async with AsyncClient(
@@ -45,9 +43,7 @@ async def test_health_does_not_require_dependencies() -> None:
 
 @pytest.mark.asyncio
 async def test_ready_reports_unavailable_dependencies() -> None:
-    lifecycle = FakeLifecycle(
-        Readiness(postgres=False, control_plane_schema=False)
-    )
+    lifecycle = FakeLifecycle(Readiness(postgres=False, control_plane_schema=False))
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
     async with AsyncClient(
@@ -65,9 +61,7 @@ async def test_ready_reports_unavailable_dependencies() -> None:
 
 @pytest.mark.asyncio
 async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
-    lifecycle = FakeLifecycle(
-        Readiness(postgres=True, control_plane_schema=True)
-    )
+    lifecycle = FakeLifecycle(Readiness(postgres=True, control_plane_schema=True))
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
     async with AsyncClient(
@@ -83,9 +77,7 @@ async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
 @pytest.mark.asyncio
 async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
     app = create_http_app(
-        FakeLifecycle(
-            Readiness(postgres=True, control_plane_schema=True)
-        ),
+        FakeLifecycle(Readiness(postgres=True, control_plane_schema=True)),
         managed_resources=object(),  # type: ignore[arg-type]
     )
     app.state.settings = SimpleNamespace(
@@ -116,9 +108,7 @@ async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
 
 @pytest.mark.asyncio
 async def test_ready_rejects_incompatible_control_plane_schema() -> None:
-    lifecycle = FakeLifecycle(
-        Readiness(postgres=True, control_plane_schema=False)
-    )
+    lifecycle = FakeLifecycle(Readiness(postgres=True, control_plane_schema=False))
     app = create_http_app(lifecycle)  # type: ignore[arg-type]
 
     async with AsyncClient(
@@ -137,9 +127,7 @@ async def test_ready_rejects_incompatible_control_plane_schema() -> None:
 @pytest.mark.asyncio
 async def test_management_routes_require_the_separate_management_token() -> None:
     app = create_http_app(
-        FakeLifecycle(
-            Readiness(postgres=True, control_plane_schema=True)
-        ),
+        FakeLifecycle(Readiness(postgres=True, control_plane_schema=True)),
         managed_resources=object(),  # type: ignore[arg-type]
     )
     app.state.settings = SimpleNamespace(
@@ -147,7 +135,9 @@ async def test_management_routes_require_the_separate_management_token() -> None
             get_secret_value=lambda: "management-secret"
         )
     )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         missing = await client.get("/v1/managed-resources/credentials")
         invalid = await client.get(
             "/v1/managed-resources/credentials",
@@ -158,7 +148,7 @@ async def test_management_routes_require_the_separate_management_token() -> None
             headers={"Authorization": "Bearer management-secret"},
         )
     assert missing.status_code == invalid.status_code == 401
-    assert valid.status_code == 422
+    assert valid.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -177,7 +167,9 @@ async def test_management_actor_is_server_derived() -> None:
         ),
         control_plane_management_actor="agentctl",
     )
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.put(
             "/v1/scopes/platform/components/prompt.system/draft",
             headers={"Authorization": "Bearer management-secret"},

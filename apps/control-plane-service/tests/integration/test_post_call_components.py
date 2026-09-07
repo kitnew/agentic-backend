@@ -1,4 +1,3 @@
-import base64
 from typing import cast
 from uuid import uuid4
 
@@ -16,7 +15,6 @@ from control_plane.domain.components.errors import InvalidComponentValue
 from control_plane.domain.managed_resource_errors import ManagedResourceNotFound
 from control_plane.domain.post_call import register_post_call_components
 from control_plane.domain.providers import default_provider_registry
-from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -24,6 +22,8 @@ from control_plane.infrastructure.persistence.managed_resources import (
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
+
+from .credential_helpers import create_platform_credential, credential_service
 
 
 def services(database: Database) -> tuple[ComponentService, ManagedResourceService]:
@@ -39,10 +39,7 @@ def services(database: Database) -> tuple[ComponentService, ManagedResourceServi
         ),
         ManagedResourceService(
             default_provider_registry(),
-            SqlAlchemyManagedResourceRepository(
-                database.sessions,
-                CredentialCipher(base64.b64encode(b"0" * 32).decode()),
-            ),
+            SqlAlchemyManagedResourceRepository(database.sessions),
         ),
     )
 
@@ -167,7 +164,7 @@ async def test_post_call_credential_changes_never_rewrite_revision(
         ComponentKind("post_call.tenant"), TenantScope("tenant-a")
     )
     try:
-        credential = await resources.create_credential("summary-api", "secret", "test")
+        credential = await create_platform_credential(database, "summary-api")
         connection = await resources.create_integration_connection(
             "tenant-a",
             "summary-api",
@@ -184,8 +181,20 @@ async def test_post_call_credential_changes_never_rewrite_revision(
         )
         revision = await components.publish_draft(address, draft.version, "test")
         assert "secret" not in str(revision.value.model_dump(mode="json"))
-        await resources.rotate_credential(credential.ref, "rotated", "test")
-        await resources.revoke_credential(credential.ref, "test")
+        credentials = credential_service(database)
+        credential = await credentials.rotate(
+            credential.ref,
+            "rotated",
+            credentials.concurrency_token(credential),
+            "test",
+            "rotate-summary-api",
+        )
+        await credentials.revoke(
+            credential.ref,
+            credentials.concurrency_token(credential),
+            "test",
+            "revoke-summary-api",
+        )
         assert (
             await components.get_active(address)
         ).revision_id == revision.revision_id

@@ -157,7 +157,9 @@ def upgrade() -> None:
     op.create_table(
         "credentials",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("name", sa.String(255), nullable=False, unique=True),
+        sa.Column("scope_type", sa.String(16), nullable=False),
+        sa.Column("tenant_id", sa.String(255)),
+        sa.Column("name", sa.String(255), nullable=False),
         sa.Column("active_version_id", sa.Uuid()),
         sa.Column("status", sa.String(16), server_default="active", nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
@@ -166,6 +168,7 @@ def upgrade() -> None:
         sa.Column("revoked_at", sa.DateTime(timezone=True)),
         sa.Column("revoked_by", sa.String(255)),
         sa.CheckConstraint("status IN ('active', 'revoked')", name="ck_credential_status"),
+        sa.CheckConstraint("(scope_type = 'platform' AND tenant_id IS NULL) OR (scope_type = 'tenant' AND tenant_id IS NOT NULL AND tenant_id <> '')", name="ck_credential_scope"),
         sa.CheckConstraint("(status = 'active' AND revoked_at IS NULL AND revoked_by IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL)", name="ck_credential_revocation"),
         sa.CheckConstraint("generation >= 1", name="ck_credential_generation"),
         schema=SCHEMA,
@@ -189,6 +192,55 @@ def upgrade() -> None:
     )
     op.create_index("uq_credential_active_version", "credential_versions", ["credential_id"], unique=True, schema=SCHEMA, postgresql_where=sa.text("retired_at IS NULL"))
     op.create_foreign_key("fk_credential_active_version", "credentials", "credential_versions", ["active_version_id", "id"], ["id", "credential_id"], source_schema=SCHEMA, referent_schema=SCHEMA)
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_credential_scope_change() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.scope_type IS DISTINCT FROM NEW.scope_type
+             OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id THEN
+            RAISE EXCEPTION 'credential scope is immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER credential_scope_immutable BEFORE UPDATE OF scope_type, tenant_id "
+        "ON control_plane.credentials FOR EACH ROW "
+        "EXECUTE FUNCTION control_plane.reject_credential_scope_change()"
+    )
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_credential_version_mutation() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF TG_OP = 'DELETE' THEN
+            RAISE EXCEPTION 'credential secret versions are immutable';
+          END IF;
+          IF OLD.id IS DISTINCT FROM NEW.id
+             OR OLD.credential_id IS DISTINCT FROM NEW.credential_id
+             OR OLD.version_number IS DISTINCT FROM NEW.version_number
+             OR OLD.key_id IS DISTINCT FROM NEW.key_id
+             OR OLD.algorithm IS DISTINCT FROM NEW.algorithm
+             OR OLD.nonce IS DISTINCT FROM NEW.nonce
+             OR OLD.ciphertext IS DISTINCT FROM NEW.ciphertext
+             OR OLD.created_at IS DISTINCT FROM NEW.created_at
+             OR OLD.created_by IS DISTINCT FROM NEW.created_by
+             OR (OLD.retired_at IS NOT NULL AND OLD.retired_at IS DISTINCT FROM NEW.retired_at) THEN
+            RAISE EXCEPTION 'credential secret versions are immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER credential_version_immutable BEFORE UPDATE OR DELETE "
+        "ON control_plane.credential_versions FOR EACH ROW "
+        "EXECUTE FUNCTION control_plane.reject_credential_version_mutation()"
+    )
     op.create_table(
         "provider_connections",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -316,6 +368,10 @@ def downgrade() -> None:
     op.drop_table("integration_connections", schema=SCHEMA)
     op.drop_table("model_deployments", schema=SCHEMA)
     op.drop_table("provider_connections", schema=SCHEMA)
+    op.execute("DROP TRIGGER credential_version_immutable ON control_plane.credential_versions")
+    op.execute("DROP FUNCTION control_plane.reject_credential_version_mutation()")
+    op.execute("DROP TRIGGER credential_scope_immutable ON control_plane.credentials")
+    op.execute("DROP FUNCTION control_plane.reject_credential_scope_change()")
     op.drop_constraint("fk_credential_active_version", "credentials", schema=SCHEMA, type_="foreignkey")
     op.drop_index("uq_credential_active_version", table_name="credential_versions", schema=SCHEMA)
     op.drop_table("credential_versions", schema=SCHEMA)

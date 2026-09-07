@@ -1,5 +1,4 @@
 import asyncio
-import base64
 
 import pytest
 from control_plane.application.components import ComponentService
@@ -17,7 +16,6 @@ from control_plane.domain.managed_resource_errors import (
 )
 from control_plane.domain.managed_resources import PhoneNumberAssignment
 from control_plane.domain.providers import default_provider_registry
-from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -31,13 +29,11 @@ from control_plane.infrastructure.persistence.repository import (
 )
 from sqlalchemy import func, select
 
-KEY = base64.b64encode(b"0" * 32).decode()
-
 
 def managed(database: Database) -> ManagedResourceService:
     return ManagedResourceService(
         default_provider_registry(),
-        SqlAlchemyManagedResourceRepository(database.sessions, CredentialCipher(KEY)),
+        SqlAlchemyManagedResourceRepository(database.sessions),
     )
 
 

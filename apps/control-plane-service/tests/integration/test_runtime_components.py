@@ -1,4 +1,3 @@
-import base64
 from uuid import uuid4
 
 import pytest
@@ -21,7 +20,6 @@ from control_plane.domain.managed_resources import (
 )
 from control_plane.domain.providers import default_provider_registry
 from control_plane.domain.runtime_components import register_runtime_components
-from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence.database import Database
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -35,16 +33,15 @@ from control_plane.infrastructure.persistence.repository import (
 )
 from sqlalchemy import func, select
 
+from .credential_helpers import create_platform_credential
+
 
 def services(database: Database) -> tuple[ComponentService, ManagedResourceService]:
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     resources = ManagedResourceService(
         default_provider_registry(),
-        SqlAlchemyManagedResourceRepository(
-            database.sessions,
-            CredentialCipher(base64.b64encode(b"0" * 32).decode()),
-        ),
+        SqlAlchemyManagedResourceRepository(database.sessions),
     )
     return ComponentService(
         registry, SqlAlchemyComponentRepository(database.sessions)
@@ -52,14 +49,13 @@ def services(database: Database) -> tuple[ComponentService, ManagedResourceServi
 
 
 async def deployment(
+    database: Database,
     resources: ManagedResourceService,
     kind: DeploymentKind,
     key: str,
     capabilities: LLMCapabilities | None = None,
 ):
-    credential = await resources.create_credential(
-        f"{key}-credential", "secret", "test"
-    )
+    credential = await create_platform_credential(database, f"{key}-credential")
     if kind in {DeploymentKind.LLM, DeploymentKind.REALTIME}:
         connection = await resources.create_connection(
             f"{key}-connection",
@@ -167,7 +163,11 @@ async def test_runtime_publication_validates_resources_atomically(
             )
 
         terra = await deployment(
-            resources, DeploymentKind.LLM, "terra-prod", LLMCapabilities(False, True)
+            database,
+            resources,
+            DeploymentKind.LLM,
+            "terra-prod",
+            LLMCapabilities(False, True),
         )
         draft = await components.save_draft(
             address,
@@ -299,6 +299,7 @@ async def test_runtime_rollback_revalidates_current_deployment(
     address = ComponentAddress(ComponentKind("runtime.llm.defaults"), PlatformScope())
     try:
         terra = await deployment(
+            database,
             resources,
             DeploymentKind.LLM,
             "rollback-terra",
@@ -367,7 +368,9 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
         ComponentKind("runtime.cascade.execution.defaults"), PlatformScope()
     )
     try:
-        stt = await deployment(resources, DeploymentKind.STT, "cascade-scribe")
+        stt = await deployment(
+            database, resources, DeploymentKind.STT, "cascade-scribe"
+        )
         stt_draft = await components.save_draft(
             stt_address,
             {"deployment_ref": str(stt.ref.value)},
@@ -458,7 +461,7 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
         ComponentKind("runtime.realtime.execution.defaults"), PlatformScope()
     )
     try:
-        credential = await resources.create_credential("realtime", "secret", "test")
+        credential = await create_platform_credential(database, "realtime")
         first = await resources.create_connection(
             "azure-realtime",
             "azure_openai",

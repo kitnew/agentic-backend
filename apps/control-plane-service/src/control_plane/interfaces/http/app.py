@@ -1,14 +1,18 @@
-from typing import Any
-from uuid import UUID
+from collections.abc import Mapping
+from typing import Annotated, Any, Literal
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from control_plane import SERVICE_NAME
+from control_plane.application.command_support import IdempotencyKeyReused
 from control_plane.application.components import ComponentService
+from control_plane.application.credentials import CredentialService
 from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
     RuntimeSecretSlot,
@@ -37,10 +41,11 @@ from control_plane.domain.managed_resource_errors import (
     InvalidManagedResource,
     ManagedResourceError,
     ManagedResourceNotFound,
+    ManagedResourcePreconditionFailed,
 )
 from control_plane.domain.managed_resources import (
-    Credential,
     CredentialRef,
+    CredentialScope,
     DeploymentKind,
     HandoffDestination,
     HandoffDestinationRef,
@@ -51,15 +56,18 @@ from control_plane.domain.managed_resources import (
     ModelDeploymentRef,
     PhoneNumberAssignment,
     PhoneNumberAssignmentRef,
+    PlatformCredentialScope,
     ProviderConnection,
     ProviderConnectionRef,
     RealtimeCapabilities,
     STTCapabilities,
+    TenantCredentialScope,
 )
 from control_plane.domain.runtime_resolution import RuntimeResolutionError
 from control_plane.interfaces.http.service_auth import (
     ManagementPrincipal,
     ServicePrincipal,
+    require_management_permission,
     require_management_token,
     require_service_scope,
 )
@@ -81,17 +89,47 @@ class RollbackRequest(BaseModel):
     revision_number: int = Field(ge=1)
 
 
-class CredentialWrite(BaseModel):
+class PlatformCredentialScopeWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["platform"]
+
+
+class TenantCredentialScopeWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tenant"]
+    tenant_id: str = Field(min_length=1, max_length=255)
+
+
+CredentialScopeWrite = Annotated[
+    PlatformCredentialScopeWrite | TenantCredentialScopeWrite,
+    Field(discriminator="type"),
+]
+
+
+class CredentialCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    scope: CredentialScopeWrite
     name: str = Field(min_length=1, max_length=255)
     secret: SecretStr = Field(min_length=1)
 
 
 class CredentialRotate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     secret: SecretStr = Field(min_length=1)
 
 
-class RevokeRequest(BaseModel):
-    pass
+class CredentialResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    scope: CredentialScopeWrite
+    name: str
+    status: Literal["active", "revoked"]
+    active_secret_version: int = Field(ge=1)
 
 
 class ProviderConnectionCreate(BaseModel):
@@ -159,10 +197,14 @@ class PhoneNumberAssignmentCreate(BaseModel):
 
 _runtime_secret_auth = Depends(require_service_scope("runtime-secret:materialize"))
 _integration_material_auth = Depends(require_service_scope("integration-material:read"))
-_snapshot_materialize_auth = Depends(require_service_scope("execution-snapshot:materialize"))
+_snapshot_materialize_auth = Depends(
+    require_service_scope("execution-snapshot:materialize")
+)
 _snapshot_read_auth = Depends(require_service_scope("execution-snapshot:read"))
 _handoff_material_auth = Depends(require_service_scope("handoff-material:read"))
 _telephony_read_auth = Depends(require_service_scope("telephony:read"))
+_credential_read_auth = Depends(require_management_permission("resources:read"))
+_credential_write_auth = Depends(require_management_permission("credentials:write"))
 
 
 class HandoffMaterialRequest(BaseModel):
@@ -213,6 +255,7 @@ def create_http_app(
     runtime_resolver: RuntimeResolver | None = None,
     runtime_materialization: ExecutionSnapshotService | None = None,
     execution_materialization: ExecutionMaterializationService | None = None,
+    credentials: CredentialService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.settings = None
@@ -222,21 +265,80 @@ def create_http_app(
     app.state.runtime_resolver = runtime_resolver
     app.state.runtime_materialization = runtime_materialization
     app.state.execution_materialization = execution_materialization
+    app.state.credentials = credentials
 
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
-        if request.url.path.startswith("/v1/") and not request.url.path.startswith(
-            "/v1/runtime/resolve"
+        target = request.url.path.startswith("/management/v1/")
+        request.state.request_id = str(uuid4())
+        if target or (
+            request.url.path.startswith("/v1/")
+            and not request.url.path.startswith("/v1/runtime/resolve")
         ):
             try:
                 request.state.management_principal = require_management_token(request)
             except HTTPException as error:
+                if target:
+                    return _management_error(
+                        request,
+                        error.status_code,
+                        "unauthenticated",
+                        str(error.detail),
+                        headers=error.headers,
+                    )
                 return JSONResponse(
                     {"detail": error.detail},
                     status_code=error.status_code,
                     headers=error.headers,
                 )
         return await call_next(request)
+
+    @app.exception_handler(HTTPException)
+    async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
+        if request.url.path.startswith("/management/v1/"):
+            code = (
+                "permission_denied"
+                if exc.status_code == status.HTTP_403_FORBIDDEN
+                else "precondition_required"
+                if exc.status_code == status.HTTP_428_PRECONDITION_REQUIRED
+                else "invalid_request"
+            )
+            return _management_error(
+                request, exc.status_code, code, str(exc.detail), headers=exc.headers
+            )
+        return JSONResponse(
+            {"detail": exc.detail}, status_code=exc.status_code, headers=exc.headers
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        if request.url.path.startswith("/management/v1/"):
+            issues = [
+                {
+                    "location": ".".join(str(item) for item in error["loc"]),
+                    "message": error["msg"],
+                }
+                for error in exc.errors()
+            ]
+            return _management_error(
+                request,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "invalid_request",
+                "request validation failed",
+                issues=issues,
+            )
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={"detail": jsonable_encoder(exc.errors())},
+        )
+
+    @app.exception_handler(IdempotencyKeyReused)
+    async def idempotency_error(
+        request: Request, exc: IdempotencyKeyReused
+    ) -> JSONResponse:
+        return _management_error(request, status.HTTP_409_CONFLICT, exc.code, str(exc))
 
     @app.exception_handler(ComponentError)
     async def component_error(_request: Request, exc: ComponentError) -> JSONResponse:
@@ -255,14 +357,18 @@ def create_http_app(
 
     @app.exception_handler(ManagedResourceError)
     async def managed_resource_error(
-        _request: Request, exc: ManagedResourceError
+        request: Request, exc: ManagedResourceError
     ) -> JSONResponse:
         if isinstance(exc, InvalidManagedResource):
             code = status.HTTP_422_UNPROCESSABLE_CONTENT
         elif isinstance(exc, ManagedResourceNotFound):
             code = status.HTTP_404_NOT_FOUND
+        elif isinstance(exc, ManagedResourcePreconditionFailed):
+            code = status.HTTP_412_PRECONDITION_FAILED
         else:
             code = status.HTTP_409_CONFLICT
+        if request.url.path.startswith("/management/v1/"):
+            return _management_error(request, code, exc.code, str(exc))
         return JSONResponse(
             status_code=code,
             content={"detail": {"code": exc.code, "message": str(exc)}},
@@ -317,6 +423,8 @@ def create_http_app(
             app.include_router(_component_router(), prefix=prefix)
     if managed_resources is not None:
         app.include_router(_managed_resource_router(), prefix="/v1/managed-resources")
+    if credentials is not None:
+        app.include_router(_credential_router(), prefix="/management/v1")
     if runtime_resolver is not None:
 
         @app.get("/v1/runtime/resolve/tenant/{tenant_id}")
@@ -367,7 +475,9 @@ def create_http_app(
             snapshot_id: UUID,
             _principal: ServicePrincipal = _snapshot_read_auth,
         ) -> Any:
-            snapshot = await request.app.state.runtime_materialization.get_snapshot(snapshot_id)
+            snapshot = await request.app.state.runtime_materialization.get_snapshot(
+                snapshot_id
+            )
             if snapshot is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
             return jsonable_encoder(snapshot)
@@ -391,6 +501,7 @@ def create_http_app(
             )
 
     if managed_resources is not None:
+
         @app.get("/internal/v1/telephony/phone-number-assignments/resolve")
         async def resolve_phone_assignment(
             request: Request,
@@ -399,15 +510,27 @@ def create_http_app(
         ) -> Any:
             try:
                 from control_plane.domain.managed_resources import normalize_e164
+
                 phone_number = normalize_e164(phone_number)
             except ValueError as error:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from error
             assignments = await request.app.state.managed_resources.list_phone_number_assignments()
-            assignment = next((item for item in assignments if item.enabled and item.phone_number == phone_number), None)
+            assignment = next(
+                (
+                    item
+                    for item in assignments
+                    if item.enabled and item.phone_number == phone_number
+                ),
+                None,
+            )
             if assignment is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-            return {"assignment_id": assignment.ref.value, "tenant_id": assignment.tenant_id,
-                    "phone_number": assignment.phone_number, "generation": assignment.generation}
+            return {
+                "assignment_id": assignment.ref.value,
+                "tenant_id": assignment.tenant_id,
+                "phone_number": assignment.phone_number,
+                "generation": assignment.generation,
+            }
 
         @app.get("/internal/v1/telephony/phone-number-assignments")
         async def list_enabled_phone_assignments(
@@ -415,9 +538,16 @@ def create_http_app(
             _principal: ServicePrincipal = _telephony_read_auth,
         ) -> list[dict[str, Any]]:
             assignments = await request.app.state.managed_resources.list_phone_number_assignments()
-            return [{"assignment_id": item.ref.value, "tenant_id": item.tenant_id,
-                     "phone_number": item.phone_number, "generation": item.generation}
-                    for item in assignments if item.enabled]
+            return [
+                {
+                    "assignment_id": item.ref.value,
+                    "tenant_id": item.tenant_id,
+                    "phone_number": item.phone_number,
+                    "generation": item.generation,
+                }
+                for item in assignments
+                if item.enabled
+            ]
 
         @app.post(
             "/internal/v1/tenants/{tenant_id}/integration-connections/{connection_id}/execution-material"
@@ -437,38 +567,47 @@ def create_http_app(
                 headers=_secret_headers(),
             )
 
-        @app.post(
-            "/internal/v1/execution-snapshots/{snapshot_id}/handoff-material"
-        )
+        @app.post("/internal/v1/execution-snapshots/{snapshot_id}/handoff-material")
         async def handoff_material(
             request: Request,
             snapshot_id: UUID,
             body: HandoffMaterialRequest,
             _principal: ServicePrincipal = _handoff_material_auth,
         ) -> JSONResponse:
-            snapshot = await request.app.state.runtime_materialization.get_snapshot(snapshot_id)
+            snapshot = await request.app.state.runtime_materialization.get_snapshot(
+                snapshot_id
+            )
             if snapshot is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
             destinations = snapshot.execution.get("handoff", [])
             selected = next(
-                (item for item in destinations
-                 if isinstance(item, dict) and item.get("key") == body.destination),
+                (
+                    item
+                    for item in destinations
+                    if isinstance(item, dict) and item.get("key") == body.destination
+                ),
                 None,
             )
             if not isinstance(selected, dict) or not selected.get("ref"):
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
             if request.app.state.managed_resources is None:
                 raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-            destination = await request.app.state.managed_resources.get_handoff_destination(
-                HandoffDestinationRef(UUID(str(selected["ref"])))
+            destination = (
+                await request.app.state.managed_resources.get_handoff_destination(
+                    HandoffDestinationRef(UUID(str(selected["ref"])))
+                )
             )
             if destination.tenant_id != snapshot.tenant_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
             if not destination.enabled:
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT)
             return JSONResponse(
-                {"snapshot_id": snapshot_id, "destination": body.destination,
-                 "generation": destination.generation, "phone_number": destination.phone_number},
+                {
+                    "snapshot_id": snapshot_id,
+                    "destination": body.destination,
+                    "generation": destination.generation,
+                    "phone_number": destination.phone_number,
+                },
                 headers=_secret_headers(),
             )
 
@@ -481,6 +620,25 @@ def _secret_headers() -> dict[str, str]:
         "Pragma": "no-cache",
         "X-Content-Type-Options": "nosniff",
     }
+
+
+def _management_error(
+    request: Request,
+    status_code: int,
+    code: str,
+    message: str,
+    *,
+    issues: list[dict[str, str]] | None = None,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
+    content: dict[str, object] = {
+        "code": code,
+        "message": message,
+        "request_id": request.state.request_id,
+    }
+    if issues:
+        content["issues"] = issues
+    return JSONResponse(content, status_code=status_code, headers=headers)
 
 
 def _runtime_secret_response(value: object) -> dict[str, object]:
@@ -584,7 +742,9 @@ def _component_router() -> APIRouter:
     async def publish(request: Request, kind: str, body: PublishRequest) -> Any:
         return jsonable_encoder(
             await _service(request).publish_draft(
-                _address(request, kind), body.expected_draft_version, _management_actor(request)
+                _address(request, kind),
+                body.expected_draft_version,
+                _management_actor(request),
             )
         )
 
@@ -614,7 +774,9 @@ def _component_router() -> APIRouter:
     async def rollback(request: Request, kind: str, body: RollbackRequest) -> Any:
         return jsonable_encoder(
             await _service(request).rollback(
-                _address(request, kind), body.revision_number, _management_actor(request)
+                _address(request, kind),
+                body.revision_number,
+                _management_actor(request),
             )
         )
 
@@ -625,19 +787,45 @@ def _managed(request: Request) -> ManagedResourceService:
     return request.app.state.managed_resources
 
 
-def _credential_response(value: Credential) -> dict[str, object]:
+def _credential(request: Request) -> CredentialService:
+    return request.app.state.credentials
+
+
+def _credential_response(value: object) -> dict[str, object]:
+    from control_plane.domain.managed_resources import Credential
+
+    assert isinstance(value, Credential)
+    scope = (
+        {"type": "tenant", "tenant_id": value.scope.tenant_id}
+        if isinstance(value.scope, TenantCredentialScope)
+        else {"type": "platform"}
+    )
     return {
         "id": value.ref.value,
+        "scope": scope,
         "name": value.name,
-        "active_version_id": value.active_version_id,
-        "active_secret_version_number": value.active_secret_version_number,
         "status": value.status,
-        "generation": value.generation,
-        "created_at": value.created_at,
-        "created_by": value.created_by,
-        "revoked_at": value.revoked_at,
-        "revoked_by": value.revoked_by,
+        "active_secret_version": value.active_secret_version_number,
     }
+
+
+def _etag(service: CredentialService, value: object) -> str:
+    from control_plane.domain.managed_resources import Credential
+
+    assert isinstance(value, Credential)
+    return f'"{service.concurrency_token(value)}"'
+
+
+def _command_headers(request: Request, *, precondition: bool) -> tuple[str, str]:
+    idempotency_key = request.headers.get("idempotency-key", "").strip()
+    if not idempotency_key:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Idempotency-Key is required")
+    if_match = request.headers.get("if-match", "").strip()
+    if precondition and not if_match:
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED, "If-Match is required"
+        )
+    return idempotency_key, if_match.removeprefix("W/").strip('"')
 
 
 def _connection_response(value: ProviderConnection) -> dict[str, object]:
@@ -745,47 +933,120 @@ def _deployment_response(value: ModelDeployment) -> dict[str, object]:
     }
 
 
-def _managed_resource_router() -> APIRouter:
+def _credential_router() -> APIRouter:
     router = APIRouter()
 
-    @router.post("/credentials", status_code=status.HTTP_201_CREATED)
-    async def create_credential(request: Request, body: CredentialWrite) -> Any:
-        value = await _managed(request).create_credential(
-            body.name, body.secret.get_secret_value(), _management_actor(request)
+    @router.post(
+        "/credentials",
+        status_code=status.HTTP_201_CREATED,
+        response_model=CredentialResponse,
+    )
+    async def create_credential(
+        request: Request,
+        body: CredentialCreate,
+        principal: ManagementPrincipal = _credential_write_auth,
+    ) -> JSONResponse:
+        idempotency_key, _ = _command_headers(request, precondition=False)
+        scope = (
+            TenantCredentialScope(body.scope.tenant_id)
+            if isinstance(body.scope, TenantCredentialScopeWrite)
+            else PlatformCredentialScope()
         )
-        return jsonable_encoder(_credential_response(value))
+        service = _credential(request)
+        value = await service.create(
+            scope,
+            body.name,
+            body.secret.get_secret_value(),
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_credential_response(value)),
+            status_code=status.HTTP_201_CREATED,
+            headers={"ETag": _etag(service, value)},
+        )
 
-    @router.post("/credentials/{resource_id}/rotate")
-    async def rotate_credential(
-        request: Request, resource_id: UUID, body: CredentialRotate
+    @router.get("/credentials", response_model=list[CredentialResponse])
+    async def list_credentials(
+        request: Request,
+        scope_type: Literal["platform", "tenant"] | None = None,
+        tenant_id: str | None = None,
+        _principal: ManagementPrincipal = _credential_read_auth,
     ) -> Any:
-        value = await _managed(request).rotate_credential(
-            CredentialRef(resource_id), body.secret.get_secret_value(), _management_actor(request)
-        )
-        return jsonable_encoder(_credential_response(value))
-
-    @router.post("/credentials/{resource_id}/revoke")
-    async def revoke_credential(
-        request: Request, resource_id: UUID, body: RevokeRequest
-    ) -> Any:
-        value = await _managed(request).revoke_credential(
-            CredentialRef(resource_id), _management_actor(request)
-        )
-        return jsonable_encoder(_credential_response(value))
-
-    @router.get("/credentials/{resource_id}")
-    async def get_credential(request: Request, resource_id: UUID) -> Any:
-        value = await _managed(request).get_credential(CredentialRef(resource_id))
-        return jsonable_encoder(_credential_response(value))
-
-    @router.get("/credentials")
-    async def list_credentials(request: Request) -> Any:
+        scope: CredentialScope | None
+        if scope_type is None and tenant_id is None:
+            scope = None
+        elif scope_type == "platform" and tenant_id is None:
+            scope = PlatformCredentialScope()
+        elif scope_type == "tenant" and tenant_id:
+            scope = TenantCredentialScope(tenant_id)
+        else:
+            raise InvalidManagedResource("credential scope filter is invalid")
         return jsonable_encoder(
             [
                 _credential_response(value)
-                for value in await _managed(request).list_credentials()
+                for value in await _credential(request).list(scope)
             ]
         )
+
+    @router.get("/credentials/{resource_id}", response_model=CredentialResponse)
+    async def get_credential(
+        request: Request,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = _credential_read_auth,
+    ) -> JSONResponse:
+        service = _credential(request)
+        value = await service.get(CredentialRef(resource_id))
+        return JSONResponse(
+            jsonable_encoder(_credential_response(value)),
+            headers={"ETag": _etag(service, value)},
+        )
+
+    @router.post("/credentials/{resource_id}/rotate", response_model=CredentialResponse)
+    async def rotate_credential(
+        request: Request,
+        resource_id: UUID,
+        body: CredentialRotate,
+        principal: ManagementPrincipal = _credential_write_auth,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
+        service = _credential(request)
+        value = await service.rotate(
+            CredentialRef(resource_id),
+            body.secret.get_secret_value(),
+            expected_token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_credential_response(value)),
+            headers={"ETag": _etag(service, value)},
+        )
+
+    @router.post("/credentials/{resource_id}/revoke", response_model=CredentialResponse)
+    async def revoke_credential(
+        request: Request,
+        resource_id: UUID,
+        principal: ManagementPrincipal = _credential_write_auth,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
+        service = _credential(request)
+        value = await service.revoke(
+            CredentialRef(resource_id),
+            expected_token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_credential_response(value)),
+            headers={"ETag": _etag(service, value)},
+        )
+
+    return router
+
+
+def _managed_resource_router() -> APIRouter:
+    router = APIRouter()
 
     @router.post("/provider-connections", status_code=status.HTTP_201_CREATED)
     async def create_connection(
@@ -868,7 +1129,9 @@ def _managed_resource_router() -> APIRouter:
         )
 
     @router.post("/integration-connections/{resource_id}/validate")
-    async def validate_integration_connection(request: Request, resource_id: UUID) -> Any:
+    async def validate_integration_connection(
+        request: Request, resource_id: UUID
+    ) -> Any:
         connection = await _managed(request).get_integration_connection(
             IntegrationConnectionRef(resource_id)
         )
@@ -888,11 +1151,17 @@ def _managed_resource_router() -> APIRouter:
             if isinstance(header_name, str):
                 headers[header_name] = material.secret
         try:
-            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0), follow_redirects=False) as client:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(5.0), follow_redirects=False
+            ) as client:
                 response = await client.get(config["endpoint"], headers=headers)
         except (httpx.HTTPError, KeyError) as error:
             return {"valid": False, "usable": False, "reason": type(error).__name__}
-        return {"valid": True, "usable": response.is_success, "status_code": response.status_code}
+        return {
+            "valid": True,
+            "usable": response.is_success,
+            "status_code": response.status_code,
+        }
 
     @router.post("/handoff-destinations", status_code=status.HTTP_201_CREATED)
     async def create_handoff_destination(

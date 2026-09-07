@@ -24,10 +24,12 @@ from control_plane.domain.managed_resources import (
     LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
+    PlatformCredentialScope,
     ProviderConnection,
     ProviderConnectionRef,
     RealtimeCapabilities,
     STTCapabilities,
+    TenantCredentialScope,
 )
 
 from .models import ConfigurationComponent as ComponentRow
@@ -319,6 +321,9 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
     def _credential(row: CredentialRow, number: int | None) -> Credential:
         return Credential(
             CredentialRef(row.id),
+            TenantCredentialScope(row.tenant_id)
+            if row.scope_type == "tenant" and row.tenant_id is not None
+            else PlatformCredentialScope(),
             row.name,
             row.active_version_id,
             number,

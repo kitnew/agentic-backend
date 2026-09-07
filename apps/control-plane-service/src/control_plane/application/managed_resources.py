@@ -3,7 +3,6 @@ from typing import Protocol
 
 from control_plane.domain.managed_resource_errors import InvalidManagedResource
 from control_plane.domain.managed_resources import (
-    Credential,
     CredentialRef,
     DeploymentKind,
     HandoffDestination,
@@ -24,15 +23,6 @@ from control_plane.domain.providers import ProviderRegistry
 
 
 class ManagedResourceRepository(Protocol):
-    async def create_credential(
-        self, name: str, secret: str, actor: str
-    ) -> Credential: ...
-    async def rotate_credential(
-        self, ref: CredentialRef, secret: str, actor: str
-    ) -> Credential: ...
-    async def revoke_credential(self, ref: CredentialRef, actor: str) -> Credential: ...
-    async def get_credential(self, ref: CredentialRef) -> Credential: ...
-    async def list_credentials(self) -> Sequence[Credential]: ...
     async def create_connection(
         self,
         key: str,
@@ -181,23 +171,6 @@ class ManagedResourceService:
     ) -> None:
         self._registry = registry
         self._repository = repository
-
-    async def create_credential(self, name: str, secret: str, actor: str) -> Credential:
-        return await self._repository.create_credential(name, secret, actor)
-
-    async def rotate_credential(
-        self, ref: CredentialRef, secret: str, actor: str
-    ) -> Credential:
-        return await self._repository.rotate_credential(ref, secret, actor)
-
-    async def revoke_credential(self, ref: CredentialRef, actor: str) -> Credential:
-        return await self._repository.revoke_credential(ref, actor)
-
-    async def get_credential(self, ref: CredentialRef) -> Credential:
-        return await self._repository.get_credential(ref)
-
-    async def list_credentials(self) -> Sequence[Credential]:
-        return await self._repository.list_credentials()
 
     async def create_connection(
         self,

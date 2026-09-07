@@ -14,10 +14,15 @@ BACKEND_CORE = "backend-core"
 SERVICE_SCOPES = {
     VOICE_AGENT: frozenset({"runtime-secret:materialize"}),
     JOB_WORKER: frozenset({"integration-material:read"}),
-    BACKEND_CORE: frozenset({
-        "execution-snapshot:materialize", "execution-snapshot:read",
-        "integration-material:read", "handoff-material:read", "telephony:read",
-    }),
+    BACKEND_CORE: frozenset(
+        {
+            "execution-snapshot:materialize",
+            "execution-snapshot:read",
+            "integration-material:read",
+            "handoff-material:read",
+            "telephony:read",
+        }
+    ),
 }
 _bearer = HTTPBearer(scheme_name="InternalServiceToken", auto_error=False)
 Credentials = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]
@@ -33,6 +38,7 @@ class ServicePrincipal:
 @dataclass(frozen=True, slots=True)
 class ManagementPrincipal:
     subject: str
+    scopes: frozenset[str]
 
 
 def _unauthorized() -> HTTPException:
@@ -57,11 +63,14 @@ def require_service_scope(scope: str) -> Callable[..., ServicePrincipal]:
             if not isinstance(service, str) or service not in SERVICE_SCOPES:
                 raise _unauthorized()
             settings = request.app.state.settings
-            secret = getattr(settings, {
-                VOICE_AGENT: "voice_agent_service_secret",
-                JOB_WORKER: "job_worker_service_secret",
-                BACKEND_CORE: "backend_core_service_secret",
-            }[service]).get_secret_value()
+            secret = getattr(
+                settings,
+                {
+                    VOICE_AGENT: "voice_agent_service_secret",
+                    JOB_WORKER: "job_worker_service_secret",
+                    BACKEND_CORE: "backend_core_service_secret",
+                }[service],
+            ).get_secret_value()
             claims = jwt.decode(
                 credentials.credentials,
                 secret,
@@ -106,8 +115,38 @@ def require_management_token(request: Request) -> ManagementPrincipal:
         if configured is not None and hasattr(configured, "get_secret_value")
         else ""
     )
-    if scheme.lower() != "bearer" or not token or not expected or not compare_digest(token, expected):
+    if (
+        scheme.lower() != "bearer"
+        or not token
+        or not expected
+        or not compare_digest(token, expected)
+    ):
         raise _unauthorized()
-    return ManagementPrincipal(
-        getattr(settings, "control_plane_management_actor", "agentctl")
+    configured_scopes = getattr(
+        settings,
+        "control_plane_management_scopes",
+        "resources:read,credentials:write",
     )
+    return ManagementPrincipal(
+        getattr(settings, "control_plane_management_actor", "agentctl"),
+        frozenset(
+            item.strip() for item in configured_scopes.split(",") if item.strip()
+        ),
+    )
+
+
+def require_management_permission(
+    permission: str,
+) -> Callable[..., ManagementPrincipal]:
+    def dependency(request: Request) -> ManagementPrincipal:
+        principal = request.state.management_principal
+        if not isinstance(principal, ManagementPrincipal):
+            raise _unauthorized()
+        if permission not in principal.scopes:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"missing required permission: {permission}",
+            )
+        return principal
+
+    return dependency

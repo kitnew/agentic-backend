@@ -10,6 +10,7 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from control_plane import SERVICE_NAME
 from control_plane.application.components import ComponentService
+from control_plane.application.credentials import CredentialService
 from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
 )
@@ -32,6 +33,9 @@ from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence import Database
 from control_plane.infrastructure.persistence.command_transactions import (
     component_command_scope,
+)
+from control_plane.infrastructure.persistence.credential_transactions import (
+    credential_command_scope,
 )
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -81,16 +85,19 @@ def create_app(
         if isinstance(database, Database)
         else None
     )
+    cipher = CredentialCipher(
+        settings.control_plane_encryption_key.get_secret_value(),
+        settings.control_plane_encryption_key_id,
+    )
+    credentials = (
+        CredentialService(credential_command_scope(database.sessions, cipher))
+        if isinstance(database, Database)
+        else None
+    )
     managed_resources = (
         ManagedResourceService(
             provider_registry,
-            SqlAlchemyManagedResourceRepository(
-                database.sessions,
-                CredentialCipher(
-                    settings.control_plane_encryption_key.get_secret_value(),
-                    settings.control_plane_encryption_key_id,
-                ),
-            ),
+            SqlAlchemyManagedResourceRepository(database.sessions),
         )
         if isinstance(database, Database)
         else None
@@ -98,10 +105,7 @@ def create_app(
     execution_materialization = (
         ExecutionMaterializationService(
             database.sessions,
-            CredentialCipher(
-                settings.control_plane_encryption_key.get_secret_value(),
-                settings.control_plane_encryption_key_id,
-            ),
+            cipher,
             SqlAlchemyExecutionSnapshotRepository(database.sessions),
         )
         if isinstance(database, Database)
@@ -139,6 +143,7 @@ def create_app(
         runtime_resolver,
         runtime_materialization,
         execution_materialization,
+        credentials,
     )
     app.state.settings = settings
     app.state.database = database
