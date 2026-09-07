@@ -10,8 +10,8 @@ from control_plane.domain.capabilities import (
 )
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     TenantScope,
 )
@@ -74,7 +74,7 @@ def test_tenant_capabilities_preserve_http_mapping_and_typed_ref() -> None:
 
 
 def test_capability_registry_is_tenant_only() -> None:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_capability_components(registry)
     assert registry.resolve(
         ComponentAddress(ComponentKind("capabilities.tenant"), TenantScope("t"))

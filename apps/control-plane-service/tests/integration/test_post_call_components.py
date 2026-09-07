@@ -8,8 +8,8 @@ from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     TenantScope,
 )
 from control_plane.domain.components.errors import InvalidComponentValue
@@ -27,7 +27,7 @@ from control_plane.infrastructure.persistence.repository import (
 
 
 def services(database: Database) -> tuple[ComponentService, ManagedResourceService]:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_post_call_components(registry)
     return (
         ComponentService(
@@ -85,7 +85,7 @@ async def test_post_call_draft_defers_live_connection_validation(
     )
     try:
         draft = await components.save_draft(
-            address, policy(str(uuid4())), 1, None, None, "test"
+            address, policy(str(uuid4())), None, None, "test"
         )
         with pytest.raises(ManagedResourceNotFound):
             await components.publish_draft(address, draft.version, "test")
@@ -100,7 +100,7 @@ async def test_post_call_draft_defers_live_connection_validation(
             "test",
         )
         draft = await components.save_draft(
-            address, policy(str(foreign.ref.value)), 1, draft.version, None, "test"
+            address, policy(str(foreign.ref.value)), draft.version, None, "test"
         )
         with pytest.raises(InvalidComponentValue, match="another tenant"):
             await components.publish_draft(address, draft.version, "test")
@@ -128,7 +128,7 @@ async def test_post_call_publish_and_rollback_revalidate_live_http_connection(
             "test",
         )
         draft = await components.save_draft(
-            address, policy(str(connection.ref.value)), 1, None, None, "test"
+            address, policy(str(connection.ref.value)), None, None, "test"
         )
         revision = await components.publish_draft(address, draft.version, "test")
         updated = await resources.update_integration_connection(
@@ -180,7 +180,7 @@ async def test_post_call_credential_changes_never_rewrite_revision(
             "test",
         )
         draft = await components.save_draft(
-            address, policy(str(connection.ref.value)), 1, None, None, "test"
+            address, policy(str(connection.ref.value)), None, None, "test"
         )
         revision = await components.publish_draft(address, draft.version, "test")
         assert "secret" not in str(revision.value.model_dump(mode="json"))

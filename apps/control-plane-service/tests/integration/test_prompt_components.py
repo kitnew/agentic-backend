@@ -3,8 +3,8 @@ from contracts import ConfigurationComponentPublishedV1
 from control_plane.application.components import ComponentService
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -20,7 +20,7 @@ from sqlalchemy import select
 
 
 def service(database: Database) -> ComponentService:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_prompt_components(registry)
     return ComponentService(
         registry,
@@ -37,7 +37,6 @@ async def publish(service: ComponentService, address: ComponentAddress, content:
     draft = await service.save_draft(
         address,
         {"content": content},
-        1,
         None,
         active.revision_id if active else None,
         "test",

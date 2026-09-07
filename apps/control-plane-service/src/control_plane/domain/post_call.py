@@ -86,14 +86,15 @@ class TenantPostCallConfig(_PostCallModel):
 
 
 def register_post_call_components(registry: object) -> None:
-    from control_plane.domain.components import ComponentRegistry
+    from control_plane.domain.components import ComponentDefinitionRegistry
 
-    assert isinstance(registry, ComponentRegistry)
+    assert isinstance(registry, ComponentDefinitionRegistry)
+    # Legacy registration; semantic replacement is Slice 8.
     registry.register(
         ComponentDefinition(
             ComponentKind("post_call.tenant"),
             TenantPostCallConfig,
             frozenset({ScopeType.TENANT}),
             1,
-        )
+        ),
     )

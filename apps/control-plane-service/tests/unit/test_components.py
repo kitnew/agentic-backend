@@ -2,8 +2,8 @@ import pytest
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinition,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     ComponentState,
     PlatformScope,
     ScopeType,
@@ -32,7 +32,7 @@ def definition() -> ComponentDefinition[ExampleSettings]:
 
 
 def test_registry_validation_and_serialization() -> None:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     registry.register(definition())
     address = ComponentAddress(
         ComponentKind("example.settings"), TenantScope("tenant-1")
@@ -45,7 +45,7 @@ def test_registry_validation_and_serialization() -> None:
     with pytest.raises(ValueError, match="duplicate"):
         registry.register(definition())
     with pytest.raises(UnknownComponentKind):
-        ComponentRegistry().resolve(address)
+        ComponentDefinitionRegistry().resolve(address)
     with pytest.raises(ScopeNotAllowed):
         registry.resolve(ComponentAddress(address.kind, PlatformScope()))
     with pytest.raises(InvalidComponentValue):

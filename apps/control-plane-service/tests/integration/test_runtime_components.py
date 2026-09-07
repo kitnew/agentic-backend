@@ -7,8 +7,8 @@ from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     TenantScope,
 )
@@ -39,7 +39,7 @@ from sqlalchemy import func, select
 
 
 def services(database: Database) -> tuple[ComponentService, ManagedResourceService]:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     resources = ManagedResourceService(
         default_provider_registry(),
@@ -154,7 +154,6 @@ async def test_runtime_publication_validates_resources_atomically(
         draft = await components.save_draft(
             address,
             {"deployment_ref": str(missing), "max_completion_tokens": 10},
-            1,
             None,
             None,
             "test",
@@ -183,7 +182,6 @@ async def test_runtime_publication_validates_resources_atomically(
                 "reasoning_effort": "high",
                 "max_completion_tokens": 10,
             },
-            1,
             draft.version,
             None,
             "test",
@@ -197,7 +195,6 @@ async def test_runtime_publication_validates_resources_atomically(
                 "temperature": 0.2,
                 "max_completion_tokens": 10,
             },
-            1,
             None,
             revision.revision_id,
             "test",
@@ -224,7 +221,6 @@ async def test_tenant_runtime_components_publish_and_rollback_independently(
         architecture_draft = await components.save_draft(
             architecture,
             {"architectures": ["realtime", "cascade"]},
-            1,
             None,
             None,
             "test",
@@ -240,7 +236,6 @@ async def test_tenant_runtime_components_publish_and_rollback_independently(
                 "stt": {"keyterms": ["Penzión Grand"]},
                 "voices": {"cascade": None, "realtime": "marin"},
             },
-            1,
             None,
             None,
             "test",
@@ -256,7 +251,6 @@ async def test_tenant_runtime_components_publish_and_rollback_independently(
         architecture_draft = await components.save_draft(
             architecture,
             {"architectures": ["cascade"]},
-            1,
             None,
             architecture_first.revision_id,
             "test",
@@ -301,7 +295,6 @@ async def test_tenant_runtime_components_publish_and_rollback_independently(
                     TenantScope("invalid-runtime"),
                 ),
                 {"architectures": []},
-                1,
                 None,
                 None,
                 "test",
@@ -341,7 +334,6 @@ async def test_runtime_rollback_revalidates_current_deployment(
                 "reasoning_effort": "high",
                 "max_completion_tokens": 10,
             },
-            1,
             None,
             None,
             "test",
@@ -362,7 +354,6 @@ async def test_runtime_rollback_revalidates_current_deployment(
                 "temperature": 0.2,
                 "max_completion_tokens": 10,
             },
-            1,
             None,
             first.revision_id,
             "test",
@@ -410,7 +401,6 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
         stt_draft = await components.save_draft(
             stt_address,
             {"deployment_ref": str(stt.ref.value)},
-            1,
             None,
             None,
             "test",
@@ -419,7 +409,6 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
         provider_draft = await components.save_draft(
             cascade_address,
             cascade_policy("provider_vad"),
-            1,
             None,
             None,
             "test",
@@ -436,7 +425,6 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
         local_draft = await components.save_draft(
             cascade_address,
             cascade_policy("local_vad"),
-            1,
             None,
             provider_revision.revision_id,
             "test",
@@ -447,7 +435,6 @@ async def test_cascade_provider_vad_revalidates_current_stt_atomically(
         failed_draft = await components.save_draft(
             cascade_address,
             cascade_policy("provider_vad"),
-            1,
             None,
             local_revision.revision_id,
             "test",
@@ -588,7 +575,7 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
         async def rejected(value: dict[str, object], match: str) -> None:
             nonlocal draft_version
             draft = await components.save_draft(
-                address, value, 1, draft_version, active_revision_id, "test"
+                address, value, draft_version, active_revision_id, "test"
             )
             draft_version = draft.version
             async with database.sessions() as session:
@@ -657,7 +644,6 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
         draft = await components.save_draft(
             address,
             realtime_policy(model.ref.value, transcript.ref.value),
-            1,
             draft_version,
             None,
             "test",
@@ -673,7 +659,6 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
         draft = await components.save_draft(
             address,
             realtime_policy(model.ref.value, transcript.ref.value, "semantic_vad"),
-            1,
             draft_version,
             active_revision_id,
             "test",
@@ -684,7 +669,6 @@ async def test_realtime_activation_validation_and_lifecycle_are_atomic(
         draft = await components.save_draft(
             address,
             realtime_policy(model.ref.value, transcript.ref.value),
-            1,
             None,
             semantic_revision.revision_id,
             "test",

@@ -4,8 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field, Strict, field_validator
 
 from control_plane.domain.components import (
     ComponentDefinition,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     ScopeType,
 )
 
@@ -32,36 +32,40 @@ class ProfileSelection(BaseModel):
 
 
 def register_prompt_components(registry: object) -> None:
-    assert isinstance(registry, ComponentRegistry)
+    assert isinstance(registry, ComponentDefinitionRegistry)
+    # Legacy registration; semantic replacement is Slice 7.
     registry.register(
         ComponentDefinition(
             ComponentKind("prompt.system"),
             PromptValue,
             frozenset({ScopeType.PLATFORM}),
             1,
-        )
+        ),
     )
+    # Legacy registration; semantic replacement is Slice 10.
     registry.register(
         ComponentDefinition(
             ComponentKind("prompt.profile.selection"),
             ProfileSelection,
             frozenset({ScopeType.TENANT}),
             1,
-        )
+        ),
     )
+    # Legacy registration; semantic replacement is Slice 7.
     registry.register(
         ComponentDefinition(
             ComponentKind("prompt.profile"),
             PromptValue,
             frozenset({ScopeType.PROFILE}),
             1,
-        )
+        ),
     )
+    # Legacy registration; semantic replacement is Slice 10.
     registry.register(
         ComponentDefinition(
             ComponentKind("prompt.tenant"),
             PromptValue,
             frozenset({ScopeType.TENANT}),
             1,
-        )
+        ),
     )

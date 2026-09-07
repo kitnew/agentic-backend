@@ -7,8 +7,8 @@ from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.capabilities import register_capability_components
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     TenantScope,
 )
 from control_plane.domain.components.errors import InvalidComponentValue
@@ -25,7 +25,7 @@ from control_plane.infrastructure.persistence.repository import (
 
 
 def services(database: Database) -> tuple[ComponentService, ManagedResourceService]:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_capability_components(registry)
     return (
         ComponentService(registry, SqlAlchemyComponentRepository(database.sessions)),
@@ -78,7 +78,7 @@ async def test_capability_publication_resolves_live_tenant_connection(
     )
     try:
         draft = await components.save_draft(
-            address, capability(str(uuid4())), 1, None, None, "test"
+            address, capability(str(uuid4())), None, None, "test"
         )
         with pytest.raises(ManagedResourceNotFound):
             await components.publish_draft(address, draft.version, "test")
@@ -94,7 +94,6 @@ async def test_capability_publication_resolves_live_tenant_connection(
         draft = await components.save_draft(
             address,
             capability(str(connection.ref.value)),
-            1,
             draft.version,
             None,
             "test",
@@ -145,7 +144,7 @@ async def test_credential_lifecycle_never_rewrites_capability_revision(
             "test",
         )
         draft = await components.save_draft(
-            address, capability(str(connection.ref.value)), 1, None, None, "test"
+            address, capability(str(connection.ref.value)), None, None, "test"
         )
         revision = await components.publish_draft(address, draft.version, "test")
         await resources.rotate_credential(credential.ref, "rotated", "test")

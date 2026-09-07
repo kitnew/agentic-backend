@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
 from contracts import (
@@ -265,7 +265,11 @@ class SqlAlchemyComponentRepository:
                 component_id=component.id,
                 component_kind=str(address.kind),
                 component_scope=IntegrationComponentScope(
-                    type=address.scope.type.value, key=address.scope.key
+                    type=cast(
+                        Literal["platform", "tenant", "profile"],
+                        address.scope.type.value,
+                    ),
+                    key=address.scope.key,
                 ),
                 revision_id=revision.id,
                 revision_number=revision.revision_number,
@@ -291,9 +295,9 @@ class SqlAlchemyComponentRepository:
     def _validate(
         self, schema_version: int, value: object, definition: ComponentDefinition[Any]
     ) -> Any:
-        if schema_version != definition.current_schema_version:
+        if schema_version != definition.schema_version:
             raise UnsupportedSchemaVersion(
-                f"expected {definition.current_schema_version}, got {schema_version}"
+                f"expected {definition.schema_version}, got {schema_version}"
             )
         return definition.deserialize(value)
 

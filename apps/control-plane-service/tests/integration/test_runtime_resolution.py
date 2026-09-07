@@ -11,8 +11,8 @@ from control_plane.application.runtime_materialization import (
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     TenantScope,
 )
@@ -44,7 +44,7 @@ from sqlalchemy import func, select
 
 
 def services(database: Database):
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     return (
         ComponentService(
@@ -128,7 +128,7 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
 ) -> None:
     database = Database(migrated_database_url)
     components, resources = services(database)
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     resolver = RuntimeResolver(
         registry,
@@ -141,7 +141,7 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
             ComponentKind(kind),
             TenantScope("runtime-integration") if tenant else PlatformScope(),
         )
-        draft = await components.save_draft(address, value, 1, None, None, "test")
+        draft = await components.save_draft(address, value, None, None, "test")
         return await components.publish_draft(address, draft.version, "test")
 
     try:
@@ -210,7 +210,7 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
 ) -> None:
     database = Database(migrated_database_url)
     components, resources = services(database)
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     reader = SqlAlchemyRuntimeResolutionReader(database.sessions)
     resolver = RuntimeResolver(registry, default_provider_registry(), reader)
@@ -226,7 +226,7 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
             ComponentKind(kind),
             TenantScope("materialize") if tenant else PlatformScope(),
         )
-        draft = await components.save_draft(address, value, 1, None, None, "test")
+        draft = await components.save_draft(address, value, None, None, "test")
         return await components.publish_draft(address, draft.version, "test")
 
     try:

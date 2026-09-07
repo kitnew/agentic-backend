@@ -4,8 +4,8 @@ import pytest
 from control_plane.domain.capabilities import IntegrationConnectionRef
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     TenantScope,
 )
@@ -104,7 +104,7 @@ def test_post_call_rejects_unknown_fields_and_invalid_static_artifacts() -> None
 
 
 def test_post_call_registry_is_tenant_only() -> None:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_post_call_components(registry)
     assert registry.resolve(
         ComponentAddress(ComponentKind("post_call.tenant"), TenantScope("t"))

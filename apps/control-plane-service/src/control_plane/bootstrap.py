@@ -22,7 +22,7 @@ from control_plane.application.runtime_materialization import (
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.domain.agent_components import register_agent_components
 from control_plane.domain.capabilities import register_capability_components
-from control_plane.domain.components import ComponentRegistry
+from control_plane.domain.components import ComponentDefinitionRegistry
 from control_plane.domain.knowledge_components import register_knowledge_components
 from control_plane.domain.post_call import register_post_call_components
 from control_plane.domain.prompt_components import register_prompt_components
@@ -52,7 +52,7 @@ def create_app(
     settings: Settings | None = None,
     database: Database | None = None,
     nats: NatsMessagePublisher | None = None,
-    registry: ComponentRegistry | None = None,
+    registry: ComponentDefinitionRegistry | None = None,
     relay: OutboxRelay | None = None,
     provider_registry: ProviderRegistry | None = None,
 ) -> FastAPI:
@@ -64,13 +64,14 @@ def create_app(
     )
     telemetry = _configure_observability(settings)
     if registry is None:
-        registry = ComponentRegistry()
+        registry = ComponentDefinitionRegistry()
         register_runtime_components(registry)
         register_agent_components(registry)
         register_prompt_components(registry)
         register_knowledge_components(registry)
         register_capability_components(registry)
         register_post_call_components(registry)
+        registry.freeze()
     provider_registry = provider_registry or default_provider_registry()
     components = (
         ComponentService(

@@ -1,8 +1,8 @@
 import pytest
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -18,7 +18,7 @@ from control_plane.domain.knowledge_components import (
 
 
 def test_tenant_knowledge_is_inline_and_tenant_scoped() -> None:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_knowledge_components(registry)
     address = ComponentAddress(ComponentKind("knowledge.tenant"), TenantScope("a"))
     value = registry.resolve(address).deserialize({"content": "# Café\n\nČas  "})

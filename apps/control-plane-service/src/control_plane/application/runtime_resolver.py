@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     TenantScope,
 )
@@ -106,7 +106,7 @@ class _CandidateRejected(Exception):
 class RuntimeResolver:
     def __init__(
         self,
-        registry: ComponentRegistry,
+        registry: ComponentDefinitionRegistry,
         providers: ProviderRegistry,
         reader: RuntimeResolutionReader,
     ) -> None:
@@ -436,7 +436,7 @@ class RuntimeResolver:
     ) -> _ActiveRuntimeComponent[T]:
         try:
             definition = self._registry.resolve(stored.address)
-            if stored.schema_version != definition.current_schema_version:
+            if stored.schema_version != definition.schema_version:
                 raise ValueError("unsupported active schema version")
             value = definition.deserialize(stored.value)
         except (ComponentError, ValueError) as error:

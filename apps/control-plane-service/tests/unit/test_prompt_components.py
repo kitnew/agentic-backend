@@ -2,8 +2,8 @@ import pytest
 from control_plane.application.execution_resolver import compose_instructions
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -18,8 +18,8 @@ from control_plane.domain.prompt_components import (
 )
 
 
-def registry() -> ComponentRegistry:
-    result = ComponentRegistry()
+def registry() -> ComponentDefinitionRegistry:
+    result = ComponentDefinitionRegistry()
     register_prompt_components(result)
     return result
 

@@ -5,8 +5,8 @@ from control_plane.domain.agent_components import (
 )
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     ProfileScope,
     TenantScope,
 )
@@ -16,8 +16,8 @@ from control_plane.domain.components.errors import (
 )
 
 
-def registry() -> ComponentRegistry:
-    result = ComponentRegistry()
+def registry() -> ComponentDefinitionRegistry:
+    result = ComponentDefinitionRegistry()
     register_agent_components(result)
     return result
 

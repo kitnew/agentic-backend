@@ -4,8 +4,8 @@ from uuid import uuid4
 import pytest
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -52,13 +52,13 @@ def deployment(
 
 
 def definition(kind: str):
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     return registry.resolve(ComponentAddress(ComponentKind(kind), PlatformScope()))
 
 
 def tenant_definition(kind: str):
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     return registry.resolve(
         ComponentAddress(ComponentKind(kind), TenantScope("tenant"))
@@ -97,7 +97,7 @@ def cascade_policy(strategy: str = "local_vad") -> dict[str, object]:
 
 
 def test_runtime_registry_registers_only_platform_defaults() -> None:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     assert registry.resolve(
         ComponentAddress(ComponentKind("runtime.llm.defaults"), PlatformScope())

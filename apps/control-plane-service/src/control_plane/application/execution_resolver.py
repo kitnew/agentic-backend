@@ -18,8 +18,8 @@ from control_plane.domain.capabilities import (
 )
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -61,7 +61,7 @@ def compose_instructions(*parts: str) -> str:
 
 
 class ExecutionResolver:
-    def __init__(self, registry: ComponentRegistry, runtime: RuntimeResolver) -> None:
+    def __init__(self, registry: ComponentDefinitionRegistry, runtime: RuntimeResolver) -> None:
         self._registry, self._runtime = registry, runtime
 
     def resolve_state(

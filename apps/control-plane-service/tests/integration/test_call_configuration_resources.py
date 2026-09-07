@@ -7,8 +7,8 @@ from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     TenantScope,
 )
 from control_plane.domain.knowledge_components import register_knowledge_components
@@ -44,7 +44,7 @@ def managed(database: Database) -> ManagedResourceService:
 
 
 def components(database: Database) -> ComponentService:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_knowledge_components(registry)
     return ComponentService(registry, SqlAlchemyComponentRepository(database.sessions))  # type: ignore[arg-type]
 
@@ -60,11 +60,11 @@ async def test_knowledge_uses_the_generic_independent_revision_lifecycle(
     )
     try:
         first = await service.save_draft(
-            address, {"content": "# First\nŽ"}, 1, None, None, "alice"
+            address, {"content": "# First\nŽ"}, None, None, "alice"
         )
         revision_one = await service.publish_draft(address, first.version, "alice")
         second = await service.save_draft(
-            address, {"content": "# Second"}, 1, None, revision_one.revision_id, "bob"
+            address, {"content": "# Second"}, None, revision_one.revision_id, "bob"
         )
         await service.publish_draft(address, second.version, "bob")
         restored = await service.rollback(address, 1, "carol")

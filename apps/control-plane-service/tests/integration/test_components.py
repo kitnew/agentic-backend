@@ -9,9 +9,9 @@ from control_plane.application.components import ComponentService
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinition,
+    ComponentDefinitionRegistry,
     ComponentDraft,
     ComponentKind,
-    ComponentRegistry,
     ComponentRevision,
     ComponentState,
     ScopeType,
@@ -42,8 +42,8 @@ class ExampleSettings(BaseModel):
     label: str
 
 
-def registry(schema_version: int = 1) -> ComponentRegistry:
-    result = ComponentRegistry()
+def registry(schema_version: int = 1) -> ComponentDefinitionRegistry:
+    result = ComponentDefinitionRegistry()
     result.register(
         ComponentDefinition(
             ComponentKind("example.settings"),
@@ -75,7 +75,6 @@ async def test_concurrent_first_draft_creation_is_a_domain_conflict(
             components.save_draft(
                 address,
                 {"enabled": True, "label": "a"},
-                1,
                 None,
                 None,
                 "alice",
@@ -83,7 +82,6 @@ async def test_concurrent_first_draft_creation_is_a_domain_conflict(
             components.save_draft(
                 address,
                 {"enabled": False, "label": "b"},
-                1,
                 None,
                 None,
                 "bob",
@@ -122,10 +120,10 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
     )
     value = {"enabled": True, "label": "one"}
     try:
-        draft = await components.save_draft(address, value, 1, None, None, "alice")
+        draft = await components.save_draft(address, value, None, None, "alice")
         assert draft.version == 1 and draft.based_on_revision_id is None
         with pytest.raises(DraftVersionConflict):
-            await components.save_draft(address, value, 1, 99, None, "alice")
+            await components.save_draft(address, value, 99, None, "alice")
 
         r1 = await components.publish_draft(address, 1, "alice")
         assert r1.revision_number == 1
@@ -134,11 +132,11 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
         ).state is ComponentState.PUBLISHED
 
         draft = await components.save_draft(
-            address, {"enabled": False, "label": "two"}, 1, None, r1.revision_id, "bob"
+            address, {"enabled": False, "label": "two"}, None, r1.revision_id, "bob"
         )
         assert draft.based_on_revision_id == r1.revision_id
         draft = await components.save_draft(
-            address, {"enabled": False, "label": "updated"}, 1, 1, r1.revision_id, "bob"
+            address, {"enabled": False, "label": "updated"}, 1, r1.revision_id, "bob"
         )
         assert draft.version == 2
         await components.discard_draft(address, 2)
@@ -150,7 +148,6 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
             draft = await components.save_draft(
                 address,
                 {"enabled": False, "label": label},
-                1,
                 None,
                 active.revision_id,
                 "bob",
@@ -166,7 +163,7 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
         assert r4.restored_from_revision_id == r1.revision_id
 
         draft = await components.save_draft(
-            address, value, 1, None, r4.revision_id, "alice"
+            address, value, None, r4.revision_id, "alice"
         )
         with pytest.raises(UnpublishedDraftConflict):
             await components.rollback(address, 1, "alice")
@@ -176,7 +173,7 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
 
         active = await components.get_active(address)
         draft = await components.save_draft(
-            address, value, 1, None, active.revision_id, "alice"
+            address, value, None, active.revision_id, "alice"
         )
         results = await asyncio.gather(
             components.publish_draft(address, draft.version, "alice"),
@@ -279,7 +276,7 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
         invalid = ComponentAddress(
             ComponentKind("example.settings"), TenantScope("tenant-invalid")
         )
-        await components.save_draft(invalid, value, 1, None, None, "alice")
+        await components.save_draft(invalid, value, None, None, "alice")
         async with database.sessions.begin() as session:
             await session.execute(
                 text(
@@ -379,7 +376,7 @@ async def test_migration_constraints_and_round_trip(
             first,
             (
                 await components.save_draft(
-                    first, {"enabled": True, "label": "first"}, 1, None, None, "test"
+                    first, {"enabled": True, "label": "first"}, None, None, "test"
                 )
             ).version,
             "test",
@@ -388,7 +385,7 @@ async def test_migration_constraints_and_round_trip(
             second,
             (
                 await components.save_draft(
-                    second, {"enabled": True, "label": "second"}, 1, None, None, "test"
+                    second, {"enabled": True, "label": "second"}, None, None, "test"
                 )
             ).version,
             "test",

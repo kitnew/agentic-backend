@@ -568,7 +568,6 @@ def _component_router() -> APIRouter:
             await _service(request).save_draft(
                 _address(request, kind),
                 body.value,
-                body.schema_version,
                 body.expected_draft_version,
                 body.expected_active_revision_id,
                 _management_actor(request),

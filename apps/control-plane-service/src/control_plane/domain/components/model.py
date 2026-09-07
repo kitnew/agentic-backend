@@ -17,9 +17,17 @@ class ComponentKind:
 
 
 class ScopeType(StrEnum):
+    SYSTEM = "system"
     PLATFORM = "platform"
     TENANT = "tenant"
     PROFILE = "profile"
+    INTERACTION_MODE = "interaction_mode"
+
+
+@dataclass(frozen=True, slots=True)
+class SystemScope:
+    type: ScopeType = ScopeType.SYSTEM
+    key: None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +64,23 @@ class ProfileScope:
         return self.profile_key
 
 
-ComponentScope = PlatformScope | TenantScope | ProfileScope
+@dataclass(frozen=True, slots=True)
+class InteractionModeScope:
+    mode_key: str
+    type: ScopeType = ScopeType.INTERACTION_MODE
+
+    def __post_init__(self) -> None:
+        if not self.mode_key:
+            raise ValueError("mode_key is required")
+
+    @property
+    def key(self) -> str:
+        return self.mode_key
+
+
+ComponentScope = (
+    SystemScope | PlatformScope | TenantScope | ProfileScope | InteractionModeScope
+)
 
 
 @dataclass(frozen=True, slots=True)

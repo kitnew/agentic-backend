@@ -8,8 +8,8 @@ from control_plane.application.ports.repositories import (
 )
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentDraft,
-    ComponentRegistry,
     ComponentRevision,
     ComponentSnapshot,
     ComponentState,
@@ -24,7 +24,7 @@ from control_plane.domain.components.errors import (
 
 class ComponentService:
     def __init__(
-        self, registry: ComponentRegistry, repository: ComponentRepository
+        self, registry: ComponentDefinitionRegistry, repository: ComponentRepository
     ) -> None:
         self._registry = registry
         self._repository = repository
@@ -33,17 +33,16 @@ class ComponentService:
         self,
         address: ComponentAddress,
         raw_value: object,
-        schema_version: int,
         expected_draft_version: int | None,
         expected_active_revision_id: UUID | None,
         actor: str,
     ) -> ComponentDraft[Any]:
-        definition = self._definition(address, schema_version)
+        definition = self._registry.resolve(address)
         typed = definition.deserialize(raw_value)
         row = await self._repository.save_draft(
             address,
             definition.serialize(typed),
-            schema_version,
+            definition.schema_version,
             expected_draft_version,
             expected_active_revision_id,
             actor,
@@ -129,9 +128,9 @@ class ComponentService:
 
     def _definition(self, address: ComponentAddress, schema_version: int):
         definition = self._registry.resolve(address)
-        if schema_version != definition.current_schema_version:
+        if schema_version != definition.schema_version:
             raise UnsupportedSchemaVersion(
-                f"expected {definition.current_schema_version}, got {schema_version}"
+                f"expected {definition.schema_version}, got {schema_version}"
             )
         return definition
 

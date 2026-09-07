@@ -200,7 +200,7 @@ async def test_management_actor_is_server_derived() -> None:
     seen: list[str] = []
 
     class Components:
-        async def save_draft(self, _address, _value, _schema, _draft, _active, actor):
+        async def save_draft(self, _address, _value, _draft, _active, actor):
             seen.append(actor)
             return {}
 
@@ -217,7 +217,7 @@ async def test_management_actor_is_server_derived() -> None:
             headers={"Authorization": "Bearer management-secret"},
             json={
                 "value": {"content": "hello"},
-                "schema_version": 1,
+                "schema_version": 99,
                 "expected_draft_version": None,
                 "expected_active_revision_id": None,
                 "actor": "forged",

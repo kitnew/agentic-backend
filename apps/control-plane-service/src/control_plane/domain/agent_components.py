@@ -6,8 +6,8 @@ from pydantic_core import PydanticCustomError
 
 from control_plane.domain.components import (
     ComponentDefinition,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     ScopeType,
 )
 
@@ -37,12 +37,13 @@ class TenantAgentValue(BaseModel):
 
 
 def register_agent_components(registry: object) -> None:
-    assert isinstance(registry, ComponentRegistry)
+    assert isinstance(registry, ComponentDefinitionRegistry)
+    # Legacy registration; semantic replacement is Slice 10.
     registry.register(
         ComponentDefinition(
             ComponentKind("agent.tenant"),
             TenantAgentValue,
             frozenset({ScopeType.TENANT}),
             1,
-        )
+        ),
     )

@@ -6,25 +6,34 @@ from .model import (
     ComponentScope,
     ComponentSnapshot,
     ComponentState,
+    InteractionModeScope,
     PlatformScope,
     ProfileScope,
     ScopeType,
+    SystemScope,
     TenantScope,
 )
-from .registry import ComponentDefinition, ComponentRegistry
+from .registry import (
+    ComponentDefinition,
+    ComponentDefinitionEntry,
+    ComponentDefinitionRegistry,
+)
 
 __all__ = [
     "ComponentAddress",
     "ComponentDefinition",
+    "ComponentDefinitionEntry",
+    "ComponentDefinitionRegistry",
     "ComponentDraft",
     "ComponentKind",
-    "ComponentRegistry",
     "ComponentRevision",
     "ComponentScope",
     "ComponentSnapshot",
     "ComponentState",
+    "InteractionModeScope",
     "PlatformScope",
     "ProfileScope",
     "ScopeType",
+    "SystemScope",
     "TenantScope",
 ]

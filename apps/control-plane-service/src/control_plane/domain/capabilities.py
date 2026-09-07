@@ -249,14 +249,15 @@ def normalize_canonical_input(
 
 
 def register_capability_components(registry: object) -> None:
-    from control_plane.domain.components import ComponentRegistry
+    from control_plane.domain.components import ComponentDefinitionRegistry
 
-    assert isinstance(registry, ComponentRegistry)
+    assert isinstance(registry, ComponentDefinitionRegistry)
+    # Legacy registration; semantic replacement is Slice 8.
     registry.register(
         ComponentDefinition(
             ComponentKind("capabilities.tenant"),
             TenantCapabilitiesConfig,
             frozenset({ScopeType.TENANT}),
             1,
-        )
+        ),
     )

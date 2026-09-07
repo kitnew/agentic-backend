@@ -7,8 +7,8 @@ from control_plane.application.ports.messaging import OutboundMessage
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinition,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     ScopeType,
     TenantScope,
 )
@@ -29,7 +29,7 @@ class ExampleSettings(BaseModel):
 def components(
     database: Database,
 ) -> tuple[ComponentService, SqlAlchemyComponentRepository]:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     registry.register(
         ComponentDefinition(
             ComponentKind("example.settings"),
@@ -47,7 +47,6 @@ async def publish(service: ComponentService, address: ComponentAddress, enabled:
     draft = await service.save_draft(
         address,
         {"enabled": enabled},
-        1,
         None,
         active.revision_id if active else None,
         "test",
@@ -65,7 +64,7 @@ async def test_lifecycle_mutations_create_outbox_atomically(
     failed = ComponentAddress(ComponentKind("example.settings"), TenantScope("failed"))
     try:
         draft = await service.save_draft(
-            address, {"enabled": True}, 1, None, None, "test"
+            address, {"enabled": True}, None, None, "test"
         )
         async with database.sessions() as session:
             assert (
@@ -98,7 +97,7 @@ async def test_lifecycle_mutations_create_outbox_atomically(
         assert rollback.payload.previous_active_revision_id == first.revision_id
         assert rollback.payload.restored_from_revision_id == first.revision_id
 
-        await service.save_draft(failed, {"enabled": True}, 1, None, None, "test")
+        await service.save_draft(failed, {"enabled": True}, None, None, "test")
 
         def fail_outbox(*_args) -> None:
             raise RuntimeError("outbox insert failed")

@@ -4,8 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field, Strict, field_validator
 
 from control_plane.domain.components import (
     ComponentDefinition,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     ScopeType,
 )
 
@@ -26,12 +26,13 @@ class TenantKnowledgeValue(BaseModel):
 
 
 def register_knowledge_components(registry: object) -> None:
-    assert isinstance(registry, ComponentRegistry)
+    assert isinstance(registry, ComponentDefinitionRegistry)
+    # Legacy registration; semantic replacement is Slice 10.
     registry.register(
         ComponentDefinition(
             ComponentKind("knowledge.tenant"),
             TenantKnowledgeValue,
             frozenset({ScopeType.TENANT}),
             1,
-        )
+        ),
     )

@@ -13,8 +13,8 @@ from control_plane.application.runtime_resolver import (
 from control_plane.domain.agent_components import register_agent_components
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
-    ComponentRegistry,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -286,13 +286,13 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
 
 
 def resolver(value: RuntimeResolutionState) -> RuntimeResolver:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     return RuntimeResolver(registry, default_provider_registry(), Reader(value))
 
 
 def execution_resolver(value: RuntimeResolutionState) -> tuple[ExecutionResolver, RuntimeResolutionState]:
-    registry = ComponentRegistry()
+    registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     register_agent_components(registry)
     register_prompt_components(registry)
