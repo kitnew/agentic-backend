@@ -355,3 +355,16 @@ async def test_component_service_uses_definition_schema_version() -> None:
     assert repository.save_draft.await_args.args[0].kind == ComponentKind(
         "SystemPrompt"
     )
+
+
+@pytest.mark.asyncio
+async def test_component_service_rejects_invalid_value_before_persistence() -> None:
+    repository = AsyncMock()
+    service = ComponentService(registry(), repository)
+
+    with pytest.raises(InvalidComponentValue):
+        await service.save_draft(
+            address("SystemPrompt"), {"content": None}, None, None, "operator"
+        )
+
+    repository.save_draft.assert_not_awaited()

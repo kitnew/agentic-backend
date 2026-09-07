@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from alembic import command
@@ -18,6 +19,7 @@ from control_plane.domain.components import (
     TenantScope,
 )
 from control_plane.domain.components.errors import (
+    ActiveRevisionConflict,
     DraftVersionConflict,
     InvalidComponentValue,
     UnpublishedDraftConflict,
@@ -112,6 +114,112 @@ async def test_concurrent_first_draft_creation_is_a_domain_conflict(
 
 
 @pytest.mark.asyncio
+async def test_two_component_operations_share_caller_owned_transaction(
+    migrated_database_url: str,
+) -> None:
+    database = Database(migrated_database_url)
+    first = ComponentAddress(
+        ComponentKind("example.settings"), TenantScope("transaction-first")
+    )
+    second = ComponentAddress(
+        ComponentKind("example.settings"), TenantScope("transaction-second")
+    )
+    try:
+        async with database.sessions.begin() as session:
+            components = ComponentService(
+                registry(), SqlAlchemyComponentRepository(session)
+            )
+            first_draft = await components.save_draft(
+                first, {"enabled": True, "label": "first"}, None, None, "operator"
+            )
+            await components.publish_draft(first, first_draft.version, "operator")
+            second_draft = await components.save_draft(
+                second, {"enabled": True, "label": "second"}, None, None, "operator"
+            )
+            await components.publish_draft(second, second_draft.version, "operator")
+
+        async with database.sessions() as session:
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM control_plane.configuration_component_revisions"
+                    )
+                )
+                == 2
+            )
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM control_plane.configuration_component_drafts"
+                    )
+                )
+                == 0
+            )
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_failed_shared_transaction_rolls_back_all_component_changes(
+    migrated_database_url: str,
+) -> None:
+    database = Database(migrated_database_url)
+    first = ComponentAddress(
+        ComponentKind("example.settings"), TenantScope("rollback-first")
+    )
+    second = ComponentAddress(
+        ComponentKind("example.settings"), TenantScope("rollback-second")
+    )
+    try:
+        with pytest.raises(ActiveRevisionConflict):
+            async with database.sessions.begin() as session:
+                components = ComponentService(
+                    registry(), SqlAlchemyComponentRepository(session)
+                )
+                draft = await components.save_draft(
+                    first,
+                    {"enabled": True, "label": "published"},
+                    None,
+                    None,
+                    "operator",
+                )
+                await components.publish_draft(first, draft.version, "operator")
+                await components.save_draft(
+                    second,
+                    {"enabled": True, "label": "must-roll-back"},
+                    None,
+                    uuid4(),
+                    "operator",
+                )
+
+        async with database.sessions() as session:
+            assert (
+                await session.scalar(
+                    text("SELECT count(*) FROM control_plane.configuration_components")
+                )
+                == 0
+            )
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM control_plane.configuration_component_drafts"
+                    )
+                )
+                == 0
+            )
+            assert (
+                await session.scalar(
+                    text(
+                        "SELECT count(*) FROM control_plane.configuration_component_revisions"
+                    )
+                )
+                == 0
+            )
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
 async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> None:
     database = Database(migrated_database_url)
     components = service(database)
@@ -127,6 +235,7 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
 
         r1 = await components.publish_draft(address, 1, "alice")
         assert r1.revision_number == 1
+        assert (await components.get_component(address)).draft is None
         assert (
             await components.get_component(address)
         ).state is ComponentState.PUBLISHED
@@ -139,6 +248,7 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
             address, {"enabled": False, "label": "updated"}, 1, r1.revision_id, "bob"
         )
         assert draft.version == 2
+        assert (await components.get_active(address)).value == r1.value
         await components.discard_draft(address, 2)
         assert (await components.get_active(address)).revision_id == r1.revision_id
         assert len(await components.list_revisions(address)) == 1
@@ -153,6 +263,14 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
                 "bob",
             )
             await components.publish_draft(address, draft.version, "bob")
+        assert [
+            item.revision_number for item in await components.list_revisions(address)
+        ] == [
+            3,
+            2,
+            1,
+        ]
+        assert (await components.get_revision(address, 1)).value == r1.value
         r4 = await components.rollback(address, 1, "carol")
         assert r4.revision_number == 4
         assert r4.value == r1.value
@@ -161,6 +279,8 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
             == (await components.get_revision(address, 3)).revision_id
         )
         assert r4.restored_from_revision_id == r1.revision_id
+        assert (await components.get_revision(address, 1)).value == r1.value
+        assert len(await components.list_revisions(address)) == 4
 
         draft = await components.save_draft(
             address, value, None, r4.revision_id, "alice"

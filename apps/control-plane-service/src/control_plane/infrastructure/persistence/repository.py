@@ -1,4 +1,5 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 from uuid import UUID, uuid4
@@ -63,8 +64,21 @@ from .models import ProviderConnection as ProviderConnectionRow
 
 
 class SqlAlchemyComponentRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(
+        self, sessions: async_sessionmaker[AsyncSession] | AsyncSession
+    ) -> None:
         self._sessions = sessions
+
+    @asynccontextmanager
+    async def _session(self, *, write: bool = False) -> AsyncIterator[AsyncSession]:
+        if isinstance(self._sessions, AsyncSession):
+            yield self._sessions
+        elif write:
+            async with self._sessions.begin() as session:
+                yield session
+        else:
+            async with self._sessions() as session:
+                yield session
 
     def _component(self, address: ComponentAddress):
         return select(ComponentRow).where(
@@ -92,7 +106,7 @@ class SqlAlchemyComponentRepository:
         expected_active_revision_id: UUID | None,
         actor: str,
     ) -> DraftRow:
-        async with self._sessions.begin() as session:
+        async with self._session(write=True) as session:
             await session.execute(
                 insert(ComponentRow)
                 .values(
@@ -142,7 +156,7 @@ class SqlAlchemyComponentRepository:
     async def discard_draft(
         self, address: ComponentAddress, expected_draft_version: int
     ) -> None:
-        async with self._sessions.begin() as session:
+        async with self._session(write=True) as session:
             component = await self._locked_component(session, address)
             draft = await session.get(DraftRow, component.id, with_for_update=True)
             if draft is None:
@@ -159,7 +173,7 @@ class SqlAlchemyComponentRepository:
         actor: str,
         definition: ComponentDefinition[Any],
     ) -> RevisionRow:
-        async with self._sessions.begin() as session:
+        async with self._session(write=True) as session:
             component = await self._locked_component(session, address)
             draft = await session.get(DraftRow, component.id, with_for_update=True)
             if draft is None:
@@ -204,7 +218,7 @@ class SqlAlchemyComponentRepository:
         actor: str,
         definition: ComponentDefinition[Any],
     ) -> RevisionRow:
-        async with self._sessions.begin() as session:
+        async with self._session(write=True) as session:
             component = await self._locked_component(session, address)
             if await session.get(DraftRow, component.id) is not None:
                 raise UnpublishedDraftConflict("discard or publish the draft first")
@@ -516,7 +530,7 @@ class SqlAlchemyComponentRepository:
     async def get_component(
         self, address: ComponentAddress
     ) -> tuple[bool, DraftRow | None, RevisionRow | None]:
-        async with self._sessions() as session:
+        async with self._session() as session:
             component = await session.scalar(self._component(address))
             if component is None:
                 return False, None, None
@@ -529,12 +543,12 @@ class SqlAlchemyComponentRepository:
             return True, draft, active
 
     async def get_draft(self, address: ComponentAddress) -> DraftRow | None:
-        async with self._sessions() as session:
+        async with self._session() as session:
             component_id = await self._component_id(session, address)
             return await session.get(DraftRow, component_id) if component_id else None
 
     async def get_active(self, address: ComponentAddress) -> RevisionRow | None:
-        async with self._sessions() as session:
+        async with self._session() as session:
             component = await session.scalar(self._component(address))
             return (
                 await session.get(RevisionRow, component.active_revision_id)
@@ -545,7 +559,7 @@ class SqlAlchemyComponentRepository:
     async def get_revision(
         self, address: ComponentAddress, revision_number: int
     ) -> RevisionRow | None:
-        async with self._sessions() as session:
+        async with self._session() as session:
             component_id = await self._component_id(session, address)
             return (
                 await session.scalar(
@@ -561,7 +575,7 @@ class SqlAlchemyComponentRepository:
     async def list_revisions(
         self, address: ComponentAddress, limit: int
     ) -> Sequence[RevisionRow]:
-        async with self._sessions() as session:
+        async with self._session() as session:
             component_id = await self._component_id(session, address)
             if component_id is None:
                 return []
