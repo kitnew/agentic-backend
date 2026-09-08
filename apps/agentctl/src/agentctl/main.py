@@ -206,7 +206,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             arguments.api_url,
             arguments.state_dir,
             arguments.control_plane_url,
-            require_backend=arguments.resource != "configuration",
+            require_backend=arguments.resource
+            not in {"configuration", "credential", "provider", "deployment"},
         )
         if arguments.resource == "configuration":
             run_configuration(

@@ -14,6 +14,27 @@ RESOURCES = {
 }
 
 
+def _print_response(value: object) -> None:
+    if isinstance(value, list):
+        value = [
+            {
+                key: item
+                for key, item in resource.items()
+                if key not in {"secret", "generation"}
+            }
+            if isinstance(resource, dict)
+            else resource
+            for resource in value
+        ]
+    elif isinstance(value, dict):
+        value = {
+            key: item
+            for key, item in value.items()
+            if key not in {"secret", "generation"}
+        }
+    print(json.dumps(value, default=str))
+
+
 def run_managed(
     settings: Settings,
     resource: str,
@@ -25,16 +46,12 @@ def run_managed(
     path = RESOURCES[resource]
     with ControlPlaneClient(settings) as client:
         if action == "list":
-            print(json.dumps(client.management("GET", path), default=str))
+            _print_response(client.management("GET", path))
             return
         if action == "show":
             if resource_id is None:
                 raise CommandError("resource id is required", 2)
-            print(
-                json.dumps(
-                    client.management("GET", f"{path}/{resource_id}"), default=str
-                )
-            )
+            _print_response(client.management("GET", f"{path}/{resource_id}"))
             return
         if action in {"create", "configure"}:
             if action == "configure" and resource_id is None:
@@ -54,15 +71,12 @@ def run_managed(
             suffix = "" if action == "create" else f"/{resource_id}"
             item_path = f"{path}{suffix}"
             etag = client.management_etag(item_path) if action == "configure" else None
-            print(
-                json.dumps(
-                    client.management_mutation(
-                        "POST" if action == "create" else "PUT",
-                        item_path,
-                        etag=etag,
-                        json=body,
-                    ),
-                    default=str,
+            _print_response(
+                client.management_mutation(
+                    "POST" if action == "create" else "PUT",
+                    item_path,
+                    etag=etag,
+                    json=body,
                 )
             )
             return
@@ -71,15 +85,12 @@ def run_managed(
                 raise CommandError("resource id is required", 2)
             body = {"secret": getpass("Secret: ")} if action == "rotate" else {}
             item_path = f"{path}/{resource_id}"
-            print(
-                json.dumps(
-                    client.management_mutation(
-                        "POST",
-                        f"{item_path}/{action}",
-                        etag=client.management_etag(item_path),
-                        json=body,
-                    ),
-                    default=str,
+            _print_response(
+                client.management_mutation(
+                    "POST",
+                    f"{item_path}/{action}",
+                    etag=client.management_etag(item_path),
+                    json=body,
                 )
             )
             return
