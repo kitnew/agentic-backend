@@ -3,7 +3,8 @@ export type ApiError = {
   code?: string;
   message: string;
   requestId?: string;
-  details?: unknown[];
+  issues?: Array<{ path: string; code: string; message: string }>;
+  details?: unknown;
 };
 
 const statusMessage: Record<number, string> = {
@@ -14,6 +15,7 @@ const statusMessage: Record<number, string> = {
   409: "The request conflicts with current server state.",
   412: "The configuration changed on the server.",
   422: "The submitted configuration is invalid.",
+  428: "A concurrency precondition is required.",
   500: "The server could not complete the request.",
 };
 
@@ -47,23 +49,35 @@ export function normalizeApiError(
     const status =
       typeof candidate.status === "number" ? candidate.status : undefined;
     const body = candidate.data ?? input;
-    const detail =
-      typeof body === "object" && body !== null && "detail" in body
-        ? body.detail
+    const bodyRecord =
+      typeof body === "object" && body !== null
+        ? (body as Record<string, unknown>)
         : undefined;
-    const details = Array.isArray(detail) ? detail : undefined;
+    const detail =
+      bodyRecord && "detail" in bodyRecord ? bodyRecord.detail : undefined;
+    const legacyDetails = Array.isArray(detail) ? detail : undefined;
+    const issues = Array.isArray(bodyRecord?.issues)
+      ? bodyRecord.issues.filter(
+          (issue): issue is { path: string; code: string; message: string } =>
+            typeof issue === "object" &&
+            issue !== null &&
+            typeof issue.path === "string" &&
+            typeof issue.code === "string" &&
+            typeof issue.message === "string",
+        )
+      : undefined;
     const error: ApiError = {
       status,
       code:
         typeof candidate.code === "string"
           ? candidate.code
-          : typeof body === "object" &&
-              body !== null &&
-              "code" in body &&
-              typeof body.code === "string"
-            ? body.code
+          : typeof bodyRecord?.code === "string"
+            ? bodyRecord.code
             : undefined,
       message:
+        (typeof bodyRecord?.message === "string"
+          ? bodyRecord.message
+          : undefined) ??
         detailMessage(detail) ??
         (typeof candidate.message === "string"
           ? candidate.message
@@ -72,11 +86,17 @@ export function normalizeApiError(
         fallback,
       requestId:
         candidate.headers?.get("x-request-id") ??
+        (typeof bodyRecord?.request_id === "string"
+          ? bodyRecord.request_id
+          : undefined) ??
         (typeof candidate.requestId === "string"
           ? candidate.requestId
           : undefined),
     };
-    if (details) error.details = details;
+    if (issues?.length) error.issues = issues;
+    if (bodyRecord && "details" in bodyRecord && bodyRecord.details != null)
+      error.details = bodyRecord.details;
+    else if (legacyDetails) error.details = legacyDetails;
     return error;
   }
   return { message: fallback };

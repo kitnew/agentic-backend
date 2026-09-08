@@ -16,11 +16,18 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
   return normalizeApiError(error, fallback).message;
 }
 
-export function managementMutationOptions(etag?: string | null): RequestInit {
+export function managementMutationOptions(
+  etag?: string | null,
+  initialize = false,
+): RequestInit {
   return {
     headers: {
       "Idempotency-Key": crypto.randomUUID(),
-      ...(etag ? { "If-Match": etag } : {}),
+      ...(initialize
+        ? { "If-None-Match": "*" }
+        : etag
+          ? { "If-Match": etag }
+          : {}),
     },
   };
 }

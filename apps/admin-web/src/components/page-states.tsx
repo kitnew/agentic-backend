@@ -1,3 +1,4 @@
+import { normalizeApiError } from "../core/api/errors";
 import { WorkspaceHeader } from "../core/ui/foundation";
 import { Button } from "./ui/button";
 
@@ -13,11 +14,14 @@ export function PageError({
   title,
   onRetry,
   compact = false,
+  error,
 }: {
   title: string;
   onRetry?: () => void;
   compact?: boolean;
+  error?: unknown;
 }) {
+  const normalized = error ? normalizeApiError(error, title) : undefined;
   return (
     <div
       className={
@@ -28,6 +32,22 @@ export function PageError({
       role="alert"
     >
       <p>{title}</p>
+      {normalized && normalized.message !== title && (
+        <p className="mt-1">{normalized.message}</p>
+      )}
+      {normalized?.code && <p className="mt-1">Code: {normalized.code}</p>}
+      {normalized?.issues?.length ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          {normalized.issues.map((issue) => (
+            <li key={`${issue.path}-${issue.code}-${issue.message}`}>
+              {issue.path}: {issue.code}: {issue.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {normalized?.requestId && (
+        <p className="mt-1">Request ID: {normalized.requestId}</p>
+      )}
       {onRetry && (
         <Button className="mt-3" variant="outline" onClick={onRetry}>
           Retry
