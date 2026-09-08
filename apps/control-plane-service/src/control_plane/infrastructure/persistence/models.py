@@ -446,7 +446,7 @@ class ExecutionSnapshot(Base):
     __tablename__ = "execution_snapshots"
     __table_args__ = (
         CheckConstraint(
-            "schema_version = 2", name="ck_execution_snapshot_schema_version"
+            "schema_version = 3", name="ck_execution_snapshot_schema_version"
         ),
         CheckConstraint(
             "architecture IN ('cascade', 'realtime')",

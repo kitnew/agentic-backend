@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from control_plane.domain.runtime_execution_snapshot import (
     ExecutionSnapshot,
-    snapshot_from_payload,
 )
 
 from .models import ExecutionSnapshot as SnapshotRow
@@ -48,6 +47,12 @@ class SqlAlchemyExecutionSnapshotRepository:
 
     @staticmethod
     def _snapshot(row: SnapshotRow) -> ExecutionSnapshot:
-        return snapshot_from_payload(
-            row.snapshot_id, row.created_at, row.payload, row.content_hash
+        return ExecutionSnapshot(
+            row.snapshot_id,
+            row.schema_version,
+            row.tenant_id,
+            row.architecture,
+            row.created_at,
+            row.payload,
+            row.content_hash,
         )

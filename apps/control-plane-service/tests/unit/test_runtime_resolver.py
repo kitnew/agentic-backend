@@ -37,7 +37,6 @@ from control_plane.domain.managed_resources import (
 from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.domain.runtime_execution_snapshot import (
     content_hash,
-    snapshot_from_payload,
     snapshot_payload,
 )
 from control_plane.domain.runtime_resolution import (
@@ -467,19 +466,22 @@ async def test_absent_architecture_is_never_a_fallback() -> None:
     assert [attempt.architecture for attempt in captured.value.attempts] == ["realtime"]
 
 
-@pytest.mark.asyncio
-async def test_execution_snapshot_payload_round_trips_and_is_secret_free() -> None:
-    resolution = await resolver(state(["cascade"])).resolve_runtime(TENANT)
-    payload = snapshot_payload(TENANT, resolution)
-    restored = snapshot_from_payload(UUID(int=999), NOW, payload, content_hash(payload))
+def test_execution_snapshot_payload_is_target_only_and_secret_free() -> None:
+    target = {
+        "backend": {"architecture": "cascade"},
+        "voice": {"architecture": "cascade"},
+        "actions": {},
+        "bindings": {"runtime_secrets": {}, "integrations": {}, "handoff": {}},
+    }
+    payload = snapshot_payload(target)
 
-    assert restored.runtime.architecture == resolution.selected.architecture
-    assert restored.resolution.attempts == resolution.attempts
+    assert set(payload) == {"backend", "voice", "actions", "bindings"}
+    assert not set(payload) & {"execution", "agent", "runtime", "resolution"}
     assert all(
         field not in str(payload).lower()
         for field in ("ciphertext", "nonce", "key_id", "secret_envelope")
     )
-    assert content_hash(payload) == content_hash(snapshot_payload(TENANT, resolution))
+    assert content_hash(payload) == content_hash(snapshot_payload(target))
 
 
 def test_execution_resolution_contains_tenant_agent_context_and_provenance() -> None:
@@ -513,29 +515,30 @@ def test_execution_resolution_requires_agent_component() -> None:
     assert captured.value.details["component_kind"] == "AgentPersonality"
 
 
-def test_execution_snapshot_contains_agent_and_hashes_context_changes() -> None:
+def test_execution_snapshot_target_hashes_context_changes() -> None:
     value = state(["cascade"])
     resolver, enriched = execution_resolver(value)
     execution = resolver.resolve_state(TENANT, enriched)
-    execution_payload = {"agent": execution.agent}
-    payload = snapshot_payload(TENANT, execution.runtime, execution_payload)
-    restored = snapshot_from_payload(UUID(int=999), NOW, payload, content_hash(payload))
-
-    assert restored.agent == execution.agent
-    changed = {"agent": replace(execution.agent, greeting="Nový deň 🌿")}
+    target = {
+        "backend": {},
+        "voice": {"agent": execution.agent},
+        "actions": {},
+        "bindings": {},
+    }
+    payload = snapshot_payload(target)
+    changed = {
+        **target,
+        "voice": {"agent": replace(execution.agent, greeting="Nový deň 🌿")},
+    }
     assert content_hash(payload) != content_hash(
-        snapshot_payload(TENANT, execution.runtime, changed)
+        snapshot_payload(changed)
     )
 
 
 def test_execution_snapshot_contains_no_credential_secret_version_internals() -> None:
     resolver, enriched = execution_resolver(state(["cascade"]))
     execution = resolver.resolve_state(TENANT, enriched)
-    payload = snapshot_payload(
-        TENANT,
-        execution.runtime,
-        {"runtime": execution.runtime.selected, "agent": execution.agent},
-    )
+    payload = snapshot_payload({"voice": {"runtime": execution.runtime.selected}})
 
     serialized = str(payload).lower()
     assert "active_version_id" not in serialized

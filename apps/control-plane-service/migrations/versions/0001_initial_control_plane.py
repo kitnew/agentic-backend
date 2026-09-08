@@ -651,7 +651,7 @@ def upgrade() -> None:
         sa.Column("content_hash", sa.String(64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "schema_version = 2", name="ck_execution_snapshot_schema_version"
+            "schema_version = 3", name="ck_execution_snapshot_schema_version"
         ),
         sa.CheckConstraint(
             "architecture IN ('cascade', 'realtime')",

@@ -127,14 +127,7 @@ class ExecutionMaterializationService:
                 tenant_id, await self._reader.load_in_session(session, tenant_id)
             )
             target = self._target_state(resolution, context)
-            payload = snapshot_payload(
-                tenant_id,
-                resolution.runtime,
-                {
-                    "agent": resolution.agent,
-                    "target": target,
-                },
-            )
+            payload = snapshot_payload(target)
             assert_secret_free_payload(payload)
             snapshot = ExecutionSnapshot(
                 uuid4(),
@@ -142,10 +135,7 @@ class ExecutionMaterializationService:
                 tenant_id,
                 resolution.architecture,
                 datetime.now(UTC),
-                cast(dict[str, object], payload["execution"]),
-                resolution.agent,
-                resolution.runtime.selected,
-                resolution.runtime,
+                payload,
                 content_hash(payload),
             )
             await self._snapshots.create(session, snapshot, payload)
@@ -286,10 +276,7 @@ class ExecutionMaterializationService:
 
     @staticmethod
     def _target(snapshot: ExecutionSnapshot) -> Mapping[str, object]:
-        value = snapshot.execution.get("target")
-        if not isinstance(value, Mapping):
-            raise ManagedResourceConflict("execution snapshot has no target state")
-        return value
+        return snapshot.target
 
     def _backend(self, snapshot: ExecutionSnapshot) -> BackendExecutionContext:
         value = self._mapping(self._target(snapshot)["backend"])
@@ -503,30 +490,6 @@ class ExecutionMaterializationService:
             raise InvalidManagedResource(
                 "integration configuration is invalid"
             ) from error
-
-    @staticmethod
-    def _runtime_resource(
-        snapshot: ExecutionSnapshot, slot: RuntimeSecretSlot
-    ) -> ResolvedProviderResource:
-        runtime = snapshot.runtime
-        resources = (
-            {
-                RuntimeSecretSlot.LLM: runtime.llm.resource,
-                RuntimeSecretSlot.STT: runtime.stt.resource,
-                RuntimeSecretSlot.TTS: runtime.tts.resource,
-            }
-            if isinstance(runtime, ResolvedCascadeRuntime)
-            else {
-                RuntimeSecretSlot.MODEL: runtime.model.resource,
-                RuntimeSecretSlot.INPUT_TRANSCRIPTION: runtime.input_transcription.resource,
-            }
-        )
-        resource = resources.get(slot)
-        if resource is None:
-            raise InvalidManagedResource(
-                "runtime secret slot is not valid for snapshot architecture"
-            )
-        return resource
 
     async def _active_secret(
         self,

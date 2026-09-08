@@ -597,6 +597,13 @@ async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
                 )
             )
         assert (snapshot_count, replay_count) == (1, 1)
+        assert set(payload) == {"backend", "voice", "actions", "bindings"}
+        assert not set(payload) & {"execution", "agent", "runtime", "resolution"}
+        assert set(payload["bindings"]) == {
+            "runtime_secrets",
+            "integrations",
+            "handoff",
+        }
         serialized = str(payload).lower()
         assert "'secret'" not in serialized
         assert all(
@@ -715,7 +722,7 @@ async def test_slice_12_replay_failure_rolls_back_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_slice_12_creation_reads_one_state_during_concurrent_mutation(
+async def test_execution_snapshot_is_coherent_during_concurrent_management_mutation(
     migrated_database_url: str,
 ) -> None:
     database = Database(migrated_database_url)
@@ -731,8 +738,15 @@ async def test_slice_12_creation_reads_one_state_during_concurrent_mutation(
         class MutatingReader:
             async def load_in_session(self, session, tenant_id):
                 before = await base.load_in_session(session, tenant_id)
+                changed = desired(refs, voice="voice-b").model_copy(
+                    update={
+                        "llm_defaults": desired(refs).llm_defaults.model_copy(
+                            update={"max_completion_tokens": 200}
+                        )
+                    }
+                )
                 await system.apply(
-                    desired(refs, voice="voice-b"),
+                    changed,
                     system.concurrency_token(applied.configuration),
                     "test",
                     "system-b",
@@ -759,7 +773,21 @@ async def test_slice_12_creation_reads_one_state_during_concurrent_mutation(
         )
 
         voice = await service.voice_context(created.execution_id)
-        assert voice.runtime["tts"]["voice"] == "voice-a"
+        snapshot_values = (
+            voice.runtime["tts"]["voice"],
+            voice.runtime["llm"]["max_completion_tokens"],
+        )
+        async with database.sessions() as session:
+            payload = await session.scalar(
+                select(SnapshotRow.payload).where(
+                    SnapshotRow.snapshot_id == created.execution_id
+                )
+            )
+        assert snapshot_values == (
+            payload["voice"]["runtime"]["tts"]["voice"],
+            payload["voice"]["runtime"]["llm"]["max_completion_tokens"],
+        )
+        assert snapshot_values in {("voice-a", 100), ("voice-b", 200)}
         assert (await system.get()).tts_defaults.default_voice_id == "voice-b"
     finally:
         await database.close()
