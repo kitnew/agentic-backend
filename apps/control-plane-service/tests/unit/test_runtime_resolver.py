@@ -17,9 +17,11 @@ from control_plane.domain.components import (
     ComponentKind,
     PlatformScope,
     ProfileScope,
+    SystemScope,
     TenantScope,
 )
 from control_plane.domain.knowledge_components import register_knowledge_components
+from control_plane.domain.live_components import LiveComponentState
 from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
@@ -102,6 +104,11 @@ def component(
     )
 
 
+def live_component(kind: str, value: dict[str, object], generation: int = 1):
+    address = ComponentAddress(ComponentKind(kind), SystemScope())
+    return address, LiveComponentState(address, value, 1, generation, NOW, "test")
+
+
 def credential(name: str) -> Credential:
     ref = IDS[f"{name}_credential"]
     return Credential(
@@ -176,7 +183,7 @@ def deployment(
 
 def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
     architectures = architectures or ["realtime", "cascade"]
-    values = [
+    components = [
         component(
             "runtime.architecture.policy", {"architectures": architectures}, True
         ),
@@ -189,48 +196,55 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
             },
             True,
         ),
-        component(
-            "runtime.llm.defaults",
+    ]
+    live_components = [
+        live_component(
+            "LLMDefaults",
             {
                 "deployment_ref": str(IDS["llm"]),
                 "reasoning_effort": "high",
                 "max_completion_tokens": 1024,
             },
         ),
-        component("runtime.stt.defaults", {"deployment_ref": str(IDS["cascade_stt"])}),
-        component(
-            "runtime.tts.defaults",
+        live_component("STTDefaults", {"deployment_ref": str(IDS["cascade_stt"])}),
+        live_component(
+            "TTSDefaults",
             {
                 "deployment_ref": str(IDS["tts"]),
                 "default_voice_id": "platform-cascade",
-                "min_sentence_chars": 20,
             },
         ),
-        component(
-            "runtime.cascade.execution.defaults",
+        live_component(
+            "Policies",
             {
-                "speech_activity": {
-                    "min_speech_seconds": 0.05,
-                    "min_silence_seconds": 0.25,
-                    "activation_threshold": 0.5,
-                },
-                "stt_commit": {"strategy": "local_vad"},
-                "endpointing": {"min_delay_seconds": 0.1, "max_delay_seconds": 0.7},
-                "interruption": {
-                    "enabled": True,
-                    "min_duration_seconds": 0.5,
-                    "min_words": 0,
-                    "false_interruption_timeout_seconds": 2.0,
-                    "resume_after_false_interruption": True,
-                },
-                "response_scheduling": {
-                    "preemptive_generation": True,
-                    "preemptive_tts": True,
-                },
+                "cascade": {
+                    "speech_activity": {
+                        "min_speech_seconds": 0.05,
+                        "min_silence_seconds": 0.25,
+                        "activation_threshold": 0.5,
+                    },
+                    "stt_commit": {"strategy": "local_vad"},
+                    "endpointing": {
+                        "min_delay_seconds": 0.1,
+                        "max_delay_seconds": 0.7,
+                    },
+                    "interruption": {
+                        "enabled": True,
+                        "min_duration_seconds": 0.5,
+                        "min_words": 0,
+                        "false_interruption_timeout_seconds": 2.0,
+                        "resume_after_false_interruption": True,
+                    },
+                    "response_scheduling": {
+                        "preemptive_generation": True,
+                        "preemptive_tts": True,
+                    },
+                    "tokenizer": {"min_sentence_chars": 20},
+                }
             },
         ),
-        component(
-            "runtime.realtime.execution.defaults",
+        live_component(
+            "RealtimeDefaults",
             {
                 "deployment_ref": str(IDS["realtime"]),
                 "input_transcription": {"deployment_ref": str(IDS["realtime_stt"])},
@@ -283,7 +297,13 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
             deployment("tts", DeploymentKind.TTS, "eleven"),
         )
     }
-    return RuntimeResolutionState(dict(values), deployments, connections, credentials)
+    return RuntimeResolutionState(
+        dict(components),
+        dict(live_components),
+        deployments,
+        connections,
+        credentials,
+    )
 
 
 def resolver(value: RuntimeResolutionState) -> RuntimeResolver:
@@ -355,6 +375,29 @@ def without_component(
         if str(address.kind) != kind
     }
     return replace(value, components=components)
+
+
+def without_live_component(
+    value: RuntimeResolutionState, kind: str
+) -> RuntimeResolutionState:
+    live_components = {
+        address: component
+        for address, component in value.live_components.items()
+        if str(address.kind) != kind
+    }
+    return replace(value, live_components=live_components)
+
+
+@pytest.mark.asyncio
+async def test_complete_system_live_state_is_required_without_legacy_fallback() -> None:
+    with pytest.raises(RuntimeResolutionError) as captured:
+        await resolver(without_live_component(state(), "LLMDefaults")).resolve_runtime(
+            TENANT
+        )
+
+    assert captured.value.reason is ResolutionFailureReason.MISSING_PLATFORM_COMPONENT
+    assert captured.value.details["component_kind"] == "LLMDefaults"
+    assert captured.value.attempts == ()
 
 
 @pytest.mark.asyncio
@@ -499,7 +542,8 @@ async def test_cascade_materializes_current_state_hints_voice_and_provenance() -
     assert selected.llm.resource.deployment.generation == 5
     assert selected.llm.resource.connection.generation == 4
     assert selected.llm.resource.credential.generation == 3
-    assert selected.llm.component.revision_number == 1
+    assert selected.llm.component.revision_number is None
+    assert selected.llm.component.component_kind == "LLMDefaults"
     assert result.architecture_policy.component_kind == "runtime.architecture.policy"
 
 
@@ -584,24 +628,25 @@ async def test_cascade_revalidates_live_resources(mutation: str, reason) -> None
 @pytest.mark.asyncio
 async def test_provider_vad_is_revalidated() -> None:
     value = state(["cascade"])
-    components = dict(value.components)
-    address = ComponentAddress(
-        ComponentKind("runtime.cascade.execution.defaults"), PlatformScope()
-    )
-    execution = components[address]
-    components[address] = replace(
-        execution,
+    live_components = dict(value.live_components)
+    address = ComponentAddress(ComponentKind("Policies"), SystemScope())
+    policies = live_components[address]
+    cascade = dict(policies.value["cascade"])
+    live_components[address] = replace(
+        policies,
         value={
-            **execution.value,
-            "stt_commit": {
-                "strategy": "provider_vad",
-                "provider_vad": {
-                    "threshold": 0.5,
-                    "silence_threshold_seconds": 0.35,
-                    "min_speech_ms": 100,
-                    "min_silence_ms": 350,
+            "cascade": {
+                **cascade,
+                "stt_commit": {
+                    "strategy": "provider_vad",
+                    "provider_vad": {
+                        "threshold": 0.5,
+                        "silence_threshold_seconds": 0.35,
+                        "min_speech_ms": 100,
+                        "min_silence_ms": 350,
+                    },
                 },
-            },
+            }
         },
     )
     connections = dict(value.connections)
@@ -620,7 +665,7 @@ async def test_provider_vad_is_revalidated() -> None:
         await resolver(
             replace(
                 value,
-                components=components,
+                live_components=live_components,
                 connections=connections,
                 deployments=deployments,
             )
@@ -704,12 +749,10 @@ async def test_realtime_revalidates_live_compatibility(mutation: str, reason) ->
 @pytest.mark.asyncio
 async def test_realtime_semantic_vad_capability_is_revalidated() -> None:
     value = state(["realtime"])
-    components = dict(value.components)
-    address = ComponentAddress(
-        ComponentKind("runtime.realtime.execution.defaults"), PlatformScope()
-    )
-    policy = components[address]
-    components[address] = replace(
+    live_components = dict(value.live_components)
+    address = ComponentAddress(ComponentKind("RealtimeDefaults"), SystemScope())
+    policy = live_components[address]
+    live_components[address] = replace(
         policy,
         value={
             **policy.value,
@@ -724,7 +767,7 @@ async def test_realtime_semantic_vad_capability_is_revalidated() -> None:
 
     with pytest.raises(RuntimeResolutionError) as captured:
         await resolver(
-            replace(value, components=components, deployments=deployments)
+            replace(value, live_components=live_components, deployments=deployments)
         ).resolve_runtime(TENANT)
 
     assert captured.value.attempts[0].failure is not None

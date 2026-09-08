@@ -136,6 +136,40 @@ class ConfigurationComponentRevision(Base):
     created_by: Mapped[str] = mapped_column(String(255))
 
 
+class LiveComponent(Base):
+    __tablename__ = "live_components"
+    __table_args__ = (
+        CheckConstraint(
+            "(scope_type = 'system' AND scope_key IS NULL) OR "
+            "(scope_type = 'tenant' AND scope_key IS NOT NULL AND scope_key <> '')",
+            name="ck_live_component_scope",
+        ),
+        CheckConstraint("schema_version >= 1", name="ck_live_component_schema_version"),
+        CheckConstraint("generation >= 1", name="ck_live_component_generation"),
+        Index(
+            "uq_live_component_address",
+            "kind",
+            "scope_type",
+            "scope_key",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
+        {"schema": SCHEMA},
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    kind: Mapped[str] = mapped_column(String(255))
+    scope_type: Mapped[str] = mapped_column(String(16))
+    scope_key: Mapped[str | None] = mapped_column(String(255))
+    value: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    schema_version: Mapped[int] = mapped_column(Integer)
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
 class Credential(Base):
     __tablename__ = "credentials"
     __table_args__ = (

@@ -14,8 +14,10 @@ from control_plane.domain.components import (
     ComponentKind,
     PlatformScope,
     ProfileScope,
+    SystemScope,
     TenantScope,
 )
+from control_plane.domain.live_components import LiveComponentState
 from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
@@ -36,17 +38,18 @@ from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
 from .models import HandoffDestination as HandoffRow
 from .models import IntegrationConnection as IntegrationRow
+from .models import LiveComponent as LiveComponentRow
 from .models import ModelDeployment as DeploymentRow
 from .models import PhoneNumberAssignment as PhoneRow
 from .models import ProviderConnection as ConnectionRow
 
-_PLATFORM_KINDS = (
-    "prompt.system",
-    "runtime.llm.defaults",
-    "runtime.stt.defaults",
-    "runtime.tts.defaults",
-    "runtime.cascade.execution.defaults",
-    "runtime.realtime.execution.defaults",
+_PLATFORM_KINDS = ("prompt.system",)
+_SYSTEM_KINDS = (
+    "STTDefaults",
+    "LLMDefaults",
+    "TTSDefaults",
+    "RealtimeDefaults",
+    "Policies",
 )
 _TENANT_KINDS = (
     "runtime.architecture.policy",
@@ -75,7 +78,10 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
         self, session: AsyncSession, tenant_id: str
     ) -> RuntimeResolutionState:
         components = await self._components(session, tenant_id)
-        deployment_ids = self._deployment_ids(components.values())
+        live_components = await self._live_components(session)
+        deployment_ids = self._deployment_ids(
+            (*components.values(), *live_components.values())
+        )
         deployments = (
             {
                 row.id: self._deployment(row)
@@ -129,6 +135,7 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
         phone = await self._phone(session, tenant_id)
         return RuntimeResolutionState(
             components,
+            live_components,
             deployments,
             connections,
             credentials,
@@ -182,6 +189,31 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                 revision.revision_number,
                 revision.schema_version,
                 dict(revision.value),
+            )
+        return result
+
+    @staticmethod
+    async def _live_components(
+        session: AsyncSession,
+    ) -> dict[ComponentAddress, LiveComponentState[dict[str, object]]]:
+        rows = (
+            await session.scalars(
+                select(LiveComponentRow).where(
+                    LiveComponentRow.scope_type == "system",
+                    LiveComponentRow.kind.in_(_SYSTEM_KINDS),
+                )
+            )
+        ).all()
+        result = {}
+        for row in rows:
+            address = ComponentAddress(ComponentKind(row.kind), SystemScope())
+            result[address] = LiveComponentState(
+                address,
+                dict(row.value),
+                row.schema_version,
+                row.generation,
+                row.updated_at,
+                row.updated_by,
             )
         return result
 
@@ -260,7 +292,9 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
 
     @staticmethod
     def _deployment_ids(
-        components: Iterable[StoredActiveRuntimeComponent],
+        components: Iterable[
+            StoredActiveRuntimeComponent | LiveComponentState[dict[str, object]]
+        ],
     ) -> set[UUID]:
         result: set[UUID] = set()
         for component in components:

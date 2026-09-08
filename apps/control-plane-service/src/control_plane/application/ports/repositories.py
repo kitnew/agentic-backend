@@ -4,6 +4,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from control_plane.domain.components import ComponentAddress, ComponentDefinition
+from control_plane.domain.live_components import LiveComponentState
 from control_plane.domain.managed_resources import (
     Credential,
     CredentialRef,
@@ -78,6 +79,31 @@ class ComponentRepository(Protocol):
     ) -> Sequence[StoredRevision]: ...
 
 
+class LiveComponentRepository(Protocol):
+    async def get(
+        self, address: ComponentAddress, *, lock: bool = False
+    ) -> LiveComponentState[Any] | None: ...
+    async def set(
+        self,
+        address: ComponentAddress,
+        value: Mapping[str, Any],
+        schema_version: int,
+        actor: str,
+    ) -> LiveComponentState[Any]: ...
+
+
+class SystemConfigurationRepository(LiveComponentRepository, Protocol):
+    async def get_deployment(
+        self, ref: ModelDeploymentRef, *, lock: bool = False
+    ) -> ModelDeployment: ...
+    async def get_connection(
+        self, ref: ProviderConnectionRef, *, lock: bool = False
+    ) -> ProviderConnection: ...
+    async def get_credential(
+        self, ref: CredentialRef, *, lock: bool = False
+    ) -> Credential: ...
+
+
 class CredentialRepository(Protocol):
     async def create(
         self, scope: CredentialScope, name: str, secret: str, actor: str
@@ -141,6 +167,12 @@ class ProviderRepository(Protocol):
     ) -> ModelDeployment: ...
     async def list_deployments(self) -> Sequence[ModelDeployment]: ...
     async def has_enabled_deployments(self, ref: ProviderConnectionRef) -> bool: ...
+    async def is_referenced_by_system_configuration(
+        self, ref: ModelDeploymentRef
+    ) -> bool: ...
+    async def system_configuration_references(
+        self, ref: ModelDeploymentRef
+    ) -> Sequence[tuple[str, Mapping[str, Any]]]: ...
     async def get_credential(
         self, ref: CredentialRef, *, lock: bool = False
     ) -> Credential: ...

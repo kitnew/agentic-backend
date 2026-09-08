@@ -4,16 +4,16 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from control_plane.domain.managed_resources import ModelDeployment, ProviderConnection
-from control_plane.domain.runtime_components import (
-    ArchitectureKind,
-    CascadeExecutionDefaults,
+from control_plane.domain.frozen_components import (
+    CascadePolicies,
     LLMDefaults,
-    RealtimeInterruptionPolicy,
+    RealtimeInterruption,
     RealtimeTurnCompletion,
     STTDefaults,
     TTSDefaults,
 )
+from control_plane.domain.managed_resources import ModelDeployment, ProviderConnection
+from control_plane.domain.runtime_components import ArchitectureKind
 
 
 class ResolutionFailureReason(StrEnum):
@@ -39,8 +39,8 @@ class ComponentProvenance:
     component_kind: str
     scope_type: str
     scope_key: str | None
-    revision_id: UUID
-    revision_number: int
+    revision_id: UUID | None
+    revision_number: int | None
     schema_version: int
 
 
@@ -114,7 +114,7 @@ class ResolvedCascadeTTS:
 @dataclass(frozen=True, slots=True)
 class ResolvedCascadeExecution:
     component: ComponentProvenance
-    policy: CascadeExecutionDefaults
+    policy: CascadePolicies
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,7 +146,7 @@ class ResolvedRealtimeRuntime:
     input_transcription: ResolvedRealtimeTranscription
     voice: str
     turn_completion: RealtimeTurnCompletion
-    interruption: RealtimeInterruptionPolicy
+    interruption: RealtimeInterruption
 
 
 ResolvedRuntime = ResolvedCascadeRuntime | ResolvedRealtimeRuntime

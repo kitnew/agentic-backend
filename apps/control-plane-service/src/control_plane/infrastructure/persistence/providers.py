@@ -28,6 +28,7 @@ from control_plane.infrastructure.encryption import CredentialCipher
 
 from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
+from .models import LiveComponent as LiveComponentRow
 from .models import ModelDeployment as ModelDeploymentRow
 from .models import ProviderConnection as ProviderConnectionRow
 
@@ -183,6 +184,31 @@ class SqlAlchemyProviderRepository:
             )
             is not None
         )
+
+    async def is_referenced_by_system_configuration(
+        self, ref: ModelDeploymentRef
+    ) -> bool:
+        return bool(await self.system_configuration_references(ref))
+
+    async def system_configuration_references(
+        self, ref: ModelDeploymentRef
+    ) -> Sequence[tuple[str, dict[str, object]]]:
+        value = str(ref.value)
+        rows = (
+            await self._session.execute(
+                select(LiveComponentRow.kind, LiveComponentRow.value).where(
+                    LiveComponentRow.scope_type == "system",
+                    (LiveComponentRow.value["deployment_ref"].as_string() == value)
+                    | (
+                        LiveComponentRow.value["input_transcription"][
+                            "deployment_ref"
+                        ].as_string()
+                        == value
+                    ),
+                )
+            )
+        ).all()
+        return [(kind, dict(payload)) for kind, payload in rows]
 
     async def get_credential(
         self, ref: CredentialRef, *, lock: bool = False

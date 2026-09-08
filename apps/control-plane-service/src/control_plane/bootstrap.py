@@ -15,6 +15,7 @@ from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
 )
 from control_plane.application.execution_resolver import ExecutionResolver
+from control_plane.application.live_components import LiveComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.ports.repositories import ComponentRepository
 from control_plane.application.providers import ProviderService
@@ -22,6 +23,7 @@ from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
+from control_plane.application.system_configuration import SystemConfigurationService
 from control_plane.domain.agent_components import register_agent_components
 from control_plane.domain.capabilities import register_capability_components
 from control_plane.domain.components import ComponentDefinitionRegistry
@@ -52,6 +54,9 @@ from control_plane.infrastructure.persistence.runtime_execution_snapshots import
 )
 from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
+)
+from control_plane.infrastructure.persistence.system_configuration_transactions import (
+    system_configuration_command_scope,
 )
 from control_plane.infrastructure.provider_validation import HttpProviderValidator
 from control_plane.interfaces.http import create_http_app
@@ -114,6 +119,22 @@ def create_app(
         if isinstance(database, Database)
         else None
     )
+    system_configuration = (
+        SystemConfigurationService(
+            registry, system_configuration_command_scope(database.sessions, cipher)
+        )
+        if isinstance(database, Database)
+        else None
+    )
+    live_components = (
+        LiveComponentService(
+            registry,
+            system_configuration_command_scope(database.sessions, cipher),
+            system_configuration.validate_live_component,
+        )
+        if isinstance(database, Database) and system_configuration is not None
+        else None
+    )
     execution_materialization = (
         ExecutionMaterializationService(
             database.sessions,
@@ -157,6 +178,8 @@ def create_app(
         execution_materialization,
         credentials,
         providers,
+        system_configuration,
+        live_components,
     )
     app.state.settings = settings
     app.state.database = database

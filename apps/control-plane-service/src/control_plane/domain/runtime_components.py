@@ -212,60 +212,14 @@ def _validate_tts(config: TTSDefaults, value: object) -> None:
 
 def register_runtime_components(registry: object) -> None:
     from control_plane.domain.components import ComponentDefinitionRegistry
+    from control_plane.domain.frozen_components import (
+        default_component_definition_registry,
+    )
 
     assert isinstance(registry, ComponentDefinitionRegistry)
-    platform = frozenset({ScopeType.PLATFORM})
-    # Legacy registration; semantic replacement is Slice 6.
-    registry.register(
-        ComponentDefinition(
-            ComponentKind("runtime.llm.defaults"),
-            LLMDefaults,
-            platform,
-            1,
-            lambda value: value.deployment_ref,
-            _validate_llm,
-        ),
-    )
-    # Legacy registration; semantic replacement is Slice 6.
-    registry.register(
-        ComponentDefinition(
-            ComponentKind("runtime.stt.defaults"),
-            STTDefaults,
-            platform,
-            1,
-            lambda value: value.deployment_ref,
-            _validate_stt,
-        ),
-    )
-    # Legacy registration; semantic replacement is Slice 6.
-    registry.register(
-        ComponentDefinition(
-            ComponentKind("runtime.tts.defaults"),
-            TTSDefaults,
-            platform,
-            1,
-            lambda value: value.deployment_ref,
-            _validate_tts,
-        ),
-    )
-    # Legacy registration; semantic replacement is Slice 6.
-    registry.register(
-        ComponentDefinition(
-            ComponentKind("runtime.cascade.execution.defaults"),
-            CascadeExecutionDefaults,
-            platform,
-            1,
-        ),
-    )
-    # Legacy registration; semantic replacement is Slice 6.
-    registry.register(
-        ComponentDefinition(
-            ComponentKind("runtime.realtime.execution.defaults"),
-            RealtimeExecutionDefaults,
-            platform,
-            1,
-        ),
-    )
+    for definition in default_component_definition_registry().definitions:
+        if definition.allowed_scopes == frozenset({ScopeType.SYSTEM}):
+            registry.register(definition)
     tenant = frozenset({ScopeType.TENANT})
     # Legacy registration; semantic replacement is Slice 10.
     registry.register(

@@ -183,6 +183,12 @@ class Repository:
             for value in self.deployments.values()
         )
 
+    async def is_referenced_by_system_configuration(self, _ref) -> bool:
+        return False
+
+    async def system_configuration_references(self, _ref):
+        return ()
+
 
 class Validator:
     def __init__(self, transaction: SimpleNamespace) -> None:

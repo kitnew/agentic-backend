@@ -18,18 +18,33 @@ from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
     RuntimeSecretSlot,
 )
+from control_plane.application.live_components import (
+    LiveComponentPreconditionFailed,
+    LiveComponentService,
+)
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.providers import ProviderService
 from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
+from control_plane.application.system_configuration import (
+    SystemConfiguration,
+    SystemConfigurationApplyResult,
+    SystemConfigurationDesired,
+    SystemConfigurationError,
+    SystemConfigurationNotFound,
+    SystemConfigurationPlan,
+    SystemConfigurationPreconditionFailed,
+    SystemConfigurationService,
+)
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
     ComponentScope,
     PlatformScope,
     ProfileScope,
+    SystemScope,
     TenantScope,
 )
 from control_plane.domain.components.errors import (
@@ -82,6 +97,28 @@ class SaveDraftRequest(BaseModel):
     schema_version: int = Field(ge=1)
     expected_draft_version: int | None
     expected_active_revision_id: UUID | None
+
+
+class LiveComponentWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: dict[str, Any]
+
+
+class SystemScopeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["system"]
+
+
+class SystemLiveComponentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    scope: SystemScopeResponse
+    value: dict[str, Any]
+    updated_at: datetime
+    updated_by: str
 
 
 class PublishRequest(BaseModel):
@@ -316,6 +353,8 @@ def create_http_app(
     execution_materialization: ExecutionMaterializationService | None = None,
     credentials: CredentialService | None = None,
     providers: ProviderService | None = None,
+    system_configuration: SystemConfigurationService | None = None,
+    live_components: LiveComponentService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.settings = None
@@ -327,6 +366,8 @@ def create_http_app(
     app.state.execution_materialization = execution_materialization
     app.state.credentials = credentials
     app.state.providers = providers
+    app.state.system_configuration = system_configuration
+    app.state.live_components = live_components
 
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
@@ -402,15 +443,19 @@ def create_http_app(
         return _management_error(request, status.HTTP_409_CONFLICT, exc.code, str(exc))
 
     @app.exception_handler(ComponentError)
-    async def component_error(_request: Request, exc: ComponentError) -> JSONResponse:
+    async def component_error(request: Request, exc: ComponentError) -> JSONResponse:
         if isinstance(
             exc, (InvalidComponentValue, ScopeNotAllowed, UnsupportedSchemaVersion)
         ):
             code = status.HTTP_422_UNPROCESSABLE_CONTENT
+        elif isinstance(exc, LiveComponentPreconditionFailed):
+            code = status.HTTP_412_PRECONDITION_FAILED
         elif isinstance(exc, UnknownComponentKind) or exc.code.endswith("not_found"):
             code = status.HTTP_404_NOT_FOUND
         else:
             code = status.HTTP_409_CONFLICT
+        if request.url.path.startswith("/management/v1/"):
+            return _management_error(request, code, exc.code, str(exc))
         return JSONResponse(
             status_code=code,
             content={"detail": {"code": exc.code, "message": str(exc)}},
@@ -453,6 +498,19 @@ def create_http_app(
             ),
         )
 
+    @app.exception_handler(SystemConfigurationError)
+    async def system_configuration_error(
+        request: Request, exc: SystemConfigurationError
+    ) -> JSONResponse:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if isinstance(exc, SystemConfigurationNotFound)
+            else status.HTTP_412_PRECONDITION_FAILED
+            if isinstance(exc, SystemConfigurationPreconditionFailed)
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
+        return _management_error(request, code, exc.code, str(exc))
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": SERVICE_NAME}
@@ -488,6 +546,10 @@ def create_http_app(
         app.include_router(_credential_router(), prefix="/management/v1")
     if providers is not None:
         app.include_router(_provider_router(), prefix="/management/v1/providers")
+    if system_configuration is not None:
+        app.include_router(_system_configuration_router(), prefix="/management/v1")
+    if live_components is not None:
+        app.include_router(_system_live_component_router(), prefix="/management/v1")
     if runtime_resolver is not None:
 
         @app.get("/v1/runtime/resolve/tenant/{tenant_id}")
@@ -675,6 +737,107 @@ def create_http_app(
             )
 
     return app
+
+
+def _system_configuration_router() -> APIRouter:
+    router = APIRouter()
+    read_auth = Depends(require_management_permission("configuration:read"))
+    write_auth = Depends(require_management_permission("configuration:write"))
+
+    @router.get("/system/configuration", response_model=SystemConfiguration)
+    async def get_system_configuration(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> JSONResponse:
+        service = request.app.state.system_configuration
+        value = await service.get()
+        return JSONResponse(
+            jsonable_encoder(value),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.post("/system/configuration/plan", response_model=SystemConfigurationPlan)
+    async def plan_system_configuration(
+        request: Request,
+        body: SystemConfigurationDesired,
+        _principal: ManagementPrincipal = write_auth,
+    ) -> Any:
+        return jsonable_encoder(await request.app.state.system_configuration.plan(body))
+
+    @router.put("/system/configuration", response_model=SystemConfigurationApplyResult)
+    async def apply_system_configuration(
+        request: Request,
+        body: SystemConfigurationDesired,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
+        service = request.app.state.system_configuration
+        result = await service.apply(
+            body, expected_token, principal.subject, idempotency_key
+        )
+        return JSONResponse(
+            jsonable_encoder(result),
+            headers={"ETag": f'"{service.concurrency_token(result.configuration)}"'},
+        )
+
+    return router
+
+
+def _system_live_component_router() -> APIRouter:
+    router = APIRouter()
+    read_auth = Depends(require_management_permission("configuration:read"))
+    write_auth = Depends(require_management_permission("configuration:write"))
+
+    @router.get("/system/components/{kind}", response_model=SystemLiveComponentResponse)
+    async def get_live_component(
+        request: Request,
+        kind: str,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service = request.app.state.live_components
+        state = await service.get(ComponentAddress(ComponentKind(kind), SystemScope()))
+        return JSONResponse(
+            jsonable_encoder(
+                {
+                    "kind": str(state.address.kind),
+                    "scope": {"type": "system"},
+                    "value": state.value,
+                    "updated_at": state.updated_at,
+                    "updated_by": state.updated_by,
+                }
+            ),
+            headers={"ETag": f'"{service.concurrency_token(state)}"'},
+        )
+
+    @router.put("/system/components/{kind}", response_model=SystemLiveComponentResponse)
+    async def set_live_component(
+        request: Request,
+        kind: str,
+        body: LiveComponentWrite,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
+        service = request.app.state.live_components
+        state = await service.set(
+            ComponentAddress(ComponentKind(kind), SystemScope()),
+            body.value,
+            expected_token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(
+                {
+                    "kind": str(state.address.kind),
+                    "scope": {"type": "system"},
+                    "value": state.value,
+                    "updated_at": state.updated_at,
+                    "updated_by": state.updated_by,
+                }
+            ),
+            headers={"ETag": f'"{service.concurrency_token(state)}"'},
+        )
+
+    return router
 
 
 def _secret_headers() -> dict[str, str]:
@@ -1150,19 +1313,18 @@ def _provider_router() -> APIRouter:
             headers={"ETag": _provider_etag(service, value)},
         )
 
-    @router.get(
-        "/connections", response_model=list[ProviderConnectionResponse]
-    )
+    @router.get("/connections", response_model=list[ProviderConnectionResponse])
     async def list_connections(
         request: Request, _principal: ManagementPrincipal = read_auth
     ) -> Any:
         return jsonable_encoder(
-            [_connection_response(value) for value in await _provider(request).list_connections()]
+            [
+                _connection_response(value)
+                for value in await _provider(request).list_connections()
+            ]
         )
 
-    @router.get(
-        "/connections/{resource_id}", response_model=ProviderConnectionResponse
-    )
+    @router.get("/connections/{resource_id}", response_model=ProviderConnectionResponse)
     async def get_connection(
         request: Request,
         resource_id: UUID,
@@ -1175,18 +1337,14 @@ def _provider_router() -> APIRouter:
             headers={"ETag": _provider_etag(service, value)},
         )
 
-    @router.put(
-        "/connections/{resource_id}", response_model=ProviderConnectionResponse
-    )
+    @router.put("/connections/{resource_id}", response_model=ProviderConnectionResponse)
     async def update_connection(
         request: Request,
         resource_id: UUID,
         body: ProviderConnectionUpdate,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        idempotency_key, expected_token = _command_headers(
-            request, precondition=True
-        )
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _provider(request)
         value = await service.update_connection(
             ProviderConnectionRef(resource_id),
@@ -1227,9 +1385,7 @@ def _provider_router() -> APIRouter:
         principal: ManagementPrincipal,
         enabled: bool,
     ) -> JSONResponse:
-        idempotency_key, expected_token = _command_headers(
-            request, precondition=True
-        )
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _provider(request)
         command = service.enable_connection if enabled else service.disable_connection
         value = await command(
@@ -1290,12 +1446,13 @@ def _provider_router() -> APIRouter:
         request: Request, _principal: ManagementPrincipal = read_auth
     ) -> Any:
         return jsonable_encoder(
-            [_deployment_response(value) for value in await _provider(request).list_deployments()]
+            [
+                _deployment_response(value)
+                for value in await _provider(request).list_deployments()
+            ]
         )
 
-    @router.get(
-        "/deployments/{resource_id}", response_model=ModelDeploymentResponse
-    )
+    @router.get("/deployments/{resource_id}", response_model=ModelDeploymentResponse)
     async def get_deployment(
         request: Request,
         resource_id: UUID,
@@ -1308,18 +1465,14 @@ def _provider_router() -> APIRouter:
             headers={"ETag": _provider_etag(service, value)},
         )
 
-    @router.put(
-        "/deployments/{resource_id}", response_model=ModelDeploymentResponse
-    )
+    @router.put("/deployments/{resource_id}", response_model=ModelDeploymentResponse)
     async def update_deployment(
         request: Request,
         resource_id: UUID,
         body: ModelDeploymentUpdate,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        idempotency_key, expected_token = _command_headers(
-            request, precondition=True
-        )
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _provider(request)
         value = await service.update_deployment(
             ModelDeploymentRef(resource_id),
@@ -1361,9 +1514,7 @@ def _provider_router() -> APIRouter:
         principal: ManagementPrincipal,
         enabled: bool,
     ) -> JSONResponse:
-        idempotency_key, expected_token = _command_headers(
-            request, precondition=True
-        )
+        idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _provider(request)
         command = service.enable_deployment if enabled else service.disable_deployment
         value = await command(

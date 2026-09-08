@@ -5,7 +5,9 @@ from control_plane.application.command_support import IdempotencyRepository
 from control_plane.application.ports.repositories import (
     ComponentRepository,
     CredentialRepository,
+    LiveComponentRepository,
     ProviderRepository,
+    SystemConfigurationRepository,
 )
 
 ComponentCommandScope = Callable[
@@ -18,4 +20,16 @@ CredentialCommandScope = Callable[
 
 ProviderCommandScope = Callable[
     [], AbstractAsyncContextManager[tuple[ProviderRepository, IdempotencyRepository]]
+]
+
+LiveComponentCommandScope = Callable[
+    [],
+    AbstractAsyncContextManager[tuple[LiveComponentRepository, IdempotencyRepository]],
+]
+
+SystemConfigurationCommandScope = Callable[
+    [],
+    AbstractAsyncContextManager[
+        tuple[SystemConfigurationRepository, IdempotencyRepository]
+    ],
 ]

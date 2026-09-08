@@ -9,6 +9,14 @@ from uuid import UUID
 
 from pydantic import BaseModel, TypeAdapter
 
+from control_plane.domain.frozen_components import (
+    CascadePolicies,
+    LLMDefaults,
+    RealtimeInterruption,
+    RealtimeTurnCompletion,
+    STTDefaults,
+    TTSDefaults,
+)
 from control_plane.domain.managed_resources import (
     CredentialRef,
     DeploymentKind,
@@ -17,14 +25,6 @@ from control_plane.domain.managed_resources import (
     ProviderConnection,
     ProviderConnectionRef,
     capabilities_from_payload,
-)
-from control_plane.domain.runtime_components import (
-    CascadeExecutionDefaults,
-    LLMDefaults,
-    RealtimeInterruptionPolicy,
-    RealtimeTurnCompletion,
-    STTDefaults,
-    TTSDefaults,
 )
 from control_plane.domain.runtime_resolution import (
     CandidateAttempt,
@@ -138,8 +138,6 @@ def _agent(value: Mapping[str, Any]) -> ResolvedTenantAgent:
     )
 
 
-
-
 def _json_value(value: object) -> object:
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
@@ -171,7 +169,7 @@ def _provenance(value: Mapping[str, Any]) -> ComponentProvenance:
         value["component_kind"],
         value["scope_type"],
         value["scope_key"],
-        UUID(value["revision_id"]),
+        UUID(value["revision_id"]) if value["revision_id"] else None,
         value["revision_number"],
         value["schema_version"],
     )
@@ -257,7 +255,7 @@ def _runtime(value: Mapping[str, Any]) -> ResolvedRuntime:
             ),
             ResolvedCascadeExecution(
                 _provenance(_mapping(execution["component"])),
-                CascadeExecutionDefaults.model_validate(execution["policy"]),
+                CascadePolicies.model_validate(execution["policy"]),
             ),
         )
     model, transcription = (
@@ -277,7 +275,7 @@ def _runtime(value: Mapping[str, Any]) -> ResolvedRuntime:
         ),
         value["voice"],
         TypeAdapter(RealtimeTurnCompletion).validate_python(value["turn_completion"]),
-        RealtimeInterruptionPolicy.model_validate(value["interruption"]),
+        RealtimeInterruption.model_validate(value["interruption"]),
     )
 
 

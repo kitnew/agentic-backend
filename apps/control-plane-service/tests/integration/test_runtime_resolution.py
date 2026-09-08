@@ -3,7 +3,6 @@ from typing import cast
 import pytest
 from control_plane.application.components import ComponentService
 from control_plane.application.ports.repositories import ComponentRepository
-from control_plane.application.providers import ProviderService
 from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
 )
@@ -12,15 +11,7 @@ from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinitionRegistry,
     ComponentKind,
-    PlatformScope,
     TenantScope,
-)
-from control_plane.domain.managed_resources import (
-    DeploymentKind,
-    LLMCapabilities,
-    RealtimeCapabilities,
-    STTCapabilities,
-    TTSCapabilities,
 )
 from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.domain.runtime_components import register_runtime_components
@@ -36,90 +27,16 @@ from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
 )
 
-from .credential_helpers import (
-    create_model_deployment,
-    create_platform_credential,
-    create_provider_connection,
-    provider_service,
-)
+from .test_system_configuration import desired, setup
 
 
-def services(database: Database):
+def component_service(database: Database):
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
-    return (
-        ComponentService(
-            registry,
-            cast(ComponentRepository, SqlAlchemyComponentRepository(database.sessions)),
-        ),
-        provider_service(database),
+    return ComponentService(
+        registry,
+        cast(ComponentRepository, SqlAlchemyComponentRepository(database.sessions)),
     )
-
-
-async def deployment(
-    database: Database,
-    resources: ProviderService,
-    kind: DeploymentKind,
-    key: str,
-    capabilities: LLMCapabilities | None = None,
-):
-    credential = await create_platform_credential(database, f"{key}-credential")
-    provider = "azure_openai" if kind is DeploymentKind.LLM else "elevenlabs"
-    connection = await create_provider_connection(
-        resources,
-        f"{key}-connection",
-        provider,
-        credential.ref,
-        {"endpoint": "https://example.openai.azure.com"}
-        if provider == "azure_openai"
-        else {},
-    )
-    config = (
-        {"deployment_name": key, "model": key, "api_version": "2026-01-01"}
-        if kind is DeploymentKind.LLM
-        else {"model_id": key}
-    )
-    selected_capabilities = (
-        capabilities
-        if kind is DeploymentKind.LLM
-        else RealtimeCapabilities(True, True)
-        if kind is DeploymentKind.REALTIME
-        else STTCapabilities(True, False)
-        if kind is DeploymentKind.STT
-        else TTSCapabilities()
-    )
-    assert selected_capabilities is not None
-    return await create_model_deployment(
-        resources,
-        key,
-        connection.ref,
-        kind,
-        config,
-        selected_capabilities,
-    )
-
-
-def cascade_policy() -> dict[str, object]:
-    return {
-        "speech_activity": {
-            "min_speech_seconds": 0.05,
-            "min_silence_seconds": 0.25,
-            "activation_threshold": 0.5,
-        },
-        "stt_commit": {"strategy": "local_vad"},
-        "endpointing": {"min_delay_seconds": 0.1, "max_delay_seconds": 0.7},
-        "interruption": {
-            "enabled": True,
-            "min_duration_seconds": 0.5,
-            "min_words": 0,
-            "false_interruption_timeout_seconds": 2.0,
-            "resume_after_false_interruption": True,
-        },
-        "response_scheduling": {
-            "preemptive_generation": True,
-            "preemptive_tts": True,
-        },
-    }
 
 
 @pytest.mark.asyncio
@@ -127,52 +44,32 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
     migrated_database_url: str,
 ) -> None:
     database = Database(migrated_database_url)
-    components, resources = services(database)
+    components = component_service(database)
+    system, _, refs = await setup(database)
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
+    reader = SqlAlchemyRuntimeResolutionReader(database.sessions)
     resolver = RuntimeResolver(
         registry,
         ProviderKindRegistry(),
-        SqlAlchemyRuntimeResolutionReader(database.sessions),
+        reader,
     )
 
-    async def publish(kind: str, value: dict[str, object], tenant: bool = False):
+    async def publish(kind: str, value: dict[str, object]):
         address = ComponentAddress(
             ComponentKind(kind),
-            TenantScope("runtime-integration") if tenant else PlatformScope(),
+            TenantScope("runtime-integration"),
         )
         draft = await components.save_draft(address, value, None, None, "test")
         return await components.publish_draft(address, draft.version, "test")
 
     try:
-        llm = await deployment(
-            database,
-            resources,
-            DeploymentKind.LLM,
-            "resolver-llm",
-            LLMCapabilities(True, True),
+        first_configuration = desired(refs, voice="voice-a")
+        applied = await system.apply(
+            first_configuration, "*", "test", "runtime-system-a"
         )
-        stt = await deployment(database, resources, DeploymentKind.STT, "resolver-stt")
-        tts = await deployment(database, resources, DeploymentKind.TTS, "resolver-tts")
         await publish(
-            "runtime.llm.defaults",
-            {
-                "deployment_ref": str(llm.ref.value),
-                "max_completion_tokens": 1024,
-            },
-        )
-        await publish("runtime.stt.defaults", {"deployment_ref": str(stt.ref.value)})
-        await publish(
-            "runtime.tts.defaults",
-            {
-                "deployment_ref": str(tts.ref.value),
-                "default_voice_id": "voice-default",
-                "min_sentence_chars": 20,
-            },
-        )
-        await publish("runtime.cascade.execution.defaults", cascade_policy())
-        await publish(
-            "runtime.architecture.policy", {"architectures": ["cascade"]}, True
+            "runtime.architecture.policy", {"architectures": ["cascade"]}
         )
         await publish(
             "runtime.speech.overrides",
@@ -181,17 +78,42 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
                 "stt": {"keyterms": ["Penzión Grand"]},
                 "voices": {"cascade": None, "realtime": None},
             },
-            True,
         )
 
         first = await resolver.resolve_runtime("runtime-integration")
+        second_configuration = desired(refs, voice="voice-b")
+        await system.apply(
+            second_configuration,
+            system.concurrency_token(applied.configuration),
+            "test",
+            "runtime-system-b",
+        )
         second = await resolver.resolve_runtime("runtime-integration")
 
-        assert first == second
         assert isinstance(first.selected, ResolvedCascadeRuntime)
-        assert first.selected.llm.resource.deployment.generation == llm.generation
-        assert first.selected.stt.resource.connection.generation == stt.generation
-        assert await resources.get_deployment(llm.ref) == llm
+        assert first.selected.tts.voice == "voice-a"
+        assert second.selected.tts.voice == "voice-b"
+        assert first.selected.llm.component.component_kind == "LLMDefaults"
+        assert first.selected.llm.component.revision_id is None
+        loaded = await reader.load("runtime-integration")
+        assert {str(address.kind) for address in loaded.live_components} == {
+            "STTDefaults",
+            "LLMDefaults",
+            "TTSDefaults",
+            "RealtimeDefaults",
+            "Policies",
+        }
+        assert all(
+            str(address.kind)
+            not in {
+                "runtime.llm.defaults",
+                "runtime.stt.defaults",
+                "runtime.tts.defaults",
+                "runtime.cascade.execution.defaults",
+                "runtime.realtime.execution.defaults",
+            }
+            for address in loaded.components
+        )
     finally:
         await database.close()
 
@@ -201,7 +123,8 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
     migrated_database_url: str,
 ) -> None:
     database = Database(migrated_database_url)
-    components, resources = services(database)
+    components = component_service(database)
+    system, _, refs = await setup(database)
     registry = ComponentDefinitionRegistry()
     register_runtime_components(registry)
     reader = SqlAlchemyRuntimeResolutionReader(database.sessions)
@@ -213,40 +136,18 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
         SqlAlchemyExecutionSnapshotRepository(database.sessions),
     )
 
-    async def publish(kind: str, value: dict[str, object], tenant: bool = False):
+    async def publish(kind: str, value: dict[str, object]):
         address = ComponentAddress(
             ComponentKind(kind),
-            TenantScope("materialize") if tenant else PlatformScope(),
+            TenantScope("materialize"),
         )
         draft = await components.save_draft(address, value, None, None, "test")
         return await components.publish_draft(address, draft.version, "test")
 
     try:
-        llm = await deployment(
-            database,
-            resources,
-            DeploymentKind.LLM,
-            "snapshot-llm",
-            LLMCapabilities(True, True),
-        )
-        stt = await deployment(database, resources, DeploymentKind.STT, "snapshot-stt")
-        tts = await deployment(database, resources, DeploymentKind.TTS, "snapshot-tts")
+        await system.apply(desired(refs), "*", "test", "materialize-system")
         await publish(
-            "runtime.llm.defaults",
-            {"deployment_ref": str(llm.ref.value), "max_completion_tokens": 1024},
-        )
-        await publish("runtime.stt.defaults", {"deployment_ref": str(stt.ref.value)})
-        await publish(
-            "runtime.tts.defaults",
-            {
-                "deployment_ref": str(tts.ref.value),
-                "default_voice_id": "voice-default",
-                "min_sentence_chars": 20,
-            },
-        )
-        await publish("runtime.cascade.execution.defaults", cascade_policy())
-        await publish(
-            "runtime.architecture.policy", {"architectures": ["cascade"]}, True
+            "runtime.architecture.policy", {"architectures": ["cascade"]}
         )
         await publish(
             "runtime.speech.overrides",
@@ -255,7 +156,6 @@ async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
                 "stt": {"keyterms": ["Penzión Grand"]},
                 "voices": {"cascade": None, "realtime": None},
             },
-            True,
         )
         first = await materializer.materialize_runtime("materialize")
         second = await materializer.materialize_runtime("materialize")

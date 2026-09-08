@@ -461,6 +461,12 @@ async def test_migration_constraints_and_round_trip(
             )
             assert (
                 await session.scalar(
+                    text("SELECT to_regclass('control_plane.live_components')")
+                )
+                == "control_plane.live_components"
+            )
+            assert (
+                await session.scalar(
                     text("SELECT to_regclass('control_plane.outbox_messages')")
                 )
                 is None

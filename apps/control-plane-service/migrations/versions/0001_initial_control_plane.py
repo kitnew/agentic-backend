@@ -138,6 +138,34 @@ def upgrade() -> None:
         referent_schema=SCHEMA,
     )
     op.create_table(
+        "live_components",
+        sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("kind", sa.String(255), nullable=False),
+        sa.Column("scope_type", sa.String(16), nullable=False),
+        sa.Column("scope_key", sa.String(255)),
+        sa.Column("value", postgresql.JSONB(), nullable=False),
+        sa.Column("schema_version", sa.Integer(), nullable=False),
+        sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_by", sa.String(255), nullable=False),
+        sa.CheckConstraint(
+            "(scope_type = 'system' AND scope_key IS NULL) OR "
+            "(scope_type = 'tenant' AND scope_key IS NOT NULL AND scope_key <> '')",
+            name="ck_live_component_scope",
+        ),
+        sa.CheckConstraint("schema_version >= 1", name="ck_live_component_schema_version"),
+        sa.CheckConstraint("generation >= 1", name="ck_live_component_generation"),
+        schema=SCHEMA,
+    )
+    op.create_index(
+        "uq_live_component_address",
+        "live_components",
+        ["kind", "scope_type", "scope_key"],
+        unique=True,
+        schema=SCHEMA,
+        postgresql_nulls_not_distinct=True,
+    )
+    op.create_table(
         "idempotency_replays",
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("principal", sa.String(255), nullable=False),
@@ -427,6 +455,8 @@ def downgrade() -> None:
     op.drop_table("credential_versions", schema=SCHEMA)
     op.drop_table("credentials", schema=SCHEMA)
     op.drop_table("idempotency_replays", schema=SCHEMA)
+    op.drop_index("uq_live_component_address", table_name="live_components", schema=SCHEMA)
+    op.drop_table("live_components", schema=SCHEMA)
     op.drop_constraint(
         "fk_configuration_component_active_revision",
         "configuration_components",

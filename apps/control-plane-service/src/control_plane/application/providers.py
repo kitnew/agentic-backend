@@ -25,11 +25,13 @@ from control_plane.domain.managed_resources import (
     CredentialStatus,
     DeploymentCapabilities,
     DeploymentKind,
+    LLMCapabilities,
     ModelDeployment,
     ModelDeploymentRef,
     PlatformCredentialScope,
     ProviderConnection,
     ProviderConnectionRef,
+    RealtimeCapabilities,
     capabilities_from_payload,
     capabilities_payload,
 )
@@ -337,6 +339,11 @@ class ProviderService:
             current = await repository.get_deployment(ref, lock=True)
             self._check_precondition(current, expected_token)
             self._validate_capabilities(current.deployment_kind, capabilities)
+            self._validate_system_references(
+                await repository.system_configuration_references(current.ref),
+                capabilities,
+                current.ref,
+            )
             connection = await self._referenced_connection(
                 repository, connection_ref, lock=current.enabled
             )
@@ -415,6 +422,10 @@ class ProviderService:
                 )
                 self._validate_capabilities(
                     current.deployment_kind, current.capabilities
+                )
+            elif await repository.is_referenced_by_system_configuration(current.ref):
+                raise ManagedResourceConflict(
+                    "model deployment is referenced by system configuration"
                 )
             value = await repository.set_deployment_enabled(
                 current, enabled, principal
@@ -526,6 +537,58 @@ class ProviderService:
             if name != "kind"
         ):
             raise InvalidManagedResource("capability values must be booleans")
+
+    @staticmethod
+    def _validate_system_references(
+        references: object,
+        capabilities: DeploymentCapabilities,
+        deployment_ref: ModelDeploymentRef,
+    ) -> None:
+        assert isinstance(references, (list, tuple))
+        reference = str(deployment_ref.value)
+        for kind, value in references:
+            if kind == "STTDefaults" and not getattr(
+                capabilities, "supports_cascade", False
+            ):
+                raise ManagedResourceConflict(
+                    "deployment capability update would invalidate system configuration"
+                )
+            if kind == "LLMDefaults" and isinstance(capabilities, LLMCapabilities):
+                if (
+                    value.get("temperature") is not None
+                    and not capabilities.supports_temperature
+                ):
+                    raise ManagedResourceConflict(
+                        "deployment capability update would invalidate system configuration"
+                    )
+                if (
+                    value.get("reasoning_effort") is not None
+                    and not capabilities.supports_reasoning_effort
+                ):
+                    raise ManagedResourceConflict(
+                        "deployment capability update would invalidate system configuration"
+                    )
+            if kind == "RealtimeDefaults":
+                if value.get("deployment_ref") == reference and isinstance(
+                    capabilities, RealtimeCapabilities
+                ):
+                    strategy = value.get("turn_completion", {}).get("strategy")
+                    supported = (
+                        capabilities.supports_server_vad
+                        if strategy == "server_vad"
+                        else capabilities.supports_semantic_vad
+                    )
+                    if not supported:
+                        raise ManagedResourceConflict(
+                            "deployment capability update would invalidate system configuration"
+                        )
+                transcription = value.get("input_transcription") or {}
+                if transcription.get("deployment_ref") == reference and not getattr(
+                    capabilities, "supports_realtime_input_transcription", False
+                ):
+                    raise ManagedResourceConflict(
+                        "deployment capability update would invalidate system configuration"
+                    )
 
     @staticmethod
     def _require_platform_credential(
