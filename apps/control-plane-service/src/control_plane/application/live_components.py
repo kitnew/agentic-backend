@@ -39,7 +39,7 @@ class LiveComponentService:
 
     async def get(self, address: ComponentAddress) -> LiveComponentState[Any]:
         self._definition(address)
-        async with self._command_scope() as (repository, _):
+        async with self._command_scope(address) as (repository, _):
             value = await repository.get(address)
         if value is None:
             raise LiveComponentNotFound(str(address.kind))
@@ -60,7 +60,7 @@ class LiveComponentService:
         fingerprint = request_fingerprint(
             {"value": serialized, "if_match": expected_token}
         )
-        async with self._command_scope() as (repository, replays):
+        async with self._command_scope(address) as (repository, replays):
             replay = await replays.get(principal, operation, idempotency_key)
             if replay is not None:
                 return self._replay(address, definition, replay, fingerprint)

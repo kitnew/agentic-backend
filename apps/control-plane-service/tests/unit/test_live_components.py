@@ -65,7 +65,7 @@ def service():
     repository, replays = Repository(), Replays()
 
     @asynccontextmanager
-    async def scope():
+    async def scope(_address):
         yield repository, replays
 
     return (

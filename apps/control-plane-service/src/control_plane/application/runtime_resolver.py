@@ -14,11 +14,14 @@ from control_plane.domain.components import (
 )
 from control_plane.domain.components.errors import ComponentError
 from control_plane.domain.frozen_components import (
+    Architecture,
+    BusinessInfo,
     LLMDefaults,
     Policies,
     ProviderVADCommit,
     RealtimeDefaults,
     RealtimeServerVAD,
+    RuntimeOverrides,
     STTDefaults,
     TTSDefaults,
 )
@@ -34,13 +37,13 @@ from control_plane.domain.managed_resources import (
     RealtimeCapabilities,
     STTCapabilities,
 )
-from control_plane.domain.registries import ProviderKindRegistry
-from control_plane.domain.runtime_components import (
-    ArchitectureKind,
-    ArchitecturePolicy,
-    SpeechOverrides,
+from control_plane.domain.registries import (
+    ArchitectureRegistry,
+    ProviderKindRegistry,
+    UnknownRegistryKey,
 )
 from control_plane.domain.runtime_resolution import (
+    ArchitectureKind,
     CandidateAttempt,
     CandidateFailure,
     ComponentProvenance,
@@ -124,10 +127,12 @@ class RuntimeResolver:
         registry: ComponentDefinitionRegistry,
         providers: ProviderKindRegistry,
         reader: RuntimeResolutionReader,
+        architectures: ArchitectureRegistry | None = None,
     ) -> None:
         self._registry = registry
         self._providers = providers
         self._reader = reader
+        self._architectures = architectures or ArchitectureRegistry()
 
     async def resolve_runtime(self, tenant_id: str) -> RuntimeResolution:
         state = await self._reader.load(tenant_id)
@@ -137,35 +142,39 @@ class RuntimeResolver:
         self, tenant_id: str, state: RuntimeResolutionState
     ) -> RuntimeResolution:
         self._require_system_configuration(state)
-        policy = self._required_tenant(
-            state, tenant_id, "runtime.architecture.policy", ArchitecturePolicy
+        architecture = self._required_tenant_live(
+            state, tenant_id, "Architecture", Architecture
         )
-        speech = self._required_tenant(
-            state, tenant_id, "runtime.speech.overrides", SpeechOverrides
+        overrides = self._required_tenant_live(
+            state, tenant_id, "RuntimeOverrides", RuntimeOverrides
         )
+        business = self._required_tenant(state, tenant_id, "BusinessInfo", BusinessInfo)
         attempts: list[CandidateAttempt] = []
-        for architecture in policy.value.architectures:
-            try:
-                selected = self._resolve_candidate(state, architecture, speech.value)
-            except _CandidateRejected as error:
-                attempts.append(
-                    CandidateAttempt(
-                        architecture,
-                        "rejected",
-                        CandidateFailure(architecture, error.reason, error.details),
-                    )
-                )
-                continue
-            attempts.append(CandidateAttempt(architecture, "selected"))
-            return RuntimeResolution(
-                selected,
-                self._provenance(policy),
-                self._provenance(speech),
-                tuple(attempts),
+        key = architecture.value.architecture_key
+        try:
+            selected = self._resolve_candidate(
+                state, key, overrides.value, business.value
             )
-        raise RuntimeResolutionError(
-            ResolutionFailureReason.CURRENT_STATE_INVALID,
-            {"tenant_id": tenant_id},
+        except _CandidateRejected as error:
+            attempts.append(
+                CandidateAttempt(
+                    cast(ArchitectureKind, key),
+                    "rejected",
+                    CandidateFailure(
+                        cast(ArchitectureKind, key), error.reason, error.details
+                    ),
+                )
+            )
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.CURRENT_STATE_INVALID,
+                {"tenant_id": tenant_id},
+                tuple(attempts),
+            ) from None
+        attempts.append(CandidateAttempt(cast(ArchitectureKind, key), "selected"))
+        return RuntimeResolution(
+            selected,
+            self._provenance(architecture),
+            self._provenance(overrides),
             tuple(attempts),
         )
 
@@ -174,11 +183,14 @@ class RuntimeResolver:
     ) -> ResolvedRuntime:
         state = await self._reader.load(tenant_id)
         self._require_system_configuration(state)
-        speech = self._required_tenant(
-            state, tenant_id, "runtime.speech.overrides", SpeechOverrides
+        overrides = self._required_tenant_live(
+            state, tenant_id, "RuntimeOverrides", RuntimeOverrides
         )
+        business = self._required_tenant(state, tenant_id, "BusinessInfo", BusinessInfo)
         try:
-            return self._resolve_candidate(state, architecture, speech.value)
+            return self._resolve_candidate(
+                state, architecture, overrides.value, business.value
+            )
         except _CandidateRejected as error:
             raise RuntimeResolutionError(
                 error.reason,
@@ -195,15 +207,35 @@ class RuntimeResolver:
     def _resolve_candidate(
         self,
         state: RuntimeResolutionState,
-        architecture: ArchitectureKind,
-        speech: SpeechOverrides,
+        architecture: str,
+        overrides: RuntimeOverrides,
+        business: BusinessInfo,
     ) -> ResolvedRuntime:
-        if architecture == "cascade":
-            return self._cascade(state, speech)
-        return self._realtime(state, speech)
+        try:
+            entry = self._architectures.resolve(architecture)
+        except UnknownRegistryKey:
+            self._reject(
+                ResolutionFailureReason.CURRENT_STATE_INVALID,
+                architecture=architecture,
+            )
+        if not entry.metadata.get("runtime_supported"):
+            self._reject(
+                ResolutionFailureReason.CURRENT_STATE_INVALID,
+                architecture=architecture,
+            )
+        if architecture == self._architectures.CASCADE:
+            return self._cascade(state, overrides, business)
+        if architecture == self._architectures.REALTIME:
+            return self._realtime(state, overrides, business)
+        self._reject(
+            ResolutionFailureReason.CURRENT_STATE_INVALID, architecture=architecture
+        )
 
     def _cascade(
-        self, state: RuntimeResolutionState, speech: SpeechOverrides
+        self,
+        state: RuntimeResolutionState,
+        overrides: RuntimeOverrides,
+        business: BusinessInfo,
     ) -> ResolvedCascadeRuntime:
         llm = self._system(state, "LLMDefaults", LLMDefaults)
         stt = self._system(state, "STTDefaults", STTDefaults)
@@ -228,7 +260,8 @@ class RuntimeResolver:
                 provider_kind=stt_resource.connection.provider_kind,
                 requirement="provider_vad",
             )
-        voice = speech.voices.cascade or tts.value.default_voice_id
+        voice = overrides.get("tts", {}).get("voice_id", tts.value.default_voice_id)
+        keyterms = overrides.get("stt", {}).get("keyterms", [])
         return ResolvedCascadeRuntime(
             "cascade",
             ResolvedCascadeLLM(self._provenance(llm), llm.value, llm_resource),
@@ -236,11 +269,9 @@ class RuntimeResolver:
                 self._provenance(stt),
                 stt.value,
                 stt_resource,
-                speech.language,
+                business.localization.default_locale,
                 ResolvedSpeechHints(
-                    ResolvedKeyterms(
-                        SpeechHintStatus.APPLIED, tuple(speech.stt.keyterms)
-                    )
+                    ResolvedKeyterms(SpeechHintStatus.APPLIED, tuple(keyterms))
                 ),
             ),
             ResolvedCascadeTTS(
@@ -252,7 +283,10 @@ class RuntimeResolver:
         )
 
     def _realtime(
-        self, state: RuntimeResolutionState, speech: SpeechOverrides
+        self,
+        state: RuntimeResolutionState,
+        overrides: RuntimeOverrides,
+        business: BusinessInfo,
     ) -> ResolvedRealtimeRuntime:
         policy = self._system(state, "RealtimeDefaults", RealtimeDefaults)
         model = self._resource(
@@ -307,14 +341,15 @@ class RuntimeResolver:
             ResolvedRealtimeModel(self._provenance(policy), model),
             ResolvedRealtimeTranscription(
                 transcription,
-                speech.language,
+                business.localization.default_locale,
                 ResolvedSpeechHints(
                     ResolvedKeyterms(
-                        SpeechHintStatus.UNSUPPORTED, tuple(speech.stt.keyterms)
+                        SpeechHintStatus.UNSUPPORTED,
+                        tuple(overrides.get("stt", {}).get("keyterms", [])),
                     )
                 ),
             ),
-            str(speech.voices.realtime or policy.value.default_voice),
+            str(overrides.get("realtime", {}).get("voice", policy.value.default_voice)),
             policy.value.turn_completion,
             policy.value.interruption,
         )
@@ -447,6 +482,32 @@ class RuntimeResolver:
                 {"tenant_id": tenant_id, "component_kind": kind},
             )
         return self._typed(stored, expected)
+
+    def _required_tenant_live[T](
+        self,
+        state: RuntimeResolutionState,
+        tenant_id: str,
+        kind: str,
+        expected: type[T],
+    ) -> _ActiveRuntimeComponent[T]:
+        address = ComponentAddress(ComponentKind(kind), TenantScope(tenant_id))
+        stored = state.live_components.get(address)
+        if stored is None:
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.MISSING_TENANT_COMPONENT,
+                {"tenant_id": tenant_id, "component_kind": kind},
+            )
+        try:
+            definition = self._registry.resolve(address)
+            value = definition.deserialize(stored.value)
+        except (ComponentError, ValueError) as error:
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.CURRENT_STATE_INVALID,
+                {"component_kind": kind, "validation_error": type(error).__name__},
+            ) from None
+        return _ActiveRuntimeComponent(
+            address, None, None, stored.schema_version, cast(T, value)
+        )
 
     @staticmethod
     def _require_system_configuration(state: RuntimeResolutionState) -> None:

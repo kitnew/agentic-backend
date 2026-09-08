@@ -52,14 +52,17 @@ _SYSTEM_KINDS = (
     "Policies",
 )
 _TENANT_KINDS = (
-    "runtime.architecture.policy",
-    "runtime.speech.overrides",
-    "prompt.profile.selection",
-    "prompt.tenant",
-    "agent.tenant",
-    "knowledge.tenant",
-    "capabilities.tenant",
-    "post_call.tenant",
+    "TenantPrompt",
+    "Knowledge",
+    "AgentPersonality",
+    "BusinessInfo",
+    "ActionsDefinition",
+)
+_TENANT_LIVE_KINDS = (
+    "Architecture",
+    "ProfileReference",
+    "RuntimeOverrides",
+    "ActionsAvailability",
 )
 
 
@@ -78,7 +81,7 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
         self, session: AsyncSession, tenant_id: str
     ) -> RuntimeResolutionState:
         components = await self._components(session, tenant_id)
-        live_components = await self._live_components(session)
+        live_components = await self._live_components(session, tenant_id)
         deployment_ids = self._deployment_ids(
             (*components.values(), *live_components.values())
         )
@@ -194,19 +197,31 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
 
     @staticmethod
     async def _live_components(
-        session: AsyncSession,
+        session: AsyncSession, tenant_id: str
     ) -> dict[ComponentAddress, LiveComponentState[dict[str, object]]]:
         rows = (
             await session.scalars(
                 select(LiveComponentRow).where(
-                    LiveComponentRow.scope_type == "system",
-                    LiveComponentRow.kind.in_(_SYSTEM_KINDS),
+                    or_(
+                        (
+                            (LiveComponentRow.scope_type == "system")
+                            & LiveComponentRow.kind.in_(_SYSTEM_KINDS)
+                        ),
+                        (
+                            (LiveComponentRow.scope_type == "tenant")
+                            & (LiveComponentRow.scope_key == tenant_id)
+                            & LiveComponentRow.kind.in_(_TENANT_LIVE_KINDS)
+                        ),
+                    )
                 )
             )
         ).all()
         result = {}
         for row in rows:
-            address = ComponentAddress(ComponentKind(row.kind), SystemScope())
+            address = ComponentAddress(
+                ComponentKind(row.kind),
+                SystemScope() if row.scope_type == "system" else TenantScope(tenant_id),
+            )
             result[address] = LiveComponentState(
                 address,
                 dict(row.value),
@@ -245,6 +260,8 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                         "active_version_number": number,
                     }
             result[row.id] = {
+                "id": row.id,
+                "key": row.key,
                 "tenant_id": row.tenant_id,
                 "integration_kind": row.integration_kind,
                 "config": dict(row.config),

@@ -87,11 +87,14 @@ class SqlAlchemyIntegrationRepository:
     ) -> IntegrationConnection:
         return self._value(await self._row(ref, lock=lock))
 
-    async def get_by_key(self, tenant_id: str, key: str) -> IntegrationConnection:
+    async def get_by_key(
+        self, tenant_id: str, key: str, *, lock: bool = False
+    ) -> IntegrationConnection:
+        statement = select(IntegrationRow).where(
+            IntegrationRow.tenant_id == tenant_id, IntegrationRow.key == key
+        )
         row = await self._session.scalar(
-            select(IntegrationRow).where(
-                IntegrationRow.tenant_id == tenant_id, IntegrationRow.key == key
-            )
+            statement.with_for_update() if lock else statement
         )
         if row is None:
             raise ManagedResourceNotFound(f"integration {key} not found for tenant")

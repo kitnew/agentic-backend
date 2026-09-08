@@ -7,12 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from control_plane.domain.capabilities import TenantCapabilitiesConfig
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinition,
-    ComponentKind,
-    PlatformScope,
 )
 from control_plane.domain.components.errors import (
     ActiveRevisionConflict,
@@ -30,28 +27,15 @@ from control_plane.domain.managed_resources import (
     ModelDeployment,
     ModelDeploymentRef,
     ProviderConnectionRef,
-    RealtimeCapabilities,
-    STTCapabilities,
     capabilities_from_payload,
-)
-from control_plane.domain.post_call import TenantPostCallConfig
-from control_plane.domain.runtime_components import (
-    CascadeExecutionDefaults,
-    ProviderVADCommitPolicy,
-    RealtimeExecutionDefaults,
-    ServerVADTurnCompletion,
-    STTDefaults,
 )
 
 from .models import ConfigurationComponent as ComponentRow
 from .models import ConfigurationComponentDraft as DraftRow
 from .models import ConfigurationComponentRevision as RevisionRow
-from .models import Credential as CredentialRow
-from .models import IntegrationConnection as IntegrationConnectionRow
 from .models import InteractionModeCatalogEntry as InteractionModeCatalogRow
 from .models import ModelDeployment as ModelDeploymentRow
 from .models import ProfileCatalogEntry as ProfileCatalogRow
-from .models import ProviderConnection as ProviderConnectionRow
 
 
 class SqlAlchemyComponentRepository:
@@ -309,167 +293,6 @@ class SqlAlchemyComponentRepository:
         definition: ComponentDefinition[Any],
     ) -> None:
         await self._validate_deployment(session, value, definition)
-        if isinstance(value, TenantCapabilitiesConfig):
-            await self._validate_capability_activation(session, address, value)
-            return
-        if isinstance(value, TenantPostCallConfig):
-            await self._validate_post_call_activation(session, address, value)
-            return
-        if isinstance(value, RealtimeExecutionDefaults):
-            await self._validate_realtime_activation(session, value)
-            return
-        if not isinstance(value, CascadeExecutionDefaults) or not isinstance(
-            value.stt_commit, ProviderVADCommitPolicy
-        ):
-            return
-
-        address = ComponentAddress(
-            ComponentKind("runtime.stt.defaults"), PlatformScope()
-        )
-        component = await session.scalar(self._component(address).with_for_update())
-        if component is None or component.active_revision_id is None:
-            raise InvalidComponentValue(
-                "provider_vad requires active runtime.stt.defaults"
-            )
-        revision = await session.get(RevisionRow, component.active_revision_id)
-        assert revision is not None
-        stt = STTDefaults.model_validate(revision.value)
-        deployment = await session.get(ModelDeploymentRow, stt.deployment_ref)
-        if deployment is None:
-            raise ManagedResourceNotFound("referenced model deployment not found")
-        if deployment.deployment_kind != DeploymentKind.STT.value:
-            raise InvalidComponentValue(
-                "runtime.stt.defaults deployment must have deployment_kind=stt"
-            )
-        connection = await session.get(ProviderConnectionRow, deployment.connection_id)
-        if connection is None or connection.provider_kind != "elevenlabs":
-            raise InvalidComponentValue(
-                "selected STT deployment does not support provider_vad"
-            )
-
-    @staticmethod
-    async def _validate_capability_activation(
-        session: AsyncSession,
-        address: ComponentAddress,
-        value: TenantCapabilitiesConfig,
-    ) -> None:
-        # Resource reads belong to persistence, never the component definition.
-        for profile in value.capabilities.values():
-            if isinstance(profile, bool) or not profile.enabled:
-                continue
-            await SqlAlchemyComponentRepository._validate_http_integration_activation(
-                session, address, profile.execution.integration_connection_ref.value
-            )
-
-    @staticmethod
-    async def _validate_post_call_activation(
-        session: AsyncSession,
-        address: ComponentAddress,
-        value: TenantPostCallConfig,
-    ) -> None:
-        for action in value.actions:
-            await SqlAlchemyComponentRepository._validate_http_integration_activation(
-                session, address, action.execution.integration_connection_ref.value
-            )
-
-    @staticmethod
-    async def _validate_http_integration_activation(
-        session: AsyncSession, address: ComponentAddress, connection_id: UUID
-    ) -> None:
-        connection = await session.get(IntegrationConnectionRow, connection_id)
-        if connection is None:
-            raise ManagedResourceNotFound("referenced integration connection not found")
-        if connection.tenant_id != address.scope.key:
-            raise InvalidComponentValue(
-                "referenced integration connection belongs to another tenant"
-            )
-        if connection.integration_kind != "http" or not connection.enabled:
-            raise InvalidComponentValue(
-                "referenced integration connection is not enabled HTTP"
-            )
-        from contracts.integration import HttpConnectionConfiguration
-
-        config = HttpConnectionConfiguration.model_validate(connection.config)
-        if (
-            config.authentication.type == "api_key_header"
-            and connection.credential_id is None
-        ):
-            raise InvalidComponentValue("HTTP API-key connection has no credential")
-        if (
-            config.authentication.type == "none"
-            and connection.credential_id is not None
-        ):
-            raise InvalidComponentValue("HTTP no-auth connection has a credential")
-        if connection.credential_id is not None:
-            credential = await session.get(CredentialRow, connection.credential_id)
-            if (
-                credential is None
-                or credential.status == "revoked"
-                or credential.active_version_id is None
-            ):
-                raise InvalidComponentValue(
-                    "referenced integration credential is not usable"
-                )
-
-    async def _validate_realtime_activation(
-        self, session: AsyncSession, value: RealtimeExecutionDefaults
-    ) -> None:
-        realtime = await session.get(ModelDeploymentRow, value.deployment_ref)
-        if realtime is None:
-            raise ManagedResourceNotFound("referenced realtime deployment not found")
-        transcription = await session.get(
-            ModelDeploymentRow, value.input_transcription.deployment_ref
-        )
-        if transcription is None:
-            raise ManagedResourceNotFound(
-                "referenced transcription deployment not found"
-            )
-        if realtime.deployment_kind != DeploymentKind.REALTIME.value:
-            raise InvalidComponentValue(
-                "realtime deployment must have deployment_kind=realtime"
-            )
-        if transcription.deployment_kind != DeploymentKind.STT.value:
-            raise InvalidComponentValue(
-                "input transcription deployment must have deployment_kind=stt"
-            )
-        if not realtime.enabled:
-            raise InvalidComponentValue("realtime deployment is disabled")
-        if not transcription.enabled:
-            raise InvalidComponentValue("input transcription deployment is disabled")
-
-        capabilities = capabilities_from_payload(dict(realtime.capabilities))
-        if not isinstance(capabilities, RealtimeCapabilities):
-            raise InvalidComponentValue("realtime deployment has no capabilities")
-        if isinstance(value.turn_completion, ServerVADTurnCompletion):
-            supported, strategy = capabilities.supports_server_vad, "server_vad"
-        else:
-            supported, strategy = capabilities.supports_semantic_vad, "semantic_vad"
-        if not supported:
-            raise InvalidComponentValue(
-                f"realtime deployment does not support {strategy}"
-            )
-
-        transcription_capabilities = capabilities_from_payload(
-            dict(transcription.capabilities)
-        )
-        if (
-            not isinstance(transcription_capabilities, STTCapabilities)
-            or not transcription_capabilities.supports_realtime_input_transcription
-        ):
-            raise InvalidComponentValue(
-                "STT deployment does not support realtime input transcription usage"
-            )
-
-        connection = await session.get(ProviderConnectionRow, realtime.connection_id)
-        if connection is None:
-            raise ManagedResourceNotFound("realtime provider connection not found")
-        if (
-            connection.provider_kind == "azure_openai"
-            and realtime.connection_id != transcription.connection_id
-        ):
-            raise InvalidComponentValue(
-                "Azure realtime and input transcription deployments must use the same provider connection"
-            )
 
     async def _component_id(
         self, session: AsyncSession, address: ComponentAddress

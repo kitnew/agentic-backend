@@ -344,7 +344,7 @@ async def test_low_level_live_write_uses_system_deployment_validation(
         system, _, refs = await setup(database)
         live = LiveComponentService(
             default_component_definition_registry(),
-            system._command_scope,
+            lambda _address: system._command_scope(),
             system.validate_live_component,
         )
         state = await live.set(

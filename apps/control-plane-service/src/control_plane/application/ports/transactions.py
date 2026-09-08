@@ -12,7 +12,9 @@ from control_plane.application.ports.repositories import (
     PlatformRepository,
     ProviderRepository,
     SystemConfigurationRepository,
+    TenantConfigurationRepository,
 )
+from control_plane.domain.components import ComponentAddress
 
 ComponentCommandScope = Callable[
     [], AbstractAsyncContextManager[tuple[ComponentRepository, IdempotencyRepository]]
@@ -42,7 +44,7 @@ TelephonyCommandScope = Callable[
 ]
 
 LiveComponentCommandScope = Callable[
-    [],
+    [ComponentAddress],
     AbstractAsyncContextManager[tuple[LiveComponentRepository, IdempotencyRepository]],
 ]
 
@@ -55,4 +57,11 @@ SystemConfigurationCommandScope = Callable[
 
 PlatformCommandScope = Callable[
     [], AbstractAsyncContextManager[tuple[PlatformRepository, IdempotencyRepository]]
+]
+
+TenantConfigurationCommandScope = Callable[
+    [str],
+    AbstractAsyncContextManager[
+        tuple[TenantConfigurationRepository, IdempotencyRepository]
+    ],
 ]

@@ -154,30 +154,64 @@ async def test_management_routes_require_the_separate_management_token() -> None
 async def test_management_actor_is_server_derived() -> None:
     seen: list[str] = []
 
-    class Components:
-        async def save_draft(self, _address, _value, _draft, _active, actor):
-            seen.append(actor)
-            return {}
+    class Tenant:
+        async def apply(self, _tenant, desired, _token, principal, _key):
+            seen.append(principal)
+            return SimpleNamespace(
+                live_updated=(),
+                drafts_saved=(),
+                unchanged=(),
+                configuration=SimpleNamespace(
+                    model_dump=lambda **_kwargs: desired.model_dump(mode="json")
+                ),
+            )
 
-    app = create_http_app(FakeLifecycle(Readiness(True, True)), Components())  # type: ignore[arg-type]
+        @staticmethod
+        def concurrency_token(_value):
+            return "tenant"
+
+    app = create_http_app(
+        FakeLifecycle(Readiness(True, True)), tenant_configuration=Tenant()
+    )  # type: ignore[arg-type]
     app.state.settings = SimpleNamespace(
         control_plane_management_token=SimpleNamespace(
             get_secret_value=lambda: "management-secret"
         ),
         control_plane_management_actor="agentctl",
+        control_plane_management_scopes="configuration:write",
     )
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.put(
-            "/v1/scopes/tenant/tenant-a/components/prompt.tenant/draft",
-            headers={"Authorization": "Bearer management-secret"},
+            "/management/v1/tenants/tenant-a/configuration",
+            headers={
+                "Authorization": "Bearer management-secret",
+                "If-Match": '"*"',
+                "Idempotency-Key": "apply",
+            },
             json={
-                "value": {"content": "hello"},
-                "schema_version": 99,
-                "expected_draft_version": None,
-                "expected_active_revision_id": None,
-                "actor": "forged",
+                "tenant_prompt": {"content": "hello"},
+                "knowledge": {"content": ""},
+                "agent_personality": {
+                    "identity": "concierge",
+                    "display_name": "Concierge",
+                    "greeting": "Hello",
+                    "conversation_scope": "property_only",
+                },
+                "business_info": {
+                    "business": {"name": "Hotel", "type": "hotel"},
+                    "contact": {"phones": [], "emails": []},
+                    "localization": {
+                        "default_locale": "en-US",
+                        "timezone": "UTC",
+                    },
+                },
+                "actions_definition": {"actions": {}},
+                "architecture": {"architecture_key": "cascade"},
+                "profile_reference": {"profile_key": "sales"},
+                "runtime_overrides": {},
+                "actions_availability": {"actions": {}},
             },
         )
     assert response.status_code == 200

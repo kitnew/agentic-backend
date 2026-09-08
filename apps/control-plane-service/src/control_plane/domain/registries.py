@@ -62,21 +62,25 @@ class RegistryEntry:
 class ArchitectureRegistry:
     __slots__ = ()
 
+    CASCADE = "cascade"
+    REALTIME = "realtime"
+    HALF_CASCADE = "half-cascade"
+
     entries = (
         RegistryEntry(
-            "cascade",
+            CASCADE,
             "Cascade",
             "Cascaded STT, LLM, and TTS runtime",
             {"runtime_supported": True},
         ),
         RegistryEntry(
-            "realtime",
+            REALTIME,
             "Realtime",
             "Realtime speech-to-speech runtime",
             {"runtime_supported": True},
         ),
         RegistryEntry(
-            "half-cascade",
+            HALF_CASCADE,
             "Half cascade",
             "Reserved half-cascade runtime",
             {"runtime_supported": False},

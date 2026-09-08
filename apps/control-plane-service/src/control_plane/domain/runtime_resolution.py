@@ -13,7 +13,8 @@ from control_plane.domain.frozen_components import (
     TTSDefaults,
 )
 from control_plane.domain.managed_resources import ModelDeployment, ProviderConnection
-from control_plane.domain.runtime_components import ArchitectureKind
+
+ArchitectureKind = Literal["cascade", "realtime"]
 
 
 class ResolutionFailureReason(StrEnum):

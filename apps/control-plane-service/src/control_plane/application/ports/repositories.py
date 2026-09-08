@@ -138,6 +138,23 @@ class PlatformRepository(ComponentRepository, Protocol):
     ) -> InteractionMode: ...
 
 
+class TenantConfigurationRepository(ComponentRepository, Protocol):
+    async def get_live(
+        self, address: ComponentAddress, *, lock: bool = False
+    ) -> LiveComponentState[Any] | None: ...
+    async def set_live(
+        self,
+        address: ComponentAddress,
+        value: Mapping[str, Any],
+        schema_version: int,
+        actor: str,
+    ) -> LiveComponentState[Any]: ...
+    async def get_profile(self, key: str, *, lock: bool = False) -> Profile | None: ...
+    async def get_integration_by_key(
+        self, tenant_id: str, key: str, *, lock: bool = False
+    ) -> IntegrationConnection: ...
+
+
 class CredentialRepository(Protocol):
     async def create(
         self, scope: CredentialScope, name: str, secret: str, actor: str
@@ -183,7 +200,9 @@ class IntegrationRepository(Protocol):
         *,
         lock: bool = False,
     ) -> IntegrationConnection: ...
-    async def get_by_key(self, tenant_id: str, key: str) -> IntegrationConnection: ...
+    async def get_by_key(
+        self, tenant_id: str, key: str, *, lock: bool = False
+    ) -> IntegrationConnection: ...
     async def list(self, tenant_id: str) -> Sequence[IntegrationConnection]: ...
     async def get_credential(
         self,

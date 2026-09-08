@@ -1,6 +1,6 @@
 from collections.abc import Awaitable, Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from control_plane.application.command_support import (
@@ -45,6 +45,12 @@ class ComponentService:
         self._repository = repository
         self._command_scope = command_scope
         self._validate_value = validate_value
+
+    def lifecycle(self, address: ComponentAddress) -> str | None:
+        return cast(
+            str | None,
+            self._registry.resolve(address).metadata.get("lifecycle"),
+        )
 
     async def save_draft(
         self,

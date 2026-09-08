@@ -29,17 +29,15 @@ from control_plane.application.runtime_materialization import (
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.application.system_configuration import SystemConfigurationService
 from control_plane.application.telephony import TelephonyService
-from control_plane.domain.agent_components import register_agent_components
+from control_plane.application.tenant_configuration import TenantConfigurationService
 from control_plane.domain.components import ComponentDefinitionRegistry
 from control_plane.domain.frozen_components import default_component_definition_registry
-from control_plane.domain.knowledge_components import register_knowledge_components
-from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.domain.registries import (
+    ArchitectureRegistry,
     DeploymentKindRegistry,
     IntegrationKindRegistry,
     ProviderKindRegistry,
 )
-from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence import Database
 from control_plane.infrastructure.persistence.command_transactions import (
@@ -72,6 +70,10 @@ from control_plane.infrastructure.persistence.system_configuration_transactions 
 from control_plane.infrastructure.persistence.telephony_transactions import (
     telephony_command_scope,
 )
+from control_plane.infrastructure.persistence.tenant_configuration_transactions import (
+    tenant_configuration_command_scope,
+    tenant_live_component_command_scope,
+)
 from control_plane.infrastructure.provider_validation import HttpProviderValidator
 from control_plane.interfaces.http import create_http_app
 from control_plane.runtime import ServiceLifecycle
@@ -88,18 +90,7 @@ def create_app(
     database = database or Database(str(settings.database_url))
     telemetry = _configure_observability(settings)
     if registry is None:
-        registry = ComponentDefinitionRegistry()
-        register_runtime_components(registry)
-        register_agent_components(registry)
-        register_prompt_components(registry)
-        register_knowledge_components(registry)
-        actions = next(
-            definition
-            for definition in default_component_definition_registry().definitions
-            if str(definition.kind) == "ActionsDefinition"
-        )
-        registry.register(actions)
-        registry.freeze()
+        registry = default_component_definition_registry()
     provider_registry = provider_registry or ProviderKindRegistry()
     cipher = CredentialCipher(
         settings.control_plane_encryption_key.get_secret_value(),
@@ -156,7 +147,9 @@ def create_app(
     live_components = (
         LiveComponentService(
             registry,
-            system_configuration_command_scope(database.sessions, cipher),
+            lambda _address: system_configuration_command_scope(
+                database.sessions, cipher
+            )(),
             system_configuration.validate_live_component,
         )
         if isinstance(database, Database) and system_configuration is not None
@@ -174,6 +167,29 @@ def create_app(
     )
     platform_catalogs = (
         PlatformCatalogService(platform_scope) if platform_scope is not None else None
+    )
+    tenant_scope = (
+        tenant_configuration_command_scope(database.sessions)
+        if isinstance(database, Database)
+        else None
+    )
+    tenant_configuration = (
+        TenantConfigurationService(
+            registry,
+            ArchitectureRegistry(),
+            tenant_scope,
+        )
+        if tenant_scope is not None
+        else None
+    )
+    tenant_live_components = (
+        LiveComponentService(
+            registry,
+            tenant_live_component_command_scope(tenant_scope),
+            tenant_configuration.validate_live_component,
+        )
+        if tenant_scope is not None and tenant_configuration is not None
+        else None
     )
     execution_materialization = (
         ExecutionMaterializationService(
@@ -223,6 +239,8 @@ def create_app(
         platform_catalogs=platform_catalogs,
         integrations=integrations,
         telephony=telephony,
+        tenant_configuration=tenant_configuration,
+        tenant_live_components=tenant_live_components,
     )
     app.state.settings = settings
     app.state.database = database

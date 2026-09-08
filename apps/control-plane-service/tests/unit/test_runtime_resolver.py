@@ -10,17 +10,15 @@ from control_plane.application.runtime_resolver import (
     RuntimeResolver,
     StoredActiveRuntimeComponent,
 )
-from control_plane.domain.agent_components import register_agent_components
 from control_plane.domain.components import (
     ComponentAddress,
-    ComponentDefinitionRegistry,
     ComponentKind,
     PlatformScope,
     ProfileScope,
     SystemScope,
     TenantScope,
 )
-from control_plane.domain.knowledge_components import register_knowledge_components
+from control_plane.domain.frozen_components import default_component_definition_registry
 from control_plane.domain.live_components import LiveComponentState
 from control_plane.domain.managed_resources import (
     Credential,
@@ -37,9 +35,7 @@ from control_plane.domain.managed_resources import (
     STTCapabilities,
     TTSCapabilities,
 )
-from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.domain.registries import ProviderKindRegistry
-from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.domain.runtime_execution_snapshot import (
     content_hash,
     snapshot_from_payload,
@@ -104,8 +100,12 @@ def component(
     )
 
 
-def live_component(kind: str, value: dict[str, object], generation: int = 1):
-    address = ComponentAddress(ComponentKind(kind), SystemScope())
+def live_component(
+    kind: str, value: dict[str, object], generation: int = 1, *, tenant: bool = False
+):
+    address = ComponentAddress(
+        ComponentKind(kind), TenantScope(TENANT) if tenant else SystemScope()
+    )
     return address, LiveComponentState(address, value, 1, generation, NOW, "test")
 
 
@@ -182,17 +182,17 @@ def deployment(
 
 
 def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
-    architectures = architectures or ["realtime", "cascade"]
+    architectures = architectures or ["realtime"]
     components = [
         component(
-            "runtime.architecture.policy", {"architectures": architectures}, True
-        ),
-        component(
-            "runtime.speech.overrides",
+            "BusinessInfo",
             {
-                "language": "sk",
-                "stt": {"keyterms": ["Penzión Grand"]},
-                "voices": {"cascade": None, "realtime": None},
+                "business": {"name": "Grand", "type": "hotel"},
+                "contact": {"phones": [], "emails": []},
+                "localization": {
+                    "default_locale": "sk-SK",
+                    "timezone": "Europe/Bratislava",
+                },
             },
             True,
         ),
@@ -253,6 +253,14 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
                 "interruption": {"enabled": True},
             },
         ),
+        live_component(
+            "Architecture", {"architecture_key": architectures[0]}, tenant=True
+        ),
+        live_component(
+            "RuntimeOverrides",
+            {"stt": {"keyterms": ["Penzión Grand"]}},
+            tenant=True,
+        ),
     ]
     credentials = {
         value.ref.value: value
@@ -307,19 +315,14 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
 
 
 def resolver(value: RuntimeResolutionState) -> RuntimeResolver:
-    registry = ComponentDefinitionRegistry()
-    register_runtime_components(registry)
+    registry = default_component_definition_registry()
     return RuntimeResolver(registry, ProviderKindRegistry(), Reader(value))
 
 
 def execution_resolver(
     value: RuntimeResolutionState,
 ) -> tuple[ExecutionResolver, RuntimeResolutionState]:
-    registry = ComponentDefinitionRegistry()
-    register_runtime_components(registry)
-    register_agent_components(registry)
-    register_prompt_components(registry)
-    register_knowledge_components(registry)
+    registry = default_component_definition_registry()
     components = dict(value.components)
     for address, raw in (
         (
@@ -331,35 +334,38 @@ def execution_resolver(
             {"content": "profile"},
         ),
         (
-            ComponentAddress(
-                ComponentKind("prompt.profile.selection"), TenantScope(TENANT)
-            ),
-            {"profile_key": "default"},
-        ),
-        (
-            ComponentAddress(ComponentKind("prompt.tenant"), TenantScope(TENANT)),
+            ComponentAddress(ComponentKind("TenantPrompt"), TenantScope(TENANT)),
             {"content": "tenant"},
         ),
         (
-            ComponentAddress(ComponentKind("knowledge.tenant"), TenantScope(TENANT)),
+            ComponentAddress(ComponentKind("Knowledge"), TenantScope(TENANT)),
             {"content": "knowledge"},
         ),
         (
-            ComponentAddress(ComponentKind("agent.tenant"), TenantScope(TENANT)),
+            ComponentAddress(ComponentKind("AgentPersonality"), TenantScope(TENANT)),
             {
+                "identity": "default",
                 "display_name": "Amélia",
-                "agent_profile": "default",
                 "greeting": "Dobrý deň 🌿",
                 "conversation_scope": "property_only",
-                "locale": "sk-SK",
-                "timezone": "Europe/Bratislava",
             },
+        ),
+        (
+            ComponentAddress(ComponentKind("ActionsDefinition"), TenantScope(TENANT)),
+            {"actions": {}},
         ),
     ):
         components[address] = StoredActiveRuntimeComponent(
             address, UUID(int=900 + len(components)), 2, 1, raw
         )
-    enriched = replace(value, components=components)
+    live_components = dict(value.live_components)
+    for kind, raw in (
+        ("ProfileReference", {"profile_key": "default"}),
+        ("ActionsAvailability", {"actions": {}}),
+    ):
+        address, stored = live_component(kind, raw, tenant=True)
+        live_components[address] = stored
+    enriched = replace(value, components=components, live_components=live_components)
     return ExecutionResolver(
         registry,
         RuntimeResolver(registry, ProviderKindRegistry(), Reader(enriched)),
@@ -374,7 +380,12 @@ def without_component(
         for address, component in value.components.items()
         if str(address.kind) != kind
     }
-    return replace(value, components=components)
+    live_components = {
+        address: component
+        for address, component in value.live_components.items()
+        if str(address.kind) != kind
+    }
+    return replace(value, components=components, live_components=live_components)
 
 
 def without_live_component(
@@ -404,8 +415,9 @@ async def test_complete_system_live_state_is_required_without_legacy_fallback() 
 @pytest.mark.parametrize(
     "kind",
     [
-        "runtime.architecture.policy",
-        "runtime.speech.overrides",
+        "Architecture",
+        "RuntimeOverrides",
+        "BusinessInfo",
     ],
 )
 async def test_tenant_components_are_required(kind: str) -> None:
@@ -426,7 +438,7 @@ async def test_tenant_components_are_required(kind: str) -> None:
         (["realtime", "cascade"], "realtime"),
     ],
 )
-async def test_exact_policy_order_is_authoritative(
+async def test_exact_architecture_selection_is_authoritative(
     architectures: list[str], expected: str
 ) -> None:
     result = await resolver(state(architectures)).resolve_runtime(TENANT)
@@ -436,23 +448,19 @@ async def test_exact_policy_order_is_authoritative(
 
 
 @pytest.mark.asyncio
-async def test_realtime_failure_falls_back_with_ordered_diagnostics() -> None:
+async def test_realtime_failure_does_not_fall_back() -> None:
     value = state()
     deployments = dict(value.deployments)
     deployments[IDS["realtime"]] = replace(deployments[IDS["realtime"]], enabled=False)
 
-    result = await resolver(replace(value, deployments=deployments)).resolve_runtime(
-        TENANT
-    )
+    with pytest.raises(RuntimeResolutionError) as captured:
+        await resolver(replace(value, deployments=deployments)).resolve_runtime(TENANT)
 
-    assert result.selected.architecture == "cascade"
-    assert [attempt.architecture for attempt in result.attempts] == [
-        "realtime",
-        "cascade",
-    ]
-    assert result.attempts[0].failure is not None
+    assert [attempt.architecture for attempt in captured.value.attempts] == ["realtime"]
+    assert captured.value.attempts[0].failure is not None
     assert (
-        result.attempts[0].failure.reason is ResolutionFailureReason.RESOURCE_DISABLED
+        captured.value.attempts[0].failure.reason
+        is ResolutionFailureReason.RESOURCE_DISABLED
     )
 
 
@@ -498,20 +506,20 @@ def test_execution_resolution_contains_tenant_agent_context_and_provenance() -> 
     selection_provenance = execution.provenance["profile_selection"]
     assert isinstance(agent_provenance, ComponentProvenance)
     assert isinstance(selection_provenance, ComponentProvenance)
-    assert agent_provenance.component_kind == "agent.tenant"
-    assert selection_provenance.component_kind == ("prompt.profile.selection")
+    assert agent_provenance.component_kind == "AgentPersonality"
+    assert selection_provenance.component_kind == "ProfileReference"
 
 
 def test_execution_resolution_requires_agent_component() -> None:
     value = state(["cascade"])
     resolver, enriched = execution_resolver(value)
-    without_agent = without_component(enriched, "agent.tenant")
+    without_agent = without_component(enriched, "AgentPersonality")
 
     with pytest.raises(RuntimeResolutionError) as captured:
         resolver.resolve_state(TENANT, without_agent)
 
     assert captured.value.reason is ResolutionFailureReason.MISSING_TENANT_COMPONENT
-    assert captured.value.details["component_kind"] == "agent.tenant"
+    assert captured.value.details["component_kind"] == "AgentPersonality"
 
 
 def test_execution_snapshot_contains_agent_and_hashes_context_changes() -> None:
@@ -535,7 +543,7 @@ async def test_cascade_materializes_current_state_hints_voice_and_provenance() -
     selected = result.selected
 
     assert isinstance(selected, ResolvedCascadeRuntime)
-    assert selected.stt.language == "sk"
+    assert selected.stt.language == "sk-SK"
     assert selected.stt.speech_hints.keyterms.status is SpeechHintStatus.APPLIED
     assert selected.stt.speech_hints.keyterms.values == ("Penzión Grand",)
     assert selected.tts.voice == "platform-cascade"
@@ -544,31 +552,27 @@ async def test_cascade_materializes_current_state_hints_voice_and_provenance() -
     assert selected.llm.resource.credential.generation == 3
     assert selected.llm.component.revision_number is None
     assert selected.llm.component.component_kind == "LLMDefaults"
-    assert result.architecture_policy.component_kind == "runtime.architecture.policy"
+    assert result.architecture_policy.component_kind == "Architecture"
 
 
 @pytest.mark.asyncio
 async def test_tenant_voices_override_platform_defaults() -> None:
     value = state()
-    components = dict(value.components)
-    address = ComponentAddress(
-        ComponentKind("runtime.speech.overrides"), TenantScope(TENANT)
-    )
-    speech = components[address]
-    components[address] = replace(
-        speech,
+    live_components = dict(value.live_components)
+    address = ComponentAddress(ComponentKind("RuntimeOverrides"), TenantScope(TENANT))
+    overrides = live_components[address]
+    live_components[address] = replace(
+        overrides,
         value={
-            **speech.value,
-            "voices": {"cascade": "tenant-cascade", "realtime": "tenant-realtime"},
+            **overrides.value,
+            "tts": {"voice_id": "tenant-cascade"},
+            "realtime": {"voice": "tenant-realtime"},
         },
     )
 
-    realtime = await resolver(replace(value, components=components)).resolve_runtime(
-        TENANT
-    )
-    cascade = await resolver(replace(value, components=components)).resolve_candidate(
-        TENANT, "cascade"
-    )
+    updated = replace(value, live_components=live_components)
+    realtime = await resolver(updated).resolve_runtime(TENANT)
+    cascade = await resolver(updated).resolve_candidate(TENANT, "cascade")
 
     assert isinstance(realtime.selected, ResolvedRealtimeRuntime)
     assert realtime.selected.voice == "tenant-realtime"
@@ -684,7 +688,7 @@ async def test_realtime_hints_remain_visible_but_do_not_force_fallback() -> None
     selected = result.selected
 
     assert isinstance(selected, ResolvedRealtimeRuntime)
-    assert selected.input_transcription.language == "sk"
+    assert selected.input_transcription.language == "sk-SK"
     assert (
         selected.input_transcription.speech_hints.keyterms.status
         is SpeechHintStatus.UNSUPPORTED
@@ -812,9 +816,7 @@ async def test_http_returns_typed_resolution_without_plaintext() -> None:
 async def test_http_returns_structured_unresolvable_response() -> None:
     app = create_http_app(
         Lifecycle(),  # type: ignore[arg-type]
-        runtime_resolver=resolver(
-            without_component(state(), "runtime.architecture.policy")
-        ),
+        runtime_resolver=resolver(without_component(state(), "Architecture")),
     )
 
     async with AsyncClient(
@@ -828,7 +830,7 @@ async def test_http_returns_structured_unresolvable_response() -> None:
         "reason": "MISSING_TENANT_COMPONENT",
         "details": {
             "tenant_id": TENANT,
-            "component_kind": "runtime.architecture.policy",
+            "component_kind": "Architecture",
         },
         "attempts": [],
     }

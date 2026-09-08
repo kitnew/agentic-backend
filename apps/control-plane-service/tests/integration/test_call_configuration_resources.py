@@ -1,15 +1,7 @@
 import asyncio
 
 import pytest
-from control_plane.application.components import ComponentService
 from control_plane.application.managed_resources import ManagedResourceService
-from control_plane.domain.components import (
-    ComponentAddress,
-    ComponentDefinitionRegistry,
-    ComponentKind,
-    TenantScope,
-)
-from control_plane.domain.knowledge_components import register_knowledge_components
 from control_plane.domain.managed_resource_errors import (
     InvalidManagedResource,
     ManagedResourceConflict,
@@ -23,47 +15,13 @@ from control_plane.infrastructure.persistence.models import (
     ConfigurationComponent,
     ConfigurationComponentRevision,
 )
-from control_plane.infrastructure.persistence.repository import (
-    SqlAlchemyComponentRepository,
-)
 from sqlalchemy import func, select
 
 
 def managed(database: Database) -> ManagedResourceService:
-    return ManagedResourceService(SqlAlchemyManagedResourceRepository(database.sessions))
-
-
-def components(database: Database) -> ComponentService:
-    registry = ComponentDefinitionRegistry()
-    register_knowledge_components(registry)
-    return ComponentService(registry, SqlAlchemyComponentRepository(database.sessions))  # type: ignore[arg-type]
-
-
-@pytest.mark.asyncio
-async def test_knowledge_uses_the_generic_independent_revision_lifecycle(
-    migrated_database_url: str,
-) -> None:
-    database = Database(migrated_database_url)
-    service = components(database)
-    address = ComponentAddress(
-        ComponentKind("knowledge.tenant"), TenantScope("tenant-a")
+    return ManagedResourceService(
+        SqlAlchemyManagedResourceRepository(database.sessions)
     )
-    try:
-        first = await service.save_draft(
-            address, {"content": "# First\nŽ"}, None, None, "alice"
-        )
-        revision_one = await service.publish_draft(address, first.version, "alice")
-        second = await service.save_draft(
-            address, {"content": "# Second"}, None, revision_one.revision_id, "bob"
-        )
-        await service.publish_draft(address, second.version, "bob")
-        restored = await service.rollback(address, 1, "carol")
-
-        assert restored.revision_number == 3
-        assert (await service.get_active(address)).value.content == "# First\nŽ"
-        assert restored.restored_from_revision_id == revision_one.revision_id
-    finally:
-        await database.close()
 
 
 @pytest.mark.asyncio
@@ -93,7 +51,9 @@ async def test_phone_assignment_partial_unique_indexes_are_race_safe(
         )
 
         assert sum(isinstance(value, PhoneNumberAssignment) for value in did_race) == 1
-        assert sum(isinstance(value, ManagedResourceConflict) for value in did_race) == 1
+        assert (
+            sum(isinstance(value, ManagedResourceConflict) for value in did_race) == 1
+        )
         assert all(isinstance(value, PhoneNumberAssignment) for value in tenant_race)
     finally:
         await database.close()

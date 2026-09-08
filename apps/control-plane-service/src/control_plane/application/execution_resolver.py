@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from typing import Any, cast
-from uuid import UUID
 
 from contracts.integration import HttpConnectionConfiguration
 
@@ -9,12 +9,6 @@ from control_plane.application.runtime_resolver import (
     RuntimeResolutionState,
     RuntimeResolver,
     StoredActiveRuntimeComponent,
-)
-from control_plane.domain.agent_components import TenantAgentValue
-from control_plane.domain.capabilities import (
-    TenantCapabilitiesConfig,
-    TenantCapabilityProfile,
-    derive_tool_name,
 )
 from control_plane.domain.components import (
     ComponentAddress,
@@ -25,10 +19,20 @@ from control_plane.domain.components import (
     TenantScope,
 )
 from control_plane.domain.components.errors import ComponentError
-from control_plane.domain.frozen_components import ProfilePrompt, SystemPrompt
-from control_plane.domain.knowledge_components import TenantKnowledgeValue
-from control_plane.domain.post_call import TenantPostCallConfig
-from control_plane.domain.prompt_components import ProfileSelection, PromptValue
+from control_plane.domain.frozen_components import (
+    ActionsAvailability,
+    ActionsDefinition,
+    AgentPersonality,
+    BusinessInfo,
+    Knowledge,
+    PostCallActionDefinition,
+    ProfilePrompt,
+    ProfileReference,
+    RuntimeActionDefinition,
+    SystemPrompt,
+    TenantPrompt,
+)
+from control_plane.domain.live_components import LiveComponentState
 from control_plane.domain.runtime_resolution import (
     ComponentProvenance,
     ResolutionFailureReason,
@@ -61,6 +65,15 @@ def compose_instructions(*parts: str) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
+def _tool_name(action_key: str) -> str:
+    value = action_key.replace(".", "_")
+    return (
+        value
+        if len(value) <= 64
+        else f"{value[:55]}_{sha256(action_key.encode()).hexdigest()[:8]}"
+    )
+
+
 class ExecutionResolver:
     def __init__(
         self, registry: ComponentDefinitionRegistry, runtime: RuntimeResolver
@@ -74,20 +87,23 @@ class ExecutionResolver:
         runtime = self._runtime.resolve_state(tenant_id, state)
         agent = self._required(
             state,
-            ComponentAddress(ComponentKind("agent.tenant"), TenantScope(tenant_id)),
-            TenantAgentValue,
+            ComponentAddress(ComponentKind("AgentPersonality"), TenantScope(tenant_id)),
+            AgentPersonality,
+        )
+        business = self._required(
+            state,
+            ComponentAddress(ComponentKind("BusinessInfo"), TenantScope(tenant_id)),
+            BusinessInfo,
         )
         system = self._required(
             state,
             ComponentAddress(ComponentKind("SystemPrompt"), PlatformScope()),
             SystemPrompt,
         )
-        selection = self._required(
+        selection = self._required_live(
             state,
-            ComponentAddress(
-                ComponentKind("prompt.profile.selection"), TenantScope(tenant_id)
-            ),
-            ProfileSelection,
+            ComponentAddress(ComponentKind("ProfileReference"), TenantScope(tenant_id)),
+            ProfileReference,
             ResolutionFailureReason.MISSING_PROFILE_SELECTION,
         )
         profile = self._required(
@@ -101,27 +117,27 @@ class ExecutionResolver:
         )
         tenant = self._required(
             state,
-            ComponentAddress(ComponentKind("prompt.tenant"), TenantScope(tenant_id)),
-            PromptValue,
+            ComponentAddress(ComponentKind("TenantPrompt"), TenantScope(tenant_id)),
+            TenantPrompt,
         )
         knowledge = self._required(
             state,
-            ComponentAddress(ComponentKind("knowledge.tenant"), TenantScope(tenant_id)),
-            TenantKnowledgeValue,
+            ComponentAddress(ComponentKind("Knowledge"), TenantScope(tenant_id)),
+            Knowledge,
         )
-        capabilities = self._optional(
+        definitions = self._required(
             state,
             ComponentAddress(
-                ComponentKind("capabilities.tenant"), TenantScope(tenant_id)
+                ComponentKind("ActionsDefinition"), TenantScope(tenant_id)
             ),
-            TenantCapabilitiesConfig,
-            TenantCapabilitiesConfig(),
+            ActionsDefinition,
         )
-        post_call = self._optional(
+        availability = self._required_live(
             state,
-            ComponentAddress(ComponentKind("post_call.tenant"), TenantScope(tenant_id)),
-            TenantPostCallConfig,
-            TenantPostCallConfig(),
+            ComponentAddress(
+                ComponentKind("ActionsAvailability"), TenantScope(tenant_id)
+            ),
+            ActionsAvailability,
         )
         prompts = {
             "profile_key": selection.value.profile_key,
@@ -144,19 +160,27 @@ class ExecutionResolver:
                 knowledge.value.content,
             ),
         }
-        enabled = []
-        for key, value in capabilities.value.capabilities.items():
-            if isinstance(value, TenantCapabilityProfile) and value.enabled:
-                self._validate_integration(
-                    tenant_id, value.execution.integration_connection_ref.value, state
-                )
-                enabled.append(self._capability(key, value))
-        actions = []
-        for action in post_call.value.actions:
-            self._validate_integration(
-                tenant_id, action.execution.integration_connection_ref.value, state
+        unknown = set(availability.value.actions) - set(definitions.value.actions)
+        if unknown:
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.CURRENT_STATE_INVALID,
+                {
+                    "component_kind": "ActionsAvailability",
+                    "unknown_actions": sorted(unknown),
+                },
             )
-            actions.append(self._post_call(action))
+        enabled = []
+        actions = []
+        for key, value in definitions.value.actions.items():
+            if not availability.value.actions.get(key, False):
+                continue
+            integration = self._validate_integration(
+                tenant_id, value.execution.integration_key, state
+            )
+            if isinstance(value, RuntimeActionDefinition):
+                enabled.append(self._capability(key, value, integration))
+            elif isinstance(value, PostCallActionDefinition):
+                actions.append(self._post_call(key, value, integration))
         handoff = tuple(sorted(state.handoffs, key=lambda row: str(row["key"])))
         return ExecutionResolution(
             tenant_id,
@@ -164,11 +188,11 @@ class ExecutionResolver:
             ResolvedTenantAgent(
                 self._provenance(agent),
                 agent.value.display_name,
-                agent.value.agent_profile,
+                agent.value.identity,
                 agent.value.greeting,
                 agent.value.conversation_scope,
-                agent.value.locale,
-                agent.value.timezone,
+                business.value.localization.default_locale,
+                business.value.localization.timezone,
             ),
             prompts,
             {
@@ -182,25 +206,26 @@ class ExecutionResolver:
             {
                 "agent": self._provenance(agent),
                 "profile_selection": self._provenance(selection),
-                "capabilities": self._provenance(capabilities)
-                if capabilities.stored
-                else None,
-                "post_call": self._provenance(post_call) if post_call.stored else None,
+                "business_info": self._provenance(business),
+                "actions_definition": self._provenance(definitions),
+                "actions_availability": self._provenance(availability),
             },
         )
 
     def _capability(
         self,
         key: str,
-        value: TenantCapabilityProfile,
+        value: RuntimeActionDefinition,
+        integration: Mapping[str, object],
     ) -> dict[str, object]:
         execution = cast(dict[str, object], value.execution.model_dump(mode="json"))
-        execution["connection_id"] = execution.pop("integration_connection_ref")
+        execution["connection_id"] = integration["id"]
+        execution.pop("integration_key")
         return {
             "semantic_key": key,
             "semantic_version": 1,
-            "tool_name": derive_tool_name(key),
-            "enabled": value.enabled,
+            "tool_name": _tool_name(key),
+            "enabled": True,
             "description": value.description,
             "announcement": value.announcement,
             "input_schema": value.agent_input_schema,
@@ -211,39 +236,49 @@ class ExecutionResolver:
             "result_schema": value.result_schema,
         }
 
-    def _post_call(self, action: Any) -> dict[str, object]:
+    def _post_call(
+        self,
+        key: str,
+        action: PostCallActionDefinition,
+        integration: Mapping[str, object],
+    ) -> dict[str, object]:
         execution = cast(dict[str, object], action.execution.model_dump(mode="json"))
-        execution["connection_id"] = execution.pop("integration_connection_ref")
+        execution["connection_id"] = integration["id"]
+        execution.pop("integration_key")
         return {
-            "action_id": action.action_id,
+            "action_id": key,
             "inputs": {
                 key: value.model_dump(mode="json")
-                for key, value in action.inputs.items()
+                for key, value in action.artifact_inputs.items()
             },
             "execution": execution,
         }
 
     @staticmethod
     def _validate_integration(
-        tenant_id: str, ref: UUID, state: RuntimeResolutionState
-    ) -> None:
-        value = state.integrations.get(ref)
+        tenant_id: str, key: str, state: RuntimeResolutionState
+    ) -> Mapping[str, object]:
+        value = next(
+            (item for item in state.integrations.values() if item.get("key") == key),
+            None,
+        )
         if value is None or value["tenant_id"] != tenant_id:
             raise RuntimeResolutionError(
                 ResolutionFailureReason.MISSING_RESOURCE,
-                {"resource_type": "integration_connection", "resource_id": str(ref)},
+                {"resource_type": "integration_connection", "integration_key": key},
             )
         if not value["enabled"] or value["integration_kind"] != "http":
             raise RuntimeResolutionError(
                 ResolutionFailureReason.RESOURCE_DISABLED,
-                {"resource_type": "integration_connection", "resource_id": str(ref)},
+                {"resource_type": "integration_connection", "integration_key": key},
             )
         config = HttpConnectionConfiguration.model_validate(value["config"])
         if config.authentication.type != "none" and value["credential"] is None:
             raise RuntimeResolutionError(
                 ResolutionFailureReason.MISSING_RESOURCE,
-                {"resource_type": "credential", "integration_connection_id": str(ref)},
+                {"resource_type": "credential", "integration_key": key},
             )
+        return value
 
     def _required(
         self,
@@ -274,6 +309,34 @@ class ExecutionResolver:
             else self._decode(stored, expected)
         )
 
+    def _required_live(
+        self,
+        state: RuntimeResolutionState,
+        address: ComponentAddress,
+        expected: type,
+        reason: ResolutionFailureReason = ResolutionFailureReason.MISSING_TENANT_COMPONENT,
+    ):
+        stored = state.live_components.get(address)
+        if stored is None:
+            raise RuntimeResolutionError(
+                reason,
+                {"component_kind": str(address.kind), "scope": address.scope.key},
+            )
+        try:
+            definition = self._registry.resolve(address)
+            value = definition.deserialize(stored.value)
+        except (ComponentError, ValueError) as error:
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.CURRENT_STATE_INVALID,
+                {"component_kind": str(address.kind)},
+            ) from error
+        if not isinstance(value, expected):
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.CURRENT_STATE_INVALID,
+                {"component_kind": str(address.kind)},
+            )
+        return _DecodedLive(stored, value)
+
     def _decode(self, stored: StoredActiveRuntimeComponent, expected: type):
         try:
             definition = self._registry.resolve(stored.address)
@@ -291,9 +354,18 @@ class ExecutionResolver:
         return _Decoded(stored, value)
 
     @staticmethod
-    def _provenance(value: _Decoded) -> ComponentProvenance:
+    def _provenance(value: _Decoded | _DecodedLive) -> ComponentProvenance:
         assert value.stored is not None
         stored = value.stored
+        if isinstance(stored, LiveComponentState):
+            return ComponentProvenance(
+                str(stored.address.kind),
+                stored.address.scope.type.value,
+                stored.address.scope.key,
+                None,
+                None,
+                stored.schema_version,
+            )
         return ComponentProvenance(
             str(stored.address.kind),
             stored.address.scope.type.value,
@@ -307,4 +379,10 @@ class ExecutionResolver:
 @dataclass(frozen=True, slots=True)
 class _Decoded:
     stored: StoredActiveRuntimeComponent | None
+    value: object
+
+
+@dataclass(frozen=True, slots=True)
+class _DecodedLive:
+    stored: LiveComponentState[Any]
     value: object

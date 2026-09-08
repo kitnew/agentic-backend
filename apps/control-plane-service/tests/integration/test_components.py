@@ -26,6 +26,9 @@ from control_plane.domain.components.errors import (
     UnpublishedDraftConflict,
     UnsupportedSchemaVersion,
 )
+from control_plane.infrastructure.persistence.command_transactions import (
+    component_command_scope,
+)
 from control_plane.infrastructure.persistence.database import (
     CONTROL_PLANE_SCHEMA_REVISION,
     Database,
@@ -53,6 +56,7 @@ def registry(schema_version: int = 1) -> ComponentDefinitionRegistry:
             ExampleSettings,
             frozenset({ScopeType.TENANT}),
             schema_version,
+            metadata={"lifecycle": "versioned"},
         )
     )
     return result
@@ -60,7 +64,9 @@ def registry(schema_version: int = 1) -> ComponentDefinitionRegistry:
 
 def service(database: Database, schema_version: int = 1) -> ComponentService:
     return ComponentService(
-        registry(schema_version), SqlAlchemyComponentRepository(database.sessions)
+        registry(schema_version),
+        SqlAlchemyComponentRepository(database.sessions),
+        component_command_scope(database.sessions),
     )  # type: ignore[arg-type]
 
 
@@ -315,91 +321,53 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
                 get_secret_value=lambda: "management-secret"
             ),
             control_plane_management_actor="http",
+            control_plane_management_scopes="configuration:read,configuration:write",
         )
         async with AsyncClient(
             transport=ASGITransport(app=app),
             base_url="http://test",
             headers={"Authorization": "Bearer management-secret"},
         ) as client:
-            base = "/v1/scopes/tenant/tenant-http/components/example.settings"
+            base = "/management/v1/tenants/tenant-http/components/example.settings"
             response = await client.put(
                 f"{base}/draft",
-                json={
-                    "value": value,
-                    "schema_version": 1,
-                    "expected_draft_version": None,
-                    "expected_active_revision_id": None,
-                    "actor": "http",
-                },
+                headers={"If-Match": '"*"'},
+                json={"value": value},
             )
-            assert response.status_code == 200 and response.json()["version"] == 1
+            assert response.status_code == 200
+            assert response.json()["draft"]["value"] == value
             assert (await client.get(f"{base}/draft")).status_code == 200
+            etag = response.headers["etag"]
             response = await client.post(
-                f"{base}/publish", json={"expected_draft_version": 1, "actor": "http"}
+                f"{base}/publish",
+                headers={"If-Match": etag, "Idempotency-Key": "publish"},
             )
-            assert (
-                response.status_code == 200 and response.json()["revision_number"] == 1
-            )
-            active_id = response.json()["revision_id"]
-            assert (await client.get(base)).json()["state"] == "PUBLISHED"
+            assert response.status_code == 200
+            assert response.json()["active"]["revision_number"] == 1
             assert (await client.get(f"{base}/active")).status_code == 200
             assert (await client.get(f"{base}/revisions/1")).status_code == 200
             assert (
                 await client.put(
                     f"{base}/draft",
-                    json={
-                        "value": value,
-                        "schema_version": 1,
-                        "expected_draft_version": None,
-                        "expected_active_revision_id": None,
-                        "actor": "http",
-                    },
+                    headers={"If-Match": '"stale"'},
+                    json={"value": value},
                 )
-            ).status_code == 409
+            ).status_code == 412
+            etag = response.headers["etag"]
             assert (
                 await client.put(
                     f"{base}/draft",
-                    json={
-                        "value": {"enabled": "bad", "label": "x"},
-                        "schema_version": 1,
-                        "expected_draft_version": None,
-                        "expected_active_revision_id": active_id,
-                        "actor": "http",
-                    },
+                    headers={"If-Match": etag},
+                    json={"value": {"enabled": "bad", "label": "x"}},
                 )
             ).status_code == 422
-            assert (
-                await client.put(
-                    f"{base}/draft",
-                    json={
-                        "value": value,
-                        "schema_version": 1,
-                        "expected_draft_version": None,
-                        "expected_active_revision_id": active_id,
-                        "actor": "http",
-                    },
-                )
-            ).status_code == 200
-            assert (
-                await client.post(
-                    f"{base}/rollback", json={"revision_number": 1, "actor": "http"}
-                )
-            ).status_code == 409
-            assert (
-                await client.delete(
-                    f"{base}/draft", params={"expected_draft_version": 1}
-                )
-            ).status_code == 204
-            assert (
-                await client.post(
-                    f"{base}/rollback", json={"revision_number": 1, "actor": "http"}
-                )
-            ).status_code == 200
             response = await client.get(
-                "/v1/scopes/tenant/tenant-a/components/example.settings/revisions"
+                "/management/v1/tenants/tenant-a/components/example.settings/revisions"
             )
             assert response.status_code == 200 and len(response.json()) == 5
-            response = await client.get("/v1/scopes/tenant/tenant-a/components/missing")
+            response = await client.get(
+                "/management/v1/tenants/tenant-a/components/missing"
+            )
             assert response.status_code == 404
 
         invalid = ComponentAddress(
