@@ -15,6 +15,7 @@ from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
 )
 from control_plane.application.execution_resolver import ExecutionResolver
+from control_plane.application.integrations import IntegrationService
 from control_plane.application.live_components import LiveComponentService
 from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.platform_catalogs import PlatformCatalogService
@@ -29,12 +30,15 @@ from control_plane.application.runtime_materialization import (
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.application.system_configuration import SystemConfigurationService
 from control_plane.domain.agent_components import register_agent_components
-from control_plane.domain.capabilities import register_capability_components
 from control_plane.domain.components import ComponentDefinitionRegistry
+from control_plane.domain.frozen_components import default_component_definition_registry
 from control_plane.domain.knowledge_components import register_knowledge_components
-from control_plane.domain.post_call import register_post_call_components
 from control_plane.domain.prompt_components import register_prompt_components
-from control_plane.domain.registries import DeploymentKindRegistry, ProviderKindRegistry
+from control_plane.domain.registries import (
+    DeploymentKindRegistry,
+    IntegrationKindRegistry,
+    ProviderKindRegistry,
+)
 from control_plane.domain.runtime_components import register_runtime_components
 from control_plane.infrastructure.encryption import CredentialCipher
 from control_plane.infrastructure.persistence import Database
@@ -43,6 +47,9 @@ from control_plane.infrastructure.persistence.command_transactions import (
 )
 from control_plane.infrastructure.persistence.credential_transactions import (
     credential_command_scope,
+)
+from control_plane.infrastructure.persistence.integration_transactions import (
+    integration_command_scope,
 )
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
@@ -86,10 +93,26 @@ def create_app(
         register_agent_components(registry)
         register_prompt_components(registry)
         register_knowledge_components(registry)
-        register_capability_components(registry)
-        register_post_call_components(registry)
+        actions = next(
+            definition
+            for definition in default_component_definition_registry().definitions
+            if str(definition.kind) == "ActionsDefinition"
+        )
+        registry.register(actions)
         registry.freeze()
     provider_registry = provider_registry or ProviderKindRegistry()
+    cipher = CredentialCipher(
+        settings.control_plane_encryption_key.get_secret_value(),
+        settings.control_plane_encryption_key_id,
+    )
+    integrations = (
+        IntegrationService(
+            integration_command_scope(database.sessions),
+            IntegrationKindRegistry(),
+        )
+        if isinstance(database, Database)
+        else None
+    )
     components = (
         ComponentService(
             registry,
@@ -98,13 +121,10 @@ def create_app(
                 SqlAlchemyComponentRepository(database.sessions),
             ),
             component_command_scope(database.sessions),
+            integrations.validate_actions_definition if integrations else None,
         )
         if isinstance(database, Database)
         else None
-    )
-    cipher = CredentialCipher(
-        settings.control_plane_encryption_key.get_secret_value(),
-        settings.control_plane_encryption_key_id,
     )
     credentials = (
         CredentialService(credential_command_scope(database.sessions, cipher))
@@ -202,6 +222,7 @@ def create_app(
         live_components,
         platform_configuration,
         platform_catalogs,
+        integrations,
     )
     app.state.settings = settings
     app.state.database = database

@@ -3,47 +3,14 @@ from typing import Protocol
 
 from control_plane.domain.managed_resource_errors import InvalidManagedResource
 from control_plane.domain.managed_resources import (
-    CredentialRef,
     HandoffDestination,
     HandoffDestinationRef,
-    IntegrationConnection,
-    IntegrationConnectionRef,
     PhoneNumberAssignment,
     PhoneNumberAssignmentRef,
 )
 
 
 class ManagedResourceRepository(Protocol):
-    async def create_integration_connection(
-        self,
-        tenant_id: str,
-        key: str,
-        config: dict[str, object],
-        credential_ref: CredentialRef | None,
-        enabled: bool,
-        actor: str,
-    ) -> IntegrationConnection: ...
-    async def update_integration_connection(
-        self,
-        ref: IntegrationConnectionRef,
-        config: dict[str, object],
-        credential_ref: CredentialRef | None,
-        expected_generation: int,
-        actor: str,
-    ) -> IntegrationConnection: ...
-    async def set_integration_connection_enabled(
-        self,
-        ref: IntegrationConnectionRef,
-        enabled: bool,
-        expected_generation: int,
-        actor: str,
-    ) -> IntegrationConnection: ...
-    async def get_integration_connection(
-        self, ref: IntegrationConnectionRef
-    ) -> IntegrationConnection: ...
-    async def list_integration_connections(
-        self, tenant_id: str | None = None
-    ) -> Sequence[IntegrationConnection]: ...
     async def create_handoff_destination(
         self,
         tenant_id: str,
@@ -94,64 +61,11 @@ class ManagedResourceRepository(Protocol):
     async def list_phone_number_assignments(
         self, tenant_id: str | None = None
     ) -> Sequence[PhoneNumberAssignment]: ...
+
+
 class ManagedResourceService:
     def __init__(self, repository: ManagedResourceRepository) -> None:
         self._repository = repository
-
-    async def create_integration_connection(
-        self,
-        tenant_id: str,
-        key: str,
-        config: object,
-        credential_ref: CredentialRef | None,
-        enabled: bool,
-        actor: str,
-    ) -> IntegrationConnection:
-        return await self._repository.create_integration_connection(
-            tenant_id,
-            key,
-            self._validate_http_connection(config, credential_ref),
-            credential_ref,
-            enabled,
-            actor,
-        )
-
-    async def update_integration_connection(
-        self,
-        ref: IntegrationConnectionRef,
-        config: object,
-        credential_ref: CredentialRef | None,
-        expected_generation: int,
-        actor: str,
-    ) -> IntegrationConnection:
-        return await self._repository.update_integration_connection(
-            ref,
-            self._validate_http_connection(config, credential_ref),
-            credential_ref,
-            expected_generation,
-            actor,
-        )
-
-    async def set_integration_connection_enabled(
-        self,
-        ref: IntegrationConnectionRef,
-        enabled: bool,
-        expected_generation: int,
-        actor: str,
-    ) -> IntegrationConnection:
-        return await self._repository.set_integration_connection_enabled(
-            ref, enabled, expected_generation, actor
-        )
-
-    async def get_integration_connection(
-        self, ref: IntegrationConnectionRef
-    ) -> IntegrationConnection:
-        return await self._repository.get_integration_connection(ref)
-
-    async def list_integration_connections(
-        self, tenant_id: str | None = None
-    ) -> Sequence[IntegrationConnection]:
-        return await self._repository.list_integration_connections(tenant_id)
 
     async def create_handoff_destination(
         self,
@@ -262,16 +176,3 @@ class ManagedResourceService:
         if not HANDOFF_DESTINATION_KEY.fullmatch(value):
             raise InvalidManagedResource("key must match ^[a-z][a-z0-9_]{0,63}$")
         return value
-
-    @staticmethod
-    def _validate_http_connection(
-        config: object, credential_ref: CredentialRef | None
-    ) -> dict[str, object]:
-        from contracts.integration import HttpConnectionConfiguration
-
-        validated = HttpConnectionConfiguration.model_validate(config)
-        if (validated.authentication.type == "none") != (credential_ref is None):
-            raise InvalidManagedResource(
-                "credential_ref must match HTTP authentication mode"
-            )
-        return validated.model_dump(mode="json")

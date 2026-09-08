@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from contracts.integration import HttpConnectionConfiguration
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, ValidationError
 
 from control_plane.domain.managed_resource_errors import InvalidManagedResource
@@ -41,6 +42,10 @@ class _AzureOpenAIDeploymentConfig(_ProviderConfig):
 
 class _ModelDeploymentConfig(_ProviderConfig):
     model_id: str = Field(min_length=1)
+
+
+class _GenericIntegrationConfig(BaseModel):
+    model_config = ConfigDict(extra="allow", frozen=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,17 +121,17 @@ class ProviderKindRegistry:
             "deepgram": _EmptyConnectionConfig,
         }
     )
-    _deployment_schemas: Mapping[
-        tuple[str, DeploymentKind], type[_ProviderConfig]
-    ] = MappingProxyType(
-        {
-            ("azure_openai", DeploymentKind.LLM): _AzureOpenAILLMDeploymentConfig,
-            ("azure_openai", DeploymentKind.REALTIME): _AzureOpenAIDeploymentConfig,
-            ("azure_openai", DeploymentKind.STT): _AzureOpenAIDeploymentConfig,
-            ("elevenlabs", DeploymentKind.STT): _ModelDeploymentConfig,
-            ("elevenlabs", DeploymentKind.TTS): _ModelDeploymentConfig,
-            ("deepgram", DeploymentKind.STT): _ModelDeploymentConfig,
-        }
+    _deployment_schemas: Mapping[tuple[str, DeploymentKind], type[_ProviderConfig]] = (
+        MappingProxyType(
+            {
+                ("azure_openai", DeploymentKind.LLM): _AzureOpenAILLMDeploymentConfig,
+                ("azure_openai", DeploymentKind.REALTIME): _AzureOpenAIDeploymentConfig,
+                ("azure_openai", DeploymentKind.STT): _AzureOpenAIDeploymentConfig,
+                ("elevenlabs", DeploymentKind.STT): _ModelDeploymentConfig,
+                ("elevenlabs", DeploymentKind.TTS): _ModelDeploymentConfig,
+                ("deepgram", DeploymentKind.STT): _ModelDeploymentConfig,
+            }
+        )
     )
 
     def resolve(self, key: str) -> RegistryEntry:
@@ -167,9 +172,7 @@ class ProviderKindRegistry:
         return self._validate(schema, value)
 
     @staticmethod
-    def _validate(
-        schema: type[_ProviderConfig], value: object
-    ) -> dict[str, object]:
+    def _validate(schema: type[_ProviderConfig], value: object) -> dict[str, object]:
         try:
             return schema.model_validate(value).model_dump(mode="json")
         except ValidationError as error:
@@ -219,9 +222,26 @@ class IntegrationKindRegistry:
             {"config_schema": MappingProxyType({"type": "object"})},
         ),
     )
+    _config_schemas: Mapping[str, type[BaseModel]] = MappingProxyType(
+        {
+            "http": HttpConnectionConfiguration,
+            "pms": _GenericIntegrationConfig,
+            "webhook": _GenericIntegrationConfig,
+        }
+    )
 
     def resolve(self, key: str) -> RegistryEntry:
         for entry in self.entries:
             if entry.key == key:
                 return entry
         raise UnknownRegistryKey(f"unknown integration kind: {key}")
+
+    def validate_config(
+        self, integration_kind: str, value: object
+    ) -> dict[str, object]:
+        try:
+            self.resolve(integration_kind)
+            schema = self._config_schemas[integration_kind]
+            return schema.model_validate(value).model_dump(mode="json")
+        except (UnknownRegistryKey, KeyError, ValidationError) as error:
+            raise InvalidManagedResource(str(error)) from error

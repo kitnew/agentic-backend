@@ -219,7 +219,11 @@ def test_frozen_component_scopes_reject_every_other_scope(
                         "phase": "runtime",
                         "description": "Look up a booking",
                         "announcement": "One moment",
-                        "agent_input_schema": {},
+                        "agent_input_schema": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {},
+                        },
                         "execution": {
                             "integration_key": "pms",
                             "method": "GET",

@@ -1,3 +1,4 @@
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -37,10 +38,13 @@ class ComponentService:
         registry: ComponentDefinitionRegistry,
         repository: ComponentRepository,
         command_scope: ComponentCommandScope | None = None,
+        validate_value: Callable[[ComponentAddress, object], Awaitable[None]]
+        | None = None,
     ) -> None:
         self._registry = registry
         self._repository = repository
         self._command_scope = command_scope
+        self._validate_value = validate_value
 
     async def save_draft(
         self,
@@ -52,6 +56,8 @@ class ComponentService:
     ) -> ComponentDraft[Any]:
         definition = self._registry.resolve(address)
         typed = definition.deserialize(raw_value)
+        if self._validate_value is not None:
+            await self._validate_value(address, typed)
         arguments = (
             address,
             definition.serialize(typed),

@@ -30,6 +30,7 @@ def control_plane_openapi() -> dict[str, Any]:
         live_components=object(),  # type: ignore[arg-type]
         platform_configuration=object(),  # type: ignore[arg-type]
         platform_catalogs=object(),  # type: ignore[arg-type]
+        integrations=object(),  # type: ignore[arg-type]
     )
     schema = app.openapi()
     # FastAPI does not carry parameters declared by an APIRouter prefix into
@@ -61,9 +62,13 @@ def export_control_plane_openapi(output: Path = DEFAULT_OUTPUT) -> None:
     browser_schema = {
         **schema,
         "paths": {
-            path.replace("/v1/", "/control-plane/"): operation
+            (
+                path.replace("/v1/", "/control-plane/")
+                if path.startswith("/v1/")
+                else f"/control-plane{path}"
+            ): operation
             for path, operation in schema["paths"].items()
-            if path.startswith("/v1/")
+            if path.startswith(("/v1/", "/management/v1/"))
         },
     }
     DEFAULT_BROWSER_OUTPUT.write_bytes(

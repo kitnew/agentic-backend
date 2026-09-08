@@ -12,6 +12,8 @@ from control_plane.domain.managed_resources import (
     CredentialScope,
     DeploymentCapabilities,
     DeploymentKind,
+    IntegrationConnection,
+    IntegrationConnectionRef,
     ModelDeployment,
     ModelDeploymentRef,
     ProviderConnection,
@@ -145,6 +147,46 @@ class CredentialRepository(Protocol):
     ) -> Credential: ...
     async def revoke(self, credential: Credential, actor: str) -> Credential: ...
     async def has_enabled_provider_connections(self, ref: CredentialRef) -> bool: ...
+    async def has_enabled_integration_connections(self, ref: CredentialRef) -> bool: ...
+
+
+class IntegrationRepository(Protocol):
+    async def create(
+        self,
+        tenant_id: str,
+        key: str,
+        integration_kind: str,
+        config: dict[str, object],
+        credential_ref: CredentialRef | None,
+        actor: str,
+    ) -> IntegrationConnection: ...
+    async def update(
+        self,
+        connection: IntegrationConnection,
+        config: dict[str, object],
+        credential_ref: CredentialRef | None,
+        actor: str,
+    ) -> IntegrationConnection: ...
+    async def set_enabled(
+        self,
+        connection: IntegrationConnection,
+        enabled: bool,
+        actor: str,
+    ) -> IntegrationConnection: ...
+    async def get(
+        self,
+        ref: IntegrationConnectionRef,
+        *,
+        lock: bool = False,
+    ) -> IntegrationConnection: ...
+    async def get_by_key(self, tenant_id: str, key: str) -> IntegrationConnection: ...
+    async def list(self, tenant_id: str) -> Sequence[IntegrationConnection]: ...
+    async def get_credential(
+        self,
+        ref: CredentialRef,
+        *,
+        lock: bool = False,
+    ) -> Credential: ...
 
 
 class ProviderRepository(Protocol):

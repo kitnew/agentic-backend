@@ -325,9 +325,6 @@ class ProviderConnection(Base):
 class IntegrationConnection(Base):
     __tablename__ = "integration_connections"
     __table_args__ = (
-        CheckConstraint(
-            "integration_kind = 'http'", name="ck_integration_connection_kind"
-        ),
         CheckConstraint("generation >= 1", name="ck_integration_connection_generation"),
         UniqueConstraint(
             "tenant_id", "key", name="uq_integration_connection_tenant_key"
@@ -338,7 +335,7 @@ class IntegrationConnection(Base):
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     tenant_id: Mapped[str] = mapped_column(String(255))
     key: Mapped[str] = mapped_column(String(255))
-    integration_kind: Mapped[str] = mapped_column(String(16))
+    integration_kind: Mapped[str] = mapped_column(String(64))
     config: Mapped[dict[str, Any]] = mapped_column(JSONB)
     credential_id: Mapped[UUID | None] = mapped_column(
         Uuid, ForeignKey(f"{SCHEMA}.credentials.id")

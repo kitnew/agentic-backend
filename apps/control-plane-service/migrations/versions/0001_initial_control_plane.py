@@ -404,7 +404,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("tenant_id", sa.String(255), nullable=False),
         sa.Column("key", sa.String(255), nullable=False),
-        sa.Column("integration_kind", sa.String(16), nullable=False),
+        sa.Column("integration_kind", sa.String(64), nullable=False),
         sa.Column("config", postgresql.JSONB(), nullable=False),
         sa.Column("credential_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.credentials.id")),
         sa.Column("enabled", sa.Boolean(), nullable=False),
@@ -413,10 +413,30 @@ def upgrade() -> None:
         sa.Column("created_by", sa.String(255), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_by", sa.String(255), nullable=False),
-        sa.CheckConstraint("integration_kind = 'http'", name="ck_integration_connection_kind"),
         sa.CheckConstraint("generation >= 1", name="ck_integration_connection_generation"),
         sa.UniqueConstraint("tenant_id", "key", name="uq_integration_connection_tenant_key"),
         schema=SCHEMA,
+    )
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_integration_connection_identity_change() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.id IS DISTINCT FROM NEW.id
+             OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
+             OR OLD.key IS DISTINCT FROM NEW.key
+             OR OLD.integration_kind IS DISTINCT FROM NEW.integration_kind THEN
+            RAISE EXCEPTION 'integration connection identity is immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER integration_connection_identity_immutable "
+        "BEFORE UPDATE OF id, tenant_id, key, integration_kind ON control_plane.integration_connections "
+        "FOR EACH ROW EXECUTE FUNCTION control_plane.reject_integration_connection_identity_change()"
     )
     op.create_table(
         "handoff_destinations",
@@ -488,6 +508,8 @@ def downgrade() -> None:
     op.drop_index("uq_phone_number_assignment_enabled_tenant", table_name="phone_number_assignments", schema=SCHEMA)
     op.drop_table("phone_number_assignments", schema=SCHEMA)
     op.drop_table("handoff_destinations", schema=SCHEMA)
+    op.execute("DROP TRIGGER integration_connection_identity_immutable ON control_plane.integration_connections")
+    op.execute("DROP FUNCTION control_plane.reject_integration_connection_identity_change()")
     op.drop_table("integration_connections", schema=SCHEMA)
     op.execute("DROP TRIGGER model_deployment_identity_immutable ON control_plane.model_deployments")
     op.execute("DROP FUNCTION control_plane.reject_model_deployment_identity_change()")

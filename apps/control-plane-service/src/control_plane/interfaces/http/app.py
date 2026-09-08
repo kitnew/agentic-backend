@@ -3,7 +3,6 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -20,6 +19,10 @@ from control_plane.application.credentials import CredentialService
 from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
     RuntimeSecretSlot,
+)
+from control_plane.application.integrations import (
+    IntegrationService,
+    IntegrationValidationResult,
 )
 from control_plane.application.live_components import (
     LiveComponentPreconditionFailed,
@@ -280,19 +283,39 @@ class GeneratedActorRequest(BaseModel):
 
 class IntegrationConnectionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    tenant_id: str = Field(min_length=1, max_length=255)
     key: str = Field(min_length=1, max_length=255)
-    integration_kind: str = "http"
+    integration_kind: str = Field(min_length=1, max_length=64)
     config: dict[str, object]
     credential_ref: UUID | None = None
-    enabled: bool = False
 
 
 class IntegrationConnectionUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     config: dict[str, object]
     credential_ref: UUID | None = None
-    expected_generation: int = Field(ge=1)
+
+
+class IntegrationConnectionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    tenant_id: str
+    key: str
+    integration_kind: str
+    config: dict[str, object]
+    credential_ref: UUID | None
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class IntegrationValidationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    valid: bool
+    usable: bool
+    code: str | None = None
+    message: str | None = None
 
 
 class HandoffDestinationCreate(BaseModel):
@@ -430,6 +453,7 @@ def create_http_app(
     live_components: LiveComponentService | None = None,
     platform_configuration: PlatformConfigurationService | None = None,
     platform_catalogs: PlatformCatalogService | None = None,
+    integrations: IntegrationService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.settings = None
@@ -445,6 +469,7 @@ def create_http_app(
     app.state.live_components = live_components
     app.state.platform_configuration = platform_configuration
     app.state.platform_catalogs = platform_catalogs
+    app.state.integrations = integrations
 
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
@@ -642,6 +667,8 @@ def create_http_app(
         app.include_router(_credential_router(), prefix="/management/v1")
     if providers is not None:
         app.include_router(_provider_router(), prefix="/management/v1/providers")
+    if integrations is not None:
+        app.include_router(_integration_router(), prefix="/management/v1")
     if system_configuration is not None:
         app.include_router(_system_configuration_router(), prefix="/management/v1")
     if live_components is not None:
@@ -653,6 +680,7 @@ def create_http_app(
     if components is not None:
         for prefix in (
             "/management/v1/platform",
+            "/management/v1/tenants/{tenant_id}",
             "/management/v1/platform/profiles/{profile_key}",
             "/management/v1/platform/interaction-modes/{mode_key}",
         ):
@@ -1543,7 +1571,11 @@ def _target_component_router() -> APIRouter:
 
 
 def _component_router() -> APIRouter:
-    router = APIRouter()
+    def legacy_component_only(kind: str) -> None:
+        if kind == "ActionsDefinition":
+            raise UnknownComponentKind(kind)
+
+    router = APIRouter(dependencies=[Depends(legacy_component_only)])
 
     @router.get("/components/{kind}")
     async def get_component(request: Request, kind: str) -> Any:
@@ -1693,11 +1725,8 @@ def _integration_connection_response(value: IntegrationConnection) -> dict[str, 
         "config": value.config,
         "credential_ref": value.credential_ref.value if value.credential_ref else None,
         "enabled": value.enabled,
-        "generation": value.generation,
         "created_at": value.created_at,
-        "created_by": value.created_by,
         "updated_at": value.updated_at,
-        "updated_by": value.updated_by,
     }
 
 
@@ -2159,109 +2188,158 @@ def _provider_router() -> APIRouter:
     return router
 
 
-def _managed_resource_router() -> APIRouter:
+def _integration_router() -> APIRouter:
     router = APIRouter()
+    read_auth = Depends(require_management_permission("resources:read"))
+    write_auth = Depends(require_management_permission("resources:write"))
 
-    @router.post("/integration-connections", status_code=status.HTTP_201_CREATED)
-    async def create_integration_connection(
-        request: Request, body: IntegrationConnectionCreate
-    ) -> Any:
-        if body.integration_kind != "http":
-            raise InvalidManagedResource("only integration_kind=http is supported")
-        value = await _managed(request).create_integration_connection(
-            body.tenant_id,
-            body.key,
-            body.config,
-            CredentialRef(body.credential_ref) if body.credential_ref else None,
-            body.enabled,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_integration_connection_response(value))
-
-    @router.put("/integration-connections/{resource_id}")
-    async def update_integration_connection(
-        request: Request, resource_id: UUID, body: IntegrationConnectionUpdate
-    ) -> Any:
-        value = await _managed(request).update_integration_connection(
-            IntegrationConnectionRef(resource_id),
-            body.config,
-            CredentialRef(body.credential_ref) if body.credential_ref else None,
-            body.expected_generation,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_integration_connection_response(value))
-
-    @router.post("/integration-connections/{resource_id}/{operation}")
-    async def set_integration_connection_enabled(
-        request: Request, resource_id: UUID, operation: str, body: GeneratedActorRequest
-    ) -> Any:
-        if operation not in {"enable", "disable"}:
-            raise HTTPException(status.HTTP_404_NOT_FOUND)
-        value = await _managed(request).set_integration_connection_enabled(
-            IntegrationConnectionRef(resource_id),
-            operation == "enable",
-            body.expected_generation,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_integration_connection_response(value))
-
-    @router.get("/integration-connections/{resource_id}")
-    async def get_integration_connection(request: Request, resource_id: UUID) -> Any:
-        return jsonable_encoder(
-            _integration_connection_response(
-                await _managed(request).get_integration_connection(
-                    IntegrationConnectionRef(resource_id)
-                )
-            )
-        )
-
-    @router.get("/integration-connections")
-    async def list_integration_connections(
-        request: Request, tenant_id: str | None = None
+    @router.get(
+        "/tenants/{tenant_id}/integrations",
+        response_model=list[IntegrationConnectionResponse],
+    )
+    async def list_integrations(
+        request: Request,
+        tenant_id: str,
+        _principal: ManagementPrincipal = read_auth,
     ) -> Any:
         return jsonable_encoder(
             [
                 _integration_connection_response(value)
-                for value in await _managed(request).list_integration_connections(
-                    tenant_id
-                )
+                for value in await request.app.state.integrations.list(tenant_id)
             ]
         )
 
-    @router.post("/integration-connections/{resource_id}/validate")
-    async def validate_integration_connection(
-        request: Request, resource_id: UUID
-    ) -> Any:
-        connection = await _managed(request).get_integration_connection(
-            IntegrationConnectionRef(resource_id)
+    @router.post(
+        "/tenants/{tenant_id}/integrations",
+        status_code=status.HTTP_201_CREATED,
+        response_model=IntegrationConnectionResponse,
+    )
+    async def create_integration_connection(
+        request: Request,
+        tenant_id: str,
+        body: IntegrationConnectionCreate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, _ = _command_headers(request, precondition=False)
+        service: IntegrationService = request.app.state.integrations
+        value = await service.create(
+            tenant_id,
+            body.key,
+            body.integration_kind,
+            body.config,
+            CredentialRef(body.credential_ref) if body.credential_ref else None,
+            principal.subject,
+            idempotency_key,
         )
-        if not connection.enabled:
-            return {"valid": False, "usable": False, "reason": "disabled"}
-        config = connection.config
-        headers = dict(config.get("headers", {}))
-        authentication = config.get("authentication", {})
-        if authentication.get("type") != "none":
-            materializer = request.app.state.execution_materialization
-            if materializer is None:
-                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE)
-            material = await materializer.integration_material(
-                connection.tenant_id, resource_id
-            )
-            header_name = authentication.get("header_name")
-            if isinstance(header_name, str):
-                headers[header_name] = material.secret
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(5.0), follow_redirects=False
-            ) as client:
-                response = await client.get(config["endpoint"], headers=headers)
-        except (httpx.HTTPError, KeyError) as error:
-            return {"valid": False, "usable": False, "reason": type(error).__name__}
-        return {
-            "valid": True,
-            "usable": response.is_success,
-            "status_code": response.status_code,
-        }
+        return JSONResponse(
+            jsonable_encoder(_integration_connection_response(value)),
+            status_code=status.HTTP_201_CREATED,
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.get(
+        "/tenants/{tenant_id}/integrations/{resource_id}",
+        response_model=IntegrationConnectionResponse,
+    )
+    async def get_integration_connection(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service: IntegrationService = request.app.state.integrations
+        value = await service.get(tenant_id, IntegrationConnectionRef(resource_id))
+        return JSONResponse(
+            jsonable_encoder(_integration_connection_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.put(
+        "/tenants/{tenant_id}/integrations/{resource_id}",
+        response_model=IntegrationConnectionResponse,
+    )
+    async def update_integration_connection(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        body: IntegrationConnectionUpdate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, token = _command_headers(request, precondition=True)
+        service: IntegrationService = request.app.state.integrations
+        value = await service.update(
+            tenant_id,
+            IntegrationConnectionRef(resource_id),
+            body.config,
+            CredentialRef(body.credential_ref) if body.credential_ref else None,
+            token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_integration_connection_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    async def set_enabled(request, tenant_id, resource_id, enabled, principal):
+        idempotency_key, token = _command_headers(request, precondition=True)
+        service: IntegrationService = request.app.state.integrations
+        command = service.enable if enabled else service.disable
+        value = await command(
+            tenant_id,
+            IntegrationConnectionRef(resource_id),
+            token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_integration_connection_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.post(
+        "/tenants/{tenant_id}/integrations/{resource_id}/enable",
+        response_model=IntegrationConnectionResponse,
+    )
+    async def enable_integration(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_enabled(request, tenant_id, resource_id, True, principal)
+
+    @router.post(
+        "/tenants/{tenant_id}/integrations/{resource_id}/disable",
+        response_model=IntegrationConnectionResponse,
+    )
+    async def disable_integration(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_enabled(request, tenant_id, resource_id, False, principal)
+
+    @router.post(
+        "/tenants/{tenant_id}/integrations/{resource_id}/validate",
+        response_model=IntegrationValidationResponse,
+    )
+    async def validate_integration(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = write_auth,
+    ) -> IntegrationValidationResult:
+        return await request.app.state.integrations.validate(
+            tenant_id, IntegrationConnectionRef(resource_id)
+        )
+
+    return router
+
+
+def _managed_resource_router() -> APIRouter:
+    router = APIRouter()
 
     @router.post("/handoff-destinations", status_code=status.HTTP_201_CREATED)
     async def create_handoff_destination(

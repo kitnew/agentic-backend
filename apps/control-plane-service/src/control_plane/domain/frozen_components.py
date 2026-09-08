@@ -1,6 +1,9 @@
+import re
 from typing import Annotated, Any, Literal, NotRequired
 from uuid import UUID
 
+from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
+from jsonschema.exceptions import SchemaError  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import TypedDict
 
@@ -298,6 +301,123 @@ SemanticKey = Annotated[
 
 class ActionsDefinition(FrozenValue):
     actions: dict[SemanticKey, ActionDefinition]
+
+    @model_validator(mode="after")
+    def validate_authoring_semantics(self) -> ActionsDefinition:
+        for action in self.actions.values():
+            _validate_json_schema(action.result_schema, "result_schema")
+            _validate_execution(action)
+            if isinstance(action, RuntimeActionDefinition):
+                _validate_runtime_action(action)
+        return self
+
+
+_CANONICAL_PATH = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*$")
+_EXPRESSION_ROOT = re.compile(r"(?<![$\w.])([A-Za-z_][A-Za-z0-9_]*)\.")
+
+
+def _validate_json_schema(
+    value: dict[str, Any] | None, name: str, *, local: bool = False
+) -> None:
+    if value is None:
+        return
+    try:
+        Draft202012Validator.check_schema(value)
+    except SchemaError as error:
+        raise ValueError(f"{name} must be a valid JSON Schema Draft 2020-12") from error
+    if local and _has_remote_reference(value):
+        raise ValueError(f"{name} must be a closed local JSON Schema")
+
+
+def _has_remote_reference(value: object) -> bool:
+    if isinstance(value, dict):
+        reference = value.get("$ref")
+        return (
+            isinstance(reference, str)
+            and not reference.startswith("#")
+            or any(_has_remote_reference(item) for item in value.values())
+        )
+    if isinstance(value, list):
+        return any(_has_remote_reference(item) for item in value)
+    return False
+
+
+def _validate_runtime_action(action: RuntimeActionDefinition) -> None:
+    schema = action.agent_input_schema
+    _validate_json_schema(schema, "agent_input_schema", local=True)
+    if (
+        schema.get("type") != "object"
+        or schema.get("additionalProperties") is not False
+    ):
+        raise ValueError("agent_input_schema must be a closed JSON Schema object")
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        raise ValueError(  # noqa: TRY004
+            "agent_input_schema.properties must be an object"
+        )
+
+    targets: set[str] = set()
+    for source, target in action.bindings.items():
+        if source not in properties:
+            raise ValueError(f"binding source {source} is not in agent_input_schema")
+        if target.startswith("business.") or not _CANONICAL_PATH.fullmatch(target):
+            raise ValueError(f"binding target {target} is not a canonical path")
+        if target in targets:
+            raise ValueError(f"canonical binding target {target} is duplicated")
+        targets.add(target)
+
+    required = schema.get("required", [])
+    for constraint in action.input_constraints:
+        for target in (constraint.start, constraint.end):
+            if target not in targets:
+                raise ValueError(
+                    f"constraint path {target} is not reachable through bindings"
+                )
+            source = next(
+                key for key, value in action.bindings.items() if value == target
+            )
+            field_schema = properties[source]
+            if source not in required:
+                raise ValueError(f"constraint source {source} must be required")
+            if (
+                not isinstance(field_schema, dict)
+                or field_schema.get("type") != "string"
+                or field_schema.get("format") != "date"
+            ):
+                raise ValueError(
+                    f"constraint source {source} must be string with format: date"
+                )
+
+
+def _validate_execution(action: ActionDefinition) -> None:
+    request_context = (
+        {"inputs", "business", "metadata"}
+        if isinstance(action, RuntimeActionDefinition)
+        else {"call", "agent", "inputs"}
+    )
+    execution = action.execution
+    _validate_template(execution.path, request_context)
+    _validate_template(execution.query, request_context)
+    _validate_template(execution.request.mapping, request_context)
+    _validate_template(execution.response.mapping, {"response"})
+
+
+def _validate_template(value: object, allowed_contexts: set[str]) -> None:
+    if isinstance(value, ExprNode):
+        roots = set(_EXPRESSION_ROOT.findall(value.expression))
+        if roots - allowed_contexts:
+            raise ValueError("mapping expression context is not allowed")
+    elif isinstance(value, dict):
+        if set(value) == {"$expr"} and isinstance(value["$expr"], str):
+            roots = set(_EXPRESSION_ROOT.findall(value["$expr"]))
+            if roots - allowed_contexts:
+                raise ValueError("mapping expression context is not allowed")
+            return
+        for item in value.values():
+            _validate_template(item, allowed_contexts)
+    elif isinstance(value, list):
+        for item in value:
+            _validate_template(item, allowed_contexts)
 
 
 class Architecture(FrozenValue):

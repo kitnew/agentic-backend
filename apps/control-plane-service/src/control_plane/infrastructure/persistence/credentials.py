@@ -19,6 +19,7 @@ from control_plane.infrastructure.encryption import CredentialCipher
 
 from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
+from .models import IntegrationConnection as IntegrationConnectionRow
 from .models import ProviderConnection as ProviderConnectionRow
 
 
@@ -136,6 +137,19 @@ class SqlAlchemyCredentialRepository:
                 .where(
                     ProviderConnectionRow.credential_id == ref.value,
                     ProviderConnectionRow.enabled.is_(True),
+                )
+                .limit(1)
+            )
+            is not None
+        )
+
+    async def has_enabled_integration_connections(self, ref: CredentialRef) -> bool:
+        return (
+            await self._session.scalar(
+                select(IntegrationConnectionRow.id)
+                .where(
+                    IntegrationConnectionRow.credential_id == ref.value,
+                    IntegrationConnectionRow.enabled.is_(True),
                 )
                 .limit(1)
             )
