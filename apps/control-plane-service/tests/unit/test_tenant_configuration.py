@@ -217,6 +217,28 @@ async def test_plan_is_non_mutating_and_apply_obeys_mixed_lifecycles() -> None:
     assert result.configuration.live.runtime_overrides["stt"]["keyterms"] == []
     assert result.configuration.versioned.tenant_prompt.active is None
     assert result.configuration.versioned.tenant_prompt.draft.content == "tenant"
+    assert all(
+        active is None
+        for address, (draft, active) in repository.components.items()
+        if address.scope.key == "tenant-a"
+    )
+
+
+@pytest.mark.asyncio
+async def test_invalid_initial_reference_leaves_tenant_state_empty() -> None:
+    service, repository, _ = setup()
+
+    with pytest.raises(TenantConfigurationError):
+        await service.apply(
+            "tenant-a",
+            desired(profile="missing"),
+            "*",
+            "alice",
+            "invalid-initial",
+        )
+
+    assert repository.live == {}
+    assert not any(address.scope.key == "tenant-a" for address in repository.components)
 
 
 @pytest.mark.asyncio

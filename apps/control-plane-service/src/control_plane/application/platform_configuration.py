@@ -136,6 +136,10 @@ class PlatformConfigurationError(Exception):
     code = "configuration_invalid"
 
 
+class PlatformConfigurationNotFound(PlatformConfigurationError):
+    code = "platform_configuration_not_found"
+
+
 class PlatformConfigurationPreconditionFailed(PlatformConfigurationError):
     code = "precondition_failed"
 
@@ -151,7 +155,10 @@ class PlatformConfigurationService:
 
     async def get(self) -> PlatformConfiguration:
         async with self._command_scope() as (repository, _):
-            return await self._load(repository)
+            configuration = await self._load(repository)
+        if self._is_initial(configuration):
+            raise PlatformConfigurationNotFound("platform configuration is absent")
+        return configuration
 
     async def plan(
         self, desired: PlatformConfigurationDesired
@@ -306,17 +313,24 @@ class PlatformConfigurationService:
     def _require_token(
         self, configuration: PlatformConfiguration, expected_token: str
     ) -> None:
-        initial = (
+        expected = (
+            "*"
+            if self._is_initial(configuration)
+            else self.concurrency_token(configuration)
+        )
+        if expected_token != expected:
+            raise PlatformConfigurationPreconditionFailed(
+                "platform configuration precondition failed"
+            )
+
+    @staticmethod
+    def _is_initial(configuration: PlatformConfiguration) -> bool:
+        return (
             not configuration.profiles
             and not configuration.interaction_modes
             and configuration.system_prompt.active is None
             and configuration.system_prompt.draft is None
         )
-        expected = "*" if initial else self.concurrency_token(configuration)
-        if expected_token != expected:
-            raise PlatformConfigurationPreconditionFailed(
-                "platform configuration precondition failed"
-            )
 
     async def _load(self, repository, *, lock=False) -> PlatformConfiguration:
         profiles = tuple(

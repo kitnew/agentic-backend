@@ -232,6 +232,15 @@ async def test_same_apply_catalog_entries_are_immediate_and_prompts_are_drafts()
     assert result.configuration.profiles[0].status is CatalogStatus.ENABLED
     assert result.configuration.profiles[0].prompt.active is None
     assert result.configuration.profiles[0].prompt.draft.content == "profile"
+    assert all(active is None for _, active in repository.components.values())
+
+
+@pytest.mark.asyncio
+async def test_get_absent_platform_configuration_is_not_found() -> None:
+    service, _, _ = setup()
+
+    with pytest.raises(PlatformConfigurationError):
+        await service.get()
 
 
 @pytest.mark.asyncio

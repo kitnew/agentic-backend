@@ -7,6 +7,7 @@ import pytest
 from control_plane.application.command_support import IdempotencyKeyReused, StoredReplay
 from control_plane.application.system_configuration import (
     SystemConfigurationDesired,
+    SystemConfigurationError,
     SystemConfigurationPreconditionFailed,
     SystemConfigurationService,
 )
@@ -231,6 +232,8 @@ async def test_apply_replay_precedes_stale_aggregate_precondition() -> None:
         await service.apply(desired(refs, voice="changed"), token, "alice", "same")
     with pytest.raises(SystemConfigurationPreconditionFailed):
         await service.apply(requested, "stale", "alice", "stale")
+    with pytest.raises(SystemConfigurationPreconditionFailed):
+        await service.apply(requested, "*", "alice", "second-initial")
 
 
 @pytest.mark.asyncio
@@ -242,6 +245,9 @@ async def test_apply_validates_deployment_kind_capabilities_and_usability() -> N
     )
     plan = await service.plan(desired(refs))
     assert not plan.valid and plan.errors[0].code == "wrong_deployment_kind"
+    assert repository.live == {}
+    with pytest.raises(SystemConfigurationError):
+        await service.apply(desired(refs), "*", "alice", "invalid-apply")
     assert repository.live == {}
 
 

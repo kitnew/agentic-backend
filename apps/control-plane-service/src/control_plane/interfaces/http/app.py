@@ -65,6 +65,7 @@ from control_plane.application.platform_configuration import (
     PlatformConfigurationApplyResult,
     PlatformConfigurationDesired,
     PlatformConfigurationError,
+    PlatformConfigurationNotFound,
     PlatformConfigurationPlan,
     PlatformConfigurationPreconditionFailed,
     PlatformConfigurationPublishResult,
@@ -731,7 +732,9 @@ def create_http_app(
         request: Request, exc: PlatformConfigurationError
     ) -> JSONResponse:
         code = (
-            status.HTTP_412_PRECONDITION_FAILED
+            status.HTTP_404_NOT_FOUND
+            if isinstance(exc, PlatformConfigurationNotFound)
+            else status.HTTP_412_PRECONDITION_FAILED
             if isinstance(exc, PlatformConfigurationPreconditionFailed)
             else status.HTTP_422_UNPROCESSABLE_CONTENT
         )
@@ -858,6 +861,15 @@ def create_http_app(
                     _openapi_header(operation, "If-Match")
                 if method == "put" and not draft_write:
                     _openapi_header(operation, "Idempotency-Key")
+                if method == "put" and path in {
+                    "/management/v1/system/configuration",
+                    "/management/v1/platform/configuration",
+                    "/management/v1/tenants/{tenant_id}/configuration",
+                }:
+                    for parameter in operation.get("parameters", []):
+                        if parameter.get("name") == "If-Match":
+                            parameter["required"] = False
+                    _openapi_header(operation, "If-None-Match", required=False)
         app.openapi_schema = schema
         return schema
 
@@ -865,7 +877,9 @@ def create_http_app(
     return app
 
 
-def _openapi_header(operation: dict[str, Any], name: str) -> None:
+def _openapi_header(
+    operation: dict[str, Any], name: str, *, required: bool = True
+) -> None:
     parameters = operation.setdefault("parameters", [])
     if any(parameter.get("name") == name for parameter in parameters):
         return
@@ -873,7 +887,7 @@ def _openapi_header(operation: dict[str, Any], name: str) -> None:
         {
             "name": name,
             "in": "header",
-            "required": True,
+            "required": required,
             "schema": {"type": "string", "minLength": 1},
         }
     )
@@ -1017,13 +1031,17 @@ def _system_configuration_router() -> APIRouter:
     ) -> Any:
         return jsonable_encoder(await request.app.state.system_configuration.plan(body))
 
-    @router.put("/system/configuration", response_model=SystemConfigurationApplyResult)
+    @router.put(
+        "/system/configuration",
+        response_model=SystemConfigurationApplyResult,
+        responses={428: {"model": ErrorResponse}},
+    )
     async def apply_system_configuration(
         request: Request,
         body: SystemConfigurationDesired,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        idempotency_key, expected_token = _command_headers(request, precondition=True)
+        idempotency_key, expected_token = _configuration_command_headers(request)
         service = request.app.state.system_configuration
         result = await service.apply(
             body, expected_token, principal.subject, idempotency_key
@@ -1135,14 +1153,16 @@ def _platform_configuration_router() -> APIRouter:
         )
 
     @router.put(
-        "/platform/configuration", response_model=PlatformConfigurationApplyResult
+        "/platform/configuration",
+        response_model=PlatformConfigurationApplyResult,
+        responses={428: {"model": ErrorResponse}},
     )
     async def apply_configuration(
         request: Request,
         body: PlatformConfigurationDesired,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        key, token = _command_headers(request, precondition=True)
+        key, token = _configuration_command_headers(request)
         service = request.app.state.platform_configuration
         result = await service.apply(body, token, principal.subject, key)
         return JSONResponse(
@@ -1206,6 +1226,7 @@ def _tenant_configuration_router() -> APIRouter:
     @router.put(
         "/tenants/{tenant_id}/configuration",
         response_model=TenantConfigurationApplyResult,
+        responses={428: {"model": ErrorResponse}},
     )
     async def apply_configuration(
         request: Request,
@@ -1213,7 +1234,7 @@ def _tenant_configuration_router() -> APIRouter:
         body: TenantConfigurationDesired,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        key, token = _command_headers(request, precondition=True)
+        key, token = _configuration_command_headers(request)
         service = request.app.state.tenant_configuration
         result = await service.apply(tenant_id, body, token, principal.subject, key)
         return JSONResponse(
@@ -1893,6 +1914,25 @@ def _command_headers(request: Request, *, precondition: bool) -> tuple[str, str]
     if_match = request.headers.get("if-match", "").strip()
     if precondition and not if_match:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "If-Match is required")
+    return idempotency_key, if_match.removeprefix("W/").strip('"')
+
+
+def _configuration_command_headers(request: Request) -> tuple[str, str]:
+    idempotency_key, _ = _command_headers(request, precondition=False)
+    if_match = request.headers.get("if-match", "").strip()
+    if_none_match = request.headers.get("if-none-match", "").strip()
+    if if_match and if_none_match:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "If-Match and If-None-Match cannot both be supplied",
+        )
+    if not if_match and not if_none_match:
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED,
+            "If-Match or If-None-Match: * is required",
+        )
+    if if_none_match:
+        return idempotency_key, if_none_match.removeprefix("W/").strip('"')
     return idempotency_key, if_match.removeprefix("W/").strip('"')
 
 

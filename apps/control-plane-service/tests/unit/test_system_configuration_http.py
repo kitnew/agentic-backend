@@ -7,7 +7,9 @@ from control_plane.application.system_configuration import (
     ConfigurationChange,
     SystemConfiguration,
     SystemConfigurationApplyResult,
+    SystemConfigurationNotFound,
     SystemConfigurationPlan,
+    SystemConfigurationPreconditionFailed,
 )
 from control_plane.interfaces.http import create_http_app
 from httpx import ASGITransport, AsyncClient
@@ -87,6 +89,35 @@ class System:
         return "aggregate"
 
 
+class BootstrapSystem:
+    def __init__(self):
+        self.value = None
+        self.replays = {}
+
+    async def get(self):
+        if self.value is None:
+            raise SystemConfigurationNotFound("system configuration is absent")
+        return self.value
+
+    async def plan(self, _desired):
+        return SystemConfigurationPlan(True, (), (), ())
+
+    async def apply(self, desired, token, _principal, key):
+        if key in self.replays:
+            return self.replays[key]
+        expected = "*" if self.value is None else "aggregate"
+        if token != expected:
+            raise SystemConfigurationPreconditionFailed("precondition failed")
+        self.value = SystemConfiguration.model_validate(desired.model_dump())
+        result = SystemConfigurationApplyResult((), (), self.value)
+        self.replays[key] = result
+        return result
+
+    @staticmethod
+    def concurrency_token(_value):
+        return "aggregate"
+
+
 @pytest.mark.asyncio
 async def test_target_system_routes_etag_idempotency_and_no_publish() -> None:
     system = System()
@@ -134,6 +165,92 @@ async def test_target_system_routes_etag_idempotency_and_no_publish() -> None:
     assert publish.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_high_level_apply_uses_initial_precondition_and_structured_428() -> None:
+    system = BootstrapSystem()
+    app = create_http_app(Lifecycle(), system_configuration=system)  # type: ignore[arg-type]
+    app.state.settings = SimpleNamespace(
+        control_plane_management_token=SimpleNamespace(
+            get_secret_value=lambda: "secret"
+        ),
+        control_plane_management_actor="admin",
+        control_plane_management_scopes="configuration:read,configuration:write",
+    )
+    auth = {"Authorization": "Bearer secret"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        missing = await client.put(
+            "/management/v1/system/configuration",
+            headers={**auth, "Idempotency-Key": "missing"},
+            json=payload(),
+        )
+        initial = await client.put(
+            "/management/v1/system/configuration",
+            headers={
+                **auth,
+                "If-None-Match": "*",
+                "Idempotency-Key": "initial",
+            },
+            json=payload(),
+        )
+        replay = await client.put(
+            "/management/v1/system/configuration",
+            headers={
+                **auth,
+                "If-None-Match": "*",
+                "Idempotency-Key": "initial",
+            },
+            json=payload(),
+        )
+        duplicate_initial = await client.put(
+            "/management/v1/system/configuration",
+            headers={
+                **auth,
+                "If-None-Match": "*",
+                "Idempotency-Key": "duplicate",
+            },
+            json=payload(),
+        )
+        mutation = await client.put(
+            "/management/v1/system/configuration",
+            headers={
+                **auth,
+                "If-Match": '"aggregate"',
+                "Idempotency-Key": "mutation",
+            },
+            json=payload(),
+        )
+        stale = await client.put(
+            "/management/v1/system/configuration",
+            headers={
+                **auth,
+                "If-Match": '"stale"',
+                "Idempotency-Key": "stale",
+            },
+            json=payload(),
+        )
+        both = await client.put(
+            "/management/v1/system/configuration",
+            headers={
+                **auth,
+                "If-Match": '"aggregate"',
+                "If-None-Match": "*",
+                "Idempotency-Key": "both",
+            },
+            json=payload(),
+        )
+
+    assert missing.status_code == 428
+    assert missing.json()["code"]
+    assert initial.status_code == 200 and initial.headers["etag"] == '"aggregate"'
+    assert replay.status_code == 200
+    assert duplicate_initial.status_code == 412
+    assert mutation.status_code == 200
+    assert stale.status_code == 412
+    assert both.status_code == 400
+
+
 def test_openapi_contains_only_frozen_system_methods() -> None:
     app = create_http_app(
         Lifecycle(), system_configuration=System(), live_components=object()
@@ -143,3 +260,14 @@ def test_openapi_contains_only_frozen_system_methods() -> None:
     assert set(paths["/management/v1/system/configuration/plan"]) == {"post"}
     assert set(paths["/management/v1/system/components/{kind}"]) == {"get", "put"}
     assert "/management/v1/system/configuration/publish" not in paths
+
+
+def test_openapi_documents_both_high_level_precondition_headers() -> None:
+    app = create_http_app(Lifecycle(), system_configuration=System())  # type: ignore[arg-type]
+    parameters = app.openapi()["paths"]["/management/v1/system/configuration"]["put"][
+        "parameters"
+    ]
+    headers = {parameter["name"]: parameter["required"] for parameter in parameters}
+
+    assert headers["If-Match"] is False
+    assert headers["If-None-Match"] is False
