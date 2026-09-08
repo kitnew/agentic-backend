@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from http import HTTPStatus
+from json import dumps
 from typing import Any, Self
 from uuid import UUID, uuid4
 
@@ -53,9 +55,9 @@ class ControlPlaneClient:
         response = self._client.request(method, path, **kwargs)
         if response.status_code >= 400:
             raise CommandError(
-                f"Control Plane API request failed ({response.status_code}): "
-                f"{response.text[:500]}",
+                _format_error(response),
                 3,
+                status_code=response.status_code,
             )
         return response
 
@@ -82,10 +84,21 @@ class ControlPlaneClient:
         return "/management/v1/platform"
 
     @staticmethod
-    def _mutation_headers(etag: str | None = None) -> dict[str, str]:
+    def _mutation_headers(
+        etag: str | None = None,
+        *,
+        if_none_match: bool = False,
+        idempotency_key: str | None = None,
+    ) -> dict[str, str]:
         return {
-            "Idempotency-Key": str(uuid4()),
-            **({"If-Match": etag} if etag else {}),
+            "Idempotency-Key": idempotency_key or str(uuid4()),
+            **(
+                {"If-None-Match": "*"}
+                if if_none_match
+                else {"If-Match": etag}
+                if etag
+                else {}
+            ),
         }
 
     def get_component(
@@ -99,7 +112,7 @@ class ControlPlaneClient:
         try:
             response = self._response("GET", f"{scope}/components/{kind}")
         except CommandError as error:
-            if "(404)" not in str(error) or "component_not_found" not in str(error):
+            if error.status_code != 404 or "component_not_found" not in str(error):
                 raise
             return ComponentState(None, None, None)
         snapshot = response.json()
@@ -215,10 +228,24 @@ class ControlPlaneClient:
         return self._request(method, f"/management/v1/{path.lstrip('/')}", **kwargs)
 
     def management_mutation(
-        self, method: str, path: str, *, etag: str | None = None, **kwargs: Any
+        self,
+        method: str,
+        path: str,
+        *,
+        etag: str | None = None,
+        if_none_match: bool = False,
+        idempotency_key: str | None = None,
+        **kwargs: Any,
     ) -> Any:
         return self.management(
-            method, path, headers=self._mutation_headers(etag), **kwargs
+            method,
+            path,
+            headers=self._mutation_headers(
+                etag,
+                if_none_match=if_none_match,
+                idempotency_key=idempotency_key,
+            ),
+            **kwargs,
         )
 
     def management_etag(self, path: str) -> str:
@@ -228,40 +255,100 @@ class ControlPlaneClient:
             raise CommandError("Control Plane response did not include ETag", 3)
         return etag
 
-    def get_configuration(
+    @staticmethod
+    def _configuration_path(scope: str, tenant_id: str | None = None) -> str:
+        if scope == "tenant":
+            if not tenant_id:
+                raise CommandError("tenant id is required", 2)
+            return f"tenants/{tenant_id}/configuration"
+        if scope not in {"system", "platform"}:
+            raise CommandError(f"unsupported configuration scope: {scope}", 2)
+        return f"{scope}/configuration"
+
+    def get_configuration_optional(
         self, scope: str, tenant_id: str | None = None
-    ) -> ConfigurationState:
-        path = (
-            f"tenants/{tenant_id}/configuration"
-            if scope == "tenant" and tenant_id
-            else f"{scope}/configuration"
-        )
-        response = self._response("GET", f"/management/v1/{path}")
+    ) -> ConfigurationState | None:
+        path = self._configuration_path(scope, tenant_id)
+        try:
+            response = self._response("GET", f"/management/v1/{path}")
+        except CommandError as error:
+            if error.status_code == 404:
+                return None
+            raise
         etag = response.headers.get("etag")
         if not etag:
             raise CommandError("Control Plane response did not include ETag", 3)
         return ConfigurationState(response.json(), etag)
 
+    def get_configuration(
+        self, scope: str, tenant_id: str | None = None
+    ) -> ConfigurationState:
+        state = self.get_configuration_optional(scope, tenant_id)
+        if state is None:
+            raise CommandError(f"{scope} configuration is not initialized", 3)
+        return state
+
+    def plan_configuration(
+        self, scope: str, value: dict[str, Any], tenant_id: str | None = None
+    ) -> Any:
+        path = self._configuration_path(scope, tenant_id)
+        return self.management("POST", f"{path}/plan", json=value)
+
     def apply_configuration(
         self,
         scope: str,
         value: dict[str, Any],
-        etag: str,
+        etag: str | None = None,
         tenant_id: str | None = None,
+        *,
+        if_none_match: bool = False,
+        idempotency_key: str | None = None,
     ) -> Any:
-        path = (
-            f"tenants/{tenant_id}/configuration"
-            if scope == "tenant" and tenant_id
-            else f"{scope}/configuration"
+        path = self._configuration_path(scope, tenant_id)
+        return self.management_mutation(
+            "PUT",
+            path,
+            etag=etag,
+            if_none_match=if_none_match,
+            idempotency_key=idempotency_key,
+            json=value,
         )
-        return self.management_mutation("PUT", path, etag=etag, json=value)
 
     def publish_configuration(
         self, scope: str, etag: str, tenant_id: str | None = None
     ) -> Any:
-        path = (
-            f"tenants/{tenant_id}/configuration/publish"
-            if scope == "tenant" and tenant_id
-            else f"{scope}/configuration/publish"
-        )
+        path = f"{self._configuration_path(scope, tenant_id)}/publish"
         return self.management_mutation("POST", path, etag=etag)
+
+
+def _format_error(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    try:
+        phrase = HTTPStatus(response.status_code).phrase
+    except ValueError:
+        phrase = "HTTP error"
+    if not isinstance(payload, dict) or not isinstance(payload.get("code"), str):
+        return (
+            f"Control Plane API request failed ({response.status_code} {phrase}): "
+            f"{response.text[:500]}"
+        )
+    lines = [
+        (
+            f"Control Plane API request failed ({response.status_code} {phrase}): "
+            f"{payload['code']}: {payload.get('message', 'request failed')}"
+        )
+    ]
+    for issue in payload.get("issues") or []:
+        if isinstance(issue, dict):
+            lines.append(
+                f"  {issue.get('path', '<root>')}: {issue.get('code', 'invalid')}: "
+                f"{issue.get('message', 'invalid value')}"
+            )
+    if payload.get("details") is not None:
+        lines.append(f"  details: {dumps(payload['details'], sort_keys=True)}")
+    if payload.get("request_id"):
+        lines.append(f"  request_id: {payload['request_id']}")
+    return "\n".join(lines)

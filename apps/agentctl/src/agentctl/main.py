@@ -2,17 +2,18 @@ import sys
 from argparse import ArgumentParser
 from collections.abc import Sequence
 from json import dumps, loads
+from pathlib import Path
 
 import httpx
 
 from agentctl import __version__
+from agentctl.commands.configuration import run_configuration
 from agentctl.commands.errors import CommandError
 from agentctl.commands.platform import (
     run_platform_runtime,
     run_profile,
     run_system_prompt,
 )
-from agentctl.commands.workspace import WorkspaceSelection, run_workspace
 from agentctl.settings import Settings, SettingsError
 
 
@@ -48,6 +49,12 @@ def run_tenant_show(*args, **kwargs):
 
 def run_managed(*args, **kwargs):
     from agentctl.commands.managed import run_managed as command
+
+    return command(*args, **kwargs)
+
+
+def run_workspace(*args, **kwargs):
+    from agentctl.commands.workspace import run_workspace as command
 
     return command(*args, **kwargs)
 
@@ -93,6 +100,26 @@ def parser() -> ArgumentParser:
     rollback = profile_actions.add_parser("rollback")
     rollback.add_argument("profile_key")
     rollback.add_argument("revision_number", type=int)
+    configuration = resources.add_parser(
+        "configuration", help="manage high-level Control Plane configuration"
+    )
+    configuration_scopes = configuration.add_subparsers(
+        dest="configuration_scope", required=True
+    )
+    system_configuration = configuration_scopes.add_parser("system")
+    platform_configuration = configuration_scopes.add_parser("platform")
+    tenant_configuration = configuration_scopes.add_parser("tenant")
+    tenant_configuration.add_argument("tenant_id")
+    for command, action_names in (
+        (system_configuration, ("get", "plan", "apply")),
+        (platform_configuration, ("get", "plan", "apply", "publish")),
+        (tenant_configuration, ("get", "plan", "apply", "publish")),
+    ):
+        subcommands = command.add_subparsers(dest="configuration_action", required=True)
+        for action in action_names:
+            subcommand = subcommands.add_parser(action)
+            if action in {"plan", "apply"}:
+                subcommand.add_argument("file", type=Path)
     for workspace_action in ("status", "pull", "plan", "push", "publish"):
         workspace = resources.add_parser(
             workspace_action, help=f"workspace {workspace_action}"
@@ -176,8 +203,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     arguments = parser().parse_args(argv)
     try:
         settings = Settings.load(
-            arguments.api_url, arguments.state_dir, arguments.control_plane_url
+            arguments.api_url,
+            arguments.state_dir,
+            arguments.control_plane_url,
+            require_backend=arguments.resource != "configuration",
         )
+        if arguments.resource == "configuration":
+            run_configuration(
+                settings,
+                arguments.configuration_scope,
+                arguments.configuration_action,
+                tenant_id=getattr(arguments, "tenant_id", None),
+                file=getattr(arguments, "file", None),
+            )
+            return 0
         if arguments.resource == "integration":
             run_integration(
                 settings,
@@ -237,6 +276,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return 0
         if arguments.resource in {"status", "pull", "plan", "push", "publish"}:
+            from agentctl.commands.workspace import WorkspaceSelection
+
             if arguments.workspace_scope == "platform":
                 selection = WorkspaceSelection("platform")
             elif arguments.workspace_scope == "tenant":
