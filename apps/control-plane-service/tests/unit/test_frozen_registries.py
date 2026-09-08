@@ -225,7 +225,7 @@ def test_frozen_component_scopes_reject_every_other_scope(
                             "properties": {},
                         },
                         "execution": {
-                            "integration_key": "pms",
+                            "integration_key": "booking",
                             "method": "GET",
                             "timeout_seconds": 1,
                             "request": {"codec": "none"},
@@ -311,7 +311,7 @@ def test_code_owned_registries_resolve_frozen_keys_and_are_read_only() -> None:
         (ArchitectureRegistry(), ("cascade", "realtime", "half-cascade")),
         (ProviderKindRegistry(), ("azure_openai", "elevenlabs", "deepgram")),
         (DeploymentKindRegistry(), ("llm", "realtime", "stt", "tts")),
-        (IntegrationKindRegistry(), ("http", "pms", "webhook")),
+        (IntegrationKindRegistry(), ("http",)),
     )
     for kind_registry, keys in registries_and_keys:
         assert tuple(entry.key for entry in kind_registry.entries) == keys

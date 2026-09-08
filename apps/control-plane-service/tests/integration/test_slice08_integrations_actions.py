@@ -40,8 +40,11 @@ async def create_integration(
         headers={"Idempotency-Key": f"create-{tenant_id}-{key}"},
         json={
             "key": key,
-            "integration_kind": "pms",
-            "config": {},
+            "integration_kind": "http",
+            "config": {
+                "endpoint": "https://example.com",
+                "authentication": {"type": "none"},
+            },
             "credential_ref": credential_ref,
         },
     )

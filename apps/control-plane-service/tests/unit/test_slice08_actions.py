@@ -40,7 +40,7 @@ def runtime_action(**changes):
             "requires_caller_phone": False,
         },
         "execution": {
-            "integration_key": "pms",
+            "integration_key": "booking",
             "method": "POST",
             "path": {"$expr": "metadata.path"},
             "request": {
@@ -80,7 +80,7 @@ def post_call_action(**changes):
             }
         },
         "execution": {
-            "integration_key": "webhook",
+            "integration_key": "notify",
             "method": "POST",
             "request": {"codec": "json", "mapping": None},
             "response": {"codec": "json", "mapping": None},

@@ -44,10 +44,6 @@ class _ModelDeploymentConfig(_ProviderConfig):
     model_id: str = Field(min_length=1)
 
 
-class _GenericIntegrationConfig(BaseModel):
-    model_config = ConfigDict(extra="allow", frozen=True)
-
-
 @dataclass(frozen=True, slots=True)
 class RegistryEntry:
     key: str
@@ -213,24 +209,10 @@ class IntegrationKindRegistry:
             "HTTP integration",
             {"config_schema": MappingProxyType({"type": "object"})},
         ),
-        RegistryEntry(
-            "pms",
-            "PMS",
-            "Property-management integration",
-            {"config_schema": MappingProxyType({"type": "object"})},
-        ),
-        RegistryEntry(
-            "webhook",
-            "Webhook",
-            "Webhook integration",
-            {"config_schema": MappingProxyType({"type": "object"})},
-        ),
     )
     _config_schemas: Mapping[str, type[BaseModel]] = MappingProxyType(
         {
             "http": HttpConnectionConfiguration,
-            "pms": _GenericIntegrationConfig,
-            "webhook": _GenericIntegrationConfig,
         }
     )
 

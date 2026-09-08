@@ -33,7 +33,6 @@ class _Registry(IntegrationKindRegistry):
 
 def test_integration_registry_accepts_known_kinds_and_validates_config() -> None:
     registry = IntegrationKindRegistry()
-    assert registry.validate_config("pms", {}) == {}
     assert (
         registry.validate_config(
             "http",
@@ -41,8 +40,9 @@ def test_integration_registry_accepts_known_kinds_and_validates_config() -> None
         )["endpoint"]
         == "https://example.com"
     )
-    with pytest.raises(InvalidManagedResource, match="unknown integration"):
-        registry.validate_config("unknown", {})
+    for kind in ("webhook", "pms", "unknown"):
+        with pytest.raises(InvalidManagedResource, match="unknown integration"):
+            registry.validate_config(kind, {})
     with pytest.raises(InvalidManagedResource):
         registry.validate_config("http", {"unknown": True})
 
@@ -51,8 +51,11 @@ def test_tenant_path_owns_identity_and_update_cannot_change_it() -> None:
     created = IntegrationConnectionCreate.model_validate(
         {
             "key": "booking-api",
-            "integration_kind": "pms",
-            "config": {},
+            "integration_kind": "http",
+            "config": {
+                "endpoint": "https://example.com",
+                "authentication": {"type": "none"},
+            },
             "credential_ref": None,
         }
     )
@@ -62,14 +65,17 @@ def test_tenant_path_owns_identity_and_update_cannot_change_it() -> None:
             {
                 "tenant_id": "tenant-b",
                 "key": "booking-api",
-                "integration_kind": "pms",
-                "config": {},
+                "integration_kind": "http",
+                "config": {
+                    "endpoint": "https://example.com",
+                    "authentication": {"type": "none"},
+                },
             }
         )
     for field, value in (
         ("tenant_id", "tenant-b"),
         ("key", "other"),
-        ("integration_kind", "webhook"),
+        ("integration_kind", "http"),
         ("enabled", True),
     ):
         with pytest.raises(ValidationError):
@@ -85,8 +91,11 @@ async def test_validation_runs_kind_check_after_read_transaction_closes() -> Non
         IntegrationConnectionRef(uuid4()),
         "tenant-a",
         "booking",
-        "pms",
-        {},
+        "http",
+        {
+            "endpoint": "https://example.com",
+            "authentication": {"type": "none"},
+        },
         None,
         False,
         1,

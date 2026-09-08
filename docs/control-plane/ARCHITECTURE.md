@@ -677,8 +677,6 @@ flowchart LR
 
     IKR[IntegrationKindRegistry]
     IKR --> IK1[http]
-    IKR --> IK2[pms]
-    IKR --> IK3[webhook]
 ```
 
 #### Properties
@@ -732,8 +730,6 @@ Supported deployment families:
 Supported integration families, e.g.:
 
 * `http`
-* `pms`
-* `webhook`
 
 ---
 
