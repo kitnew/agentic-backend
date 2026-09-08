@@ -7632,7 +7632,7 @@
           {
             "in": "header",
             "name": "If-Match",
-            "required": true,
+            "required": false,
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -7642,6 +7642,15 @@
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -7738,6 +7747,16 @@
               }
             },
             "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
           },
           "429": {
             "content": {
@@ -15616,7 +15635,7 @@
           {
             "in": "header",
             "name": "If-Match",
-            "required": true,
+            "required": false,
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -15626,6 +15645,15 @@
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -15722,6 +15750,16 @@
               }
             },
             "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
           },
           "429": {
             "content": {
@@ -17586,7 +17624,7 @@
           {
             "in": "header",
             "name": "If-Match",
-            "required": true,
+            "required": false,
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -17596,6 +17634,15 @@
             "in": "header",
             "name": "Idempotency-Key",
             "required": true,
+            "schema": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
             "schema": {
               "minLength": 1,
               "type": "string"
@@ -17692,6 +17739,16 @@
               }
             },
             "description": "Unprocessable Content"
+          },
+          "428": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Precondition Required"
           },
           "429": {
             "content": {

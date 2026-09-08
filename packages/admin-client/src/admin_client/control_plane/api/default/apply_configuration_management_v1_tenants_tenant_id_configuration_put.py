@@ -9,20 +9,25 @@ from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
 from ...models.tenant_configuration_apply_result import TenantConfigurationApplyResult
 from ...models.tenant_configuration_desired import TenantConfigurationDesired
-from ...types import Response
+from ...types import UNSET, Response, Unset
 
 
 def _get_kwargs(
     tenant_id: str,
     *,
     body: TenantConfigurationDesired,
-    if_match: str,
+    if_match: str | Unset = UNSET,
     idempotency_key: str,
+    if_none_match: str | Unset = UNSET,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
-    headers["If-Match"] = if_match
+    if not isinstance(if_match, Unset):
+        headers["If-Match"] = if_match
 
     headers["Idempotency-Key"] = idempotency_key
+
+    if not isinstance(if_none_match, Unset):
+        headers["If-None-Match"] = if_none_match
 
     _kwargs: dict[str, Any] = {
         "method": "put",
@@ -82,6 +87,11 @@ def _parse_response(
 
         return response_422
 
+    if response.status_code == 428:
+        response_428 = ErrorResponse.from_dict(response.json())
+
+        return response_428
+
     if response.status_code == 429:
         response_429 = ErrorResponse.from_dict(response.json())
 
@@ -119,15 +129,17 @@ def sync_detailed(
     *,
     client: AuthenticatedClient,
     body: TenantConfigurationDesired,
-    if_match: str,
+    if_match: str | Unset = UNSET,
     idempotency_key: str,
+    if_none_match: str | Unset = UNSET,
 ) -> Response[ErrorResponse | TenantConfigurationApplyResult]:
     """Apply Configuration
 
     Args:
         tenant_id (str):
-        if_match (str):
+        if_match (str | Unset):
         idempotency_key (str):
+        if_none_match (str | Unset):
         body (TenantConfigurationDesired):
 
     Raises:
@@ -143,6 +155,7 @@ def sync_detailed(
         body=body,
         if_match=if_match,
         idempotency_key=idempotency_key,
+        if_none_match=if_none_match,
     )
 
     response = client.get_httpx_client().request(
@@ -157,15 +170,17 @@ def sync(
     *,
     client: AuthenticatedClient,
     body: TenantConfigurationDesired,
-    if_match: str,
+    if_match: str | Unset = UNSET,
     idempotency_key: str,
+    if_none_match: str | Unset = UNSET,
 ) -> ErrorResponse | TenantConfigurationApplyResult | None:
     """Apply Configuration
 
     Args:
         tenant_id (str):
-        if_match (str):
+        if_match (str | Unset):
         idempotency_key (str):
+        if_none_match (str | Unset):
         body (TenantConfigurationDesired):
 
     Raises:
@@ -182,6 +197,7 @@ def sync(
         body=body,
         if_match=if_match,
         idempotency_key=idempotency_key,
+        if_none_match=if_none_match,
     ).parsed
 
 
@@ -190,15 +206,17 @@ async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
     body: TenantConfigurationDesired,
-    if_match: str,
+    if_match: str | Unset = UNSET,
     idempotency_key: str,
+    if_none_match: str | Unset = UNSET,
 ) -> Response[ErrorResponse | TenantConfigurationApplyResult]:
     """Apply Configuration
 
     Args:
         tenant_id (str):
-        if_match (str):
+        if_match (str | Unset):
         idempotency_key (str):
+        if_none_match (str | Unset):
         body (TenantConfigurationDesired):
 
     Raises:
@@ -214,6 +232,7 @@ async def asyncio_detailed(
         body=body,
         if_match=if_match,
         idempotency_key=idempotency_key,
+        if_none_match=if_none_match,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -226,15 +245,17 @@ async def asyncio(
     *,
     client: AuthenticatedClient,
     body: TenantConfigurationDesired,
-    if_match: str,
+    if_match: str | Unset = UNSET,
     idempotency_key: str,
+    if_none_match: str | Unset = UNSET,
 ) -> ErrorResponse | TenantConfigurationApplyResult | None:
     """Apply Configuration
 
     Args:
         tenant_id (str):
-        if_match (str):
+        if_match (str | Unset):
         idempotency_key (str):
+        if_none_match (str | Unset):
         body (TenantConfigurationDesired):
 
     Raises:
@@ -252,5 +273,6 @@ async def asyncio(
             body=body,
             if_match=if_match,
             idempotency_key=idempotency_key,
+            if_none_match=if_none_match,
         )
     ).parsed
