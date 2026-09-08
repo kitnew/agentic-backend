@@ -15,3 +15,12 @@ export function throwAdminResponse(response: GeneratedResponse): never {
 export function apiErrorMessage(error: unknown, fallback: string): string {
   return normalizeApiError(error, fallback).message;
 }
+
+export function managementMutationOptions(etag?: string | null): RequestInit {
+  return {
+    headers: {
+      "Idempotency-Key": crypto.randomUUID(),
+      ...(etag ? { "If-Match": etag } : {}),
+    },
+  };
+}

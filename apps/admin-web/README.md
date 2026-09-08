@@ -13,7 +13,7 @@ pnpm api:check
 pnpm typecheck && pnpm lint && pnpm format:check && pnpm test && pnpm build && pnpm e2e
 ```
 
-`api:generate` reads the Backend and Control Plane OpenAPI snapshots; never edit either generated client tree by hand. `api:check` regenerates both and fails on a diff. CP browser paths use `/control-plane/*`; the proxy rewrites them to CP `/v1/*` and injects `CONTROL_PLANE_MANAGEMENT_TOKEN` server-side. Backend remains the owner of `/admin/*` tenant identity, sessions, and operational views. The browser never receives either management token.
+`api:generate` reads the Backend and Control Plane OpenAPI snapshots; never edit either generated client tree by hand. `api:check` regenerates both and fails on a diff. CP browser paths use the exact `/management/v1/*` contract; the proxy forwards them unchanged and injects `CONTROL_PLANE_MANAGEMENT_TOKEN` server-side. Backend remains the owner of `/admin/*` tenant identity, sessions, and operational views. The browser never receives either management token.
 
 ## Architecture
 
@@ -31,7 +31,7 @@ Future forms use React Hook Form plus Zod inside their feature. A backend DTO is
 
 `/tenants/$tenantId/agent` is a tenant feature discovered from `src/features/agent`; Core, AppShell, and navigation have no Agent-specific code. It maps generated Admin API DTOs to a feature-local React Hook Form/Zod model for the editable agent name, greeting, profile, locale, tenant instructions, and the supported tenant TTS voice override.
 
-The Backend Admin API is canonical. Save creates or updates the existing versioned draft with its ETag, publishes it, and reloads canonical state; profile or tenant-prompt changes also apply the existing prompt set. Platform and profile prompt content is read-only. Capabilities are a read-only enabled summary. Infrastructure runtime settings, capabilities management, knowledge, integrations, revisions/history UI, RBAC, Debug Chat, and test calls remain out of scope.
+Tenant configuration is edited through the generated high-level `TenantConfiguration` Management API with its aggregate ETag. Platform and system configuration use their corresponding high-level Management APIs; resource-specific provider, integration, and telephony screens use the generated expert APIs.
 
 ## Add a feature
 

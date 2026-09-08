@@ -32,9 +32,8 @@ export default defineConfig(({ mode }) => {
             });
           },
         },
-        "/control-plane": {
+        "/management": {
           target: `http://localhost:${controlPlanePort}`,
-          rewrite: (path) => path.replace(/^\/control-plane/, "/v1"),
           configure(proxy) {
             proxy.on("proxyReq", (request) => {
               request.removeHeader("Authorization");

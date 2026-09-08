@@ -6,18 +6,23 @@ import {
   PageHeader,
   PageLoading,
 } from "../../components/page-states";
-import { responseData } from "../../core/api/client";
+import { managementMutationOptions, responseData } from "../../core/api/client";
 import {
-  createConnectionV1ManagedResourcesProviderConnectionsPost,
-  createCredentialV1ManagedResourcesCredentialsPost,
-  createDeploymentV1ManagedResourcesModelDeploymentsPost,
-  listConnectionsV1ManagedResourcesProviderConnectionsGet,
-  listCredentialsV1ManagedResourcesCredentialsGet,
-  listDeploymentsV1ManagedResourcesModelDeploymentsGet,
-  revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePost,
-  rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePost,
-  setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPost,
-  setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPost,
+  createConnectionManagementV1ProvidersConnectionsPost,
+  createCredentialManagementV1CredentialsPost,
+  createDeploymentManagementV1ProvidersDeploymentsPost,
+  disableConnectionManagementV1ProvidersConnectionsIdDisablePost,
+  disableDeploymentManagementV1ProvidersDeploymentsIdDisablePost,
+  enableConnectionManagementV1ProvidersConnectionsIdEnablePost,
+  enableDeploymentManagementV1ProvidersDeploymentsIdEnablePost,
+  getConnectionManagementV1ProvidersConnectionsIdGet,
+  getCredentialManagementV1CredentialsIdGet,
+  getDeploymentManagementV1ProvidersDeploymentsIdGet,
+  listConnectionsManagementV1ProvidersConnectionsGet,
+  listCredentialsManagementV1CredentialsGet,
+  listDeploymentsManagementV1ProvidersDeploymentsGet,
+  revokeCredentialManagementV1CredentialsIdRevokePost,
+  rotateCredentialManagementV1CredentialsIdRotatePost,
 } from "../../core/api/control-plane";
 
 export function PlatformProvidersPage() {
@@ -37,19 +42,22 @@ export function PlatformProvidersPage() {
     queryFn: async () =>
       Promise.all([
         responseData<unknown[]>(
-          await listCredentialsV1ManagedResourcesCredentialsGet(),
+          await listCredentialsManagementV1CredentialsGet(),
         ),
         responseData<unknown[]>(
-          await listConnectionsV1ManagedResourcesProviderConnectionsGet(),
+          await listConnectionsManagementV1ProvidersConnectionsGet(),
         ),
         responseData<unknown[]>(
-          await listDeploymentsV1ManagedResourcesModelDeploymentsGet(),
+          await listDeploymentsManagementV1ProvidersDeploymentsGet(),
         ),
       ]),
   });
   const create = useMutation({
     mutationFn: () =>
-      createCredentialV1ManagedResourcesCredentialsPost({ name, secret }),
+      createCredentialManagementV1CredentialsPost(
+        { name, secret, scope: { type: "platform" } },
+        managementMutationOptions(),
+      ),
     onSuccess: () => {
       setSecret("");
       query.refetch();
@@ -57,24 +65,48 @@ export function PlatformProvidersPage() {
   });
   const createConnection = useMutation({
     mutationFn: () =>
-      createConnectionV1ManagedResourcesProviderConnectionsPost({
-        key: connectionKey,
-        provider_kind: "openai",
-        credential_ref: credentialRef,
-        connection_config: JSON.parse(connectionJson),
-        enabled: true,
-      }),
+      createConnectionManagementV1ProvidersConnectionsPost(
+        {
+          key: connectionKey,
+          provider_kind: "openai",
+          credential_ref: credentialRef,
+          connection_config: JSON.parse(connectionJson),
+        },
+        managementMutationOptions(),
+      ),
     onSuccess: () => query.refetch(),
   });
   const createDeployment = useMutation({
     mutationFn: () =>
-      createDeploymentV1ManagedResourcesModelDeploymentsPost({
-        key: deploymentKey,
-        connection_ref: connectionRef,
-        deployment_kind: deploymentKind,
-        deployment_config: JSON.parse(deploymentJson),
-        enabled: true,
-      }),
+      createDeploymentManagementV1ProvidersDeploymentsPost(
+        {
+          key: deploymentKey,
+          connection_ref: connectionRef,
+          deployment_kind: deploymentKind,
+          deployment_config: JSON.parse(deploymentJson),
+          capabilities:
+            deploymentKind === "llm"
+              ? {
+                  kind: "llm",
+                  supports_reasoning_effort: false,
+                  supports_temperature: true,
+                }
+              : deploymentKind === "realtime"
+                ? {
+                    kind: "realtime",
+                    supports_semantic_vad: true,
+                    supports_server_vad: true,
+                  }
+                : deploymentKind === "stt"
+                  ? {
+                      kind: "stt",
+                      supports_cascade: true,
+                      supports_realtime_input_transcription: false,
+                    }
+                  : { kind: "tts" },
+        },
+        managementMutationOptions(),
+      ),
     onSuccess: () => query.refetch(),
   });
   if (query.isPending) return <PageLoading />;
@@ -215,24 +247,38 @@ export function PlatformProvidersPage() {
       <ProviderList
         title="Provider Connections"
         items={connections}
-        onToggle={(resource, operation) =>
-          setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPost(
-            String(resource.resource_id ?? resource.id),
-            operation,
-            { expected_generation: Number(resource.generation ?? 1) },
-          ).then(() => query.refetch())
-        }
+        onToggle={async (resource, operation) => {
+          const id = String(resource.id);
+          const current =
+            await getConnectionManagementV1ProvidersConnectionsIdGet(id);
+          const mutate =
+            operation === "enable"
+              ? enableConnectionManagementV1ProvidersConnectionsIdEnablePost
+              : disableConnectionManagementV1ProvidersConnectionsIdDisablePost;
+          await mutate(
+            id,
+            managementMutationOptions(current.headers.get("etag")),
+          );
+          await query.refetch();
+        }}
       />
       <ProviderList
         title="Model Deployments"
         items={deployments}
-        onToggle={(resource, operation) =>
-          setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPost(
-            String(resource.resource_id ?? resource.id),
-            operation,
-            { expected_generation: Number(resource.generation ?? 1) },
-          ).then(() => query.refetch())
-        }
+        onToggle={async (resource, operation) => {
+          const id = String(resource.id);
+          const current =
+            await getDeploymentManagementV1ProvidersDeploymentsIdGet(id);
+          const mutate =
+            operation === "enable"
+              ? enableDeploymentManagementV1ProvidersDeploymentsIdEnablePost
+              : disableDeploymentManagementV1ProvidersDeploymentsIdDisablePost;
+          await mutate(
+            id,
+            managementMutationOptions(current.headers.get("etag")),
+          );
+          await query.refetch();
+        }}
       />
       <CredentialList items={credentials} onRefresh={() => query.refetch()} />
       {create.isError && (
@@ -311,8 +357,7 @@ function CredentialList({
       <ul className="divide-y border-y">
         {items.map((item) => {
           const resource = item as Record<string, unknown>;
-          const id = String(resource.resource_id ?? resource.id);
-          const generation = Number(resource.generation ?? 1);
+          const id = String(resource.id);
           return (
             <li
               className="flex items-center justify-between gap-3 py-3"
@@ -327,25 +372,31 @@ function CredentialList({
               <span className="flex gap-2">
                 <button
                   className="rounded border px-2 py-1 text-sm"
-                  onClick={() =>
-                    rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePost(
+                  onClick={async () => {
+                    const current =
+                      await getCredentialManagementV1CredentialsIdGet(id);
+                    await rotateCredentialManagementV1CredentialsIdRotatePost(
                       id,
                       { secret: window.prompt("New secret") ?? "" },
-                      { headers: { "If-Match": `"${generation}"` } },
-                    ).then(onRefresh)
-                  }
+                      managementMutationOptions(current.headers.get("etag")),
+                    );
+                    onRefresh();
+                  }}
                   type="button"
                 >
                   Rotate
                 </button>
                 <button
                   className="rounded border px-2 py-1 text-sm"
-                  onClick={() =>
-                    revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePost(
+                  onClick={async () => {
+                    const current =
+                      await getCredentialManagementV1CredentialsIdGet(id);
+                    await revokeCredentialManagementV1CredentialsIdRevokePost(
                       id,
-                      {},
-                    ).then(onRefresh)
-                  }
+                      managementMutationOptions(current.headers.get("etag")),
+                    );
+                    onRefresh();
+                  }}
                   type="button"
                 >
                   Revoke

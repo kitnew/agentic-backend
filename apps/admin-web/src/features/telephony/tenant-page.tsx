@@ -6,10 +6,10 @@ import {
   PageHeader,
   PageLoading,
 } from "../../components/page-states";
-import { responseData } from "../../core/api/client";
+import { managementMutationOptions, responseData } from "../../core/api/client";
 import {
-  createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPost,
-  listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGet,
+  createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPost,
+  listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGet,
 } from "../../core/api/control-plane";
 import { tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGet } from "../../core/api/generated/admin-tenants/admin-tenants";
 import { useTenant } from "../../core/tenant/use-tenant";
@@ -22,8 +22,8 @@ export function TenantTelephonyPage() {
     enabled: Boolean(tenantId),
     queryFn: async () =>
       responseData<unknown[]>(
-        await listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGet(
-          { tenant_id: tenantId },
+        await listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGet(
+          tenantId as string,
         ),
       ),
   });
@@ -39,11 +39,11 @@ export function TenantTelephonyPage() {
   });
   const assign = useMutation({
     mutationFn: () =>
-      createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPost({
-        tenant_id: tenantId as string,
-        phone_number: phone,
-        enabled: true,
-      }),
+      createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPost(
+        tenantId as string,
+        { phone_number: phone },
+        managementMutationOptions(),
+      ),
     onSuccess: () => {
       setPhone("");
       assignments.refetch();

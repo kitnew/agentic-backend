@@ -6,12 +6,14 @@ import {
   PageHeader,
   PageLoading,
 } from "../../components/page-states";
-import { responseData } from "../../core/api/client";
+import { managementMutationOptions, responseData } from "../../core/api/client";
 import {
-  createHandoffDestinationV1ManagedResourcesHandoffDestinationsPost,
-  listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGet,
-  setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPost,
-  updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPut,
+  createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPost,
+  disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePost,
+  enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePost,
+  getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGet,
+  listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGet,
+  updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPut,
 } from "../../core/api/control-plane";
 import { useTenant } from "../../core/tenant/use-tenant";
 
@@ -25,21 +27,19 @@ export function HandoffPage() {
     enabled: Boolean(tenantId),
     queryFn: async () =>
       responseData<unknown[]>(
-        await listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGet({
-          tenant_id: tenantId,
-        }),
+        await listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGet(
+          tenantId as string,
+        ),
       ),
   });
   const refresh = () => query.refetch();
   const create = useMutation({
     mutationFn: () =>
-      createHandoffDestinationV1ManagedResourcesHandoffDestinationsPost({
-        tenant_id: tenantId as string,
-        key,
-        phone_number: phoneNumber,
-        description,
-        enabled: true,
-      }),
+      createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPost(
+        tenantId as string,
+        { key, phone_number: phoneNumber, description },
+        managementMutationOptions(),
+      ),
     onSuccess: () => {
       setKey("");
       setPhoneNumber("");
@@ -99,7 +99,6 @@ export function HandoffPage() {
           const id = String(
             resource.resource_id ?? resource.id ?? resource.key,
           );
-          const generation = Number(resource.generation ?? 1);
           const enabled = resource.enabled !== false;
           return (
             <li
@@ -116,21 +115,36 @@ export function HandoffPage() {
               <span className="flex gap-2">
                 <button
                   className="rounded border px-2 py-1 text-sm"
-                  onClick={() =>
-                    setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPost(
+                  onClick={async () => {
+                    const current =
+                      await getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGet(
+                        tenantId,
+                        id,
+                      );
+                    const operation = enabled
+                      ? disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePost
+                      : enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePost;
+                    await operation(
+                      tenantId,
                       id,
-                      enabled ? "disable" : "enable",
-                      { expected_generation: generation },
-                    ).then(refresh)
-                  }
+                      managementMutationOptions(current.headers.get("etag")),
+                    );
+                    await refresh();
+                  }}
                   type="button"
                 >
                   {enabled ? "Disable" : "Enable"}
                 </button>
                 <button
                   className="rounded border px-2 py-1 text-sm"
-                  onClick={() =>
-                    updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPut(
+                  onClick={async () => {
+                    const current =
+                      await getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGet(
+                        tenantId,
+                        id,
+                      );
+                    await updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPut(
+                      tenantId,
                       id,
                       {
                         description: String(
@@ -139,10 +153,11 @@ export function HandoffPage() {
                         phone_number: String(
                           resource.phone_number ?? phoneNumber,
                         ),
-                        expected_generation: generation,
                       },
-                    ).then(refresh)
-                  }
+                      managementMutationOptions(current.headers.get("etag")),
+                    );
+                    await refresh();
+                  }}
                   type="button"
                 >
                   Save current

@@ -6,13 +6,15 @@ import {
   PageHeader,
   PageLoading,
 } from "../../components/page-states";
-import { responseData } from "../../core/api/client";
+import { managementMutationOptions, responseData } from "../../core/api/client";
 import {
-  createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPost,
-  listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGet,
-  setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPost,
-  updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPut,
-  validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePost,
+  createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPost,
+  disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePost,
+  enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePost,
+  getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGet,
+  listIntegrationsManagementV1TenantsTenantIdIntegrationsGet,
+  updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPut,
+  validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePost,
 } from "../../core/api/control-plane";
 import { useTenant } from "../../core/tenant/use-tenant";
 
@@ -25,21 +27,22 @@ export function IntegrationsPage() {
     enabled: Boolean(tenantId),
     queryFn: async () =>
       responseData<unknown[]>(
-        await listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGet(
-          { tenant_id: tenantId },
+        await listIntegrationsManagementV1TenantsTenantIdIntegrationsGet(
+          tenantId as string,
         ),
       ),
   });
   const create = useMutation({
     mutationFn: async () =>
       responseData(
-        await createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPost(
+        await createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPost(
+          tenantId as string,
           {
-            tenant_id: tenantId as string,
             key,
             integration_kind: "http",
             config: JSON.parse(config),
           },
+          managementMutationOptions(),
         ),
       ),
     onSuccess: () => query.refetch(),
@@ -91,7 +94,6 @@ export function IntegrationsPage() {
           const id = String(
             resource.resource_id ?? resource.id ?? resource.key,
           );
-          const generation = Number(resource.generation ?? 1);
           const enabled = resource.enabled !== false;
           return (
             <li
@@ -108,13 +110,22 @@ export function IntegrationsPage() {
               <span className="flex gap-2">
                 <button
                   className="rounded border px-2 py-1 text-sm"
-                  onClick={() =>
-                    setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPost(
+                  onClick={async () => {
+                    const current =
+                      await getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGet(
+                        tenantId,
+                        id,
+                      );
+                    const operation = enabled
+                      ? disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePost
+                      : enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePost;
+                    await operation(
+                      tenantId,
                       id,
-                      enabled ? "disable" : "enable",
-                      { expected_generation: generation },
-                    ).then(() => query.refetch())
-                  }
+                      managementMutationOptions(current.headers.get("etag")),
+                    );
+                    await query.refetch();
+                  }}
                   type="button"
                 >
                   {enabled ? "Disable" : "Enable"}
@@ -122,7 +133,8 @@ export function IntegrationsPage() {
                 <button
                   className="rounded border px-2 py-1 text-sm"
                   onClick={() =>
-                    validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePost(
+                    validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePost(
+                      tenantId,
                       id,
                     ).then(() => query.refetch())
                   }
@@ -132,8 +144,14 @@ export function IntegrationsPage() {
                 </button>
                 <button
                   className="rounded border px-2 py-1 text-sm"
-                  onClick={() =>
-                    updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPut(
+                  onClick={async () => {
+                    const current =
+                      await getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGet(
+                        tenantId,
+                        id,
+                      );
+                    await updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPut(
+                      tenantId,
                       id,
                       {
                         config: resource.config as Record<string, unknown>,
@@ -141,10 +159,11 @@ export function IntegrationsPage() {
                           | string
                           | null
                           | undefined,
-                        expected_generation: generation,
                       },
-                    ).then(() => query.refetch())
-                  }
+                      managementMutationOptions(current.headers.get("etag")),
+                    );
+                    await query.refetch();
+                  }}
                   type="button"
                 >
                   Save current
