@@ -226,6 +226,13 @@ class PhoneNumberAssignment:
     updated_by: str
 
 
+@dataclass(frozen=True, slots=True)
+class InboundRoute:
+    tenant_id: str
+    phone_number: str
+    route_version: str
+
+
 HANDOFF_DESTINATION_KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 E164 = re.compile(r"^\+[1-9][0-9]{1,14}$")
 

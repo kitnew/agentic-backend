@@ -92,14 +92,9 @@ async def test_phone_assignment_partial_unique_indexes_are_race_safe(
             return_exceptions=True,
         )
 
-        for results in (did_race, tenant_race):
-            assert (
-                sum(isinstance(value, PhoneNumberAssignment) for value in results) == 1
-            )
-            assert (
-                sum(isinstance(value, ManagedResourceConflict) for value in results)
-                == 1
-            )
+        assert sum(isinstance(value, PhoneNumberAssignment) for value in did_race) == 1
+        assert sum(isinstance(value, ManagedResourceConflict) for value in did_race) == 1
+        assert all(isinstance(value, PhoneNumberAssignment) for value in tenant_race)
     finally:
         await database.close()
 
@@ -169,10 +164,11 @@ async def test_handoff_and_phone_assignments_are_live_independent_cas_resources(
             await service.create_phone_number_assignment(
                 "tenant-c", "+421552301401", True, "bob"
             )
-        with pytest.raises(ManagedResourceConflict):
+        assert (
             await service.create_phone_number_assignment(
                 "tenant-a", "+421552301403", True, "bob"
             )
+        ).enabled is True
         with pytest.raises(ManagedResourceConflict):
             await service.set_phone_number_assignment_enabled(
                 historical.ref, False, 1, "bob"

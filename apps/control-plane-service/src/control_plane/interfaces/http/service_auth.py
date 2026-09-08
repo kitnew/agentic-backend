@@ -19,8 +19,6 @@ SERVICE_SCOPES = {
             "execution-snapshot:materialize",
             "execution-snapshot:read",
             "integration-material:read",
-            "handoff-material:read",
-            "telephony:read",
         }
     ),
 }

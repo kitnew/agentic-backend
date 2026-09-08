@@ -78,7 +78,7 @@ async def test_ready_succeeds_when_dependencies_are_healthy() -> None:
 async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
     app = create_http_app(
         FakeLifecycle(Readiness(postgres=True, control_plane_schema=True)),
-        managed_resources=object(),  # type: ignore[arg-type]
+        telephony=object(),  # type: ignore[arg-type]
     )
     app.state.settings = SimpleNamespace(
         control_plane_management_token=SimpleNamespace(
@@ -89,7 +89,7 @@ async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         phone_response = await client.put(
-            "/v1/managed-resources/phone-number-assignments/00000000-0000-0000-0000-000000000000",
+            "/management/v1/tenants/tenant-a/telephony/phone-number-assignments/00000000-0000-0000-0000-000000000000",
             headers={"Authorization": "Bearer management-secret"},
             json={
                 "phone_number": "+421552301401",
@@ -98,7 +98,7 @@ async def test_phone_number_assignments_do_not_have_an_update_route() -> None:
             },
         )
         tenant_response = await client.put(
-            "/v1/managed-resources/phone-number-assignments/00000000-0000-0000-0000-000000000000",
+            "/management/v1/tenants/tenant-a/telephony/phone-number-assignments/00000000-0000-0000-0000-000000000000",
             headers={"Authorization": "Bearer management-secret"},
             json={"tenant_id": "tenant-b", "expected_generation": 1, "actor": "admin"},
         )
@@ -128,7 +128,6 @@ async def test_ready_rejects_incompatible_control_plane_schema() -> None:
 async def test_management_routes_require_the_separate_management_token() -> None:
     app = create_http_app(
         FakeLifecycle(Readiness(postgres=True, control_plane_schema=True)),
-        managed_resources=object(),  # type: ignore[arg-type]
     )
     app.state.settings = SimpleNamespace(
         control_plane_management_token=SimpleNamespace(

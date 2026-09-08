@@ -17,7 +17,6 @@ from control_plane.application.execution_materialization import (
 from control_plane.application.execution_resolver import ExecutionResolver
 from control_plane.application.integrations import IntegrationService
 from control_plane.application.live_components import LiveComponentService
-from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.platform_catalogs import PlatformCatalogService
 from control_plane.application.platform_configuration import (
     PlatformConfigurationService,
@@ -29,6 +28,7 @@ from control_plane.application.runtime_materialization import (
 )
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.application.system_configuration import SystemConfigurationService
+from control_plane.application.telephony import TelephonyService
 from control_plane.domain.agent_components import register_agent_components
 from control_plane.domain.components import ComponentDefinitionRegistry
 from control_plane.domain.frozen_components import default_component_definition_registry
@@ -51,9 +51,6 @@ from control_plane.infrastructure.persistence.credential_transactions import (
 from control_plane.infrastructure.persistence.integration_transactions import (
     integration_command_scope,
 )
-from control_plane.infrastructure.persistence.managed_resources import (
-    SqlAlchemyManagedResourceRepository,
-)
 from control_plane.infrastructure.persistence.platform_configuration_transactions import (
     platform_configuration_command_scope,
 )
@@ -71,6 +68,9 @@ from control_plane.infrastructure.persistence.runtime_resolution import (
 )
 from control_plane.infrastructure.persistence.system_configuration_transactions import (
     system_configuration_command_scope,
+)
+from control_plane.infrastructure.persistence.telephony_transactions import (
+    telephony_command_scope,
 )
 from control_plane.infrastructure.provider_validation import HttpProviderValidator
 from control_plane.interfaces.http import create_http_app
@@ -113,6 +113,11 @@ def create_app(
         if isinstance(database, Database)
         else None
     )
+    telephony = (
+        TelephonyService(telephony_command_scope(database.sessions))
+        if isinstance(database, Database)
+        else None
+    )
     components = (
         ComponentService(
             registry,
@@ -128,11 +133,6 @@ def create_app(
     )
     credentials = (
         CredentialService(credential_command_scope(database.sessions, cipher))
-        if isinstance(database, Database)
-        else None
-    )
-    managed_resources = (
-        ManagedResourceService(SqlAlchemyManagedResourceRepository(database.sessions))
         if isinstance(database, Database)
         else None
     )
@@ -212,17 +212,17 @@ def create_app(
     app = create_http_app(
         ServiceLifecycle(database, telemetry),
         components,
-        managed_resources,
-        runtime_resolver,
-        runtime_materialization,
-        execution_materialization,
-        credentials,
-        providers,
-        system_configuration,
-        live_components,
-        platform_configuration,
-        platform_catalogs,
-        integrations,
+        runtime_resolver=runtime_resolver,
+        runtime_materialization=runtime_materialization,
+        execution_materialization=execution_materialization,
+        credentials=credentials,
+        providers=providers,
+        system_configuration=system_configuration,
+        live_components=live_components,
+        platform_configuration=platform_configuration,
+        platform_catalogs=platform_catalogs,
+        integrations=integrations,
+        telephony=telephony,
     )
     app.state.settings = settings
     app.state.database = database

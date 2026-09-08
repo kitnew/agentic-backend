@@ -455,6 +455,26 @@ def upgrade() -> None:
         sa.UniqueConstraint("tenant_id", "key", name="uq_handoff_destination_tenant_key"),
         schema=SCHEMA,
     )
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_handoff_destination_identity_change() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.id IS DISTINCT FROM NEW.id
+             OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
+             OR OLD.key IS DISTINCT FROM NEW.key THEN
+            RAISE EXCEPTION 'handoff destination identity is immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER handoff_destination_identity_immutable "
+        "BEFORE UPDATE OF id, tenant_id, key ON control_plane.handoff_destinations "
+        "FOR EACH ROW EXECUTE FUNCTION control_plane.reject_handoff_destination_identity_change()"
+    )
     op.create_table(
         "phone_number_assignments",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -470,20 +490,32 @@ def upgrade() -> None:
         schema=SCHEMA,
     )
     op.create_index(
-        "uq_phone_number_assignment_enabled_tenant",
-        "phone_number_assignments",
-        ["tenant_id"],
-        unique=True,
-        schema=SCHEMA,
-        postgresql_where=sa.text("enabled"),
-    )
-    op.create_index(
         "uq_phone_number_assignment_enabled_phone",
         "phone_number_assignments",
         ["phone_number"],
         unique=True,
         schema=SCHEMA,
         postgresql_where=sa.text("enabled"),
+    )
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_phone_number_assignment_identity_change() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.id IS DISTINCT FROM NEW.id
+             OR OLD.tenant_id IS DISTINCT FROM NEW.tenant_id
+             OR OLD.phone_number IS DISTINCT FROM NEW.phone_number THEN
+            RAISE EXCEPTION 'phone number assignment identity is immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER phone_number_assignment_identity_immutable "
+        "BEFORE UPDATE OF id, tenant_id, phone_number ON control_plane.phone_number_assignments "
+        "FOR EACH ROW EXECUTE FUNCTION control_plane.reject_phone_number_assignment_identity_change()"
     )
     op.create_table(
         "execution_snapshots",
@@ -505,8 +537,11 @@ def downgrade() -> None:
     op.drop_index("ix_execution_snapshot_tenant_created", table_name="execution_snapshots", schema=SCHEMA)
     op.drop_table("execution_snapshots", schema=SCHEMA)
     op.drop_index("uq_phone_number_assignment_enabled_phone", table_name="phone_number_assignments", schema=SCHEMA)
-    op.drop_index("uq_phone_number_assignment_enabled_tenant", table_name="phone_number_assignments", schema=SCHEMA)
+    op.execute("DROP TRIGGER phone_number_assignment_identity_immutable ON control_plane.phone_number_assignments")
+    op.execute("DROP FUNCTION control_plane.reject_phone_number_assignment_identity_change()")
     op.drop_table("phone_number_assignments", schema=SCHEMA)
+    op.execute("DROP TRIGGER handoff_destination_identity_immutable ON control_plane.handoff_destinations")
+    op.execute("DROP FUNCTION control_plane.reject_handoff_destination_identity_change()")
     op.drop_table("handoff_destinations", schema=SCHEMA)
     op.execute("DROP TRIGGER integration_connection_identity_immutable ON control_plane.integration_connections")
     op.execute("DROP FUNCTION control_plane.reject_integration_connection_identity_change()")

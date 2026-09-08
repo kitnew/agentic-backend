@@ -28,7 +28,6 @@ from control_plane.application.live_components import (
     LiveComponentPreconditionFailed,
     LiveComponentService,
 )
-from control_plane.application.managed_resources import ManagedResourceService
 from control_plane.application.platform_catalogs import (
     CatalogConflict,
     CatalogError,
@@ -65,6 +64,7 @@ from control_plane.application.system_configuration import (
     SystemConfigurationPreconditionFailed,
     SystemConfigurationService,
 )
+from control_plane.application.telephony import TelephonyService
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
@@ -277,10 +277,6 @@ class ProviderConnectionResponse(BaseModel):
     updated_at: datetime
 
 
-class GeneratedActorRequest(BaseModel):
-    expected_generation: int = Field(ge=1)
-
-
 class IntegrationConnectionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     key: str = Field(min_length=1, max_length=255)
@@ -321,11 +317,9 @@ class IntegrationValidationResponse(BaseModel):
 class HandoffDestinationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tenant_id: str = Field(min_length=1, max_length=255)
-    key: str = Field(min_length=1, max_length=64)
+    key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     description: str = Field(min_length=1, max_length=1000)
     phone_number: str = Field(min_length=1, max_length=64)
-    enabled: bool = False
 
 
 class HandoffDestinationUpdate(BaseModel):
@@ -333,15 +327,44 @@ class HandoffDestinationUpdate(BaseModel):
 
     description: str = Field(min_length=1, max_length=1000)
     phone_number: str = Field(min_length=1, max_length=64)
-    expected_generation: int = Field(ge=1)
 
 
 class PhoneNumberAssignmentCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    tenant_id: str = Field(min_length=1, max_length=255)
     phone_number: str = Field(min_length=1, max_length=64)
-    enabled: bool = False
+
+
+class PhoneNumberAssignmentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    tenant_id: str
+    phone_number: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class HandoffDestinationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    tenant_id: str
+    key: str
+    description: str
+    phone_number: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class InboundRouteResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tenant_id: str
+    phone_number: str
+    route_version: str
 
 
 _runtime_secret_auth = Depends(require_service_scope("runtime-secret:materialize"))
@@ -350,14 +373,8 @@ _snapshot_materialize_auth = Depends(
     require_service_scope("execution-snapshot:materialize")
 )
 _snapshot_read_auth = Depends(require_service_scope("execution-snapshot:read"))
-_handoff_material_auth = Depends(require_service_scope("handoff-material:read"))
-_telephony_read_auth = Depends(require_service_scope("telephony:read"))
 _credential_read_auth = Depends(require_management_permission("resources:read"))
 _credential_write_auth = Depends(require_management_permission("credentials:write"))
-
-
-class HandoffMaterialRequest(BaseModel):
-    destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
 
 
 class LLMCapabilitiesWrite(BaseModel):
@@ -443,7 +460,6 @@ class ProviderValidationResponse(BaseModel):
 def create_http_app(
     lifecycle: ServiceLifecycle,
     components: ComponentService | None = None,
-    managed_resources: ManagedResourceService | None = None,
     runtime_resolver: RuntimeResolver | None = None,
     runtime_materialization: ExecutionSnapshotService | None = None,
     execution_materialization: ExecutionMaterializationService | None = None,
@@ -454,12 +470,12 @@ def create_http_app(
     platform_configuration: PlatformConfigurationService | None = None,
     platform_catalogs: PlatformCatalogService | None = None,
     integrations: IntegrationService | None = None,
+    telephony: TelephonyService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.settings = None
     app.state.lifecycle = lifecycle
     app.state.components = components
-    app.state.managed_resources = managed_resources
     app.state.runtime_resolver = runtime_resolver
     app.state.runtime_materialization = runtime_materialization
     app.state.execution_materialization = execution_materialization
@@ -470,6 +486,7 @@ def create_http_app(
     app.state.platform_configuration = platform_configuration
     app.state.platform_catalogs = platform_catalogs
     app.state.integrations = integrations
+    app.state.telephony = telephony
 
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
@@ -661,14 +678,14 @@ def create_http_app(
 
     if components is not None:
         app.include_router(_component_router(), prefix="/v1/scopes/tenant/{tenant_id}")
-    if managed_resources is not None:
-        app.include_router(_managed_resource_router(), prefix="/v1/managed-resources")
     if credentials is not None:
         app.include_router(_credential_router(), prefix="/management/v1")
     if providers is not None:
         app.include_router(_provider_router(), prefix="/management/v1/providers")
     if integrations is not None:
         app.include_router(_integration_router(), prefix="/management/v1")
+    if telephony is not None:
+        app.include_router(_telephony_router(), prefix="/management/v1")
     if system_configuration is not None:
         app.include_router(_system_configuration_router(), prefix="/management/v1")
     if live_components is not None:
@@ -760,54 +777,7 @@ def create_http_app(
                 headers=_secret_headers(),
             )
 
-    if managed_resources is not None:
-
-        @app.get("/internal/v1/telephony/phone-number-assignments/resolve")
-        async def resolve_phone_assignment(
-            request: Request,
-            phone_number: str = Query(...),
-            _principal: ServicePrincipal = _telephony_read_auth,
-        ) -> Any:
-            try:
-                from control_plane.domain.managed_resources import normalize_e164
-
-                phone_number = normalize_e164(phone_number)
-            except ValueError as error:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from error
-            assignments = await request.app.state.managed_resources.list_phone_number_assignments()
-            assignment = next(
-                (
-                    item
-                    for item in assignments
-                    if item.enabled and item.phone_number == phone_number
-                ),
-                None,
-            )
-            if assignment is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-            return {
-                "assignment_id": assignment.ref.value,
-                "tenant_id": assignment.tenant_id,
-                "phone_number": assignment.phone_number,
-                "generation": assignment.generation,
-            }
-
-        @app.get("/internal/v1/telephony/phone-number-assignments")
-        async def list_enabled_phone_assignments(
-            request: Request,
-            _principal: ServicePrincipal = _telephony_read_auth,
-        ) -> list[dict[str, Any]]:
-            assignments = await request.app.state.managed_resources.list_phone_number_assignments()
-            return [
-                {
-                    "assignment_id": item.ref.value,
-                    "tenant_id": item.tenant_id,
-                    "phone_number": item.phone_number,
-                    "generation": item.generation,
-                }
-                for item in assignments
-                if item.enabled
-            ]
+    if execution_materialization is not None:
 
         @app.post(
             "/internal/v1/tenants/{tenant_id}/integration-connections/{connection_id}/execution-material"
@@ -824,50 +794,6 @@ def create_http_app(
             material = await service.integration_material(tenant_id, connection_id)
             return JSONResponse(
                 jsonable_encoder(_integration_material_response(material)),
-                headers=_secret_headers(),
-            )
-
-        @app.post("/internal/v1/execution-snapshots/{snapshot_id}/handoff-material")
-        async def handoff_material(
-            request: Request,
-            snapshot_id: UUID,
-            body: HandoffMaterialRequest,
-            _principal: ServicePrincipal = _handoff_material_auth,
-        ) -> JSONResponse:
-            snapshot = await request.app.state.runtime_materialization.get_snapshot(
-                snapshot_id
-            )
-            if snapshot is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-            destinations = snapshot.execution.get("handoff", [])
-            selected = next(
-                (
-                    item
-                    for item in destinations
-                    if isinstance(item, dict) and item.get("key") == body.destination
-                ),
-                None,
-            )
-            if not isinstance(selected, dict) or not selected.get("ref"):
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-            if request.app.state.managed_resources is None:
-                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
-            destination = (
-                await request.app.state.managed_resources.get_handoff_destination(
-                    HandoffDestinationRef(UUID(str(selected["ref"])))
-                )
-            )
-            if destination.tenant_id != snapshot.tenant_id:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-            if not destination.enabled:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT)
-            return JSONResponse(
-                {
-                    "snapshot_id": snapshot_id,
-                    "destination": body.destination,
-                    "generation": destination.generation,
-                    "phone_number": destination.phone_number,
-                },
                 headers=_secret_headers(),
             )
 
@@ -1654,10 +1580,6 @@ def _component_router() -> APIRouter:
     return router
 
 
-def _managed(request: Request) -> ManagedResourceService:
-    return request.app.state.managed_resources
-
-
 def _provider(request: Request) -> ProviderService:
     return request.app.state.providers
 
@@ -1738,11 +1660,8 @@ def _handoff_destination_response(value: HandoffDestination) -> dict[str, object
         "description": value.description,
         "phone_number": value.phone_number,
         "enabled": value.enabled,
-        "generation": value.generation,
         "created_at": value.created_at,
-        "created_by": value.created_by,
         "updated_at": value.updated_at,
-        "updated_by": value.updated_by,
     }
 
 
@@ -1754,11 +1673,8 @@ def _phone_number_assignment_response(
         "tenant_id": value.tenant_id,
         "phone_number": value.phone_number,
         "enabled": value.enabled,
-        "generation": value.generation,
         "created_at": value.created_at,
-        "created_by": value.created_by,
         "updated_at": value.updated_at,
-        "updated_by": value.updated_by,
     }
 
 
@@ -2338,114 +2254,245 @@ def _integration_router() -> APIRouter:
     return router
 
 
-def _managed_resource_router() -> APIRouter:
+def _telephony_router() -> APIRouter:
     router = APIRouter()
+    read_auth = Depends(require_management_permission("resources:read"))
+    write_auth = Depends(require_management_permission("resources:write"))
 
-    @router.post("/handoff-destinations", status_code=status.HTTP_201_CREATED)
-    async def create_handoff_destination(
-        request: Request, body: HandoffDestinationCreate
-    ) -> Any:
-        value = await _managed(request).create_handoff_destination(
-            body.tenant_id,
-            body.key,
-            body.description,
-            body.phone_number,
-            body.enabled,
-            _management_actor(request),
+    assignment_path = "/tenants/{tenant_id}/telephony/phone-number-assignments"
+    destination_path = "/tenants/{tenant_id}/telephony/handoff-destinations"
+
+    @router.post(
+        assignment_path,
+        status_code=status.HTTP_201_CREATED,
+        response_model=PhoneNumberAssignmentResponse,
+    )
+    async def create_phone_number_assignment(
+        request: Request,
+        tenant_id: str,
+        body: PhoneNumberAssignmentCreate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, _ = _command_headers(request, precondition=False)
+        service: TelephonyService = request.app.state.telephony
+        value = await service.create_assignment(
+            tenant_id, body.phone_number, principal.subject, idempotency_key
         )
-        return jsonable_encoder(_handoff_destination_response(value))
-
-    @router.put("/handoff-destinations/{resource_id}")
-    async def update_handoff_destination(
-        request: Request, resource_id: UUID, body: HandoffDestinationUpdate
-    ) -> Any:
-        value = await _managed(request).update_handoff_destination(
-            HandoffDestinationRef(resource_id),
-            body.description,
-            body.phone_number,
-            body.expected_generation,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_handoff_destination_response(value))
-
-    @router.post("/handoff-destinations/{resource_id}/{operation}")
-    async def set_handoff_destination_enabled(
-        request: Request, resource_id: UUID, operation: str, body: GeneratedActorRequest
-    ) -> Any:
-        if operation not in {"enable", "disable"}:
-            raise HTTPException(status.HTTP_404_NOT_FOUND)
-        value = await _managed(request).set_handoff_destination_enabled(
-            HandoffDestinationRef(resource_id),
-            operation == "enable",
-            body.expected_generation,
-            _management_actor(request),
-        )
-        return jsonable_encoder(_handoff_destination_response(value))
-
-    @router.get("/handoff-destinations/{resource_id}")
-    async def get_handoff_destination(request: Request, resource_id: UUID) -> Any:
-        return jsonable_encoder(
-            _handoff_destination_response(
-                await _managed(request).get_handoff_destination(
-                    HandoffDestinationRef(resource_id)
-                )
-            )
+        return JSONResponse(
+            jsonable_encoder(_phone_number_assignment_response(value)),
+            status_code=status.HTTP_201_CREATED,
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
         )
 
-    @router.get("/handoff-destinations")
-    async def list_handoff_destinations(
-        request: Request, tenant_id: str | None = None
+    @router.get(assignment_path, response_model=list[PhoneNumberAssignmentResponse])
+    async def list_phone_number_assignments(
+        request: Request,
+        tenant_id: str,
+        _principal: ManagementPrincipal = read_auth,
     ) -> Any:
         return jsonable_encoder(
             [
-                _handoff_destination_response(value)
-                for value in await _managed(request).list_handoff_destinations(
+                _phone_number_assignment_response(value)
+                for value in await request.app.state.telephony.list_assignments(
                     tenant_id
                 )
             ]
         )
 
-    @router.post("/phone-number-assignments", status_code=status.HTTP_201_CREATED)
-    async def create_phone_number_assignment(
-        request: Request, body: PhoneNumberAssignmentCreate
-    ) -> Any:
-        value = await _managed(request).create_phone_number_assignment(
-            body.tenant_id, body.phone_number, body.enabled, _management_actor(request)
+    @router.get(
+        f"{assignment_path}/{{resource_id}}",
+        response_model=PhoneNumberAssignmentResponse,
+    )
+    async def get_phone_number_assignment(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service: TelephonyService = request.app.state.telephony
+        value = await service.get_assignment(
+            tenant_id, PhoneNumberAssignmentRef(resource_id)
         )
-        return jsonable_encoder(_phone_number_assignment_response(value))
+        return JSONResponse(
+            jsonable_encoder(_phone_number_assignment_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
 
-    @router.post("/phone-number-assignments/{resource_id}/{operation}")
-    async def set_phone_number_assignment_enabled(
-        request: Request, resource_id: UUID, operation: str, body: GeneratedActorRequest
-    ) -> Any:
-        if operation not in {"enable", "disable"}:
-            raise HTTPException(status.HTTP_404_NOT_FOUND)
-        value = await _managed(request).set_phone_number_assignment_enabled(
+    async def set_assignment_enabled(
+        request: Request, tenant_id: str, resource_id: UUID, enabled: bool, principal
+    ) -> JSONResponse:
+        idempotency_key, token = _command_headers(request, precondition=True)
+        service: TelephonyService = request.app.state.telephony
+        command = service.enable_assignment if enabled else service.disable_assignment
+        value = await command(
+            tenant_id,
             PhoneNumberAssignmentRef(resource_id),
-            operation == "enable",
-            body.expected_generation,
-            _management_actor(request),
+            token,
+            principal.subject,
+            idempotency_key,
         )
-        return jsonable_encoder(_phone_number_assignment_response(value))
-
-    @router.get("/phone-number-assignments/{resource_id}")
-    async def get_phone_number_assignment(request: Request, resource_id: UUID) -> Any:
-        return jsonable_encoder(
-            _phone_number_assignment_response(
-                await _managed(request).get_phone_number_assignment(
-                    PhoneNumberAssignmentRef(resource_id)
-                )
-            )
+        return JSONResponse(
+            jsonable_encoder(_phone_number_assignment_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
         )
 
-    @router.get("/phone-number-assignments")
-    async def list_phone_number_assignments(
-        request: Request, tenant_id: str | None = None
+    @router.post(
+        f"{assignment_path}/{{resource_id}}/enable",
+        response_model=PhoneNumberAssignmentResponse,
+    )
+    async def enable_phone_number_assignment(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_assignment_enabled(
+            request, tenant_id, resource_id, True, principal
+        )
+
+    @router.post(
+        f"{assignment_path}/{{resource_id}}/disable",
+        response_model=PhoneNumberAssignmentResponse,
+    )
+    async def disable_phone_number_assignment(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_assignment_enabled(
+            request, tenant_id, resource_id, False, principal
+        )
+
+    @router.post(
+        destination_path,
+        status_code=status.HTTP_201_CREATED,
+        response_model=HandoffDestinationResponse,
+    )
+    async def create_handoff_destination(
+        request: Request,
+        tenant_id: str,
+        body: HandoffDestinationCreate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, _ = _command_headers(request, precondition=False)
+        service: TelephonyService = request.app.state.telephony
+        value = await service.create_destination(
+            tenant_id,
+            body.key,
+            body.description,
+            body.phone_number,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_handoff_destination_response(value)),
+            status_code=status.HTTP_201_CREATED,
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.put(
+        f"{destination_path}/{{resource_id}}",
+        response_model=HandoffDestinationResponse,
+    )
+    async def update_handoff_destination(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        body: HandoffDestinationUpdate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        idempotency_key, token = _command_headers(request, precondition=True)
+        service: TelephonyService = request.app.state.telephony
+        value = await service.update_destination(
+            tenant_id,
+            HandoffDestinationRef(resource_id),
+            body.description,
+            body.phone_number,
+            token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_handoff_destination_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    async def set_destination_enabled(
+        request: Request, tenant_id: str, resource_id: UUID, enabled: bool, principal
+    ) -> JSONResponse:
+        idempotency_key, token = _command_headers(request, precondition=True)
+        service: TelephonyService = request.app.state.telephony
+        command = service.enable_destination if enabled else service.disable_destination
+        value = await command(
+            tenant_id,
+            HandoffDestinationRef(resource_id),
+            token,
+            principal.subject,
+            idempotency_key,
+        )
+        return JSONResponse(
+            jsonable_encoder(_handoff_destination_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.post(
+        f"{destination_path}/{{resource_id}}/enable",
+        response_model=HandoffDestinationResponse,
+    )
+    async def enable_handoff_destination(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_destination_enabled(
+            request, tenant_id, resource_id, True, principal
+        )
+
+    @router.post(
+        f"{destination_path}/{{resource_id}}/disable",
+        response_model=HandoffDestinationResponse,
+    )
+    async def disable_handoff_destination(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_destination_enabled(
+            request, tenant_id, resource_id, False, principal
+        )
+
+    @router.get(
+        f"{destination_path}/{{resource_id}}",
+        response_model=HandoffDestinationResponse,
+    )
+    async def get_handoff_destination(
+        request: Request,
+        tenant_id: str,
+        resource_id: UUID,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service: TelephonyService = request.app.state.telephony
+        value = await service.get_destination(
+            tenant_id, HandoffDestinationRef(resource_id)
+        )
+        return JSONResponse(
+            jsonable_encoder(_handoff_destination_response(value)),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.get(destination_path, response_model=list[HandoffDestinationResponse])
+    async def list_handoff_destinations(
+        request: Request,
+        tenant_id: str,
+        _principal: ManagementPrincipal = read_auth,
     ) -> Any:
         return jsonable_encoder(
             [
-                _phone_number_assignment_response(value)
-                for value in await _managed(request).list_phone_number_assignments(
+                _handoff_destination_response(value)
+                for value in await request.app.state.telephony.list_destinations(
                     tenant_id
                 )
             ]

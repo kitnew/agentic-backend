@@ -12,10 +12,14 @@ from control_plane.domain.managed_resources import (
     CredentialScope,
     DeploymentCapabilities,
     DeploymentKind,
+    HandoffDestination,
+    HandoffDestinationRef,
     IntegrationConnection,
     IntegrationConnectionRef,
     ModelDeployment,
     ModelDeploymentRef,
+    PhoneNumberAssignment,
+    PhoneNumberAssignmentRef,
     ProviderConnection,
     ProviderConnectionRef,
 )
@@ -187,6 +191,45 @@ class IntegrationRepository(Protocol):
         *,
         lock: bool = False,
     ) -> Credential: ...
+
+
+class PhoneNumberAssignmentRepository(Protocol):
+    async def create(
+        self, tenant_id: str, phone_number: str, actor: str
+    ) -> PhoneNumberAssignment: ...
+    async def set_enabled(
+        self, assignment: PhoneNumberAssignment, enabled: bool, actor: str
+    ) -> PhoneNumberAssignment: ...
+    async def get(
+        self, ref: PhoneNumberAssignmentRef, *, lock: bool = False
+    ) -> PhoneNumberAssignment: ...
+    async def list(self, tenant_id: str) -> Sequence[PhoneNumberAssignment]: ...
+    async def resolve(self, phone_number: str) -> PhoneNumberAssignment: ...
+
+
+class HandoffDestinationRepository(Protocol):
+    async def create(
+        self,
+        tenant_id: str,
+        key: str,
+        description: str,
+        phone_number: str,
+        actor: str,
+    ) -> HandoffDestination: ...
+    async def update(
+        self,
+        destination: HandoffDestination,
+        description: str,
+        phone_number: str,
+        actor: str,
+    ) -> HandoffDestination: ...
+    async def set_enabled(
+        self, destination: HandoffDestination, enabled: bool, actor: str
+    ) -> HandoffDestination: ...
+    async def get(
+        self, ref: HandoffDestinationRef, *, lock: bool = False
+    ) -> HandoffDestination: ...
+    async def list(self, tenant_id: str) -> Sequence[HandoffDestination]: ...
 
 
 class ProviderRepository(Protocol):

@@ -384,12 +384,6 @@ class PhoneNumberAssignment(Base):
             "generation >= 1", name="ck_phone_number_assignment_generation"
         ),
         Index(
-            "uq_phone_number_assignment_enabled_tenant",
-            "tenant_id",
-            unique=True,
-            postgresql_where=text("enabled"),
-        ),
-        Index(
             "uq_phone_number_assignment_enabled_phone",
             "phone_number",
             unique=True,
