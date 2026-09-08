@@ -78,16 +78,12 @@ def parser() -> ArgumentParser:
         system_actions.add_parser(action)
     rollback = system_actions.add_parser("rollback")
     rollback.add_argument("revision_number", type=int)
-    runtime = resources.add_parser("runtime", help="inspect the platform Runtime policy")
+    runtime = resources.add_parser(
+        "runtime", help="inspect the platform Runtime policy"
+    )
     runtime_actions = runtime.add_subparsers(dest="action", required=True)
     runtime_actions.add_parser("show")
     runtime_actions.add_parser("push")
-    runtime_actions.add_parser("publish")
-    revisions = runtime_actions.add_parser("revisions")
-    revisions.add_argument("component", choices=("llm", "stt", "tts", "cascade", "realtime"), nargs="?")
-    rollback = runtime_actions.add_parser("rollback")
-    rollback.add_argument("component", choices=("llm", "stt", "tts", "cascade", "realtime"))
-    rollback.add_argument("revision_number", type=int)
     profile = resources.add_parser("profile", help="inspect platform Profile Prompts")
     profile_actions = profile.add_subparsers(dest="action", required=True)
     profile_actions.add_parser("list")
@@ -136,7 +132,9 @@ def parser() -> ArgumentParser:
     create_connection.add_argument("key")
     create_connection.add_argument("--kind", choices=("http",), required=True)
     create_connection.add_argument("--endpoint")
-    create_connection.add_argument("--auth", choices=("none", "api_key_header"), default="none")
+    create_connection.add_argument(
+        "--auth", choices=("none", "api_key_header"), default="none"
+    )
     create_connection.add_argument("--auth-header", default="X-API-Key")
     create_connection.add_argument("--header", action="append", default=[])
     for action in ("plan", "configure"):
@@ -154,14 +152,12 @@ def parser() -> ArgumentParser:
         "credential": "manage Control Plane credentials",
         "provider": "manage provider connections",
         "deployment": "manage model deployments",
-        "handoff": "manage handoff destinations",
     }.items():
         managed = resources.add_parser(resource, help=help_text)
         managed_actions = {
             "credential": ("list", "show", "create", "rotate", "revoke"),
             "provider": ("list", "show", "create", "configure", "enable", "disable"),
             "deployment": ("list", "show", "create", "configure", "enable", "disable"),
-            "handoff": ("list", "show", "create", "configure", "enable", "disable"),
         }[resource]
         managed.add_argument("action", choices=managed_actions)
         managed.add_argument("resource_id", nargs="?")
@@ -230,7 +226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 revision_number=getattr(arguments, "revision_number", None),
             )
             return 0
-        if arguments.resource in {"credential", "provider", "deployment", "handoff"}:
+        if arguments.resource in {"credential", "provider", "deployment"}:
             run_managed(
                 settings,
                 arguments.resource,

@@ -10,11 +10,11 @@ from agentctl.control_plane import ControlPlaneClient
 from agentctl.settings import Settings
 
 RUNTIME_KINDS = {
-    "llm": "runtime.llm.defaults",
-    "stt": "runtime.stt.defaults",
-    "tts": "runtime.tts.defaults",
-    "cascade": "runtime.cascade.execution.defaults",
-    "realtime": "runtime.realtime.execution.defaults",
+    "llm": "llm_defaults",
+    "stt": "stt_defaults",
+    "tts": "tts_defaults",
+    "cascade": "policies",
+    "realtime": "realtime_defaults",
 }
 
 
@@ -25,40 +25,72 @@ def _read(path: Path) -> str:
         raise CommandError(f"missing authoring file: {path}", 2) from None
 
 
-def _content(state: Any) -> str:
-    value = state.working or {}
-    return value.get("content", "") if isinstance(value, dict) else str(value)
-
-
 def _text(value: Any) -> str:
     return value.get("content", "") if isinstance(value, dict) else str(value or "")
 
 
-def _prompt(settings: Settings, action: str, kind: str, path: Path, *, profile_key: str | None = None, revision_number: int | None = None) -> None:
+def _selected(value: dict[str, Any]) -> Any:
+    return value.get("draft") or value.get("active")
+
+
+def _platform_desired(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "system_prompt": _selected(value["system_prompt"]),
+        "profiles": [
+            {**profile, "prompt": _selected(profile["prompt"])}
+            for profile in value["profiles"]
+        ],
+        "interaction_modes": [
+            {**mode, "prompt": _selected(mode["prompt"])}
+            for mode in value["interaction_modes"]
+        ],
+    }
+
+
+def _prompt(
+    settings: Settings,
+    action: str,
+    kind: str,
+    path: Path,
+    *,
+    profile_key: str | None = None,
+    revision_number: int | None = None,
+) -> None:
     with ControlPlaneClient(settings) as client:
-        state = client.get_component(kind, profile_key=profile_key)
+        configuration = client.get_configuration("platform")
+        prompt = (
+            configuration.value["system_prompt"]
+            if profile_key is None
+            else next(
+                profile["prompt"]
+                for profile in configuration.value["profiles"]
+                if profile["key"] == profile_key
+            )
+        )
         if action == "show":
-            print(_content(state) or "No active prompt.")
+            print(_text(_selected(prompt)) or "No active prompt.")
         elif action == "pull":
             if path.exists():
                 raise CommandError(f"refusing to overwrite existing file: {path}", 2)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(_text(state.working), encoding="utf-8")
+            path.write_text(_text(_selected(prompt)), encoding="utf-8")
         elif action == "push":
             value = _read(path)
-            client.save_component(
-                kind,
-                {"content": value},
-                draft_version=state.draft_version,
-                active_revision_id=state.active_revision_id,
-                profile_key=profile_key,
-            )
+            desired = _platform_desired(configuration.value)
+            if profile_key is None:
+                desired["system_prompt"] = {"content": value}
+            else:
+                profile = next(
+                    item for item in desired["profiles"] if item["key"] == profile_key
+                )
+                profile["prompt"] = {"content": value}
+            client.apply_configuration("platform", desired, configuration.write_etag)
             print("Saved Control Plane draft.")
         elif action == "publish":
-            if state.draft_version is None:
+            if not configuration.value["status"]["has_drafts"]:
                 print("No saved draft to publish.")
             else:
-                client.publish_component(kind, state.draft_version, profile_key=profile_key)
+                client.publish_configuration("platform", configuration.write_etag)
                 print("Published Control Plane component.")
         elif action == "revisions":
             for revision in client.revisions(kind, profile_key=profile_key):
@@ -71,34 +103,64 @@ def _prompt(settings: Settings, action: str, kind: str, path: Path, *, profile_k
             raise CommandError(f"unsupported prompt action: {action}", 2)
 
 
-def run_system_prompt(settings: Settings, action: str, *, force: bool = False, revision_number: int | None = None) -> None:
-    _prompt(settings, action, "prompt.system", settings.state_dir / "platform" / "system_prompt.md", revision_number=revision_number)
+def run_system_prompt(
+    settings: Settings,
+    action: str,
+    *,
+    force: bool = False,
+    revision_number: int | None = None,
+) -> None:
+    _prompt(
+        settings,
+        action,
+        "SystemPrompt",
+        settings.state_dir / "platform" / "system_prompt.md",
+        revision_number=revision_number,
+    )
 
 
-def run_profile(settings: Settings, action: str, profile: str | None, *, force: bool = False, revision_number: int | None = None) -> None:
+def run_profile(
+    settings: Settings,
+    action: str,
+    profile: str | None,
+    *,
+    force: bool = False,
+    revision_number: int | None = None,
+) -> None:
     if profile is None:
         raise CommandError("profile key is required", 2)
     _prompt(
         settings,
         action,
-        "prompt.profile",
+        "ProfilePrompt",
         settings.state_dir / "platform" / "profiles" / f"{profile}.md",
         profile_key=profile,
         revision_number=revision_number,
     )
 
 
-def run_platform_runtime(settings: Settings, action: str, *, force: bool = False, component: str | None = None, revision_number: int | None = None) -> None:
+def run_platform_runtime(
+    settings: Settings,
+    action: str,
+    *,
+    force: bool = False,
+    component: str | None = None,
+    revision_number: int | None = None,
+) -> None:
     path = settings.state_dir / "platform" / "runtime.yaml"
     with ControlPlaneClient(settings) as client:
-        states = {name: client.get_component(kind) for name, kind in RUNTIME_KINDS.items()}
+        state = client.get_configuration("system")
+        current = {name: state.value[field] for name, field in RUNTIME_KINDS.items()}
         if action == "show":
-            print(yaml.safe_dump({name: state.working for name, state in states.items() if state.working is not None}, sort_keys=False), end="")
+            print(yaml.safe_dump(current, sort_keys=False), end="")
         elif action == "pull":
             if path.exists() and not force:
                 raise CommandError(f"refusing to overwrite existing file: {path}", 2)
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(yaml.safe_dump({name: state.working for name, state in states.items() if state.working is not None}, sort_keys=False), encoding="utf-8")
+            path.write_text(
+                yaml.safe_dump(current, sort_keys=False),
+                encoding="utf-8",
+            )
         elif action == "push":
             try:
                 value = yaml.safe_load(_read(path))
@@ -106,35 +168,12 @@ def run_platform_runtime(settings: Settings, action: str, *, force: bool = False
                 raise CommandError(f"invalid runtime YAML: {error}", 2) from error
             if not isinstance(value, dict):
                 raise CommandError("runtime YAML root must be a mapping", 2)
+            desired = dict(state.value)
             for name, payload in value.items():
                 if name not in RUNTIME_KINDS:
                     raise CommandError(f"unknown runtime component: {name}", 2)
-                client.save_component(
-                    RUNTIME_KINDS[name],
-                    payload,
-                    draft_version=states[name].draft_version,
-                    active_revision_id=states[name].active_revision_id,
-                )
-            print("Saved Control Plane runtime draft.")
-        elif action == "publish":
-            dirty = [name for name, state in states.items() if state.draft_version is not None]
-            if not dirty:
-                print("No saved runtime draft to publish.")
-            else:
-                for name in dirty:
-                    version = states[name].draft_version
-                    assert version is not None
-                    client.publish_component(RUNTIME_KINDS[name], version)
-                print("Published Control Plane runtime components: " + ", ".join(dirty))
-        elif action == "revisions":
-            selected = {component: RUNTIME_KINDS[component]} if component else RUNTIME_KINDS
-            for name, kind in selected.items():
-                print(f"[{name}]")
-                for revision in client.revisions(kind):
-                    print(revision)
-        elif action == "rollback":
-            if component is None or revision_number is None:
-                raise CommandError("runtime component and revision number are required", 2)
-            print(client.rollback(RUNTIME_KINDS[component], revision_number))
+                desired[RUNTIME_KINDS[name]] = payload
+            client.apply_configuration("system", desired, state.write_etag)
+            print("Applied Control Plane system configuration.")
         else:
             raise CommandError(f"unsupported runtime action: {action}", 2)

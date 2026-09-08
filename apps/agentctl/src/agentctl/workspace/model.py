@@ -5,7 +5,6 @@ from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 
 class ResourceKind(StrEnum):
@@ -50,7 +49,13 @@ class DraftResourceKind(StrEnum):
 class ResourceId:
     scope: str
     owner: str
-    kind: ResourceKind | WorkspaceResourceKind | PlatformResourceKind | LiveResourceKind | DraftResourceKind
+    kind: (
+        ResourceKind
+        | WorkspaceResourceKind
+        | PlatformResourceKind
+        | LiveResourceKind
+        | DraftResourceKind
+    )
     qualifier: str | None = None
 
     def __str__(self) -> str:
@@ -73,7 +78,6 @@ class RemoteAuthoringState:
     working_value: Any | None
     published_value: Any | None = None
     write_etag: str | None = None
-    active_revision_id: UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +137,12 @@ def resource_path(root: Path, resource_id: ResourceId) -> Path:
             WorkspaceResourceKind.RUNTIME_ARCHITECTURE,
             WorkspaceResourceKind.RUNTIME_SPEECH,
         }:
-            return root / "platform" / "runtime" / f"{resource_id.kind.value.removeprefix('workspace_runtime_')}.yaml"
+            return (
+                root
+                / "platform"
+                / "runtime"
+                / f"{resource_id.kind.value.removeprefix('workspace_runtime_')}.yaml"
+            )
         if resource_id.kind in {
             WorkspaceResourceKind.PLATFORM_RUNTIME_LLM,
             WorkspaceResourceKind.PLATFORM_RUNTIME_STT,
@@ -141,7 +150,12 @@ def resource_path(root: Path, resource_id: ResourceId) -> Path:
             WorkspaceResourceKind.PLATFORM_RUNTIME_CASCADE,
             WorkspaceResourceKind.PLATFORM_RUNTIME_REALTIME,
         }:
-            return root / "platform" / "runtime" / f"{resource_id.kind.value.removeprefix('platform_runtime_')}.yaml"
+            return (
+                root
+                / "platform"
+                / "runtime"
+                / f"{resource_id.kind.value.removeprefix('platform_runtime_')}.yaml"
+            )
         if resource_id.kind is PlatformResourceKind.SYSTEM_PROMPT:
             return root / "platform" / "system_prompt.md"
         if resource_id.kind is PlatformResourceKind.PROFILE_PROMPT:
@@ -165,9 +179,13 @@ def resource_path(root: Path, resource_id: ResourceId) -> Path:
         ResourceKind.CAPABILITIES: base / "capabilities.yaml",
         ResourceKind.POST_CALL: base / "post_call.yaml",
         WorkspaceResourceKind.AGENT: base / "agent.yaml",
-        WorkspaceResourceKind.RUNTIME_ARCHITECTURE: base / "runtime" / "architecture.yaml",
+        WorkspaceResourceKind.RUNTIME_ARCHITECTURE: base
+        / "runtime"
+        / "architecture.yaml",
         WorkspaceResourceKind.RUNTIME_SPEECH: base / "runtime" / "speech.yaml",
-        WorkspaceResourceKind.PROMPT_PROFILE_SELECTION: base / "prompt" / "profile_selection.yaml",
+        WorkspaceResourceKind.PROMPT_PROFILE_SELECTION: base
+        / "prompt"
+        / "profile_selection.yaml",
         WorkspaceResourceKind.PROMPT_TENANT: base / "prompt" / "tenant.md",
         WorkspaceResourceKind.KNOWLEDGE: base / "knowledge.md",
         WorkspaceResourceKind.CAPABILITIES: base / "capabilities.yaml",
