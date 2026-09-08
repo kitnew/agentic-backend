@@ -25,6 +25,7 @@ from control_plane.domain.components import (
     TenantScope,
 )
 from control_plane.domain.components.errors import ComponentError
+from control_plane.domain.frozen_components import ProfilePrompt, SystemPrompt
 from control_plane.domain.knowledge_components import TenantKnowledgeValue
 from control_plane.domain.post_call import TenantPostCallConfig
 from control_plane.domain.prompt_components import ProfileSelection, PromptValue
@@ -61,7 +62,9 @@ def compose_instructions(*parts: str) -> str:
 
 
 class ExecutionResolver:
-    def __init__(self, registry: ComponentDefinitionRegistry, runtime: RuntimeResolver) -> None:
+    def __init__(
+        self, registry: ComponentDefinitionRegistry, runtime: RuntimeResolver
+    ) -> None:
         self._registry, self._runtime = registry, runtime
 
     def resolve_state(
@@ -76,8 +79,8 @@ class ExecutionResolver:
         )
         system = self._required(
             state,
-            ComponentAddress(ComponentKind("prompt.system"), PlatformScope()),
-            PromptValue,
+            ComponentAddress(ComponentKind("SystemPrompt"), PlatformScope()),
+            SystemPrompt,
         )
         selection = self._required(
             state,
@@ -90,10 +93,10 @@ class ExecutionResolver:
         profile = self._required(
             state,
             ComponentAddress(
-                ComponentKind("prompt.profile"),
+                ComponentKind("ProfilePrompt"),
                 ProfileScope(selection.value.profile_key),
             ),
-            PromptValue,
+            ProfilePrompt,
             ResolutionFailureReason.MISSING_PROFILE,
         )
         tenant = self._required(

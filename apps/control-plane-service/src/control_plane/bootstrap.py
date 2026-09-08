@@ -17,6 +17,10 @@ from control_plane.application.execution_materialization import (
 from control_plane.application.execution_resolver import ExecutionResolver
 from control_plane.application.live_components import LiveComponentService
 from control_plane.application.managed_resources import ManagedResourceService
+from control_plane.application.platform_catalogs import PlatformCatalogService
+from control_plane.application.platform_configuration import (
+    PlatformConfigurationService,
+)
 from control_plane.application.ports.repositories import ComponentRepository
 from control_plane.application.providers import ProviderService
 from control_plane.application.runtime_materialization import (
@@ -42,6 +46,9 @@ from control_plane.infrastructure.persistence.credential_transactions import (
 )
 from control_plane.infrastructure.persistence.managed_resources import (
     SqlAlchemyManagedResourceRepository,
+)
+from control_plane.infrastructure.persistence.platform_configuration_transactions import (
+    platform_configuration_command_scope,
 )
 from control_plane.infrastructure.persistence.provider_transactions import (
     provider_command_scope,
@@ -135,6 +142,19 @@ def create_app(
         if isinstance(database, Database) and system_configuration is not None
         else None
     )
+    platform_scope = (
+        platform_configuration_command_scope(database.sessions)
+        if isinstance(database, Database)
+        else None
+    )
+    platform_configuration = (
+        PlatformConfigurationService(registry, platform_scope)
+        if platform_scope is not None
+        else None
+    )
+    platform_catalogs = (
+        PlatformCatalogService(platform_scope) if platform_scope is not None else None
+    )
     execution_materialization = (
         ExecutionMaterializationService(
             database.sessions,
@@ -180,6 +200,8 @@ def create_app(
         providers,
         system_configuration,
         live_components,
+        platform_configuration,
+        platform_catalogs,
     )
     app.state.settings = settings
     app.state.database = database

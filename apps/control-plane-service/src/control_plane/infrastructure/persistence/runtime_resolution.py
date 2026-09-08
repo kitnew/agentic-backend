@@ -43,7 +43,7 @@ from .models import ModelDeployment as DeploymentRow
 from .models import PhoneNumberAssignment as PhoneRow
 from .models import ProviderConnection as ConnectionRow
 
-_PLATFORM_KINDS = ("prompt.system",)
+_PLATFORM_KINDS = ("SystemPrompt",)
 _SYSTEM_KINDS = (
     "STTDefaults",
     "LLMDefaults",
@@ -165,7 +165,7 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                         ),
                         (
                             (ComponentRow.scope_type == "profile")
-                            & (ComponentRow.kind == "prompt.profile")
+                            & (ComponentRow.kind == "ProfilePrompt")
                         ),
                     )
                 )

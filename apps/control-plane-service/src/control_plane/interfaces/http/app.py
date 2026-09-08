@@ -11,7 +11,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool
 
 from control_plane import SERVICE_NAME
-from control_plane.application.command_support import IdempotencyKeyReused
+from control_plane.application.command_support import (
+    IdempotencyKeyReused,
+    opaque_concurrency_token,
+)
 from control_plane.application.components import ComponentService
 from control_plane.application.credentials import CredentialService
 from control_plane.application.execution_materialization import (
@@ -23,6 +26,27 @@ from control_plane.application.live_components import (
     LiveComponentService,
 )
 from control_plane.application.managed_resources import ManagedResourceService
+from control_plane.application.platform_catalogs import (
+    CatalogConflict,
+    CatalogError,
+    CatalogNotFound,
+    CatalogPreconditionFailed,
+    InteractionModeCreate,
+    InteractionModeUpdate,
+    PlatformCatalogService,
+    ProfileCreate,
+    ProfileUpdate,
+)
+from control_plane.application.platform_configuration import (
+    PlatformConfiguration,
+    PlatformConfigurationApplyResult,
+    PlatformConfigurationDesired,
+    PlatformConfigurationError,
+    PlatformConfigurationPlan,
+    PlatformConfigurationPreconditionFailed,
+    PlatformConfigurationPublishResult,
+    PlatformConfigurationService,
+)
 from control_plane.application.providers import ProviderService
 from control_plane.application.runtime_materialization import (
     ExecutionSnapshotService,
@@ -42,6 +66,7 @@ from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
     ComponentScope,
+    InteractionModeScope,
     PlatformScope,
     ProfileScope,
     SystemScope,
@@ -49,6 +74,7 @@ from control_plane.domain.components import (
 )
 from control_plane.domain.components.errors import (
     ComponentError,
+    ComponentNotFound,
     InvalidComponentValue,
     ScopeNotAllowed,
     UnknownComponentKind,
@@ -97,6 +123,53 @@ class SaveDraftRequest(BaseModel):
     schema_version: int = Field(ge=1)
     expected_draft_version: int | None
     expected_active_revision_id: UUID | None
+
+
+class VersionedComponentDraftWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    value: dict[str, Any]
+
+
+class VersionedComponentRevisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    revision_number: int
+    schema_version: int
+    value: dict[str, Any]
+    created_at: datetime
+    created_by: str
+    restored_from_revision: int | None
+
+
+class VersionedComponentDraftResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: int
+    value: dict[str, Any]
+    based_on_revision_number: int | None
+    updated_at: datetime
+    updated_by: str
+
+
+class VersionedComponentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str
+    scope: dict[str, str]
+    active: VersionedComponentRevisionResponse | None
+    draft: VersionedComponentDraftResponse | None
+
+
+class CatalogResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    name: str
+    description: str
+    status: Literal["enabled", "disabled"]
+    created_at: datetime
+    updated_at: datetime
 
 
 class LiveComponentWrite(BaseModel):
@@ -355,6 +428,8 @@ def create_http_app(
     providers: ProviderService | None = None,
     system_configuration: SystemConfigurationService | None = None,
     live_components: LiveComponentService | None = None,
+    platform_configuration: PlatformConfigurationService | None = None,
+    platform_catalogs: PlatformCatalogService | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.settings = None
@@ -368,6 +443,8 @@ def create_http_app(
     app.state.providers = providers
     app.state.system_configuration = system_configuration
     app.state.live_components = live_components
+    app.state.platform_configuration = platform_configuration
+    app.state.platform_catalogs = platform_catalogs
 
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
@@ -511,6 +588,30 @@ def create_http_app(
         )
         return _management_error(request, code, exc.code, str(exc))
 
+    @app.exception_handler(PlatformConfigurationError)
+    async def platform_configuration_error(
+        request: Request, exc: PlatformConfigurationError
+    ) -> JSONResponse:
+        code = (
+            status.HTTP_412_PRECONDITION_FAILED
+            if isinstance(exc, PlatformConfigurationPreconditionFailed)
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
+        return _management_error(request, code, exc.code, str(exc))
+
+    @app.exception_handler(CatalogError)
+    async def catalog_error(request: Request, exc: CatalogError) -> JSONResponse:
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if isinstance(exc, CatalogNotFound)
+            else status.HTTP_412_PRECONDITION_FAILED
+            if isinstance(exc, CatalogPreconditionFailed)
+            else status.HTTP_409_CONFLICT
+            if isinstance(exc, CatalogConflict)
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
+        return _management_error(request, code, exc.code, str(exc))
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": SERVICE_NAME}
@@ -534,12 +635,7 @@ def create_http_app(
         )
 
     if components is not None:
-        for prefix in (
-            "/v1/scopes/platform",
-            "/v1/scopes/tenant/{tenant_id}",
-            "/v1/scopes/profile/{profile_key}",
-        ):
-            app.include_router(_component_router(), prefix=prefix)
+        app.include_router(_component_router(), prefix="/v1/scopes/tenant/{tenant_id}")
     if managed_resources is not None:
         app.include_router(_managed_resource_router(), prefix="/v1/managed-resources")
     if credentials is not None:
@@ -550,6 +646,17 @@ def create_http_app(
         app.include_router(_system_configuration_router(), prefix="/management/v1")
     if live_components is not None:
         app.include_router(_system_live_component_router(), prefix="/management/v1")
+    if platform_configuration is not None:
+        app.include_router(_platform_configuration_router(), prefix="/management/v1")
+    if platform_catalogs is not None:
+        app.include_router(_platform_catalog_router(), prefix="/management/v1")
+    if components is not None:
+        for prefix in (
+            "/management/v1/platform",
+            "/management/v1/platform/profiles/{profile_key}",
+            "/management/v1/platform/interaction-modes/{mode_key}",
+        ):
+            app.include_router(_target_component_router(), prefix=prefix)
     if runtime_resolver is not None:
 
         @app.get("/v1/runtime/resolve/tenant/{tenant_id}")
@@ -782,6 +889,257 @@ def _system_configuration_router() -> APIRouter:
     return router
 
 
+def _platform_configuration_router() -> APIRouter:
+    router = APIRouter()
+    read_auth = Depends(require_management_permission("configuration:read"))
+    write_auth = Depends(require_management_permission("configuration:write"))
+
+    @router.get("/platform/configuration", response_model=PlatformConfiguration)
+    async def get_configuration(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> JSONResponse:
+        service = request.app.state.platform_configuration
+        value = await service.get()
+        return JSONResponse(
+            jsonable_encoder(value),
+            headers={"ETag": f'"{service.concurrency_token(value)}"'},
+        )
+
+    @router.post(
+        "/platform/configuration/plan", response_model=PlatformConfigurationPlan
+    )
+    async def plan_configuration(
+        request: Request,
+        body: PlatformConfigurationDesired,
+        _principal: ManagementPrincipal = write_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            await request.app.state.platform_configuration.plan(body)
+        )
+
+    @router.put(
+        "/platform/configuration", response_model=PlatformConfigurationApplyResult
+    )
+    async def apply_configuration(
+        request: Request,
+        body: PlatformConfigurationDesired,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        key, token = _command_headers(request, precondition=True)
+        service = request.app.state.platform_configuration
+        result = await service.apply(body, token, principal.subject, key)
+        return JSONResponse(
+            jsonable_encoder(result),
+            headers={"ETag": f'"{service.concurrency_token(result.configuration)}"'},
+        )
+
+    @router.post(
+        "/platform/configuration/publish",
+        response_model=PlatformConfigurationPublishResult,
+    )
+    async def publish_configuration(
+        request: Request, principal: ManagementPrincipal = write_auth
+    ) -> JSONResponse:
+        key, token = _command_headers(request, precondition=True)
+        service = request.app.state.platform_configuration
+        result = await service.publish(token, principal.subject, key)
+        return JSONResponse(
+            jsonable_encoder(result),
+            headers={"ETag": f'"{service.concurrency_token(result.configuration)}"'},
+        )
+
+    return router
+
+
+def _catalog_response(service, value, *, status_code=200) -> JSONResponse:
+    return JSONResponse(
+        jsonable_encoder(_catalog_payload(value)),
+        status_code=status_code,
+        headers={"ETag": f'"{service.concurrency_token(value)}"'},
+    )
+
+
+def _catalog_payload(value) -> dict[str, object]:
+    return {
+        "key": value.key,
+        "name": value.name,
+        "description": value.description,
+        "status": value.status,
+        "created_at": value.created_at,
+        "updated_at": value.updated_at,
+    }
+
+
+def _platform_catalog_router() -> APIRouter:
+    router = APIRouter()
+    read_auth = Depends(require_management_permission("configuration:read"))
+    write_auth = Depends(require_management_permission("configuration:write"))
+
+    @router.get("/platform/profiles", response_model=list[CatalogResponse])
+    async def list_profiles(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(
+            [
+                _catalog_payload(value)
+                for value in await request.app.state.platform_catalogs.list_profiles()
+            ]
+        )
+
+    @router.post(
+        "/platform/profiles",
+        status_code=status.HTTP_201_CREATED,
+        response_model=CatalogResponse,
+    )
+    async def create_profile(
+        request: Request,
+        body: ProfileCreate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        key, _ = _command_headers(request, precondition=False)
+        service = request.app.state.platform_catalogs
+        value = await service.create_profile(body, principal.subject, key)
+        return _catalog_response(service, value, status_code=status.HTTP_201_CREATED)
+
+    @router.get("/platform/profiles/{profile_key}", response_model=CatalogResponse)
+    async def get_profile(
+        request: Request,
+        profile_key: str,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service = request.app.state.platform_catalogs
+        return _catalog_response(service, await service.get_profile(profile_key))
+
+    @router.put("/platform/profiles/{profile_key}", response_model=CatalogResponse)
+    async def update_profile(
+        request: Request,
+        profile_key: str,
+        body: ProfileUpdate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        key, token = _command_headers(request, precondition=True)
+        service = request.app.state.platform_catalogs
+        value = await service.update_profile(
+            profile_key, body, token, principal.subject, key
+        )
+        return _catalog_response(service, value)
+
+    async def set_profile(request, profile_key, enabled, principal):
+        key, token = _command_headers(request, precondition=True)
+        service = request.app.state.platform_catalogs
+        value = await service.set_profile_enabled(
+            profile_key, enabled, token, principal.subject, key
+        )
+        return _catalog_response(service, value)
+
+    @router.post(
+        "/platform/profiles/{profile_key}/enable", response_model=CatalogResponse
+    )
+    async def enable_profile(
+        request: Request,
+        profile_key: str,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_profile(request, profile_key, True, principal)
+
+    @router.post(
+        "/platform/profiles/{profile_key}/disable", response_model=CatalogResponse
+    )
+    async def disable_profile(
+        request: Request,
+        profile_key: str,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_profile(request, profile_key, False, principal)
+
+    @router.get(
+        "/platform/interaction-modes", response_model=list[CatalogResponse]
+    )
+    async def list_modes(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(
+            [
+                _catalog_payload(value)
+                for value in await request.app.state.platform_catalogs.list_interaction_modes()
+            ]
+        )
+
+    @router.post(
+        "/platform/interaction-modes",
+        status_code=status.HTTP_201_CREATED,
+        response_model=CatalogResponse,
+    )
+    async def create_mode(
+        request: Request,
+        body: InteractionModeCreate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        key, _ = _command_headers(request, precondition=False)
+        service = request.app.state.platform_catalogs
+        value = await service.create_interaction_mode(body, principal.subject, key)
+        return _catalog_response(service, value, status_code=status.HTTP_201_CREATED)
+
+    @router.get(
+        "/platform/interaction-modes/{mode_key}", response_model=CatalogResponse
+    )
+    async def get_mode(
+        request: Request,
+        mode_key: str,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        service = request.app.state.platform_catalogs
+        return _catalog_response(service, await service.get_interaction_mode(mode_key))
+
+    @router.put(
+        "/platform/interaction-modes/{mode_key}", response_model=CatalogResponse
+    )
+    async def update_mode(
+        request: Request,
+        mode_key: str,
+        body: InteractionModeUpdate,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        key, token = _command_headers(request, precondition=True)
+        service = request.app.state.platform_catalogs
+        value = await service.update_interaction_mode(
+            mode_key, body, token, principal.subject, key
+        )
+        return _catalog_response(service, value)
+
+    async def set_mode(request, mode_key, enabled, principal):
+        key, token = _command_headers(request, precondition=True)
+        service = request.app.state.platform_catalogs
+        value = await service.set_interaction_mode_enabled(
+            mode_key, enabled, token, principal.subject, key
+        )
+        return _catalog_response(service, value)
+
+    @router.post(
+        "/platform/interaction-modes/{mode_key}/enable",
+        response_model=CatalogResponse,
+    )
+    async def enable_mode(
+        request: Request,
+        mode_key: str,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_mode(request, mode_key, True, principal)
+
+    @router.post(
+        "/platform/interaction-modes/{mode_key}/disable",
+        response_model=CatalogResponse,
+    )
+    async def disable_mode(
+        request: Request,
+        mode_key: str,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        return await set_mode(request, mode_key, False, principal)
+
+    return router
+
+
 def _system_live_component_router() -> APIRouter:
     router = APIRouter()
     read_auth = Depends(require_management_permission("configuration:read"))
@@ -914,6 +1272,8 @@ def _address(request: Request, kind: str) -> ComponentAddress:
         scope = TenantScope(tenant_id)
     elif profile_key := request.path_params.get("profile_key"):
         scope = ProfileScope(profile_key)
+    elif mode_key := request.path_params.get("mode_key"):
+        scope = InteractionModeScope(mode_key)
     else:
         scope = PlatformScope()
     return ComponentAddress(ComponentKind(kind), scope)
@@ -927,6 +1287,259 @@ def _management_actor(request: Request) -> str:
     principal = request.state.management_principal
     assert isinstance(principal, ManagementPrincipal)
     return principal.subject
+
+
+def _component_etag(value) -> str:
+    return opaque_concurrency_token(
+        {
+            "active_revision_id": (
+                str(value.active.revision_id) if value.active is not None else None
+            ),
+            "draft_version": value.draft.version if value.draft is not None else None,
+        }
+    )
+
+
+def _component_scope(value) -> dict[str, str]:
+    result = {"type": value.type.value}
+    if isinstance(value, ProfileScope):
+        result["profile_key"] = value.profile_key
+    elif isinstance(value, InteractionModeScope):
+        result["mode_key"] = value.mode_key
+    elif isinstance(value, TenantScope):
+        result["tenant_id"] = value.tenant_id
+    return result
+
+
+def _revision_payload(value) -> dict[str, object]:
+    return {
+        "revision_number": value.revision_number,
+        "schema_version": value.schema_version,
+        "value": value.value,
+        "created_at": value.created_at,
+        "created_by": value.created_by,
+        "restored_from_revision": None,
+    }
+
+
+def _draft_payload(value, active) -> dict[str, object]:
+    return {
+        "schema_version": value.schema_version,
+        "value": value.value,
+        "based_on_revision_number": (
+            active.revision_number
+            if active is not None and value.based_on_revision_id == active.revision_id
+            else None
+        ),
+        "updated_at": value.updated_at,
+        "updated_by": value.updated_by,
+    }
+
+
+def _component_payload(value) -> dict[str, object]:
+    return {
+        "kind": str(value.address.kind),
+        "scope": _component_scope(value.address.scope),
+        "active": _revision_payload(value.active) if value.active is not None else None,
+        "draft": (
+            _draft_payload(value.draft, value.active)
+            if value.draft is not None
+            else None
+        ),
+    }
+
+
+def _require_component_precondition(request: Request, current) -> None:
+    raw = request.headers.get("if-match", "").strip()
+    if not raw:
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED, "If-Match is required"
+        )
+    supplied = raw.removeprefix("W/").strip('"')
+    expected = "*" if current is None else _component_etag(current)
+    if supplied != expected:
+        raise HTTPException(
+            status.HTTP_412_PRECONDITION_FAILED,
+            "versioned component precondition failed",
+        )
+
+
+async def _target_snapshot(request: Request, kind: str):
+    try:
+        return await _service(request).get_component(_address(request, kind))
+    except ComponentNotFound:
+        return None
+
+
+def _component_response(value, *, status_code=200) -> JSONResponse:
+    return JSONResponse(
+        jsonable_encoder(_component_payload(value)),
+        status_code=status_code,
+        headers={"ETag": f'"{_component_etag(value)}"'},
+    )
+
+
+def _target_component_router() -> APIRouter:
+    router = APIRouter()
+    read_auth = Depends(require_management_permission("configuration:read"))
+    write_auth = Depends(require_management_permission("configuration:write"))
+
+    @router.get("/components/{kind}", response_model=VersionedComponentResponse)
+    async def get_component(
+        request: Request,
+        kind: str,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> JSONResponse:
+        return _component_response(
+            await _service(request).get_component(_address(request, kind))
+        )
+
+    @router.get(
+        "/components/{kind}/draft", response_model=VersionedComponentDraftResponse
+    )
+    async def get_draft(
+        request: Request,
+        kind: str,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> Any:
+        snapshot = await _service(request).get_component(_address(request, kind))
+        if snapshot.draft is None:
+            raise ComponentNotFound("component draft does not exist")
+        return jsonable_encoder(_draft_payload(snapshot.draft, snapshot.active))
+
+    @router.put(
+        "/components/{kind}/draft", response_model=VersionedComponentResponse
+    )
+    async def save_draft(
+        request: Request,
+        kind: str,
+        body: VersionedComponentDraftWrite,
+        _principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        current = await _target_snapshot(request, kind)
+        _require_component_precondition(request, current)
+        await _service(request).save_draft(
+            _address(request, kind),
+            body.value,
+            current.draft.version if current and current.draft else None,
+            current.active.revision_id if current and current.active else None,
+            _management_actor(request),
+        )
+        return _component_response(
+            await _service(request).get_component(_address(request, kind))
+        )
+
+    @router.delete("/components/{kind}/draft", status_code=status.HTTP_204_NO_CONTENT)
+    async def discard_draft(
+        request: Request,
+        kind: str,
+        _principal: ManagementPrincipal = write_auth,
+    ) -> None:
+        current = await _service(request).get_component(_address(request, kind))
+        _require_component_precondition(request, current)
+        if current.draft is None:
+            raise ComponentNotFound("component draft does not exist")
+        await _service(request).discard_draft(
+            _address(request, kind), current.draft.version
+        )
+
+    @router.post(
+        "/components/{kind}/publish", response_model=VersionedComponentResponse
+    )
+    async def publish(
+        request: Request,
+        kind: str,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        key, _ = _command_headers(request, precondition=True)
+        current = await _service(request).get_component(_address(request, kind))
+        _require_component_precondition(request, current)
+        if current.draft is None:
+            raise ComponentNotFound("component draft does not exist")
+        await _service(request).publish_draft(
+            _address(request, kind),
+            current.draft.version,
+            principal.subject,
+            idempotency_key=key,
+        )
+        return _component_response(
+            await _service(request).get_component(_address(request, kind))
+        )
+
+    @router.get(
+        "/components/{kind}/active", response_model=VersionedComponentRevisionResponse
+    )
+    async def active(
+        request: Request,
+        kind: str,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            _revision_payload(
+                await _service(request).get_active(_address(request, kind))
+            )
+        )
+
+    @router.get(
+        "/components/{kind}/revisions",
+        response_model=list[VersionedComponentRevisionResponse],
+    )
+    async def revisions(
+        request: Request,
+        kind: str,
+        limit: int = Query(100, ge=1, le=500),
+        _principal: ManagementPrincipal = read_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            [
+                _revision_payload(value)
+                for value in await _service(request).list_revisions(
+                    _address(request, kind), limit
+                )
+            ]
+        )
+
+    @router.get(
+        "/components/{kind}/revisions/{revision_number}",
+        response_model=VersionedComponentRevisionResponse,
+    )
+    async def revision(
+        request: Request,
+        kind: str,
+        revision_number: int,
+        _principal: ManagementPrincipal = read_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            _revision_payload(
+                await _service(request).get_revision(
+                    _address(request, kind), revision_number
+                )
+            )
+        )
+
+    @router.post(
+        "/components/{kind}/rollback", response_model=VersionedComponentResponse
+    )
+    async def rollback(
+        request: Request,
+        kind: str,
+        body: RollbackRequest,
+        principal: ManagementPrincipal = write_auth,
+    ) -> JSONResponse:
+        key, _ = _command_headers(request, precondition=True)
+        current = await _service(request).get_component(_address(request, kind))
+        _require_component_precondition(request, current)
+        await _service(request).rollback(
+            _address(request, kind),
+            body.revision_number,
+            principal.subject,
+            idempotency_key=key,
+        )
+        return _component_response(
+            await _service(request).get_component(_address(request, kind))
+        )
+
+    return router
 
 
 def _component_router() -> APIRouter:

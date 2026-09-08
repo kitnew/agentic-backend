@@ -323,11 +323,11 @@ def execution_resolver(
     components = dict(value.components)
     for address, raw in (
         (
-            ComponentAddress(ComponentKind("prompt.system"), PlatformScope()),
+            ComponentAddress(ComponentKind("SystemPrompt"), PlatformScope()),
             {"content": "system"},
         ),
         (
-            ComponentAddress(ComponentKind("prompt.profile"), ProfileScope("default")),
+            ComponentAddress(ComponentKind("ProfilePrompt"), ProfileScope("default")),
             {"content": "profile"},
         ),
         (

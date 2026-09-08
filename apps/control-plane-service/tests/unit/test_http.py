@@ -171,7 +171,7 @@ async def test_management_actor_is_server_derived() -> None:
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         response = await client.put(
-            "/v1/scopes/platform/components/prompt.system/draft",
+            "/v1/scopes/tenant/tenant-a/components/prompt.tenant/draft",
             headers={"Authorization": "Bearer management-secret"},
             json={
                 "value": {"content": "hello"},

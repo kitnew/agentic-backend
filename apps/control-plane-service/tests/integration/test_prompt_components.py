@@ -1,5 +1,6 @@
 import pytest
 from control_plane.application.components import ComponentService
+from control_plane.domain.catalogs import CatalogStatus
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinitionRegistry,
@@ -11,6 +12,9 @@ from control_plane.domain.components import (
 from control_plane.domain.components.errors import RevisionNotFound
 from control_plane.domain.prompt_components import register_prompt_components
 from control_plane.infrastructure.persistence.database import Database
+from control_plane.infrastructure.persistence.platform_catalogs import (
+    SqlAlchemyPlatformRepository,
+)
 from control_plane.infrastructure.persistence.repository import (
     SqlAlchemyComponentRepository,
 )
@@ -47,10 +51,22 @@ async def test_prompt_addresses_are_independent_and_use_generic_lifecycle(
 ) -> None:
     database = Database(migrated_database_url)
     components = service(database)
-    system = ComponentAddress(ComponentKind("prompt.system"), PlatformScope())
-    hotel = ComponentAddress(ComponentKind("prompt.profile"), ProfileScope("hotel"))
+    async with database.sessions.begin() as session:
+        catalogs = SqlAlchemyPlatformRepository(session)
+        await catalogs.put_profile(
+            "hotel", "Hotel", "Hotel profile", CatalogStatus.ENABLED, "test"
+        )
+        await catalogs.put_profile(
+            "restaurant",
+            "Restaurant",
+            "Restaurant profile",
+            CatalogStatus.ENABLED,
+            "test",
+        )
+    system = ComponentAddress(ComponentKind("SystemPrompt"), PlatformScope())
+    hotel = ComponentAddress(ComponentKind("ProfilePrompt"), ProfileScope("hotel"))
     restaurant = ComponentAddress(
-        ComponentKind("prompt.profile"), ProfileScope("restaurant")
+        ComponentKind("ProfilePrompt"), ProfileScope("restaurant")
     )
     tenant_a = ComponentAddress(ComponentKind("prompt.tenant"), TenantScope("a"))
     tenant_b = ComponentAddress(ComponentKind("prompt.tenant"), TenantScope("b"))
