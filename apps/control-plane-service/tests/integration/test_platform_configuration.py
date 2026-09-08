@@ -396,7 +396,7 @@ async def test_target_prompt_http_uses_value_only_write_and_etag(
             get_secret_value=lambda: "secret"
         ),
         control_plane_management_actor="alice",
-        control_plane_management_scopes="configuration:read,configuration:write",
+        control_plane_management_scopes="configuration:read,configuration:write,configuration:publish",
     )
     headers = {"Authorization": "Bearer secret", "If-Match": '"*"'}
     try:

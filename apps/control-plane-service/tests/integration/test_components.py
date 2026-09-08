@@ -321,7 +321,7 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
                 get_secret_value=lambda: "management-secret"
             ),
             control_plane_management_actor="http",
-            control_plane_management_scopes="configuration:read,configuration:write",
+            control_plane_management_scopes="configuration:read,configuration:write,configuration:publish",
         )
         async with AsyncClient(
             transport=ASGITransport(app=app),

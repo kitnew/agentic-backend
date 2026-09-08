@@ -71,13 +71,13 @@ def test_openapi_exposes_only_target_telephony_management_contract() -> None:
     destination = "/management/v1/tenants/{tenant_id}/telephony/handoff-destinations"
 
     assert set(paths[assignment]) == {"get", "post"}
-    assert set(paths[f"{assignment}/{{resource_id}}"] ) == {"get"}
-    assert f"{assignment}/{{resource_id}}/enable" in paths
-    assert f"{assignment}/{{resource_id}}/disable" in paths
+    assert set(paths[f"{assignment}/{{id}}"] ) == {"get"}
+    assert f"{assignment}/{{id}}/enable" in paths
+    assert f"{assignment}/{{id}}/disable" in paths
     assert set(paths[destination]) == {"get", "post"}
-    assert set(paths[f"{destination}/{{resource_id}}"] ) == {"get", "put"}
-    assert f"{destination}/{{resource_id}}/enable" in paths
-    assert f"{destination}/{{resource_id}}/disable" in paths
+    assert set(paths[f"{destination}/{{id}}"] ) == {"get", "put"}
+    assert f"{destination}/{{id}}/enable" in paths
+    assert f"{destination}/{{id}}/disable" in paths
     assert not any("/internal/v1/telephony/inbound-route" == path for path in paths)
     assert not any("/internal/v1/telephony/phone-number-assignments" in path for path in paths)
     assert not any("/v1/managed-resources/phone-number-assignments" in path for path in paths)

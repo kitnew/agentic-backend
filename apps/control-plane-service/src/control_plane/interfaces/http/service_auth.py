@@ -24,6 +24,10 @@ SERVICE_SCOPES = {
 }
 _bearer = HTTPBearer(scheme_name="InternalServiceToken", auto_error=False)
 Credentials = Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)]
+_management_bearer = HTTPBearer(scheme_name="ManagementToken", auto_error=False)
+ManagementCredentials = Annotated[
+    HTTPAuthorizationCredentials | None, Depends(_management_bearer)
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +140,9 @@ def require_management_token(request: Request) -> ManagementPrincipal:
 def require_management_permission(
     permission: str,
 ) -> Callable[..., ManagementPrincipal]:
-    def dependency(request: Request) -> ManagementPrincipal:
+    def dependency(
+        request: Request, _credentials: ManagementCredentials
+    ) -> ManagementPrincipal:
         principal = request.state.management_principal
         if not isinstance(principal, ManagementPrincipal):
             raise _unauthorized()

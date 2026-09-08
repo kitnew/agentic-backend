@@ -124,6 +124,9 @@ async def test_create_scopes_and_normal_reads_are_secret_free(
             "name",
             "status",
             "active_secret_version",
+            "created_at",
+            "updated_at",
+            "revoked_at",
         }
         assert platform.json()["scope"] == {"type": "platform"}
         assert tenant.json()["scope"] == {
@@ -626,6 +629,6 @@ async def test_credential_routes_enforce_permissions_and_command_headers(
             headers={"Idempotency-Key": "rotate"},
             json={"secret": "rotated"},
         )
-        assert missing_match.status_code == 428
+        assert missing_match.status_code == 400
         assert "request_id" in missing_key.json()
         assert "request_id" in missing_match.json()

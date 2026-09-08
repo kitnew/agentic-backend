@@ -325,10 +325,11 @@ async def test_replay_write_failure_rolls_back_assignment_creation(
             base_url="http://test",
             headers={"Authorization": "Bearer management-token"},
         ) as client:
-            with pytest.raises(DBAPIError, match="replay insert failed"):
-                await create_assignment(
-                    client, "tenant-a", "+421900999999", "rollback-create"
-                )
+            response = await create_assignment(
+                client, "tenant-a", "+421900999999", "rollback-create"
+            )
+            assert response.status_code == 500
+            assert response.json()["code"] == "internal_error"
         async with database.sessions() as session:
             assert await session.scalar(
                 text("SELECT count(*) FROM control_plane.phone_number_assignments")

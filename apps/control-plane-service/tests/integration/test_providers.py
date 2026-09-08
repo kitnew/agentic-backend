@@ -459,7 +459,7 @@ async def test_provider_http_contract_is_secret_free_and_retry_safe(
                     f"/management/v1/providers/connections/{connection_id}/enable",
                     headers={"Idempotency-Key": "missing-precondition"},
                 )
-            ).status_code == 428
+                ).status_code == 400
             enabled = await client.post(
                 f"/management/v1/providers/connections/{connection_id}/enable",
                 headers={"Idempotency-Key": "enable", "If-Match": first_etag},

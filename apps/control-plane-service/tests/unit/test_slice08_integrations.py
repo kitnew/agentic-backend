@@ -129,7 +129,7 @@ def test_openapi_exposes_only_target_integration_routes_and_dtos() -> None:
     ).openapi()
     paths = schema["paths"]
     collection = "/management/v1/tenants/{tenant_id}/integrations"
-    resource = f"{collection}/{{resource_id}}"
+    resource = f"{collection}/{{id}}"
     assert set(paths[collection]) == {"get", "post"}
     assert set(paths[resource]) == {"get", "put"}
     assert f"{resource}/enable" in paths

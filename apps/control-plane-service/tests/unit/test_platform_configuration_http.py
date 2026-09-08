@@ -89,7 +89,9 @@ def app():
             get_secret_value=lambda: "secret"
         ),
         control_plane_management_actor="admin",
-        control_plane_management_scopes="configuration:read,configuration:write",
+        control_plane_management_scopes=(
+            "configuration:read,configuration:write,configuration:publish"
+        ),
     )
     return value
 

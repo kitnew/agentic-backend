@@ -92,6 +92,9 @@ def create_app(
     if registry is None:
         registry = default_component_definition_registry()
     provider_registry = provider_registry or ProviderKindRegistry()
+    architecture_registry = ArchitectureRegistry()
+    deployment_registry = DeploymentKindRegistry()
+    integration_registry = IntegrationKindRegistry()
     cipher = CredentialCipher(
         settings.control_plane_encryption_key.get_secret_value(),
         settings.control_plane_encryption_key_id,
@@ -99,7 +102,7 @@ def create_app(
     integrations = (
         IntegrationService(
             integration_command_scope(database.sessions),
-            IntegrationKindRegistry(),
+            integration_registry,
         )
         if isinstance(database, Database)
         else None
@@ -131,7 +134,7 @@ def create_app(
         ProviderService(
             provider_command_scope(database.sessions, cipher),
             provider_registry,
-            DeploymentKindRegistry(),
+            deployment_registry,
             HttpProviderValidator(),
         )
         if isinstance(database, Database)
@@ -176,7 +179,7 @@ def create_app(
     tenant_configuration = (
         TenantConfigurationService(
             registry,
-            ArchitectureRegistry(),
+            architecture_registry,
             tenant_scope,
         )
         if tenant_scope is not None
@@ -241,12 +244,20 @@ def create_app(
         telephony=telephony,
         tenant_configuration=tenant_configuration,
         tenant_live_components=tenant_live_components,
+        component_registry=registry,
+        architecture_registry=architecture_registry,
+        provider_registry=provider_registry,
+        deployment_registry=deployment_registry,
+        integration_registry=integration_registry,
     )
     app.state.settings = settings
     app.state.database = database
     app.state.telemetry = telemetry
     app.state.component_registry = registry
+    app.state.architecture_registry = architecture_registry
     app.state.provider_registry = provider_registry
+    app.state.deployment_registry = deployment_registry
+    app.state.integration_registry = integration_registry
     if settings.otel_enabled and telemetry.tracer_provider and telemetry.meter_provider:
         FastAPIInstrumentor.instrument_app(
             app,

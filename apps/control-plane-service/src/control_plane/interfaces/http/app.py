@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StrictBool
 
@@ -63,6 +64,7 @@ from control_plane.application.system_configuration import (
     SystemConfigurationPlan,
     SystemConfigurationPreconditionFailed,
     SystemConfigurationService,
+    ValidationIssue,
 )
 from control_plane.application.telephony import TelephonyService
 from control_plane.application.tenant_configuration import (
@@ -78,6 +80,7 @@ from control_plane.application.tenant_configuration import (
 )
 from control_plane.domain.components import (
     ComponentAddress,
+    ComponentDefinitionRegistry,
     ComponentKind,
     ComponentScope,
     InteractionModeScope,
@@ -121,6 +124,13 @@ from control_plane.domain.managed_resources import (
     TenantCredentialScope,
     TTSCapabilities,
 )
+from control_plane.domain.registries import (
+    ArchitectureRegistry,
+    DeploymentKindRegistry,
+    IntegrationKindRegistry,
+    ProviderKindRegistry,
+    RegistryEntry,
+)
 from control_plane.domain.runtime_resolution import RuntimeResolutionError
 from control_plane.interfaces.http.service_auth import (
     ManagementPrincipal,
@@ -132,11 +142,24 @@ from control_plane.interfaces.http.service_auth import (
 from control_plane.runtime.lifecycle import ServiceLifecycle
 
 
-class SaveDraftRequest(BaseModel):
-    value: dict[str, Any]
-    schema_version: int = Field(ge=1)
-    expected_draft_version: int | None
-    expected_active_revision_id: UUID | None
+class ErrorResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    message: str
+    issues: list[ValidationIssue] | None = None
+    details: dict[str, object] | None = None
+    request_id: str
+
+
+MANAGEMENT_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    code: {"model": ErrorResponse}
+    for code in (400, 401, 403, 404, 409, 412, 422, 429, 500, 503)
+}
+
+
+def _management_router() -> APIRouter:
+    return APIRouter(responses=MANAGEMENT_ERROR_RESPONSES)
 
 
 class VersionedComponentDraftWrite(BaseModel):
@@ -218,10 +241,6 @@ class SystemLiveComponentResponse(BaseModel):
     updated_by: str
 
 
-class PublishRequest(BaseModel):
-    expected_draft_version: int
-
-
 class RollbackRequest(BaseModel):
     revision_number: int = Field(ge=1)
 
@@ -267,6 +286,9 @@ class CredentialResponse(BaseModel):
     name: str
     status: Literal["active", "revoked"]
     active_secret_version: int = Field(ge=1)
+    created_at: datetime
+    updated_at: datetime
+    revoked_at: datetime | None
 
 
 class ProviderConnectionCreate(BaseModel):
@@ -478,6 +500,25 @@ class ProviderValidationResponse(BaseModel):
     message: str | None = None
 
 
+class RegistryEntryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    name: str
+    description: str
+    metadata: dict[str, object]
+
+
+class ComponentDefinitionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    schema_version: int
+    allowed_scopes: list[str]
+    value_schema: dict[str, object]
+    metadata: dict[str, object]
+
+
 def create_http_app(
     lifecycle: ServiceLifecycle,
     components: ComponentService | None = None,
@@ -494,6 +535,11 @@ def create_http_app(
     integrations: IntegrationService | None = None,
     telephony: TelephonyService | None = None,
     tenant_configuration: TenantConfigurationService | None = None,
+    component_registry: ComponentDefinitionRegistry | None = None,
+    architecture_registry: ArchitectureRegistry | None = None,
+    provider_registry: ProviderKindRegistry | None = None,
+    deployment_registry: DeploymentKindRegistry | None = None,
+    integration_registry: IntegrationKindRegistry | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agentic Backend Control Plane", lifespan=lifecycle.lifespan)
     app.state.settings = None
@@ -512,6 +558,11 @@ def create_http_app(
     app.state.integrations = integrations
     app.state.telephony = telephony
     app.state.tenant_configuration = tenant_configuration
+    app.state.component_registry = component_registry
+    app.state.architecture_registry = architecture_registry
+    app.state.provider_registry = provider_registry
+    app.state.deployment_registry = deployment_registry
+    app.state.integration_registry = integration_registry
 
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
@@ -537,7 +588,17 @@ def create_http_app(
                     status_code=error.status_code,
                     headers=error.headers,
                 )
-        return await call_next(request)
+        try:
+            return await call_next(request)
+        except Exception:
+            if target:
+                return _management_error(
+                    request,
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    "internal_error",
+                    "unexpected internal failure",
+                )
+            raise
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
@@ -545,8 +606,6 @@ def create_http_app(
             code = (
                 "permission_denied"
                 if exc.status_code == status.HTTP_403_FORBIDDEN
-                else "precondition_required"
-                if exc.status_code == status.HTTP_428_PRECONDITION_REQUIRED
                 else "invalid_request"
             )
             return _management_error(
@@ -563,14 +622,19 @@ def create_http_app(
         if request.url.path.startswith("/management/v1/"):
             issues = [
                 {
-                    "location": ".".join(str(item) for item in error["loc"]),
+                    "code": error["type"],
+                    "path": ".".join(str(item) for item in error["loc"]),
                     "message": error["msg"],
                 }
                 for error in exc.errors()
             ]
             return _management_error(
                 request,
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                (
+                    status.HTTP_400_BAD_REQUEST
+                    if any(error["type"] == "json_invalid" for error in exc.errors())
+                    else status.HTTP_422_UNPROCESSABLE_CONTENT
+                ),
                 "invalid_request",
                 "request validation failed",
                 issues=issues,
@@ -732,6 +796,17 @@ def create_http_app(
         app.include_router(_platform_catalog_router(), prefix="/management/v1")
     if tenant_configuration is not None:
         app.include_router(_tenant_configuration_router(), prefix="/management/v1")
+    if all(
+        registry is not None
+        for registry in (
+            component_registry,
+            architecture_registry,
+            provider_registry,
+            deployment_registry,
+            integration_registry,
+        )
+    ):
+        app.include_router(_registry_router(), prefix="/management/v1")
     if components is not None:
         for prefix in (
             "/management/v1/platform",
@@ -838,11 +913,60 @@ def create_http_app(
                 headers=_secret_headers(),
             )
 
+    def management_openapi() -> dict[str, Any]:
+        if app.openapi_schema is not None:
+            return app.openapi_schema
+        schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+        for path, item in schema["paths"].items():
+            if not path.startswith("/management/v1/"):
+                continue
+            for method, operation in item.items():
+                if method not in {"post", "put", "delete"}:
+                    continue
+                read_only = path.endswith(("/plan", "/validate"))
+                draft_write = path.endswith("/draft")
+                if method == "post" and not read_only:
+                    _openapi_header(operation, "Idempotency-Key")
+                if (method in {"put", "delete"} or method == "post") and (
+                    draft_write
+                    or method == "put"
+                    or path.endswith(
+                        (
+                            "/publish",
+                            "/rollback",
+                            "/rotate",
+                            "/revoke",
+                            "/enable",
+                            "/disable",
+                        )
+                    )
+                ):
+                    _openapi_header(operation, "If-Match")
+                if method == "put" and not draft_write:
+                    _openapi_header(operation, "Idempotency-Key")
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = management_openapi  # type: ignore[method-assign]
     return app
 
 
+def _openapi_header(operation: dict[str, Any], name: str) -> None:
+    parameters = operation.setdefault("parameters", [])
+    if any(parameter.get("name") == name for parameter in parameters):
+        return
+    parameters.append(
+        {
+            "name": name,
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string", "minLength": 1},
+        }
+    )
+
+
 def _system_configuration_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("configuration:read"))
     write_auth = Depends(require_management_permission("configuration:write"))
 
@@ -884,10 +1008,80 @@ def _system_configuration_router() -> APIRouter:
     return router
 
 
+def _registry_router() -> APIRouter:
+    router = _management_router()
+    read_auth = Depends(require_management_permission("registries:read"))
+
+    def entries(values: tuple[RegistryEntry, ...]) -> list[dict[str, object]]:
+        return [
+            {
+                "key": value.key,
+                "name": value.name,
+                "description": value.description,
+                "metadata": dict(value.metadata),
+            }
+            for value in values
+        ]
+
+    @router.get("/registries/architectures", response_model=list[RegistryEntryResponse])
+    async def architectures(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(
+            entries(request.app.state.architecture_registry.entries)
+        )
+
+    @router.get(
+        "/registries/components", response_model=list[ComponentDefinitionResponse]
+    )
+    async def components(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(
+            [
+                {
+                    "key": value.key,
+                    "schema_version": value.schema_version,
+                    "allowed_scopes": value.allowed_scopes,
+                    "value_schema": value.value_schema,
+                    "metadata": dict(value.metadata),
+                }
+                for value in request.app.state.component_registry.entries
+            ]
+        )
+
+    @router.get(
+        "/registries/provider-kinds", response_model=list[RegistryEntryResponse]
+    )
+    async def provider_kinds(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(entries(request.app.state.provider_registry.entries))
+
+    @router.get(
+        "/registries/deployment-kinds", response_model=list[RegistryEntryResponse]
+    )
+    async def deployment_kinds(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(entries(request.app.state.deployment_registry.entries))
+
+    @router.get(
+        "/registries/integration-kinds", response_model=list[RegistryEntryResponse]
+    )
+    async def integration_kinds(
+        request: Request, _principal: ManagementPrincipal = read_auth
+    ) -> Any:
+        return jsonable_encoder(entries(request.app.state.integration_registry.entries))
+
+    return router
+
+
 def _platform_configuration_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("configuration:read"))
     write_auth = Depends(require_management_permission("configuration:write"))
+    publish_auth = Depends(require_management_permission("configuration:publish"))
 
     @router.get("/platform/configuration", response_model=PlatformConfiguration)
     async def get_configuration(
@@ -933,7 +1127,7 @@ def _platform_configuration_router() -> APIRouter:
         response_model=PlatformConfigurationPublishResult,
     )
     async def publish_configuration(
-        request: Request, principal: ManagementPrincipal = write_auth
+        request: Request, principal: ManagementPrincipal = publish_auth
     ) -> JSONResponse:
         key, token = _command_headers(request, precondition=True)
         service = request.app.state.platform_configuration
@@ -947,9 +1141,10 @@ def _platform_configuration_router() -> APIRouter:
 
 
 def _tenant_configuration_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("configuration:read"))
     write_auth = Depends(require_management_permission("configuration:write"))
+    publish_auth = Depends(require_management_permission("configuration:publish"))
 
     @router.get(
         "/tenants/{tenant_id}/configuration", response_model=TenantConfiguration
@@ -1005,7 +1200,7 @@ def _tenant_configuration_router() -> APIRouter:
     async def publish_configuration(
         request: Request,
         tenant_id: str,
-        principal: ManagementPrincipal = write_auth,
+        principal: ManagementPrincipal = publish_auth,
     ) -> JSONResponse:
         key, token = _command_headers(request, precondition=True)
         service = request.app.state.tenant_configuration
@@ -1038,7 +1233,7 @@ def _catalog_payload(value) -> dict[str, object]:
 
 
 def _platform_catalog_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("configuration:read"))
     write_auth = Depends(require_management_permission("configuration:write"))
 
@@ -1206,7 +1401,7 @@ def _platform_catalog_router() -> APIRouter:
 
 
 def _system_live_component_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("configuration:read"))
     write_auth = Depends(require_management_permission("configuration:write"))
 
@@ -1291,6 +1486,7 @@ def _management_error(
     message: str,
     *,
     issues: list[dict[str, str]] | None = None,
+    details: dict[str, object] | None = None,
     headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     content: dict[str, object] = {
@@ -1300,6 +1496,8 @@ def _management_error(
     }
     if issues:
         content["issues"] = issues
+    if details is not None:
+        content["details"] = details
     return JSONResponse(content, status_code=status_code, headers=headers)
 
 
@@ -1430,9 +1628,7 @@ def _component_payload(value) -> dict[str, object]:
 def _require_component_precondition(request: Request, current) -> None:
     raw = request.headers.get("if-match", "").strip()
     if not raw:
-        raise HTTPException(
-            status.HTTP_428_PRECONDITION_REQUIRED, "If-Match is required"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "If-Match is required")
     supplied = raw.removeprefix("W/").strip('"')
     expected = "*" if current is None else _component_etag(current)
     if supplied != expected:
@@ -1463,9 +1659,10 @@ def _component_response(value, *, status_code=200) -> JSONResponse:
 
 
 def _target_component_router(*, include_live: bool = False) -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("configuration:read"))
     write_auth = Depends(require_management_permission("configuration:write"))
+    publish_auth = Depends(require_management_permission("configuration:publish"))
 
     @router.get(
         "/components/{kind}",
@@ -1567,7 +1764,7 @@ def _target_component_router(*, include_live: bool = False) -> APIRouter:
     async def publish(
         request: Request,
         kind: str,
-        principal: ManagementPrincipal = write_auth,
+        principal: ManagementPrincipal = publish_auth,
     ) -> JSONResponse:
         _require_versioned(request, kind)
         key, _ = _command_headers(request, precondition=True)
@@ -1665,90 +1862,6 @@ def _target_component_router(*, include_live: bool = False) -> APIRouter:
     return router
 
 
-def _component_router() -> APIRouter:
-    def legacy_component_only(kind: str) -> None:
-        if kind == "ActionsDefinition":
-            raise UnknownComponentKind(kind)
-
-    router = APIRouter(dependencies=[Depends(legacy_component_only)])
-
-    @router.get("/components/{kind}")
-    async def get_component(request: Request, kind: str) -> Any:
-        return jsonable_encoder(
-            await _service(request).get_component(_address(request, kind))
-        )
-
-    @router.get("/components/{kind}/draft")
-    async def get_draft(request: Request, kind: str) -> Any:
-        return jsonable_encoder(
-            await _service(request).get_draft(_address(request, kind))
-        )
-
-    @router.put("/components/{kind}/draft")
-    async def save_draft(request: Request, kind: str, body: SaveDraftRequest) -> Any:
-        return jsonable_encoder(
-            await _service(request).save_draft(
-                _address(request, kind),
-                body.value,
-                body.expected_draft_version,
-                body.expected_active_revision_id,
-                _management_actor(request),
-            )
-        )
-
-    @router.delete("/components/{kind}/draft", status_code=status.HTTP_204_NO_CONTENT)
-    async def discard_draft(
-        request: Request, kind: str, expected_draft_version: int = Query(ge=1)
-    ) -> None:
-        await _service(request).discard_draft(
-            _address(request, kind), expected_draft_version
-        )
-
-    @router.post("/components/{kind}/publish")
-    async def publish(request: Request, kind: str, body: PublishRequest) -> Any:
-        return jsonable_encoder(
-            await _service(request).publish_draft(
-                _address(request, kind),
-                body.expected_draft_version,
-                _management_actor(request),
-            )
-        )
-
-    @router.get("/components/{kind}/active")
-    async def active(request: Request, kind: str) -> Any:
-        return jsonable_encoder(
-            await _service(request).get_active(_address(request, kind))
-        )
-
-    @router.get("/components/{kind}/revisions")
-    async def revisions(
-        request: Request, kind: str, limit: int = Query(100, ge=1, le=500)
-    ) -> Any:
-        return jsonable_encoder(
-            await _service(request).list_revisions(_address(request, kind), limit)
-        )
-
-    @router.get("/components/{kind}/revisions/{revision_number}")
-    async def revision(request: Request, kind: str, revision_number: int) -> Any:
-        return jsonable_encoder(
-            await _service(request).get_revision(
-                _address(request, kind), revision_number
-            )
-        )
-
-    @router.post("/components/{kind}/rollback")
-    async def rollback(request: Request, kind: str, body: RollbackRequest) -> Any:
-        return jsonable_encoder(
-            await _service(request).rollback(
-                _address(request, kind),
-                body.revision_number,
-                _management_actor(request),
-            )
-        )
-
-    return router
-
-
 def _provider(request: Request) -> ProviderService:
     return request.app.state.providers
 
@@ -1757,22 +1870,26 @@ def _credential(request: Request) -> CredentialService:
     return request.app.state.credentials
 
 
-def _credential_response(value: object) -> dict[str, object]:
+def _credential_response(value: object) -> CredentialResponse:
     from control_plane.domain.managed_resources import Credential
 
     assert isinstance(value, Credential)
+    assert value.active_secret_version_number is not None
     scope = (
         {"type": "tenant", "tenant_id": value.scope.tenant_id}
         if isinstance(value.scope, TenantCredentialScope)
         else {"type": "platform"}
     )
-    return {
-        "id": value.ref.value,
-        "scope": scope,
-        "name": value.name,
-        "status": value.status,
-        "active_secret_version": value.active_secret_version_number,
-    }
+    return CredentialResponse(
+        id=value.ref.value,
+        scope=scope,  # type: ignore[arg-type]
+        name=value.name,
+        status=value.status.value,
+        active_secret_version=value.active_secret_version_number,
+        created_at=value.created_at,
+        updated_at=value.revoked_at or value.created_at,
+        revoked_at=value.revoked_at,
+    )
 
 
 def _etag(service: CredentialService, value: object) -> str:
@@ -1788,9 +1905,7 @@ def _command_headers(request: Request, *, precondition: bool) -> tuple[str, str]
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Idempotency-Key is required")
     if_match = request.headers.get("if-match", "").strip()
     if precondition and not if_match:
-        raise HTTPException(
-            status.HTTP_428_PRECONDITION_REQUIRED, "If-Match is required"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "If-Match is required")
     return idempotency_key, if_match.removeprefix("W/").strip('"')
 
 
@@ -1898,7 +2013,7 @@ def _capabilities(value: CapabilitiesWrite):
 
 
 def _credential_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
 
     @router.post(
         "/credentials",
@@ -1925,7 +2040,7 @@ def _credential_router() -> APIRouter:
             idempotency_key,
         )
         return JSONResponse(
-            jsonable_encoder(_credential_response(value)),
+            _credential_response(value).model_dump(mode="json"),
             status_code=status.HTTP_201_CREATED,
             headers={"ETag": _etag(service, value)},
         )
@@ -1946,63 +2061,61 @@ def _credential_router() -> APIRouter:
             scope = TenantCredentialScope(tenant_id)
         else:
             raise InvalidManagedResource("credential scope filter is invalid")
-        return jsonable_encoder(
-            [
-                _credential_response(value)
-                for value in await _credential(request).list(scope)
-            ]
-        )
+        return [
+            _credential_response(value)
+            for value in await _credential(request).list(scope)
+        ]
 
-    @router.get("/credentials/{resource_id}", response_model=CredentialResponse)
+    @router.get("/credentials/{id}", response_model=CredentialResponse)
     async def get_credential(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = _credential_read_auth,
     ) -> JSONResponse:
         service = _credential(request)
-        value = await service.get(CredentialRef(resource_id))
+        value = await service.get(CredentialRef(id))
         return JSONResponse(
-            jsonable_encoder(_credential_response(value)),
+            _credential_response(value).model_dump(mode="json"),
             headers={"ETag": _etag(service, value)},
         )
 
-    @router.post("/credentials/{resource_id}/rotate", response_model=CredentialResponse)
+    @router.post("/credentials/{id}/rotate", response_model=CredentialResponse)
     async def rotate_credential(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         body: CredentialRotate,
         principal: ManagementPrincipal = _credential_write_auth,
     ) -> JSONResponse:
         idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _credential(request)
         value = await service.rotate(
-            CredentialRef(resource_id),
+            CredentialRef(id),
             body.secret.get_secret_value(),
             expected_token,
             principal.subject,
             idempotency_key,
         )
         return JSONResponse(
-            jsonable_encoder(_credential_response(value)),
+            _credential_response(value).model_dump(mode="json"),
             headers={"ETag": _etag(service, value)},
         )
 
-    @router.post("/credentials/{resource_id}/revoke", response_model=CredentialResponse)
+    @router.post("/credentials/{id}/revoke", response_model=CredentialResponse)
     async def revoke_credential(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = _credential_write_auth,
     ) -> JSONResponse:
         idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _credential(request)
         value = await service.revoke(
-            CredentialRef(resource_id),
+            CredentialRef(id),
             expected_token,
             principal.subject,
             idempotency_key,
         )
         return JSONResponse(
-            jsonable_encoder(_credential_response(value)),
+            _credential_response(value).model_dump(mode="json"),
             headers={"ETag": _etag(service, value)},
         )
 
@@ -2010,7 +2123,7 @@ def _credential_router() -> APIRouter:
 
 
 def _provider_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("resources:read"))
     write_auth = Depends(require_management_permission("resources:write"))
 
@@ -2051,30 +2164,30 @@ def _provider_router() -> APIRouter:
             ]
         )
 
-    @router.get("/connections/{resource_id}", response_model=ProviderConnectionResponse)
+    @router.get("/connections/{id}", response_model=ProviderConnectionResponse)
     async def get_connection(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = read_auth,
     ) -> JSONResponse:
         service = _provider(request)
-        value = await service.get_connection(ProviderConnectionRef(resource_id))
+        value = await service.get_connection(ProviderConnectionRef(id))
         return JSONResponse(
             jsonable_encoder(_connection_response(value)),
             headers={"ETag": _provider_etag(service, value)},
         )
 
-    @router.put("/connections/{resource_id}", response_model=ProviderConnectionResponse)
+    @router.put("/connections/{id}", response_model=ProviderConnectionResponse)
     async def update_connection(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         body: ProviderConnectionUpdate,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
         idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _provider(request)
         value = await service.update_connection(
-            ProviderConnectionRef(resource_id),
+            ProviderConnectionRef(id),
             CredentialRef(body.credential_ref),
             body.connection_config,
             expected_token,
@@ -2086,29 +2199,25 @@ def _provider_router() -> APIRouter:
             headers={"ETag": _provider_etag(service, value)},
         )
 
-    @router.post(
-        "/connections/{resource_id}/enable", response_model=ProviderConnectionResponse
-    )
+    @router.post("/connections/{id}/enable", response_model=ProviderConnectionResponse)
     async def enable_connection(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await connection_lifecycle(request, resource_id, principal, True)
+        return await connection_lifecycle(request, id, principal, True)
 
-    @router.post(
-        "/connections/{resource_id}/disable", response_model=ProviderConnectionResponse
-    )
+    @router.post("/connections/{id}/disable", response_model=ProviderConnectionResponse)
     async def disable_connection(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await connection_lifecycle(request, resource_id, principal, False)
+        return await connection_lifecycle(request, id, principal, False)
 
     async def connection_lifecycle(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal,
         enabled: bool,
     ) -> JSONResponse:
@@ -2116,7 +2225,7 @@ def _provider_router() -> APIRouter:
         service = _provider(request)
         command = service.enable_connection if enabled else service.disable_connection
         value = await command(
-            ProviderConnectionRef(resource_id),
+            ProviderConnectionRef(id),
             expected_token,
             principal.subject,
             idempotency_key,
@@ -2127,18 +2236,16 @@ def _provider_router() -> APIRouter:
         )
 
     @router.post(
-        "/connections/{resource_id}/validate",
+        "/connections/{id}/validate",
         response_model=ProviderValidationResponse,
     )
     async def validate_connection(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = write_auth,
     ) -> Any:
         return jsonable_encoder(
-            await _provider(request).validate_connection(
-                ProviderConnectionRef(resource_id)
-            )
+            await _provider(request).validate_connection(ProviderConnectionRef(id))
         )
 
     @router.post(
@@ -2179,30 +2286,30 @@ def _provider_router() -> APIRouter:
             ]
         )
 
-    @router.get("/deployments/{resource_id}", response_model=ModelDeploymentResponse)
+    @router.get("/deployments/{id}", response_model=ModelDeploymentResponse)
     async def get_deployment(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = read_auth,
     ) -> JSONResponse:
         service = _provider(request)
-        value = await service.get_deployment(ModelDeploymentRef(resource_id))
+        value = await service.get_deployment(ModelDeploymentRef(id))
         return JSONResponse(
             jsonable_encoder(_deployment_response(value)),
             headers={"ETag": _provider_etag(service, value)},
         )
 
-    @router.put("/deployments/{resource_id}", response_model=ModelDeploymentResponse)
+    @router.put("/deployments/{id}", response_model=ModelDeploymentResponse)
     async def update_deployment(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         body: ModelDeploymentUpdate,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
         idempotency_key, expected_token = _command_headers(request, precondition=True)
         service = _provider(request)
         value = await service.update_deployment(
-            ModelDeploymentRef(resource_id),
+            ModelDeploymentRef(id),
             ProviderConnectionRef(body.connection_ref),
             body.deployment_config,
             _capabilities(body.capabilities),
@@ -2215,29 +2322,25 @@ def _provider_router() -> APIRouter:
             headers={"ETag": _provider_etag(service, value)},
         )
 
-    @router.post(
-        "/deployments/{resource_id}/enable", response_model=ModelDeploymentResponse
-    )
+    @router.post("/deployments/{id}/enable", response_model=ModelDeploymentResponse)
     async def enable_deployment(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await deployment_lifecycle(request, resource_id, principal, True)
+        return await deployment_lifecycle(request, id, principal, True)
 
-    @router.post(
-        "/deployments/{resource_id}/disable", response_model=ModelDeploymentResponse
-    )
+    @router.post("/deployments/{id}/disable", response_model=ModelDeploymentResponse)
     async def disable_deployment(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await deployment_lifecycle(request, resource_id, principal, False)
+        return await deployment_lifecycle(request, id, principal, False)
 
     async def deployment_lifecycle(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal,
         enabled: bool,
     ) -> JSONResponse:
@@ -2245,7 +2348,7 @@ def _provider_router() -> APIRouter:
         service = _provider(request)
         command = service.enable_deployment if enabled else service.disable_deployment
         value = await command(
-            ModelDeploymentRef(resource_id),
+            ModelDeploymentRef(id),
             expected_token,
             principal.subject,
             idempotency_key,
@@ -2256,25 +2359,23 @@ def _provider_router() -> APIRouter:
         )
 
     @router.post(
-        "/deployments/{resource_id}/validate",
+        "/deployments/{id}/validate",
         response_model=ProviderValidationResponse,
     )
     async def validate_deployment(
         request: Request,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = write_auth,
     ) -> Any:
         return jsonable_encoder(
-            await _provider(request).validate_deployment(
-                ModelDeploymentRef(resource_id)
-            )
+            await _provider(request).validate_deployment(ModelDeploymentRef(id))
         )
 
     return router
 
 
 def _integration_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("resources:read"))
     write_auth = Depends(require_management_permission("resources:write"))
 
@@ -2323,30 +2424,30 @@ def _integration_router() -> APIRouter:
         )
 
     @router.get(
-        "/tenants/{tenant_id}/integrations/{resource_id}",
+        "/tenants/{tenant_id}/integrations/{id}",
         response_model=IntegrationConnectionResponse,
     )
     async def get_integration_connection(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = read_auth,
     ) -> JSONResponse:
         service: IntegrationService = request.app.state.integrations
-        value = await service.get(tenant_id, IntegrationConnectionRef(resource_id))
+        value = await service.get(tenant_id, IntegrationConnectionRef(id))
         return JSONResponse(
             jsonable_encoder(_integration_connection_response(value)),
             headers={"ETag": f'"{service.concurrency_token(value)}"'},
         )
 
     @router.put(
-        "/tenants/{tenant_id}/integrations/{resource_id}",
+        "/tenants/{tenant_id}/integrations/{id}",
         response_model=IntegrationConnectionResponse,
     )
     async def update_integration_connection(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         body: IntegrationConnectionUpdate,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
@@ -2354,7 +2455,7 @@ def _integration_router() -> APIRouter:
         service: IntegrationService = request.app.state.integrations
         value = await service.update(
             tenant_id,
-            IntegrationConnectionRef(resource_id),
+            IntegrationConnectionRef(id),
             body.config,
             CredentialRef(body.credential_ref) if body.credential_ref else None,
             token,
@@ -2366,13 +2467,13 @@ def _integration_router() -> APIRouter:
             headers={"ETag": f'"{service.concurrency_token(value)}"'},
         )
 
-    async def set_enabled(request, tenant_id, resource_id, enabled, principal):
+    async def set_enabled(request, tenant_id, id, enabled, principal):
         idempotency_key, token = _command_headers(request, precondition=True)
         service: IntegrationService = request.app.state.integrations
         command = service.enable if enabled else service.disable
         value = await command(
             tenant_id,
-            IntegrationConnectionRef(resource_id),
+            IntegrationConnectionRef(id),
             token,
             principal.subject,
             idempotency_key,
@@ -2383,48 +2484,48 @@ def _integration_router() -> APIRouter:
         )
 
     @router.post(
-        "/tenants/{tenant_id}/integrations/{resource_id}/enable",
+        "/tenants/{tenant_id}/integrations/{id}/enable",
         response_model=IntegrationConnectionResponse,
     )
     async def enable_integration(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await set_enabled(request, tenant_id, resource_id, True, principal)
+        return await set_enabled(request, tenant_id, id, True, principal)
 
     @router.post(
-        "/tenants/{tenant_id}/integrations/{resource_id}/disable",
+        "/tenants/{tenant_id}/integrations/{id}/disable",
         response_model=IntegrationConnectionResponse,
     )
     async def disable_integration(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await set_enabled(request, tenant_id, resource_id, False, principal)
+        return await set_enabled(request, tenant_id, id, False, principal)
 
     @router.post(
-        "/tenants/{tenant_id}/integrations/{resource_id}/validate",
+        "/tenants/{tenant_id}/integrations/{id}/validate",
         response_model=IntegrationValidationResponse,
     )
     async def validate_integration(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = write_auth,
     ) -> IntegrationValidationResult:
         return await request.app.state.integrations.validate(
-            tenant_id, IntegrationConnectionRef(resource_id)
+            tenant_id, IntegrationConnectionRef(id)
         )
 
     return router
 
 
 def _telephony_router() -> APIRouter:
-    router = APIRouter()
+    router = _management_router()
     read_auth = Depends(require_management_permission("resources:read"))
     write_auth = Depends(require_management_permission("resources:write"))
 
@@ -2469,33 +2570,31 @@ def _telephony_router() -> APIRouter:
         )
 
     @router.get(
-        f"{assignment_path}/{{resource_id}}",
+        f"{assignment_path}/{{id}}",
         response_model=PhoneNumberAssignmentResponse,
     )
     async def get_phone_number_assignment(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = read_auth,
     ) -> JSONResponse:
         service: TelephonyService = request.app.state.telephony
-        value = await service.get_assignment(
-            tenant_id, PhoneNumberAssignmentRef(resource_id)
-        )
+        value = await service.get_assignment(tenant_id, PhoneNumberAssignmentRef(id))
         return JSONResponse(
             jsonable_encoder(_phone_number_assignment_response(value)),
             headers={"ETag": f'"{service.concurrency_token(value)}"'},
         )
 
     async def set_assignment_enabled(
-        request: Request, tenant_id: str, resource_id: UUID, enabled: bool, principal
+        request: Request, tenant_id: str, id: UUID, enabled: bool, principal
     ) -> JSONResponse:
         idempotency_key, token = _command_headers(request, precondition=True)
         service: TelephonyService = request.app.state.telephony
         command = service.enable_assignment if enabled else service.disable_assignment
         value = await command(
             tenant_id,
-            PhoneNumberAssignmentRef(resource_id),
+            PhoneNumberAssignmentRef(id),
             token,
             principal.subject,
             idempotency_key,
@@ -2506,32 +2605,28 @@ def _telephony_router() -> APIRouter:
         )
 
     @router.post(
-        f"{assignment_path}/{{resource_id}}/enable",
+        f"{assignment_path}/{{id}}/enable",
         response_model=PhoneNumberAssignmentResponse,
     )
     async def enable_phone_number_assignment(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await set_assignment_enabled(
-            request, tenant_id, resource_id, True, principal
-        )
+        return await set_assignment_enabled(request, tenant_id, id, True, principal)
 
     @router.post(
-        f"{assignment_path}/{{resource_id}}/disable",
+        f"{assignment_path}/{{id}}/disable",
         response_model=PhoneNumberAssignmentResponse,
     )
     async def disable_phone_number_assignment(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await set_assignment_enabled(
-            request, tenant_id, resource_id, False, principal
-        )
+        return await set_assignment_enabled(request, tenant_id, id, False, principal)
 
     @router.post(
         destination_path,
@@ -2561,13 +2656,13 @@ def _telephony_router() -> APIRouter:
         )
 
     @router.put(
-        f"{destination_path}/{{resource_id}}",
+        f"{destination_path}/{{id}}",
         response_model=HandoffDestinationResponse,
     )
     async def update_handoff_destination(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         body: HandoffDestinationUpdate,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
@@ -2575,7 +2670,7 @@ def _telephony_router() -> APIRouter:
         service: TelephonyService = request.app.state.telephony
         value = await service.update_destination(
             tenant_id,
-            HandoffDestinationRef(resource_id),
+            HandoffDestinationRef(id),
             body.description,
             body.phone_number,
             token,
@@ -2588,14 +2683,14 @@ def _telephony_router() -> APIRouter:
         )
 
     async def set_destination_enabled(
-        request: Request, tenant_id: str, resource_id: UUID, enabled: bool, principal
+        request: Request, tenant_id: str, id: UUID, enabled: bool, principal
     ) -> JSONResponse:
         idempotency_key, token = _command_headers(request, precondition=True)
         service: TelephonyService = request.app.state.telephony
         command = service.enable_destination if enabled else service.disable_destination
         value = await command(
             tenant_id,
-            HandoffDestinationRef(resource_id),
+            HandoffDestinationRef(id),
             token,
             principal.subject,
             idempotency_key,
@@ -2606,47 +2701,41 @@ def _telephony_router() -> APIRouter:
         )
 
     @router.post(
-        f"{destination_path}/{{resource_id}}/enable",
+        f"{destination_path}/{{id}}/enable",
         response_model=HandoffDestinationResponse,
     )
     async def enable_handoff_destination(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await set_destination_enabled(
-            request, tenant_id, resource_id, True, principal
-        )
+        return await set_destination_enabled(request, tenant_id, id, True, principal)
 
     @router.post(
-        f"{destination_path}/{{resource_id}}/disable",
+        f"{destination_path}/{{id}}/disable",
         response_model=HandoffDestinationResponse,
     )
     async def disable_handoff_destination(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         principal: ManagementPrincipal = write_auth,
     ) -> JSONResponse:
-        return await set_destination_enabled(
-            request, tenant_id, resource_id, False, principal
-        )
+        return await set_destination_enabled(request, tenant_id, id, False, principal)
 
     @router.get(
-        f"{destination_path}/{{resource_id}}",
+        f"{destination_path}/{{id}}",
         response_model=HandoffDestinationResponse,
     )
     async def get_handoff_destination(
         request: Request,
         tenant_id: str,
-        resource_id: UUID,
+        id: UUID,
         _principal: ManagementPrincipal = read_auth,
     ) -> JSONResponse:
         service: TelephonyService = request.app.state.telephony
-        value = await service.get_destination(
-            tenant_id, HandoffDestinationRef(resource_id)
-        )
+        value = await service.get_destination(tenant_id, HandoffDestinationRef(id))
         return JSONResponse(
             jsonable_encoder(_handoff_destination_response(value)),
             headers={"ETag": f'"{service.concurrency_token(value)}"'},

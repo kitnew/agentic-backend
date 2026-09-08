@@ -91,9 +91,9 @@ def test_target_provider_routes_replace_legacy_managed_resource_routes() -> None
     paths = app.openapi()["paths"]
 
     assert "/management/v1/providers/connections" in paths
-    assert "/management/v1/providers/connections/{resource_id}/validate" in paths
+    assert "/management/v1/providers/connections/{id}/validate" in paths
     assert "/management/v1/providers/deployments" in paths
-    assert "/management/v1/providers/deployments/{resource_id}/validate" in paths
+    assert "/management/v1/providers/deployments/{id}/validate" in paths
     assert "/v1/managed-resources/provider-connections" not in paths
     assert "/v1/managed-resources/model-deployments" not in paths
     schemas = app.openapi()["components"]["schemas"]
