@@ -194,15 +194,6 @@ def create_app(
         if tenant_scope is not None and tenant_configuration is not None
         else None
     )
-    execution_materialization = (
-        ExecutionMaterializationService(
-            database.sessions,
-            cipher,
-            SqlAlchemyExecutionSnapshotRepository(database.sessions),
-        )
-        if isinstance(database, Database)
-        else None
-    )
     resolution_reader = (
         SqlAlchemyRuntimeResolutionReader(database.sessions)
         if isinstance(database, Database)
@@ -217,6 +208,19 @@ def create_app(
         if resolution_reader is not None
         else None
     )
+    execution_materialization = (
+        ExecutionMaterializationService(
+            database.sessions,
+            cipher,
+            SqlAlchemyExecutionSnapshotRepository(database.sessions),
+            ExecutionResolver(registry, runtime_resolver),
+            resolution_reader,
+        )
+        if isinstance(database, Database)
+        and runtime_resolver is not None
+        and resolution_reader is not None
+        else None
+    )
     runtime_materialization = (
         ExecutionSnapshotService(
             database.sessions,
@@ -224,6 +228,7 @@ def create_app(
             resolution_reader,
             SqlAlchemyExecutionSnapshotRepository(database.sessions),
             ExecutionResolver(registry, runtime_resolver),
+            execution_materialization,
         )
         if runtime_resolver is not None and resolution_reader is not None
         else None

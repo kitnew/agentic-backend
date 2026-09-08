@@ -61,8 +61,6 @@ class CredentialProvenance:
     credential_ref: UUID
     generation: int
     status: str
-    active_version_id: UUID | None
-    active_secret_version_number: int | None
 
 
 @dataclass(frozen=True, slots=True)

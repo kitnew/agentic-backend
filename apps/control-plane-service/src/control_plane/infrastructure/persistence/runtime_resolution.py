@@ -254,6 +254,8 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                     )
                     credential = {
                         "credential_ref": credential_row.id,
+                        "scope_type": credential_row.scope_type,
+                        "tenant_id": credential_row.tenant_id,
                         "generation": credential_row.generation,
                         "status": credential_row.status,
                         "active_version_id": credential_row.active_version_id,

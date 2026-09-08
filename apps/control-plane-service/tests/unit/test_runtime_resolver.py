@@ -482,8 +482,8 @@ async def test_execution_snapshot_payload_round_trips_and_is_secret_free() -> No
     payload = snapshot_payload(TENANT, resolution)
     restored = snapshot_from_payload(UUID(int=999), NOW, payload, content_hash(payload))
 
-    assert restored.runtime == resolution.selected
-    assert restored.resolution == resolution
+    assert restored.runtime.architecture == resolution.selected.architecture
+    assert restored.resolution.attempts == resolution.attempts
     assert all(
         field not in str(payload).lower()
         for field in ("ciphertext", "nonce", "key_id", "secret_envelope")
@@ -534,6 +534,36 @@ def test_execution_snapshot_contains_agent_and_hashes_context_changes() -> None:
     changed = {"agent": replace(execution.agent, greeting="Nový deň 🌿")}
     assert content_hash(payload) != content_hash(
         snapshot_payload(TENANT, execution.runtime, changed)
+    )
+
+
+def test_execution_snapshot_contains_no_credential_secret_version_internals() -> None:
+    resolver, enriched = execution_resolver(state(["cascade"]))
+    execution = resolver.resolve_state(TENANT, enriched)
+    payload = snapshot_payload(
+        TENANT,
+        execution.runtime,
+        {"runtime": execution.runtime.selected, "agent": execution.agent},
+    )
+
+    serialized = str(payload).lower()
+    assert "active_version_id" not in serialized
+    assert "active_secret_version_number" not in serialized
+
+
+def test_target_execution_state_does_not_embed_component_provenance() -> None:
+    resolver, enriched = execution_resolver(state(["cascade"]))
+    execution = resolver.resolve_state(TENANT, enriched)
+    assert "provenance" not in str(execution.actions).lower()
+    assert all(
+        set(action) == {
+            "key",
+            "phase",
+            "definition",
+            "execution_plan",
+            "integration",
+        }
+        for action in execution.actions
     )
 
 

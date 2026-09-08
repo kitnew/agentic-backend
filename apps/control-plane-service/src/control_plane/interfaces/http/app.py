@@ -887,7 +887,7 @@ def create_http_app(
             service: ExecutionMaterializationService = (
                 request.app.state.execution_materialization
             )
-            material = await service.runtime_secret(snapshot_id, slot)
+            material = await service.legacy_runtime_secret(snapshot_id, slot)
             return JSONResponse(
                 jsonable_encoder(_runtime_secret_response(material)),
                 headers=_secret_headers(),
@@ -907,7 +907,9 @@ def create_http_app(
             service: ExecutionMaterializationService = (
                 request.app.state.execution_materialization
             )
-            material = await service.integration_material(tenant_id, connection_id)
+            material = await service.legacy_integration_material(
+                tenant_id, connection_id
+            )
             return JSONResponse(
                 jsonable_encoder(_integration_material_response(material)),
                 headers=_secret_headers(),
@@ -1503,10 +1505,10 @@ def _management_error(
 
 def _runtime_secret_response(value: object) -> dict[str, object]:
     from control_plane.application.execution_materialization import (
-        RuntimeSecretMaterial,
+        LegacyRuntimeSecretMaterial,
     )
 
-    assert isinstance(value, RuntimeSecretMaterial)
+    assert isinstance(value, LegacyRuntimeSecretMaterial)
     return {
         "snapshot_id": value.snapshot_id,
         "slot": value.slot,
@@ -1524,10 +1526,10 @@ def _runtime_secret_response(value: object) -> dict[str, object]:
 
 def _integration_material_response(value: object) -> dict[str, object]:
     from control_plane.application.execution_materialization import (
-        IntegrationExecutionMaterial,
+        LegacyIntegrationExecutionMaterial,
     )
 
-    assert isinstance(value, IntegrationExecutionMaterial)
+    assert isinstance(value, LegacyIntegrationExecutionMaterial)
     return {
         "tenant_id": value.tenant_id,
         "integration_connection_id": value.integration_connection_id,

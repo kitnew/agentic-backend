@@ -531,9 +531,26 @@ def upgrade() -> None:
         schema=SCHEMA,
     )
     op.create_index("ix_execution_snapshot_tenant_created", "execution_snapshots", ["tenant_id", "created_at"], schema=SCHEMA)
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_execution_snapshot_update() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          RAISE EXCEPTION 'execution snapshot is immutable';
+        END
+        $$
+        """
+    )
+    op.execute(
+        "CREATE TRIGGER execution_snapshot_immutable "
+        "BEFORE UPDATE ON control_plane.execution_snapshots "
+        "FOR EACH ROW EXECUTE FUNCTION control_plane.reject_execution_snapshot_update()"
+    )
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER execution_snapshot_immutable ON control_plane.execution_snapshots")
+    op.execute("DROP FUNCTION control_plane.reject_execution_snapshot_update()")
     op.drop_index("ix_execution_snapshot_tenant_created", table_name="execution_snapshots", schema=SCHEMA)
     op.drop_table("execution_snapshots", schema=SCHEMA)
     op.drop_index("uq_phone_number_assignment_enabled_phone", table_name="phone_number_assignments", schema=SCHEMA)

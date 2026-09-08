@@ -462,8 +462,6 @@ class RuntimeResolver:
                 credential.ref.value,
                 credential.generation,
                 credential.status.value,
-                credential.active_version_id,
-                credential.active_secret_version_number,
             ),
         )
 

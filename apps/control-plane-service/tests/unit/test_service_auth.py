@@ -6,7 +6,7 @@ from uuid import UUID
 import jwt
 import pytest
 from control_plane.application.execution_materialization import (
-    RuntimeSecretMaterial,
+    LegacyRuntimeSecretMaterial,
     RuntimeSecretSlot,
 )
 from control_plane.interfaces.http import create_http_app
@@ -20,10 +20,10 @@ class Lifecycle:
 
 
 class Materializer:
-    async def runtime_secret(
+    async def legacy_runtime_secret(
         self, snapshot_id: UUID, slot: RuntimeSecretSlot
-    ) -> RuntimeSecretMaterial:
-        return RuntimeSecretMaterial(
+    ) -> LegacyRuntimeSecretMaterial:
+        return LegacyRuntimeSecretMaterial(
             snapshot_id,
             slot,
             "marker-secret",

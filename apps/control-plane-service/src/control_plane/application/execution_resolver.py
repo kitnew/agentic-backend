@@ -2,6 +2,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, cast
+from uuid import UUID
 
 from contracts.integration import HttpConnectionConfiguration
 
@@ -54,6 +55,8 @@ class ExecutionResolution:
     handoff: tuple[Mapping[str, object], ...]
     phone_assignment: Mapping[str, object] | None
     provenance: dict[str, object]
+    actions: tuple[dict[str, object], ...]
+    integration_bindings: Mapping[str, UUID]
 
     @property
     def architecture(self) -> str:
@@ -170,17 +173,23 @@ class ExecutionResolver:
                 },
             )
         enabled = []
-        actions = []
+        post_call = []
+        target_actions = []
+        integration_bindings: dict[str, UUID] = {}
         for key, value in definitions.value.actions.items():
             if not availability.value.actions.get(key, False):
                 continue
             integration = self._validate_integration(
                 tenant_id, value.execution.integration_key, state
             )
+            integration_bindings[value.execution.integration_key] = cast(
+                UUID, integration["id"]
+            )
+            target_actions.append(self._target_action(key, value))
             if isinstance(value, RuntimeActionDefinition):
                 enabled.append(self._capability(key, value, integration))
             elif isinstance(value, PostCallActionDefinition):
-                actions.append(self._post_call(key, value, integration))
+                post_call.append(self._post_call(key, value, integration))
         handoff = tuple(sorted(state.handoffs, key=lambda row: str(row["key"])))
         return ExecutionResolution(
             tenant_id,
@@ -200,7 +209,7 @@ class ExecutionResolver:
                 "provenance": self._provenance(knowledge),
             },
             tuple(enabled),
-            tuple(actions),
+            tuple(post_call),
             handoff,
             state.phone_assignment,
             {
@@ -210,7 +219,25 @@ class ExecutionResolver:
                 "actions_definition": self._provenance(definitions),
                 "actions_availability": self._provenance(availability),
             },
+            tuple(target_actions),
+            integration_bindings,
         )
+
+    @staticmethod
+    def _target_action(
+        key: str, value: RuntimeActionDefinition | PostCallActionDefinition
+    ) -> dict[str, object]:
+        raw = cast(dict[str, object], value.model_dump(mode="json"))
+        execution = cast(dict[str, object], raw.pop("execution"))
+        integration_key = cast(str, execution.pop("integration_key"))
+        phase = cast(str, raw.pop("phase"))
+        return {
+            "key": key,
+            "phase": phase,
+            "definition": raw,
+            "execution_plan": execution,
+            "integration": {"semantic_key": integration_key},
+        }
 
     def _capability(
         self,
@@ -273,9 +300,37 @@ class ExecutionResolver:
                 {"resource_type": "integration_connection", "integration_key": key},
             )
         config = HttpConnectionConfiguration.model_validate(value["config"])
-        if config.authentication.type != "none" and value["credential"] is None:
+        credential = value["credential"]
+        if config.authentication.type == "none":
+            if credential is not None:
+                raise RuntimeResolutionError(
+                    ResolutionFailureReason.CURRENT_STATE_INVALID,
+                    {
+                        "resource_type": "integration_connection",
+                        "integration_key": key,
+                    },
+                )
+            return value
+        if not isinstance(credential, Mapping):
             raise RuntimeResolutionError(
                 ResolutionFailureReason.MISSING_RESOURCE,
+                {"resource_type": "credential", "integration_key": key},
+            )
+        if (
+            credential["scope_type"] == "tenant"
+            and credential["tenant_id"] != tenant_id
+        ):
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.CROSS_TENANT_RESOURCE,
+                {"resource_type": "credential", "integration_key": key},
+            )
+        if (
+            credential["status"] != "active"
+            or credential["active_version_id"] is None
+            or credential["active_version_number"] is None
+        ):
+            raise RuntimeResolutionError(
+                ResolutionFailureReason.CREDENTIAL_REVOKED,
                 {"resource_type": "credential", "integration_key": key},
             )
         return value

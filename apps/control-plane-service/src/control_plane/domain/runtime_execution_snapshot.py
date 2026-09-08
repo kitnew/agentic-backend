@@ -65,6 +65,10 @@ class ExecutionSnapshot:
     resolution: RuntimeResolution
     content_hash: str
 
+    @property
+    def execution_id(self) -> UUID:
+        return self.snapshot_id
+
 
 def snapshot_payload(
     tenant_id: str,
@@ -94,6 +98,35 @@ def content_hash(payload: Mapping[str, object]) -> str:
             payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
         ).encode()
     ).hexdigest()
+
+
+def assert_secret_free_payload(payload: Mapping[str, object]) -> None:
+    forbidden = {
+        "secret",
+        "ciphertext",
+        "nonce",
+        "key_id",
+        "algorithm",
+        "active_version_id",
+        "active_secret_version_number",
+        "credential_version_id",
+        "credential_version_number",
+    }
+
+    def visit(value: object) -> None:
+        if isinstance(value, Mapping):
+            leaked = forbidden.intersection(str(key).lower() for key in value)
+            if leaked:
+                raise ValueError(
+                    f"execution snapshot contains secret material: {sorted(leaked)}"
+                )
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, list | tuple):
+            for item in value:
+                visit(item)
+
+    visit(payload)
 
 
 def snapshot_from_payload(
@@ -139,6 +172,12 @@ def _agent(value: Mapping[str, Any]) -> ResolvedTenantAgent:
 
 
 def _json_value(value: object) -> object:
+    if isinstance(value, CredentialProvenance):
+        return {
+            "credential_ref": _json_value(value.credential_ref),
+            "generation": value.generation,
+            "status": value.status,
+        }
     if isinstance(value, BaseModel):
         return value.model_dump(mode="json")
     if isinstance(value, UUID):
@@ -211,10 +250,6 @@ def _resource(value: Mapping[str, Any]) -> ResolvedProviderResource:
             _uuid(credential["credential_ref"]),
             credential["generation"],
             credential["status"],
-            _uuid(credential["active_version_id"])
-            if credential["active_version_id"]
-            else None,
-            credential["active_secret_version_number"],
         ),
     )
 
