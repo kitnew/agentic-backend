@@ -226,7 +226,10 @@ class HttpExecutionHandler:
         material: IntegrationExecutionMaterial,
         bodies: dict[str, AsyncIterator[bytes]] | None = None,
     ) -> HttpRequestResult:
-        return await self._execute_http(plan, material, bodies)
+        result = await self._execute_http(plan, material, bodies)
+        if plan.result_schema is not None:
+            self._validate_output(plan.result_schema, result.data)
+        return result
 
     async def _execute_http(
         self,
@@ -1321,8 +1324,6 @@ class CapabilityWorker:
                         transient=False,
                     )
                 result = await self._webhooks.execute(plan, material)
-                if plan.result_schema is not None:
-                    self._webhooks._validate_output(plan.result_schema, result.data)
                 logger.info(
                     "capability_provider_call_completed",
                     extra={

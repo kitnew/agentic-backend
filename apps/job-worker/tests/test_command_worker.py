@@ -53,7 +53,7 @@ async def test_post_call_plan_client_parses_generic_http_plan() -> None:
             "definition": {},
             "execution_plan": {},
         },
-        integration={"semantic_key": "webhook"},
+        integration={"semantic_key": "notify"},
     )
 
     async def send(request: httpx.Request) -> httpx.Response:
@@ -318,7 +318,7 @@ async def test_post_call_action_stays_logical_and_uses_generic_webhook_handler()
                         "timeout_seconds": 10,
                     },
                 },
-                integration={"semantic_key": "webhook"},
+                integration={"semantic_key": "notify"},
             ), {"inputs": {}}
 
         async def post_call_action_material(self, *args):
@@ -384,7 +384,7 @@ async def test_post_call_action_executes_generic_http_request() -> None:
                         "timeout_seconds": 5,
                     },
                 },
-                integration={"semantic_key": "webhook"},
+                integration={"semantic_key": "notify"},
             ), {"inputs": {}}
 
         async def post_call_action_material(self, *args):
@@ -420,6 +420,63 @@ async def test_post_call_action_executes_generic_http_request() -> None:
 
 
 @pytest.mark.asyncio
+async def test_post_call_action_rejects_result_schema_violation() -> None:
+    class Backend:
+        async def post_call_action(self, *args):
+            return WorkerExecutionContext(
+                execution_id=uuid4(),
+                tenant_id="tenant-a",
+                action={
+                    "key": "notify",
+                    "phase": "post_call",
+                    "definition": {
+                        "result_schema": {
+                            "type": "object",
+                            "required": ["status"],
+                            "properties": {"status": {"type": "integer"}},
+                        }
+                    },
+                    "execution_plan": {
+                        "method": "POST",
+                        "request": {"codec": "none"},
+                        "response": {"codec": "json"},
+                        "timeout_seconds": 10,
+                    },
+                },
+                integration={"semantic_key": "notify"},
+            ), {"inputs": {}}
+
+        async def post_call_action_material(self, *args):
+            return IntegrationExecutionMaterial(
+                integration_kind="http",
+                config={
+                    "endpoint": "https://example.test",
+                    "headers": {},
+                    "authentication": {"type": "none"},
+                    "security": {"additional_allowed_hosts": []},
+                },
+            )
+
+    async def send(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "not-an-integer"}, request=request)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(send))
+    command = ExecutePostCallAction(
+        call_id=uuid4(), finalization_id=uuid4(), action_id="notify"
+    )
+    envelope = command_envelope(
+        command, tenant_id=uuid4(), correlation_id=command.call_id
+    )
+    try:
+        with pytest.raises(ExecutionError, match="HTTP semantic result is invalid"):
+            await ExecutePostCallActionHandler(
+                Backend(), HttpExecutionHandler(client)
+            )(command, envelope)
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
 async def test_post_call_action_retry_reuses_representation_binding() -> None:
     representation_id = uuid4()
     reads: list[UUID] = []
@@ -448,7 +505,7 @@ async def test_post_call_action_retry_reuses_representation_binding() -> None:
                         "timeout_seconds": 10,
                     },
                 },
-                integration={"semantic_key": "webhook"},
+                integration={"semantic_key": "notify"},
             ), {
                 "inputs": {
                     "recording": {
