@@ -109,7 +109,7 @@ def test_openapi_exposes_only_target_telephony_management_contract() -> None:
     assert "TenantConfiguration" not in models
 
 
-def test_inbound_route_transport_is_semantic_and_not_mounted_yet() -> None:
+def test_inbound_route_transport_is_semantic() -> None:
     assert set(InboundRouteResponse.model_fields) == {
         "tenant_id",
         "phone_number",

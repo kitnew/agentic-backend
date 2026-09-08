@@ -570,21 +570,15 @@ def create_http_app(
         target = request.url.path.startswith("/management/v1/")
         structured = request.url.path.startswith(("/management/v1/", "/internal/v1/"))
         request.state.request_id = str(uuid4())
-        if target or request.url.path.startswith("/v1/"):
+        if target:
             try:
                 request.state.management_principal = require_management_token(request)
             except HTTPException as error:
-                if target:
-                    return _management_error(
-                        request,
-                        error.status_code,
-                        "unauthenticated",
-                        str(error.detail),
-                        headers=error.headers,
-                    )
-                return JSONResponse(
-                    {"detail": error.detail},
-                    status_code=error.status_code,
+                return _management_error(
+                    request,
+                    error.status_code,
+                    "unauthenticated",
+                    str(error.detail),
                     headers=error.headers,
                 )
         try:

@@ -125,32 +125,6 @@ async def test_ready_rejects_incompatible_control_plane_schema() -> None:
 
 
 @pytest.mark.asyncio
-async def test_management_routes_require_the_separate_management_token() -> None:
-    app = create_http_app(
-        FakeLifecycle(Readiness(postgres=True, control_plane_schema=True)),
-    )
-    app.state.settings = SimpleNamespace(
-        control_plane_management_token=SimpleNamespace(
-            get_secret_value=lambda: "management-secret"
-        )
-    )
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        missing = await client.get("/v1/managed-resources/credentials")
-        invalid = await client.get(
-            "/v1/managed-resources/credentials",
-            headers={"Authorization": "Bearer wrong"},
-        )
-        valid = await client.post(
-            "/v1/managed-resources/credentials",
-            headers={"Authorization": "Bearer management-secret"},
-        )
-    assert missing.status_code == invalid.status_code == 401
-    assert valid.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_management_actor_is_server_derived() -> None:
     seen: list[str] = []
 
