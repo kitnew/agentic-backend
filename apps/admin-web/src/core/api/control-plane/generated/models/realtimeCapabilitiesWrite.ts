@@ -6,6 +6,7 @@
  */
 
 export interface RealtimeCapabilitiesWrite {
+  kind: 'realtime';
   supports_semantic_vad: boolean;
   supports_server_vad: boolean;
 }

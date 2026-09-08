@@ -9,6 +9,4 @@ import type { ProviderConnectionUpdateConnectionConfig } from './providerConnect
 export interface ProviderConnectionUpdate {
   connection_config: ProviderConnectionUpdateConnectionConfig;
   credential_ref: string;
-  /** @minimum 1 */
-  expected_generation: number;
 }

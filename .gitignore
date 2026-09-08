@@ -159,6 +159,8 @@ secrets/*.json
 infrastructure/compose/secrets/
 *.json
 *.tsbuildinfo
+!packages/admin-client/openapi/control-plane.openapi.json
+!packages/admin-client/openapi/control-plane-browser.openapi.json
 
 # Admin Web source directories named `lib` must be tracked; the generic Python
 # `lib/` rule above must not hide these TypeScript modules.

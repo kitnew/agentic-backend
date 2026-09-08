@@ -27,6 +27,7 @@ def snapshot(directory: Path) -> Mapping[str, bytes]:
 def generate(schema: Path, output: Path, cache: Path) -> None:
     environment = os.environ.copy()
     environment["RUFF_CACHE_DIR"] = str(cache)
+    environment.setdefault("UV_TOOL_DIR", str(cache.parent / "uv-tools"))
     subprocess.run(
         [
             "uvx",

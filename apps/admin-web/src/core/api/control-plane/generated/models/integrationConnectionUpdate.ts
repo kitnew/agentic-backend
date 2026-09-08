@@ -9,6 +9,4 @@ import type { IntegrationConnectionUpdateConfig } from './integrationConnectionU
 export interface IntegrationConnectionUpdate {
   config: IntegrationConnectionUpdateConfig;
   credential_ref?: string | null;
-  /** @minimum 1 */
-  expected_generation: number;
 }

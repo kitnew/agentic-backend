@@ -12,7 +12,10 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
-const generatedRoot = resolve(projectRoot, "src/core/api/generated");
+const generatedRoots = [
+  "src/core/api/generated",
+  "src/core/api/control-plane/generated",
+].map((path) => resolve(projectRoot, path));
 
 function snapshot(root) {
   const hash = createHash("sha256");
@@ -34,11 +37,14 @@ function snapshot(root) {
 }
 
 const tempRoot = mkdtempSync(resolve(tmpdir(), "admin-web-api-check-"));
-const beforeRoot = resolve(tempRoot, "before");
-cpSync(generatedRoot, beforeRoot, { recursive: true });
+const beforeRoots = generatedRoots.map((root, index) => {
+  const before = resolve(tempRoot, `before-${index}`);
+  cpSync(root, before, { recursive: true });
+  return before;
+});
 
 try {
-  const before = snapshot(beforeRoot);
+  const before = beforeRoots.map(snapshot);
   execFileSync(
     process.platform === "win32" ? "pnpm.cmd" : "pnpm",
     ["api:generate"],
@@ -47,9 +53,9 @@ try {
       stdio: "inherit",
     },
   );
-  const after = snapshot(generatedRoot);
+  const after = generatedRoots.map(snapshot);
 
-  if (before !== after) {
+  if (before.some((value, index) => value !== after[index])) {
     console.error(
       "Generated Admin API is not deterministic; run pnpm api:generate and inspect the diff.",
     );

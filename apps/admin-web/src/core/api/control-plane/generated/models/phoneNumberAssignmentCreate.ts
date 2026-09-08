@@ -6,15 +6,9 @@
  */
 
 export interface PhoneNumberAssignmentCreate {
-  enabled?: boolean;
   /**
      * @minLength 1
      * @maxLength 64
      */
   phone_number: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
-  tenant_id: string;
 }

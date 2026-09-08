@@ -11,10 +11,10 @@ export interface HandoffDestinationCreate {
      * @maxLength 1000
      */
   description: string;
-  enabled?: boolean;
   /**
      * @minLength 1
      * @maxLength 64
+     * @pattern ^[a-z][a-z0-9_]*$
      */
   key: string;
   /**
@@ -22,9 +22,4 @@ export interface HandoffDestinationCreate {
      * @maxLength 64
      */
   phone_number: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
-  tenant_id: string;
 }

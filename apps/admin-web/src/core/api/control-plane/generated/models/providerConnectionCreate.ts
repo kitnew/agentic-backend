@@ -9,7 +9,6 @@ import type { ProviderConnectionCreateConnectionConfig } from './providerConnect
 export interface ProviderConnectionCreate {
   connection_config: ProviderConnectionCreateConnectionConfig;
   credential_ref: string;
-  enabled?: boolean;
   /**
      * @minLength 1
      * @maxLength 255

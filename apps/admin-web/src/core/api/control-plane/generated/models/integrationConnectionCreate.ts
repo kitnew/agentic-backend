@@ -9,16 +9,14 @@ import type { IntegrationConnectionCreateConfig } from './integrationConnectionC
 export interface IntegrationConnectionCreate {
   config: IntegrationConnectionCreateConfig;
   credential_ref?: string | null;
-  enabled?: boolean;
-  integration_kind?: string;
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  integration_kind: string;
   /**
      * @minLength 1
      * @maxLength 255
      */
   key: string;
-  /**
-     * @minLength 1
-     * @maxLength 255
-     */
-  tenant_id: string;
 }

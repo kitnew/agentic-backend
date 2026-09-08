@@ -8,13 +8,10 @@ import type { LLMCapabilitiesWrite } from './lLMCapabilitiesWrite';
 import type { ModelDeploymentUpdateDeploymentConfig } from './modelDeploymentUpdateDeploymentConfig';
 import type { RealtimeCapabilitiesWrite } from './realtimeCapabilitiesWrite';
 import type { STTCapabilitiesWrite } from './sTTCapabilitiesWrite';
+import type { TTSCapabilitiesWrite } from './tTSCapabilitiesWrite';
 
 export interface ModelDeploymentUpdate {
+  capabilities: LLMCapabilitiesWrite | RealtimeCapabilitiesWrite | STTCapabilitiesWrite | TTSCapabilitiesWrite;
   connection_ref: string;
   deployment_config: ModelDeploymentUpdateDeploymentConfig;
-  /** @minimum 1 */
-  expected_generation: number;
-  llm_capabilities?: LLMCapabilitiesWrite | null;
-  realtime_capabilities?: RealtimeCapabilitiesWrite | null;
-  stt_capabilities?: STTCapabilitiesWrite | null;
 }

@@ -6,6 +6,7 @@
  */
 
 export interface STTCapabilitiesWrite {
+  kind: 'stt';
   supports_cascade: boolean;
   supports_realtime_input_transcription: boolean;
 }

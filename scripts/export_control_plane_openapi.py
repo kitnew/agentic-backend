@@ -5,6 +5,13 @@ from pathlib import Path
 from re import findall
 from typing import Any
 
+from control_plane.domain.frozen_components import default_component_definition_registry
+from control_plane.domain.registries import (
+    ArchitectureRegistry,
+    DeploymentKindRegistry,
+    IntegrationKindRegistry,
+    ProviderKindRegistry,
+)
 from control_plane.interfaces.http import create_http_app
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +31,7 @@ def control_plane_openapi() -> dict[str, Any]:
     app = create_http_app(
         SchemaLifecycle(),  # type: ignore[arg-type]
         components=object(),  # type: ignore[arg-type]
+        credentials=object(),  # type: ignore[arg-type]
         providers=object(),  # type: ignore[arg-type]
         system_configuration=object(),  # type: ignore[arg-type]
         live_components=object(),  # type: ignore[arg-type]
@@ -31,6 +39,13 @@ def control_plane_openapi() -> dict[str, Any]:
         platform_catalogs=object(),  # type: ignore[arg-type]
         integrations=object(),  # type: ignore[arg-type]
         telephony=object(),  # type: ignore[arg-type]
+        tenant_configuration=object(),  # type: ignore[arg-type]
+        tenant_live_components=object(),  # type: ignore[arg-type]
+        component_registry=default_component_definition_registry(),
+        architecture_registry=ArchitectureRegistry(),
+        provider_registry=ProviderKindRegistry(),
+        deployment_registry=DeploymentKindRegistry(),
+        integration_registry=IntegrationKindRegistry(),
     )
     schema = app.openapi()
     # FastAPI does not carry parameters declared by an APIRouter prefix into
@@ -62,13 +77,9 @@ def export_control_plane_openapi(output: Path = DEFAULT_OUTPUT) -> None:
     browser_schema = {
         **schema,
         "paths": {
-            (
-                path.replace("/v1/", "/control-plane/")
-                if path.startswith("/v1/")
-                else f"/control-plane{path}"
-            ): operation
+            path: operation
             for path, operation in schema["paths"].items()
-            if path.startswith(("/v1/", "/management/v1/"))
+            if path.startswith("/management/v1/")
         },
     }
     DEFAULT_BROWSER_OUTPUT.write_bytes(

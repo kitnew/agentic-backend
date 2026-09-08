@@ -11,8 +11,6 @@ export interface HandoffDestinationUpdate {
      * @maxLength 1000
      */
   description: string;
-  /** @minimum 1 */
-  expected_generation: number;
   /**
      * @minLength 1
      * @maxLength 64

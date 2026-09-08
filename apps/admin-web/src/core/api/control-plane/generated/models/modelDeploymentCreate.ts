@@ -9,18 +9,16 @@ import type { LLMCapabilitiesWrite } from './lLMCapabilitiesWrite';
 import type { ModelDeploymentCreateDeploymentConfig } from './modelDeploymentCreateDeploymentConfig';
 import type { RealtimeCapabilitiesWrite } from './realtimeCapabilitiesWrite';
 import type { STTCapabilitiesWrite } from './sTTCapabilitiesWrite';
+import type { TTSCapabilitiesWrite } from './tTSCapabilitiesWrite';
 
 export interface ModelDeploymentCreate {
+  capabilities: LLMCapabilitiesWrite | RealtimeCapabilitiesWrite | STTCapabilitiesWrite | TTSCapabilitiesWrite;
   connection_ref: string;
   deployment_config: ModelDeploymentCreateDeploymentConfig;
   deployment_kind: DeploymentKind;
-  enabled?: boolean;
   /**
      * @minLength 1
      * @maxLength 255
      */
   key: string;
-  llm_capabilities?: LLMCapabilitiesWrite | null;
-  realtime_capabilities?: RealtimeCapabilitiesWrite | null;
-  stt_capabilities?: STTCapabilitiesWrite | null;
 }

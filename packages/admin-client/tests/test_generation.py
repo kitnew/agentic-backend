@@ -1,10 +1,12 @@
 from pathlib import Path
 
 from scripts.generate_admin_client import drift, snapshot
+from scripts.generate_control_plane_client import drift as control_plane_drift
 
 
 def test_generated_client_is_current() -> None:
     assert drift() == []
+    assert control_plane_drift() == []
 
 
 def test_snapshot_detects_intentional_drift(tmp_path: Path) -> None:

@@ -36,10 +36,13 @@ dev = [
 ]
 
 [tool.ruff]
-extend-exclude = ["packages/admin-client/src/admin_client/generated"]
+extend-exclude = [
+    "packages/admin-client/src/admin_client/generated",
+    "packages/admin-client/src/admin_client/control_plane",
+]
 
 [[tool.mypy.overrides]]
-module = ["admin_client.generated.*"]
+module = ["admin_client.generated.*", "admin_client.control_plane.*"]
 ignore_errors = true
 
 [tool.pytest.ini_options]

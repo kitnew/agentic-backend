@@ -17,3 +17,11 @@ Verify committed output is current:
 ```bash
 uv run python -m scripts.generate_admin_client --check
 ```
+
+The Control Plane Management client is generated independently from the mounted
+`/management/v1` schema:
+
+```bash
+uv run python -m scripts.generate_control_plane_client
+uv run python -m scripts.generate_control_plane_client --check
+```

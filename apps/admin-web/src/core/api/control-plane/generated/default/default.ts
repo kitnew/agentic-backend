@@ -5,61 +5,148 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  CatalogResponse,
+  ComponentDefinitionResponse,
+  CredentialCreate,
+  CredentialResponse,
   CredentialRotate,
-  CredentialWrite,
-  DiscardDraftV1ScopesPlatformComponentsKindDraftDeleteParams,
-  DiscardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteParams,
-  DiscardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteParams,
-  GeneratedActorRequest,
-  HTTPValidationError,
+  ErrorResponse,
   HandoffDestinationCreate,
+  HandoffDestinationResponse,
   HandoffDestinationUpdate,
   IntegrationConnectionCreate,
+  IntegrationConnectionResponse,
   IntegrationConnectionUpdate,
-  ListHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetParams,
-  ListIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetParams,
-  ListPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetParams,
+  IntegrationValidationResponse,
+  InteractionModeCreate,
+  InteractionModeUpdate,
+  ListCredentialsManagementV1CredentialsGetParams,
+  LiveComponentResponse,
+  LiveComponentWrite,
   ModelDeploymentCreate,
+  ModelDeploymentResponse,
   ModelDeploymentUpdate,
   PhoneNumberAssignmentCreate,
+  PhoneNumberAssignmentResponse,
+  PlatformConfiguration,
+  PlatformConfigurationApplyResult,
+  PlatformConfigurationDesired,
+  PlatformConfigurationPlan,
+  PlatformConfigurationPublishResult,
+  ProfileCreate,
+  ProfileUpdate,
   ProviderConnectionCreate,
+  ProviderConnectionResponse,
   ProviderConnectionUpdate,
-  PublishRequest,
-  RevisionsV1ScopesPlatformComponentsKindRevisionsGetParams,
-  RevisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetParams,
-  RevisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetParams,
-  RevokeRequest,
+  ProviderValidationResponse,
+  RegistryEntryResponse,
+  RevisionsManagementV1PlatformComponentsKindRevisionsGetParams,
+  RevisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetParams,
+  RevisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetParams,
+  RevisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetParams,
   RollbackRequest,
-  SaveDraftRequest
+  SystemConfiguration,
+  SystemConfigurationApplyResult,
+  SystemConfigurationDesired,
+  SystemConfigurationPlan,
+  SystemLiveComponentResponse,
+  TenantConfiguration,
+  TenantConfigurationApplyResult,
+  TenantConfigurationDesired,
+  TenantConfigurationPlan,
+  TenantConfigurationPublishResult,
+  VersionedComponentDraftResponse,
+  VersionedComponentDraftWrite,
+  VersionedComponentResponse,
+  VersionedComponentRevisionResponse
 } from '../models';
 
 
-export type listCredentialsV1ManagedResourcesCredentialsGetResponse200 = {
-  data: unknown
+export type listCredentialsManagementV1CredentialsGetResponse200 = {
+  data: CredentialResponse[]
   status: 200
 }
 
-export type listCredentialsV1ManagedResourcesCredentialsGetResponseSuccess = (listCredentialsV1ManagedResourcesCredentialsGetResponse200) & {
+export type listCredentialsManagementV1CredentialsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listCredentialsManagementV1CredentialsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listCredentialsManagementV1CredentialsGetResponseSuccess = (listCredentialsManagementV1CredentialsGetResponse200) & {
   headers: Headers;
 };
-;
+export type listCredentialsManagementV1CredentialsGetResponseError = (listCredentialsManagementV1CredentialsGetResponse400 | listCredentialsManagementV1CredentialsGetResponse401 | listCredentialsManagementV1CredentialsGetResponse403 | listCredentialsManagementV1CredentialsGetResponse404 | listCredentialsManagementV1CredentialsGetResponse409 | listCredentialsManagementV1CredentialsGetResponse412 | listCredentialsManagementV1CredentialsGetResponse422 | listCredentialsManagementV1CredentialsGetResponse429 | listCredentialsManagementV1CredentialsGetResponse500 | listCredentialsManagementV1CredentialsGetResponse503) & {
+  headers: Headers;
+};
 
-export type listCredentialsV1ManagedResourcesCredentialsGetResponse = (listCredentialsV1ManagedResourcesCredentialsGetResponseSuccess)
+export type listCredentialsManagementV1CredentialsGetResponse = (listCredentialsManagementV1CredentialsGetResponseSuccess | listCredentialsManagementV1CredentialsGetResponseError)
 
-export const getListCredentialsV1ManagedResourcesCredentialsGetUrl = () => {
+export const getListCredentialsManagementV1CredentialsGetUrl = (params?: ListCredentialsManagementV1CredentialsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/control-plane/managed-resources/credentials`
+  return stringifiedParams.length > 0 ? `/management/v1/credentials?${stringifiedParams}` : `/management/v1/credentials`
 }
 
 /**
  * @summary List Credentials
  */
-export const listCredentialsV1ManagedResourcesCredentialsGet = async ( options?: RequestInit): Promise<listCredentialsV1ManagedResourcesCredentialsGetResponse> => {
+export const listCredentialsManagementV1CredentialsGet = async (params?: ListCredentialsManagementV1CredentialsGetParams, options?: RequestInit): Promise<listCredentialsManagementV1CredentialsGetResponse> => {
 
-  const res = await fetch(getListCredentialsV1ManagedResourcesCredentialsGetUrl(),
+  const res = await fetch(getListCredentialsManagementV1CredentialsGetUrl(params),
   {
     ...options,
     method: 'GET'
@@ -71,93 +158,183 @@ export const listCredentialsV1ManagedResourcesCredentialsGet = async ( options?:
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listCredentialsV1ManagedResourcesCredentialsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listCredentialsV1ManagedResourcesCredentialsGetResponse
+  const data: listCredentialsManagementV1CredentialsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listCredentialsManagementV1CredentialsGetResponse
 }
 
 
-export type createCredentialV1ManagedResourcesCredentialsPostResponse201 = {
-  data: unknown
+export type createCredentialManagementV1CredentialsPostResponse201 = {
+  data: CredentialResponse
   status: 201
 }
 
-export type createCredentialV1ManagedResourcesCredentialsPostResponse422 = {
-  data: HTTPValidationError
+export type createCredentialManagementV1CredentialsPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createCredentialManagementV1CredentialsPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createCredentialManagementV1CredentialsPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createCredentialManagementV1CredentialsPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createCredentialManagementV1CredentialsPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createCredentialManagementV1CredentialsPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createCredentialManagementV1CredentialsPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type createCredentialV1ManagedResourcesCredentialsPostResponseSuccess = (createCredentialV1ManagedResourcesCredentialsPostResponse201) & {
+export type createCredentialManagementV1CredentialsPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createCredentialManagementV1CredentialsPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createCredentialManagementV1CredentialsPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createCredentialManagementV1CredentialsPostResponseSuccess = (createCredentialManagementV1CredentialsPostResponse201) & {
   headers: Headers;
 };
-export type createCredentialV1ManagedResourcesCredentialsPostResponseError = (createCredentialV1ManagedResourcesCredentialsPostResponse422) & {
+export type createCredentialManagementV1CredentialsPostResponseError = (createCredentialManagementV1CredentialsPostResponse400 | createCredentialManagementV1CredentialsPostResponse401 | createCredentialManagementV1CredentialsPostResponse403 | createCredentialManagementV1CredentialsPostResponse404 | createCredentialManagementV1CredentialsPostResponse409 | createCredentialManagementV1CredentialsPostResponse412 | createCredentialManagementV1CredentialsPostResponse422 | createCredentialManagementV1CredentialsPostResponse429 | createCredentialManagementV1CredentialsPostResponse500 | createCredentialManagementV1CredentialsPostResponse503) & {
   headers: Headers;
 };
 
-export type createCredentialV1ManagedResourcesCredentialsPostResponse = (createCredentialV1ManagedResourcesCredentialsPostResponseSuccess | createCredentialV1ManagedResourcesCredentialsPostResponseError)
+export type createCredentialManagementV1CredentialsPostResponse = (createCredentialManagementV1CredentialsPostResponseSuccess | createCredentialManagementV1CredentialsPostResponseError)
 
-export const getCreateCredentialV1ManagedResourcesCredentialsPostUrl = () => {
-
-
+export const getCreateCredentialManagementV1CredentialsPostUrl = () => {
 
 
-  return `/control-plane/managed-resources/credentials`
+
+
+  return `/management/v1/credentials`
 }
 
 /**
  * @summary Create Credential
  */
-export const createCredentialV1ManagedResourcesCredentialsPost = async (credentialWrite: CredentialWrite, options?: RequestInit): Promise<createCredentialV1ManagedResourcesCredentialsPostResponse> => {
+export const createCredentialManagementV1CredentialsPost = async (credentialCreate: CredentialCreate, options?: RequestInit): Promise<createCredentialManagementV1CredentialsPostResponse> => {
 
-  const res = await fetch(getCreateCredentialV1ManagedResourcesCredentialsPostUrl(),
+  const res = await fetch(getCreateCredentialManagementV1CredentialsPostUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(credentialWrite)
+    body: JSON.stringify(credentialCreate)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: createCredentialV1ManagedResourcesCredentialsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createCredentialV1ManagedResourcesCredentialsPostResponse
+  const data: createCredentialManagementV1CredentialsPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createCredentialManagementV1CredentialsPostResponse
 }
 
 
-export type getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse200 = {
-  data: unknown
+export type getCredentialManagementV1CredentialsIdGetResponse200 = {
+  data: CredentialResponse
   status: 200
 }
 
-export type getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse422 = {
-  data: HTTPValidationError
+export type getCredentialManagementV1CredentialsIdGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getCredentialV1ManagedResourcesCredentialsResourceIdGetResponseSuccess = (getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse200) & {
+export type getCredentialManagementV1CredentialsIdGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getCredentialManagementV1CredentialsIdGetResponseSuccess = (getCredentialManagementV1CredentialsIdGetResponse200) & {
   headers: Headers;
 };
-export type getCredentialV1ManagedResourcesCredentialsResourceIdGetResponseError = (getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse422) & {
+export type getCredentialManagementV1CredentialsIdGetResponseError = (getCredentialManagementV1CredentialsIdGetResponse400 | getCredentialManagementV1CredentialsIdGetResponse401 | getCredentialManagementV1CredentialsIdGetResponse403 | getCredentialManagementV1CredentialsIdGetResponse404 | getCredentialManagementV1CredentialsIdGetResponse409 | getCredentialManagementV1CredentialsIdGetResponse412 | getCredentialManagementV1CredentialsIdGetResponse422 | getCredentialManagementV1CredentialsIdGetResponse429 | getCredentialManagementV1CredentialsIdGetResponse500 | getCredentialManagementV1CredentialsIdGetResponse503) & {
   headers: Headers;
 };
 
-export type getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse = (getCredentialV1ManagedResourcesCredentialsResourceIdGetResponseSuccess | getCredentialV1ManagedResourcesCredentialsResourceIdGetResponseError)
+export type getCredentialManagementV1CredentialsIdGetResponse = (getCredentialManagementV1CredentialsIdGetResponseSuccess | getCredentialManagementV1CredentialsIdGetResponseError)
 
-export const getGetCredentialV1ManagedResourcesCredentialsResourceIdGetUrl = (resourceId: string,) => {
-
-
+export const getGetCredentialManagementV1CredentialsIdGetUrl = (id: string,) => {
 
 
-  return `/control-plane/managed-resources/credentials/${resourceId}`
+
+
+  return `/management/v1/credentials/${id}`
 }
 
 /**
  * @summary Get Credential
  */
-export const getCredentialV1ManagedResourcesCredentialsResourceIdGet = async (resourceId: string, options?: RequestInit): Promise<getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse> => {
+export const getCredentialManagementV1CredentialsIdGet = async (id: string, options?: RequestInit): Promise<getCredentialManagementV1CredentialsIdGetResponse> => {
 
-  const res = await fetch(getGetCredentialV1ManagedResourcesCredentialsResourceIdGetUrl(resourceId),
+  const res = await fetch(getGetCredentialManagementV1CredentialsIdGetUrl(id),
   {
     ...options,
     method: 'GET'
@@ -169,604 +346,89 @@ export const getCredentialV1ManagedResourcesCredentialsResourceIdGet = async (re
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getCredentialV1ManagedResourcesCredentialsResourceIdGetResponse
+  const data: getCredentialManagementV1CredentialsIdGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getCredentialManagementV1CredentialsIdGetResponse
 }
 
 
-export type revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse200 = {
-  data: unknown
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse200 = {
+  data: CredentialResponse
   status: 200
 }
 
-export type revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse422 = {
-  data: HTTPValidationError
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponseSuccess = (revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse200) & {
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponseSuccess = (revokeCredentialManagementV1CredentialsIdRevokePostResponse200) & {
   headers: Headers;
 };
-export type revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponseError = (revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse422) & {
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponseError = (revokeCredentialManagementV1CredentialsIdRevokePostResponse400 | revokeCredentialManagementV1CredentialsIdRevokePostResponse401 | revokeCredentialManagementV1CredentialsIdRevokePostResponse403 | revokeCredentialManagementV1CredentialsIdRevokePostResponse404 | revokeCredentialManagementV1CredentialsIdRevokePostResponse409 | revokeCredentialManagementV1CredentialsIdRevokePostResponse412 | revokeCredentialManagementV1CredentialsIdRevokePostResponse422 | revokeCredentialManagementV1CredentialsIdRevokePostResponse429 | revokeCredentialManagementV1CredentialsIdRevokePostResponse500 | revokeCredentialManagementV1CredentialsIdRevokePostResponse503) & {
   headers: Headers;
 };
 
-export type revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse = (revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponseSuccess | revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponseError)
+export type revokeCredentialManagementV1CredentialsIdRevokePostResponse = (revokeCredentialManagementV1CredentialsIdRevokePostResponseSuccess | revokeCredentialManagementV1CredentialsIdRevokePostResponseError)
 
-export const getRevokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostUrl = (resourceId: string,) => {
-
-
+export const getRevokeCredentialManagementV1CredentialsIdRevokePostUrl = (id: string,) => {
 
 
-  return `/control-plane/managed-resources/credentials/${resourceId}/revoke`
+
+
+  return `/management/v1/credentials/${id}/revoke`
 }
 
 /**
  * @summary Revoke Credential
  */
-export const revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePost = async (resourceId: string,
-    revokeRequest: RevokeRequest, options?: RequestInit): Promise<revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse> => {
+export const revokeCredentialManagementV1CredentialsIdRevokePost = async (id: string, options?: RequestInit): Promise<revokeCredentialManagementV1CredentialsIdRevokePostResponse> => {
 
-  const res = await fetch(getRevokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostUrl(resourceId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(revokeRequest)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revokeCredentialV1ManagedResourcesCredentialsResourceIdRevokePostResponse
-}
-
-
-export type rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponseSuccess = (rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse200) & {
-  headers: Headers;
-};
-export type rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponseError = (rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse422) & {
-  headers: Headers;
-};
-
-export type rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse = (rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponseSuccess | rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponseError)
-
-export const getRotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostUrl = (resourceId: string,) => {
-
-
-
-
-  return `/control-plane/managed-resources/credentials/${resourceId}/rotate`
-}
-
-/**
- * @summary Rotate Credential
- */
-export const rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePost = async (resourceId: string,
-    credentialRotate: CredentialRotate, options?: RequestInit): Promise<rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse> => {
-
-  const res = await fetch(getRotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostUrl(resourceId),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(credentialRotate)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as rotateCredentialV1ManagedResourcesCredentialsResourceIdRotatePostResponse
-}
-
-
-export type listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponseSuccess = (listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse200) & {
-  headers: Headers;
-};
-export type listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponseError = (listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse422) & {
-  headers: Headers;
-};
-
-export type listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse = (listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponseSuccess | listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponseError)
-
-export const getListHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetUrl = (params?: ListHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/control-plane/managed-resources/handoff-destinations?${stringifiedParams}` : `/control-plane/managed-resources/handoff-destinations`
-}
-
-/**
- * @summary List Handoff Destinations
- */
-export const listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGet = async (params?: ListHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetParams, options?: RequestInit): Promise<listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse> => {
-
-  const res = await fetch(getListHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listHandoffDestinationsV1ManagedResourcesHandoffDestinationsGetResponse
-}
-
-
-export type createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse201 = {
-  data: unknown
-  status: 201
-}
-
-export type createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponseSuccess = (createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse201) & {
-  headers: Headers;
-};
-export type createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponseError = (createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse422) & {
-  headers: Headers;
-};
-
-export type createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse = (createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponseSuccess | createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponseError)
-
-export const getCreateHandoffDestinationV1ManagedResourcesHandoffDestinationsPostUrl = () => {
-
-
-
-
-  return `/control-plane/managed-resources/handoff-destinations`
-}
-
-/**
- * @summary Create Handoff Destination
- */
-export const createHandoffDestinationV1ManagedResourcesHandoffDestinationsPost = async (handoffDestinationCreate: HandoffDestinationCreate, options?: RequestInit): Promise<createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse> => {
-
-  const res = await fetch(getCreateHandoffDestinationV1ManagedResourcesHandoffDestinationsPostUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(handoffDestinationCreate)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createHandoffDestinationV1ManagedResourcesHandoffDestinationsPostResponse
-}
-
-
-export type getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponseSuccess = (getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse200) & {
-  headers: Headers;
-};
-export type getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponseError = (getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse422) & {
-  headers: Headers;
-};
-
-export type getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse = (getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponseSuccess | getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponseError)
-
-export const getGetHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetUrl = (resourceId: string,) => {
-
-
-
-
-  return `/control-plane/managed-resources/handoff-destinations/${resourceId}`
-}
-
-/**
- * @summary Get Handoff Destination
- */
-export const getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGet = async (resourceId: string, options?: RequestInit): Promise<getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse> => {
-
-  const res = await fetch(getGetHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetUrl(resourceId),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdGetResponse
-}
-
-
-export type updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponseSuccess = (updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse200) & {
-  headers: Headers;
-};
-export type updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponseError = (updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse422) & {
-  headers: Headers;
-};
-
-export type updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse = (updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponseSuccess | updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponseError)
-
-export const getUpdateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutUrl = (resourceId: string,) => {
-
-
-
-
-  return `/control-plane/managed-resources/handoff-destinations/${resourceId}`
-}
-
-/**
- * @summary Update Handoff Destination
- */
-export const updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPut = async (resourceId: string,
-    handoffDestinationUpdate: HandoffDestinationUpdate, options?: RequestInit): Promise<updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse> => {
-
-  const res = await fetch(getUpdateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutUrl(resourceId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(handoffDestinationUpdate)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateHandoffDestinationV1ManagedResourcesHandoffDestinationsResourceIdPutResponse
-}
-
-
-export type setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponseSuccess = (setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse200) & {
-  headers: Headers;
-};
-export type setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponseError = (setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse422) & {
-  headers: Headers;
-};
-
-export type setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse = (setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponseSuccess | setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponseError)
-
-export const getSetHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostUrl = (resourceId: string,
-    operation: string,) => {
-
-
-
-
-  return `/control-plane/managed-resources/handoff-destinations/${resourceId}/${operation}`
-}
-
-/**
- * @summary Set Handoff Destination Enabled
- */
-export const setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPost = async (resourceId: string,
-    operation: string,
-    generatedActorRequest: GeneratedActorRequest, options?: RequestInit): Promise<setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse> => {
-
-  const res = await fetch(getSetHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostUrl(resourceId,operation),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(generatedActorRequest)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as setHandoffDestinationEnabledV1ManagedResourcesHandoffDestinationsResourceIdOperationPostResponse
-}
-
-
-export type listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponseSuccess = (listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse200) & {
-  headers: Headers;
-};
-export type listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponseError = (listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse422) & {
-  headers: Headers;
-};
-
-export type listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse = (listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponseSuccess | listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponseError)
-
-export const getListIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetUrl = (params?: ListIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/control-plane/managed-resources/integration-connections?${stringifiedParams}` : `/control-plane/managed-resources/integration-connections`
-}
-
-/**
- * @summary List Integration Connections
- */
-export const listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGet = async (params?: ListIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetParams, options?: RequestInit): Promise<listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse> => {
-
-  const res = await fetch(getListIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetUrl(params),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listIntegrationConnectionsV1ManagedResourcesIntegrationConnectionsGetResponse
-}
-
-
-export type createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse201 = {
-  data: unknown
-  status: 201
-}
-
-export type createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponseSuccess = (createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse201) & {
-  headers: Headers;
-};
-export type createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponseError = (createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse422) & {
-  headers: Headers;
-};
-
-export type createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse = (createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponseSuccess | createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponseError)
-
-export const getCreateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostUrl = () => {
-
-
-
-
-  return `/control-plane/managed-resources/integration-connections`
-}
-
-/**
- * @summary Create Integration Connection
- */
-export const createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPost = async (integrationConnectionCreate: IntegrationConnectionCreate, options?: RequestInit): Promise<createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse> => {
-
-  const res = await fetch(getCreateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(integrationConnectionCreate)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createIntegrationConnectionV1ManagedResourcesIntegrationConnectionsPostResponse
-}
-
-
-export type getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponseSuccess = (getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse200) & {
-  headers: Headers;
-};
-export type getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponseError = (getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse422) & {
-  headers: Headers;
-};
-
-export type getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse = (getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponseSuccess | getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponseError)
-
-export const getGetIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetUrl = (resourceId: string,) => {
-
-
-
-
-  return `/control-plane/managed-resources/integration-connections/${resourceId}`
-}
-
-/**
- * @summary Get Integration Connection
- */
-export const getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGet = async (resourceId: string, options?: RequestInit): Promise<getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse> => {
-
-  const res = await fetch(getGetIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetUrl(resourceId),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdGetResponse
-}
-
-
-export type updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponseSuccess = (updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse200) & {
-  headers: Headers;
-};
-export type updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponseError = (updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse422) & {
-  headers: Headers;
-};
-
-export type updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse = (updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponseSuccess | updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponseError)
-
-export const getUpdateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutUrl = (resourceId: string,) => {
-
-
-
-
-  return `/control-plane/managed-resources/integration-connections/${resourceId}`
-}
-
-/**
- * @summary Update Integration Connection
- */
-export const updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPut = async (resourceId: string,
-    integrationConnectionUpdate: IntegrationConnectionUpdate, options?: RequestInit): Promise<updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse> => {
-
-  const res = await fetch(getUpdateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutUrl(resourceId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(integrationConnectionUpdate)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdPutResponse
-}
-
-
-export type validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponseSuccess = (validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse200) & {
-  headers: Headers;
-};
-export type validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponseError = (validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse422) & {
-  headers: Headers;
-};
-
-export type validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse = (validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponseSuccess | validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponseError)
-
-export const getValidateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostUrl = (resourceId: string,) => {
-
-
-
-
-  return `/control-plane/managed-resources/integration-connections/${resourceId}/validate`
-}
-
-/**
- * @summary Validate Integration Connection
- */
-export const validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePost = async (resourceId: string, options?: RequestInit): Promise<validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse> => {
-
-  const res = await fetch(getValidateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostUrl(resourceId),
+  const res = await fetch(getRevokeCredentialManagementV1CredentialsIdRevokePostUrl(id),
   {
     ...options,
     method: 'POST'
@@ -778,89 +440,184 @@ export const validateIntegrationConnectionV1ManagedResourcesIntegrationConnectio
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as validateIntegrationConnectionV1ManagedResourcesIntegrationConnectionsResourceIdValidatePostResponse
+  const data: revokeCredentialManagementV1CredentialsIdRevokePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revokeCredentialManagementV1CredentialsIdRevokePostResponse
 }
 
 
-export type setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse200 = {
-  data: unknown
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse200 = {
+  data: CredentialResponse
   status: 200
 }
 
-export type setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse422 = {
-  data: HTTPValidationError
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponseSuccess = (setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse200) & {
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponseSuccess = (rotateCredentialManagementV1CredentialsIdRotatePostResponse200) & {
   headers: Headers;
 };
-export type setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponseError = (setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse422) & {
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponseError = (rotateCredentialManagementV1CredentialsIdRotatePostResponse400 | rotateCredentialManagementV1CredentialsIdRotatePostResponse401 | rotateCredentialManagementV1CredentialsIdRotatePostResponse403 | rotateCredentialManagementV1CredentialsIdRotatePostResponse404 | rotateCredentialManagementV1CredentialsIdRotatePostResponse409 | rotateCredentialManagementV1CredentialsIdRotatePostResponse412 | rotateCredentialManagementV1CredentialsIdRotatePostResponse422 | rotateCredentialManagementV1CredentialsIdRotatePostResponse429 | rotateCredentialManagementV1CredentialsIdRotatePostResponse500 | rotateCredentialManagementV1CredentialsIdRotatePostResponse503) & {
   headers: Headers;
 };
 
-export type setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse = (setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponseSuccess | setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponseError)
+export type rotateCredentialManagementV1CredentialsIdRotatePostResponse = (rotateCredentialManagementV1CredentialsIdRotatePostResponseSuccess | rotateCredentialManagementV1CredentialsIdRotatePostResponseError)
 
-export const getSetIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostUrl = (resourceId: string,
-    operation: string,) => {
-
+export const getRotateCredentialManagementV1CredentialsIdRotatePostUrl = (id: string,) => {
 
 
 
-  return `/control-plane/managed-resources/integration-connections/${resourceId}/${operation}`
+
+  return `/management/v1/credentials/${id}/rotate`
 }
 
 /**
- * @summary Set Integration Connection Enabled
+ * @summary Rotate Credential
  */
-export const setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPost = async (resourceId: string,
-    operation: string,
-    generatedActorRequest: GeneratedActorRequest, options?: RequestInit): Promise<setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse> => {
+export const rotateCredentialManagementV1CredentialsIdRotatePost = async (id: string,
+    credentialRotate: CredentialRotate, options?: RequestInit): Promise<rotateCredentialManagementV1CredentialsIdRotatePostResponse> => {
 
-  const res = await fetch(getSetIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostUrl(resourceId,operation),
+  const res = await fetch(getRotateCredentialManagementV1CredentialsIdRotatePostUrl(id),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(generatedActorRequest)
+    body: JSON.stringify(credentialRotate)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as setIntegrationConnectionEnabledV1ManagedResourcesIntegrationConnectionsResourceIdOperationPostResponse
+  const data: rotateCredentialManagementV1CredentialsIdRotatePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rotateCredentialManagementV1CredentialsIdRotatePostResponse
 }
 
 
-export type listDeploymentsV1ManagedResourcesModelDeploymentsGetResponse200 = {
-  data: unknown
+export type getComponentManagementV1PlatformComponentsKindGetResponse200 = {
+  data: LiveComponentResponse | VersionedComponentResponse
   status: 200
 }
 
-export type listDeploymentsV1ManagedResourcesModelDeploymentsGetResponseSuccess = (listDeploymentsV1ManagedResourcesModelDeploymentsGetResponse200) & {
+export type getComponentManagementV1PlatformComponentsKindGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getComponentManagementV1PlatformComponentsKindGetResponseSuccess = (getComponentManagementV1PlatformComponentsKindGetResponse200) & {
   headers: Headers;
 };
-;
+export type getComponentManagementV1PlatformComponentsKindGetResponseError = (getComponentManagementV1PlatformComponentsKindGetResponse400 | getComponentManagementV1PlatformComponentsKindGetResponse401 | getComponentManagementV1PlatformComponentsKindGetResponse403 | getComponentManagementV1PlatformComponentsKindGetResponse404 | getComponentManagementV1PlatformComponentsKindGetResponse409 | getComponentManagementV1PlatformComponentsKindGetResponse412 | getComponentManagementV1PlatformComponentsKindGetResponse422 | getComponentManagementV1PlatformComponentsKindGetResponse429 | getComponentManagementV1PlatformComponentsKindGetResponse500 | getComponentManagementV1PlatformComponentsKindGetResponse503) & {
+  headers: Headers;
+};
 
-export type listDeploymentsV1ManagedResourcesModelDeploymentsGetResponse = (listDeploymentsV1ManagedResourcesModelDeploymentsGetResponseSuccess)
+export type getComponentManagementV1PlatformComponentsKindGetResponse = (getComponentManagementV1PlatformComponentsKindGetResponseSuccess | getComponentManagementV1PlatformComponentsKindGetResponseError)
 
-export const getListDeploymentsV1ManagedResourcesModelDeploymentsGetUrl = () => {
-
-
+export const getGetComponentManagementV1PlatformComponentsKindGetUrl = (kind: string,) => {
 
 
-  return `/control-plane/managed-resources/model-deployments`
+
+
+  return `/management/v1/platform/components/${kind}`
 }
 
 /**
- * @summary List Deployments
+ * @summary Get Component
  */
-export const listDeploymentsV1ManagedResourcesModelDeploymentsGet = async ( options?: RequestInit): Promise<listDeploymentsV1ManagedResourcesModelDeploymentsGetResponse> => {
+export const getComponentManagementV1PlatformComponentsKindGet = async (kind: string, options?: RequestInit): Promise<getComponentManagementV1PlatformComponentsKindGetResponse> => {
 
-  const res = await fetch(getListDeploymentsV1ManagedResourcesModelDeploymentsGetUrl(),
+  const res = await fetch(getGetComponentManagementV1PlatformComponentsKindGetUrl(kind),
   {
     ...options,
     method: 'GET'
@@ -872,93 +629,89 @@ export const listDeploymentsV1ManagedResourcesModelDeploymentsGet = async ( opti
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listDeploymentsV1ManagedResourcesModelDeploymentsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listDeploymentsV1ManagedResourcesModelDeploymentsGetResponse
+  const data: getComponentManagementV1PlatformComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getComponentManagementV1PlatformComponentsKindGetResponse
 }
 
 
-export type createDeploymentV1ManagedResourcesModelDeploymentsPostResponse201 = {
-  data: unknown
-  status: 201
-}
-
-export type createDeploymentV1ManagedResourcesModelDeploymentsPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type createDeploymentV1ManagedResourcesModelDeploymentsPostResponseSuccess = (createDeploymentV1ManagedResourcesModelDeploymentsPostResponse201) & {
-  headers: Headers;
-};
-export type createDeploymentV1ManagedResourcesModelDeploymentsPostResponseError = (createDeploymentV1ManagedResourcesModelDeploymentsPostResponse422) & {
-  headers: Headers;
-};
-
-export type createDeploymentV1ManagedResourcesModelDeploymentsPostResponse = (createDeploymentV1ManagedResourcesModelDeploymentsPostResponseSuccess | createDeploymentV1ManagedResourcesModelDeploymentsPostResponseError)
-
-export const getCreateDeploymentV1ManagedResourcesModelDeploymentsPostUrl = () => {
-
-
-
-
-  return `/control-plane/managed-resources/model-deployments`
-}
-
-/**
- * @summary Create Deployment
- */
-export const createDeploymentV1ManagedResourcesModelDeploymentsPost = async (modelDeploymentCreate: ModelDeploymentCreate, options?: RequestInit): Promise<createDeploymentV1ManagedResourcesModelDeploymentsPostResponse> => {
-
-  const res = await fetch(getCreateDeploymentV1ManagedResourcesModelDeploymentsPostUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(modelDeploymentCreate)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createDeploymentV1ManagedResourcesModelDeploymentsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createDeploymentV1ManagedResourcesModelDeploymentsPostResponse
-}
-
-
-export type getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse200 = {
-  data: unknown
+export type activeManagementV1PlatformComponentsKindActiveGetResponse200 = {
+  data: VersionedComponentRevisionResponse
   status: 200
 }
 
-export type getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse422 = {
-  data: HTTPValidationError
+export type activeManagementV1PlatformComponentsKindActiveGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponseSuccess = (getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse200) & {
+export type activeManagementV1PlatformComponentsKindActiveGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type activeManagementV1PlatformComponentsKindActiveGetResponseSuccess = (activeManagementV1PlatformComponentsKindActiveGetResponse200) & {
   headers: Headers;
 };
-export type getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponseError = (getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse422) & {
+export type activeManagementV1PlatformComponentsKindActiveGetResponseError = (activeManagementV1PlatformComponentsKindActiveGetResponse400 | activeManagementV1PlatformComponentsKindActiveGetResponse401 | activeManagementV1PlatformComponentsKindActiveGetResponse403 | activeManagementV1PlatformComponentsKindActiveGetResponse404 | activeManagementV1PlatformComponentsKindActiveGetResponse409 | activeManagementV1PlatformComponentsKindActiveGetResponse412 | activeManagementV1PlatformComponentsKindActiveGetResponse422 | activeManagementV1PlatformComponentsKindActiveGetResponse429 | activeManagementV1PlatformComponentsKindActiveGetResponse500 | activeManagementV1PlatformComponentsKindActiveGetResponse503) & {
   headers: Headers;
 };
 
-export type getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse = (getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponseSuccess | getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponseError)
+export type activeManagementV1PlatformComponentsKindActiveGetResponse = (activeManagementV1PlatformComponentsKindActiveGetResponseSuccess | activeManagementV1PlatformComponentsKindActiveGetResponseError)
 
-export const getGetDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetUrl = (resourceId: string,) => {
-
-
+export const getActiveManagementV1PlatformComponentsKindActiveGetUrl = (kind: string,) => {
 
 
-  return `/control-plane/managed-resources/model-deployments/${resourceId}`
+
+
+  return `/management/v1/platform/components/${kind}/active`
 }
 
 /**
- * @summary Get Deployment
+ * @summary Active
  */
-export const getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGet = async (resourceId: string, options?: RequestInit): Promise<getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse> => {
+export const activeManagementV1PlatformComponentsKindActiveGet = async (kind: string, options?: RequestInit): Promise<activeManagementV1PlatformComponentsKindActiveGetResponse> => {
 
-  const res = await fetch(getGetDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetUrl(resourceId),
+  const res = await fetch(getActiveManagementV1PlatformComponentsKindActiveGetUrl(kind),
   {
     ...options,
     method: 'GET'
@@ -970,133 +723,454 @@ export const getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGet = asyn
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getDeploymentV1ManagedResourcesModelDeploymentsResourceIdGetResponse
+  const data: activeManagementV1PlatformComponentsKindActiveGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as activeManagementV1PlatformComponentsKindActiveGetResponse
 }
 
 
-export type updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse200 = {
-  data: unknown
-  status: 200
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse204 = {
+  data: void
+  status: 204
 }
 
-export type updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse422 = {
-  data: HTTPValidationError
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponseSuccess = (updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse200) & {
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponseSuccess = (discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse204) & {
   headers: Headers;
 };
-export type updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponseError = (updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse422) & {
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponseError = (discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse400 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse401 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse403 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse404 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse409 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse412 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse422 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse429 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse500 | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse503) & {
   headers: Headers;
 };
 
-export type updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse = (updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponseSuccess | updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponseError)
+export type discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse = (discardDraftManagementV1PlatformComponentsKindDraftDeleteResponseSuccess | discardDraftManagementV1PlatformComponentsKindDraftDeleteResponseError)
 
-export const getUpdateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutUrl = (resourceId: string,) => {
-
-
+export const getDiscardDraftManagementV1PlatformComponentsKindDraftDeleteUrl = (kind: string,) => {
 
 
-  return `/control-plane/managed-resources/model-deployments/${resourceId}`
+
+
+  return `/management/v1/platform/components/${kind}/draft`
 }
 
 /**
- * @summary Update Deployment
+ * @summary Discard Draft
  */
-export const updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPut = async (resourceId: string,
-    modelDeploymentUpdate: ModelDeploymentUpdate, options?: RequestInit): Promise<updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse> => {
+export const discardDraftManagementV1PlatformComponentsKindDraftDelete = async (kind: string, options?: RequestInit): Promise<discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse> => {
 
-  const res = await fetch(getUpdateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutUrl(resourceId),
+  const res = await fetch(getDiscardDraftManagementV1PlatformComponentsKindDraftDeleteUrl(kind),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as discardDraftManagementV1PlatformComponentsKindDraftDeleteResponse
+}
+
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse200 = {
+  data: VersionedComponentDraftResponse
+  status: 200
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponseSuccess = (getDraftManagementV1PlatformComponentsKindDraftGetResponse200) & {
+  headers: Headers;
+};
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponseError = (getDraftManagementV1PlatformComponentsKindDraftGetResponse400 | getDraftManagementV1PlatformComponentsKindDraftGetResponse401 | getDraftManagementV1PlatformComponentsKindDraftGetResponse403 | getDraftManagementV1PlatformComponentsKindDraftGetResponse404 | getDraftManagementV1PlatformComponentsKindDraftGetResponse409 | getDraftManagementV1PlatformComponentsKindDraftGetResponse412 | getDraftManagementV1PlatformComponentsKindDraftGetResponse422 | getDraftManagementV1PlatformComponentsKindDraftGetResponse429 | getDraftManagementV1PlatformComponentsKindDraftGetResponse500 | getDraftManagementV1PlatformComponentsKindDraftGetResponse503) & {
+  headers: Headers;
+};
+
+export type getDraftManagementV1PlatformComponentsKindDraftGetResponse = (getDraftManagementV1PlatformComponentsKindDraftGetResponseSuccess | getDraftManagementV1PlatformComponentsKindDraftGetResponseError)
+
+export const getGetDraftManagementV1PlatformComponentsKindDraftGetUrl = (kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/components/${kind}/draft`
+}
+
+/**
+ * @summary Get Draft
+ */
+export const getDraftManagementV1PlatformComponentsKindDraftGet = async (kind: string, options?: RequestInit): Promise<getDraftManagementV1PlatformComponentsKindDraftGetResponse> => {
+
+  const res = await fetch(getGetDraftManagementV1PlatformComponentsKindDraftGetUrl(kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDraftManagementV1PlatformComponentsKindDraftGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDraftManagementV1PlatformComponentsKindDraftGetResponse
+}
+
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponseSuccess = (saveDraftManagementV1PlatformComponentsKindDraftPutResponse200) & {
+  headers: Headers;
+};
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponseError = (saveDraftManagementV1PlatformComponentsKindDraftPutResponse400 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse401 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse403 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse404 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse409 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse412 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse422 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse429 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse500 | saveDraftManagementV1PlatformComponentsKindDraftPutResponse503) & {
+  headers: Headers;
+};
+
+export type saveDraftManagementV1PlatformComponentsKindDraftPutResponse = (saveDraftManagementV1PlatformComponentsKindDraftPutResponseSuccess | saveDraftManagementV1PlatformComponentsKindDraftPutResponseError)
+
+export const getSaveDraftManagementV1PlatformComponentsKindDraftPutUrl = (kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/components/${kind}/draft`
+}
+
+/**
+ * @summary Save Draft
+ */
+export const saveDraftManagementV1PlatformComponentsKindDraftPut = async (kind: string,
+    versionedComponentDraftWrite: VersionedComponentDraftWrite, options?: RequestInit): Promise<saveDraftManagementV1PlatformComponentsKindDraftPutResponse> => {
+
+  const res = await fetch(getSaveDraftManagementV1PlatformComponentsKindDraftPutUrl(kind),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(modelDeploymentUpdate)
+    body: JSON.stringify(versionedComponentDraftWrite)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateDeploymentV1ManagedResourcesModelDeploymentsResourceIdPutResponse
+  const data: saveDraftManagementV1PlatformComponentsKindDraftPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveDraftManagementV1PlatformComponentsKindDraftPutResponse
 }
 
 
-export type setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse200 = {
-  data: unknown
+export type publishManagementV1PlatformComponentsKindPublishPostResponse200 = {
+  data: VersionedComponentResponse
   status: 200
 }
 
-export type setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse422 = {
-  data: HTTPValidationError
+export type publishManagementV1PlatformComponentsKindPublishPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponseSuccess = (setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse200) & {
+export type publishManagementV1PlatformComponentsKindPublishPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type publishManagementV1PlatformComponentsKindPublishPostResponseSuccess = (publishManagementV1PlatformComponentsKindPublishPostResponse200) & {
   headers: Headers;
 };
-export type setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponseError = (setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse422) & {
+export type publishManagementV1PlatformComponentsKindPublishPostResponseError = (publishManagementV1PlatformComponentsKindPublishPostResponse400 | publishManagementV1PlatformComponentsKindPublishPostResponse401 | publishManagementV1PlatformComponentsKindPublishPostResponse403 | publishManagementV1PlatformComponentsKindPublishPostResponse404 | publishManagementV1PlatformComponentsKindPublishPostResponse409 | publishManagementV1PlatformComponentsKindPublishPostResponse412 | publishManagementV1PlatformComponentsKindPublishPostResponse422 | publishManagementV1PlatformComponentsKindPublishPostResponse429 | publishManagementV1PlatformComponentsKindPublishPostResponse500 | publishManagementV1PlatformComponentsKindPublishPostResponse503) & {
   headers: Headers;
 };
 
-export type setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse = (setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponseSuccess | setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponseError)
+export type publishManagementV1PlatformComponentsKindPublishPostResponse = (publishManagementV1PlatformComponentsKindPublishPostResponseSuccess | publishManagementV1PlatformComponentsKindPublishPostResponseError)
 
-export const getSetDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostUrl = (resourceId: string,
-    operation: string,) => {
-
+export const getPublishManagementV1PlatformComponentsKindPublishPostUrl = (kind: string,) => {
 
 
 
-  return `/control-plane/managed-resources/model-deployments/${resourceId}/${operation}`
+
+  return `/management/v1/platform/components/${kind}/publish`
 }
 
 /**
- * @summary Set Deployment Enabled
+ * @summary Publish
  */
-export const setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPost = async (resourceId: string,
-    operation: string,
-    generatedActorRequest: GeneratedActorRequest, options?: RequestInit): Promise<setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse> => {
+export const publishManagementV1PlatformComponentsKindPublishPost = async (kind: string, options?: RequestInit): Promise<publishManagementV1PlatformComponentsKindPublishPostResponse> => {
 
-  const res = await fetch(getSetDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostUrl(resourceId,operation),
+  const res = await fetch(getPublishManagementV1PlatformComponentsKindPublishPostUrl(kind),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(generatedActorRequest)
+    method: 'POST'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as setDeploymentEnabledV1ManagedResourcesModelDeploymentsResourceIdOperationPostResponse
+  const data: publishManagementV1PlatformComponentsKindPublishPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishManagementV1PlatformComponentsKindPublishPostResponse
 }
 
 
-export type listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse200 = {
-  data: unknown
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse200 = {
+  data: VersionedComponentRevisionResponse[]
   status: 200
 }
 
-export type listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse422 = {
-  data: HTTPValidationError
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponseSuccess = (listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse200) & {
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponseSuccess = (revisionsManagementV1PlatformComponentsKindRevisionsGetResponse200) & {
   headers: Headers;
 };
-export type listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponseError = (listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse422) & {
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponseError = (revisionsManagementV1PlatformComponentsKindRevisionsGetResponse400 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse401 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse403 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse404 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse409 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse412 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse422 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse429 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse500 | revisionsManagementV1PlatformComponentsKindRevisionsGetResponse503) & {
   headers: Headers;
 };
 
-export type listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse = (listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponseSuccess | listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponseError)
+export type revisionsManagementV1PlatformComponentsKindRevisionsGetResponse = (revisionsManagementV1PlatformComponentsKindRevisionsGetResponseSuccess | revisionsManagementV1PlatformComponentsKindRevisionsGetResponseError)
 
-export const getListPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetUrl = (params?: ListPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetParams,) => {
+export const getRevisionsManagementV1PlatformComponentsKindRevisionsGetUrl = (kind: string,
+    params?: RevisionsManagementV1PlatformComponentsKindRevisionsGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -1108,15 +1182,16 @@ export const getListPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmen
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/control-plane/managed-resources/phone-number-assignments?${stringifiedParams}` : `/control-plane/managed-resources/phone-number-assignments`
+  return stringifiedParams.length > 0 ? `/management/v1/platform/components/${kind}/revisions?${stringifiedParams}` : `/management/v1/platform/components/${kind}/revisions`
 }
 
 /**
- * @summary List Phone Number Assignments
+ * @summary Revisions
  */
-export const listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGet = async (params?: ListPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetParams, options?: RequestInit): Promise<listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse> => {
+export const revisionsManagementV1PlatformComponentsKindRevisionsGet = async (kind: string,
+    params?: RevisionsManagementV1PlatformComponentsKindRevisionsGetParams, options?: RequestInit): Promise<revisionsManagementV1PlatformComponentsKindRevisionsGetResponse> => {
 
-  const res = await fetch(getListPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetUrl(params),
+  const res = await fetch(getRevisionsManagementV1PlatformComponentsKindRevisionsGetUrl(kind,params),
   {
     ...options,
     method: 'GET'
@@ -1128,93 +1203,844 @@ export const listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsG
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listPhoneNumberAssignmentsV1ManagedResourcesPhoneNumberAssignmentsGetResponse
+  const data: revisionsManagementV1PlatformComponentsKindRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionsManagementV1PlatformComponentsKindRevisionsGetResponse
 }
 
 
-export type createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse201 = {
-  data: unknown
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse200 = {
+  data: VersionedComponentRevisionResponse
+  status: 200
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponseSuccess = (revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse200) & {
+  headers: Headers;
+};
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponseError = (revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse400 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse401 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse403 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse404 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse409 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse412 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse422 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse429 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse500 | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse503) & {
+  headers: Headers;
+};
+
+export type revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse = (revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponseSuccess | revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponseError)
+
+export const getRevisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetUrl = (kind: string,
+    revisionNumber: number,) => {
+
+
+
+
+  return `/management/v1/platform/components/${kind}/revisions/${revisionNumber}`
+}
+
+/**
+ * @summary Revision
+ */
+export const revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGet = async (kind: string,
+    revisionNumber: number, options?: RequestInit): Promise<revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse> => {
+
+  const res = await fetch(getRevisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetUrl(kind,revisionNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionManagementV1PlatformComponentsKindRevisionsRevisionNumberGetResponse
+}
+
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponseSuccess = (rollbackManagementV1PlatformComponentsKindRollbackPostResponse200) & {
+  headers: Headers;
+};
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponseError = (rollbackManagementV1PlatformComponentsKindRollbackPostResponse400 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse401 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse403 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse404 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse409 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse412 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse422 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse429 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse500 | rollbackManagementV1PlatformComponentsKindRollbackPostResponse503) & {
+  headers: Headers;
+};
+
+export type rollbackManagementV1PlatformComponentsKindRollbackPostResponse = (rollbackManagementV1PlatformComponentsKindRollbackPostResponseSuccess | rollbackManagementV1PlatformComponentsKindRollbackPostResponseError)
+
+export const getRollbackManagementV1PlatformComponentsKindRollbackPostUrl = (kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/components/${kind}/rollback`
+}
+
+/**
+ * @summary Rollback
+ */
+export const rollbackManagementV1PlatformComponentsKindRollbackPost = async (kind: string,
+    rollbackRequest: RollbackRequest, options?: RequestInit): Promise<rollbackManagementV1PlatformComponentsKindRollbackPostResponse> => {
+
+  const res = await fetch(getRollbackManagementV1PlatformComponentsKindRollbackPostUrl(kind),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rollbackRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rollbackManagementV1PlatformComponentsKindRollbackPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rollbackManagementV1PlatformComponentsKindRollbackPostResponse
+}
+
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse200 = {
+  data: PlatformConfiguration
+  status: 200
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponseSuccess = (getConfigurationManagementV1PlatformConfigurationGetResponse200) & {
+  headers: Headers;
+};
+export type getConfigurationManagementV1PlatformConfigurationGetResponseError = (getConfigurationManagementV1PlatformConfigurationGetResponse400 | getConfigurationManagementV1PlatformConfigurationGetResponse401 | getConfigurationManagementV1PlatformConfigurationGetResponse403 | getConfigurationManagementV1PlatformConfigurationGetResponse404 | getConfigurationManagementV1PlatformConfigurationGetResponse409 | getConfigurationManagementV1PlatformConfigurationGetResponse412 | getConfigurationManagementV1PlatformConfigurationGetResponse422 | getConfigurationManagementV1PlatformConfigurationGetResponse429 | getConfigurationManagementV1PlatformConfigurationGetResponse500 | getConfigurationManagementV1PlatformConfigurationGetResponse503) & {
+  headers: Headers;
+};
+
+export type getConfigurationManagementV1PlatformConfigurationGetResponse = (getConfigurationManagementV1PlatformConfigurationGetResponseSuccess | getConfigurationManagementV1PlatformConfigurationGetResponseError)
+
+export const getGetConfigurationManagementV1PlatformConfigurationGetUrl = () => {
+
+
+
+
+  return `/management/v1/platform/configuration`
+}
+
+/**
+ * @summary Get Configuration
+ */
+export const getConfigurationManagementV1PlatformConfigurationGet = async ( options?: RequestInit): Promise<getConfigurationManagementV1PlatformConfigurationGetResponse> => {
+
+  const res = await fetch(getGetConfigurationManagementV1PlatformConfigurationGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getConfigurationManagementV1PlatformConfigurationGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getConfigurationManagementV1PlatformConfigurationGetResponse
+}
+
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse200 = {
+  data: PlatformConfigurationApplyResult
+  status: 200
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponseSuccess = (applyConfigurationManagementV1PlatformConfigurationPutResponse200) & {
+  headers: Headers;
+};
+export type applyConfigurationManagementV1PlatformConfigurationPutResponseError = (applyConfigurationManagementV1PlatformConfigurationPutResponse400 | applyConfigurationManagementV1PlatformConfigurationPutResponse401 | applyConfigurationManagementV1PlatformConfigurationPutResponse403 | applyConfigurationManagementV1PlatformConfigurationPutResponse404 | applyConfigurationManagementV1PlatformConfigurationPutResponse409 | applyConfigurationManagementV1PlatformConfigurationPutResponse412 | applyConfigurationManagementV1PlatformConfigurationPutResponse422 | applyConfigurationManagementV1PlatformConfigurationPutResponse429 | applyConfigurationManagementV1PlatformConfigurationPutResponse500 | applyConfigurationManagementV1PlatformConfigurationPutResponse503) & {
+  headers: Headers;
+};
+
+export type applyConfigurationManagementV1PlatformConfigurationPutResponse = (applyConfigurationManagementV1PlatformConfigurationPutResponseSuccess | applyConfigurationManagementV1PlatformConfigurationPutResponseError)
+
+export const getApplyConfigurationManagementV1PlatformConfigurationPutUrl = () => {
+
+
+
+
+  return `/management/v1/platform/configuration`
+}
+
+/**
+ * @summary Apply Configuration
+ */
+export const applyConfigurationManagementV1PlatformConfigurationPut = async (platformConfigurationDesired: PlatformConfigurationDesired, options?: RequestInit): Promise<applyConfigurationManagementV1PlatformConfigurationPutResponse> => {
+
+  const res = await fetch(getApplyConfigurationManagementV1PlatformConfigurationPutUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(platformConfigurationDesired)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: applyConfigurationManagementV1PlatformConfigurationPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as applyConfigurationManagementV1PlatformConfigurationPutResponse
+}
+
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse200 = {
+  data: PlatformConfigurationPlan
+  status: 200
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponseSuccess = (planConfigurationManagementV1PlatformConfigurationPlanPostResponse200) & {
+  headers: Headers;
+};
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponseError = (planConfigurationManagementV1PlatformConfigurationPlanPostResponse400 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse401 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse403 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse404 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse409 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse412 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse422 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse429 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse500 | planConfigurationManagementV1PlatformConfigurationPlanPostResponse503) & {
+  headers: Headers;
+};
+
+export type planConfigurationManagementV1PlatformConfigurationPlanPostResponse = (planConfigurationManagementV1PlatformConfigurationPlanPostResponseSuccess | planConfigurationManagementV1PlatformConfigurationPlanPostResponseError)
+
+export const getPlanConfigurationManagementV1PlatformConfigurationPlanPostUrl = () => {
+
+
+
+
+  return `/management/v1/platform/configuration/plan`
+}
+
+/**
+ * @summary Plan Configuration
+ */
+export const planConfigurationManagementV1PlatformConfigurationPlanPost = async (platformConfigurationDesired: PlatformConfigurationDesired, options?: RequestInit): Promise<planConfigurationManagementV1PlatformConfigurationPlanPostResponse> => {
+
+  const res = await fetch(getPlanConfigurationManagementV1PlatformConfigurationPlanPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(platformConfigurationDesired)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: planConfigurationManagementV1PlatformConfigurationPlanPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as planConfigurationManagementV1PlatformConfigurationPlanPostResponse
+}
+
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse200 = {
+  data: PlatformConfigurationPublishResult
+  status: 200
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponseSuccess = (publishConfigurationManagementV1PlatformConfigurationPublishPostResponse200) & {
+  headers: Headers;
+};
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponseError = (publishConfigurationManagementV1PlatformConfigurationPublishPostResponse400 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse401 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse403 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse404 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse409 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse412 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse422 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse429 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse500 | publishConfigurationManagementV1PlatformConfigurationPublishPostResponse503) & {
+  headers: Headers;
+};
+
+export type publishConfigurationManagementV1PlatformConfigurationPublishPostResponse = (publishConfigurationManagementV1PlatformConfigurationPublishPostResponseSuccess | publishConfigurationManagementV1PlatformConfigurationPublishPostResponseError)
+
+export const getPublishConfigurationManagementV1PlatformConfigurationPublishPostUrl = () => {
+
+
+
+
+  return `/management/v1/platform/configuration/publish`
+}
+
+/**
+ * @summary Publish Configuration
+ */
+export const publishConfigurationManagementV1PlatformConfigurationPublishPost = async ( options?: RequestInit): Promise<publishConfigurationManagementV1PlatformConfigurationPublishPostResponse> => {
+
+  const res = await fetch(getPublishConfigurationManagementV1PlatformConfigurationPublishPostUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: publishConfigurationManagementV1PlatformConfigurationPublishPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishConfigurationManagementV1PlatformConfigurationPublishPostResponse
+}
+
+
+export type listModesManagementV1PlatformInteractionModesGetResponse200 = {
+  data: CatalogResponse[]
+  status: 200
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listModesManagementV1PlatformInteractionModesGetResponseSuccess = (listModesManagementV1PlatformInteractionModesGetResponse200) & {
+  headers: Headers;
+};
+export type listModesManagementV1PlatformInteractionModesGetResponseError = (listModesManagementV1PlatformInteractionModesGetResponse400 | listModesManagementV1PlatformInteractionModesGetResponse401 | listModesManagementV1PlatformInteractionModesGetResponse403 | listModesManagementV1PlatformInteractionModesGetResponse404 | listModesManagementV1PlatformInteractionModesGetResponse409 | listModesManagementV1PlatformInteractionModesGetResponse412 | listModesManagementV1PlatformInteractionModesGetResponse422 | listModesManagementV1PlatformInteractionModesGetResponse429 | listModesManagementV1PlatformInteractionModesGetResponse500 | listModesManagementV1PlatformInteractionModesGetResponse503) & {
+  headers: Headers;
+};
+
+export type listModesManagementV1PlatformInteractionModesGetResponse = (listModesManagementV1PlatformInteractionModesGetResponseSuccess | listModesManagementV1PlatformInteractionModesGetResponseError)
+
+export const getListModesManagementV1PlatformInteractionModesGetUrl = () => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes`
+}
+
+/**
+ * @summary List Modes
+ */
+export const listModesManagementV1PlatformInteractionModesGet = async ( options?: RequestInit): Promise<listModesManagementV1PlatformInteractionModesGetResponse> => {
+
+  const res = await fetch(getListModesManagementV1PlatformInteractionModesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listModesManagementV1PlatformInteractionModesGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listModesManagementV1PlatformInteractionModesGetResponse
+}
+
+
+export type createModeManagementV1PlatformInteractionModesPostResponse201 = {
+  data: CatalogResponse
   status: 201
 }
 
-export type createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse422 = {
-  data: HTTPValidationError
+export type createModeManagementV1PlatformInteractionModesPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponseSuccess = (createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse201) & {
+export type createModeManagementV1PlatformInteractionModesPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createModeManagementV1PlatformInteractionModesPostResponseSuccess = (createModeManagementV1PlatformInteractionModesPostResponse201) & {
   headers: Headers;
 };
-export type createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponseError = (createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse422) & {
+export type createModeManagementV1PlatformInteractionModesPostResponseError = (createModeManagementV1PlatformInteractionModesPostResponse400 | createModeManagementV1PlatformInteractionModesPostResponse401 | createModeManagementV1PlatformInteractionModesPostResponse403 | createModeManagementV1PlatformInteractionModesPostResponse404 | createModeManagementV1PlatformInteractionModesPostResponse409 | createModeManagementV1PlatformInteractionModesPostResponse412 | createModeManagementV1PlatformInteractionModesPostResponse422 | createModeManagementV1PlatformInteractionModesPostResponse429 | createModeManagementV1PlatformInteractionModesPostResponse500 | createModeManagementV1PlatformInteractionModesPostResponse503) & {
   headers: Headers;
 };
 
-export type createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse = (createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponseSuccess | createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponseError)
+export type createModeManagementV1PlatformInteractionModesPostResponse = (createModeManagementV1PlatformInteractionModesPostResponseSuccess | createModeManagementV1PlatformInteractionModesPostResponseError)
 
-export const getCreatePhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostUrl = () => {
-
-
+export const getCreateModeManagementV1PlatformInteractionModesPostUrl = () => {
 
 
-  return `/control-plane/managed-resources/phone-number-assignments`
+
+
+  return `/management/v1/platform/interaction-modes`
 }
 
 /**
- * @summary Create Phone Number Assignment
+ * @summary Create Mode
  */
-export const createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPost = async (phoneNumberAssignmentCreate: PhoneNumberAssignmentCreate, options?: RequestInit): Promise<createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse> => {
+export const createModeManagementV1PlatformInteractionModesPost = async (interactionModeCreate: InteractionModeCreate, options?: RequestInit): Promise<createModeManagementV1PlatformInteractionModesPostResponse> => {
 
-  const res = await fetch(getCreatePhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostUrl(),
+  const res = await fetch(getCreateModeManagementV1PlatformInteractionModesPostUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(phoneNumberAssignmentCreate)
+    body: JSON.stringify(interactionModeCreate)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsPostResponse
+  const data: createModeManagementV1PlatformInteractionModesPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createModeManagementV1PlatformInteractionModesPostResponse
 }
 
 
-export type getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse200 = {
-  data: unknown
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse200 = {
+  data: CatalogResponse
   status: 200
 }
 
-export type getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse422 = {
-  data: HTTPValidationError
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponseSuccess = (getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse200) & {
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponseSuccess = (getModeManagementV1PlatformInteractionModesModeKeyGetResponse200) & {
   headers: Headers;
 };
-export type getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponseError = (getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse422) & {
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponseError = (getModeManagementV1PlatformInteractionModesModeKeyGetResponse400 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse401 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse403 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse404 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse409 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse412 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse422 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse429 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse500 | getModeManagementV1PlatformInteractionModesModeKeyGetResponse503) & {
   headers: Headers;
 };
 
-export type getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse = (getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponseSuccess | getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponseError)
+export type getModeManagementV1PlatformInteractionModesModeKeyGetResponse = (getModeManagementV1PlatformInteractionModesModeKeyGetResponseSuccess | getModeManagementV1PlatformInteractionModesModeKeyGetResponseError)
 
-export const getGetPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetUrl = (resourceId: string,) => {
-
-
+export const getGetModeManagementV1PlatformInteractionModesModeKeyGetUrl = (modeKey: string,) => {
 
 
-  return `/control-plane/managed-resources/phone-number-assignments/${resourceId}`
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}`
 }
 
 /**
- * @summary Get Phone Number Assignment
+ * @summary Get Mode
  */
-export const getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGet = async (resourceId: string, options?: RequestInit): Promise<getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse> => {
+export const getModeManagementV1PlatformInteractionModesModeKeyGet = async (modeKey: string, options?: RequestInit): Promise<getModeManagementV1PlatformInteractionModesModeKeyGetResponse> => {
 
-  const res = await fetch(getGetPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetUrl(resourceId),
+  const res = await fetch(getGetModeManagementV1PlatformInteractionModesModeKeyGetUrl(modeKey),
   {
     ...options,
     method: 'GET'
@@ -1226,89 +2052,2691 @@ export const getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsRes
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getPhoneNumberAssignmentV1ManagedResourcesPhoneNumberAssignmentsResourceIdGetResponse
+  const data: getModeManagementV1PlatformInteractionModesModeKeyGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getModeManagementV1PlatformInteractionModesModeKeyGetResponse
 }
 
 
-export type setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse200 = {
-  data: unknown
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse200 = {
+  data: CatalogResponse
   status: 200
 }
 
-export type setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse422 = {
-  data: HTTPValidationError
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponseSuccess = (setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse200) & {
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponseSuccess = (updateModeManagementV1PlatformInteractionModesModeKeyPutResponse200) & {
   headers: Headers;
 };
-export type setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponseError = (setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse422) & {
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponseError = (updateModeManagementV1PlatformInteractionModesModeKeyPutResponse400 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse401 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse403 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse404 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse409 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse412 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse422 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse429 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse500 | updateModeManagementV1PlatformInteractionModesModeKeyPutResponse503) & {
   headers: Headers;
 };
 
-export type setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse = (setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponseSuccess | setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponseError)
+export type updateModeManagementV1PlatformInteractionModesModeKeyPutResponse = (updateModeManagementV1PlatformInteractionModesModeKeyPutResponseSuccess | updateModeManagementV1PlatformInteractionModesModeKeyPutResponseError)
 
-export const getSetPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostUrl = (resourceId: string,
-    operation: string,) => {
-
+export const getUpdateModeManagementV1PlatformInteractionModesModeKeyPutUrl = (modeKey: string,) => {
 
 
 
-  return `/control-plane/managed-resources/phone-number-assignments/${resourceId}/${operation}`
+
+  return `/management/v1/platform/interaction-modes/${modeKey}`
 }
 
 /**
- * @summary Set Phone Number Assignment Enabled
+ * @summary Update Mode
  */
-export const setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPost = async (resourceId: string,
-    operation: string,
-    generatedActorRequest: GeneratedActorRequest, options?: RequestInit): Promise<setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse> => {
+export const updateModeManagementV1PlatformInteractionModesModeKeyPut = async (modeKey: string,
+    interactionModeUpdate: InteractionModeUpdate, options?: RequestInit): Promise<updateModeManagementV1PlatformInteractionModesModeKeyPutResponse> => {
 
-  const res = await fetch(getSetPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostUrl(resourceId,operation),
+  const res = await fetch(getUpdateModeManagementV1PlatformInteractionModesModeKeyPutUrl(modeKey),
   {
     ...options,
-    method: 'POST',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(generatedActorRequest)
+    body: JSON.stringify(interactionModeUpdate)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as setPhoneNumberAssignmentEnabledV1ManagedResourcesPhoneNumberAssignmentsResourceIdOperationPostResponse
+  const data: updateModeManagementV1PlatformInteractionModesModeKeyPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateModeManagementV1PlatformInteractionModesModeKeyPutResponse
 }
 
 
-export type listConnectionsV1ManagedResourcesProviderConnectionsGetResponse200 = {
-  data: unknown
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse200 = {
+  data: LiveComponentResponse | VersionedComponentResponse
   status: 200
 }
 
-export type listConnectionsV1ManagedResourcesProviderConnectionsGetResponseSuccess = (listConnectionsV1ManagedResourcesProviderConnectionsGetResponse200) & {
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponseSuccess = (getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse200) & {
   headers: Headers;
 };
-;
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponseError = (getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse400 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse401 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse403 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse404 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse409 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse412 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse422 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse429 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse500 | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse503) & {
+  headers: Headers;
+};
 
-export type listConnectionsV1ManagedResourcesProviderConnectionsGetResponse = (listConnectionsV1ManagedResourcesProviderConnectionsGetResponseSuccess)
+export type getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse = (getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponseSuccess | getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponseError)
 
-export const getListConnectionsV1ManagedResourcesProviderConnectionsGetUrl = () => {
+export const getGetComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetUrl = (modeKey: string,
+    kind: string,) => {
 
 
 
 
-  return `/control-plane/managed-resources/provider-connections`
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}`
+}
+
+/**
+ * @summary Get Component
+ */
+export const getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGet = async (modeKey: string,
+    kind: string, options?: RequestInit): Promise<getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse> => {
+
+  const res = await fetch(getGetComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetUrl(modeKey,kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getComponentManagementV1PlatformInteractionModesModeKeyComponentsKindGetResponse
+}
+
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse200 = {
+  data: VersionedComponentRevisionResponse
+  status: 200
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponseSuccess = (activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse200) & {
+  headers: Headers;
+};
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponseError = (activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse400 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse401 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse403 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse404 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse409 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse412 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse422 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse429 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse500 | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse503) & {
+  headers: Headers;
+};
+
+export type activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse = (activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponseSuccess | activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponseError)
+
+export const getActiveManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetUrl = (modeKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/active`
+}
+
+/**
+ * @summary Active
+ */
+export const activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGet = async (modeKey: string,
+    kind: string, options?: RequestInit): Promise<activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse> => {
+
+  const res = await fetch(getActiveManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetUrl(modeKey,kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as activeManagementV1PlatformInteractionModesModeKeyComponentsKindActiveGetResponse
+}
+
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponseSuccess = (discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse204) & {
+  headers: Headers;
+};
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponseError = (discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse400 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse401 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse403 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse404 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse409 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse412 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse422 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse429 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse500 | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse503) & {
+  headers: Headers;
+};
+
+export type discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse = (discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponseSuccess | discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponseError)
+
+export const getDiscardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteUrl = (modeKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/draft`
+}
+
+/**
+ * @summary Discard Draft
+ */
+export const discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDelete = async (modeKey: string,
+    kind: string, options?: RequestInit): Promise<discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse> => {
+
+  const res = await fetch(getDiscardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteUrl(modeKey,kind),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as discardDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftDeleteResponse
+}
+
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse200 = {
+  data: VersionedComponentDraftResponse
+  status: 200
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponseSuccess = (getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse200) & {
+  headers: Headers;
+};
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponseError = (getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse400 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse401 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse403 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse404 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse409 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse412 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse422 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse429 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse500 | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse503) & {
+  headers: Headers;
+};
+
+export type getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse = (getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponseSuccess | getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponseError)
+
+export const getGetDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetUrl = (modeKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/draft`
+}
+
+/**
+ * @summary Get Draft
+ */
+export const getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGet = async (modeKey: string,
+    kind: string, options?: RequestInit): Promise<getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse> => {
+
+  const res = await fetch(getGetDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetUrl(modeKey,kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftGetResponse
+}
+
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponseSuccess = (saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse200) & {
+  headers: Headers;
+};
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponseError = (saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse400 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse401 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse403 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse404 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse409 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse412 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse422 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse429 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse500 | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse503) & {
+  headers: Headers;
+};
+
+export type saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse = (saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponseSuccess | saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponseError)
+
+export const getSaveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutUrl = (modeKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/draft`
+}
+
+/**
+ * @summary Save Draft
+ */
+export const saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPut = async (modeKey: string,
+    kind: string,
+    versionedComponentDraftWrite: VersionedComponentDraftWrite, options?: RequestInit): Promise<saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse> => {
+
+  const res = await fetch(getSaveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutUrl(modeKey,kind),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(versionedComponentDraftWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveDraftManagementV1PlatformInteractionModesModeKeyComponentsKindDraftPutResponse
+}
+
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponseSuccess = (publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse200) & {
+  headers: Headers;
+};
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponseError = (publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse400 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse401 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse403 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse404 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse409 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse412 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse422 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse429 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse500 | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse503) & {
+  headers: Headers;
+};
+
+export type publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse = (publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponseSuccess | publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponseError)
+
+export const getPublishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostUrl = (modeKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/publish`
+}
+
+/**
+ * @summary Publish
+ */
+export const publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPost = async (modeKey: string,
+    kind: string, options?: RequestInit): Promise<publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse> => {
+
+  const res = await fetch(getPublishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostUrl(modeKey,kind),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishManagementV1PlatformInteractionModesModeKeyComponentsKindPublishPostResponse
+}
+
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse200 = {
+  data: VersionedComponentRevisionResponse[]
+  status: 200
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponseSuccess = (revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse200) & {
+  headers: Headers;
+};
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponseError = (revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse400 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse401 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse403 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse404 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse409 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse412 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse422 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse429 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse500 | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse503) & {
+  headers: Headers;
+};
+
+export type revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse = (revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponseSuccess | revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponseError)
+
+export const getRevisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetUrl = (modeKey: string,
+    kind: string,
+    params?: RevisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/revisions?${stringifiedParams}` : `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/revisions`
+}
+
+/**
+ * @summary Revisions
+ */
+export const revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGet = async (modeKey: string,
+    kind: string,
+    params?: RevisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetParams, options?: RequestInit): Promise<revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse> => {
+
+  const res = await fetch(getRevisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetUrl(modeKey,kind,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionsManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsGetResponse
+}
+
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse200 = {
+  data: VersionedComponentRevisionResponse
+  status: 200
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponseSuccess = (revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse200) & {
+  headers: Headers;
+};
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponseError = (revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse400 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse401 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse403 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse404 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse409 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse412 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse422 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse429 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse500 | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse503) & {
+  headers: Headers;
+};
+
+export type revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse = (revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponseSuccess | revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponseError)
+
+export const getRevisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetUrl = (modeKey: string,
+    kind: string,
+    revisionNumber: number,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/revisions/${revisionNumber}`
+}
+
+/**
+ * @summary Revision
+ */
+export const revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGet = async (modeKey: string,
+    kind: string,
+    revisionNumber: number, options?: RequestInit): Promise<revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse> => {
+
+  const res = await fetch(getRevisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetUrl(modeKey,kind,revisionNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionManagementV1PlatformInteractionModesModeKeyComponentsKindRevisionsRevisionNumberGetResponse
+}
+
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponseSuccess = (rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse200) & {
+  headers: Headers;
+};
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponseError = (rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse400 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse401 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse403 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse404 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse409 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse412 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse422 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse429 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse500 | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse503) & {
+  headers: Headers;
+};
+
+export type rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse = (rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponseSuccess | rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponseError)
+
+export const getRollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostUrl = (modeKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/components/${kind}/rollback`
+}
+
+/**
+ * @summary Rollback
+ */
+export const rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPost = async (modeKey: string,
+    kind: string,
+    rollbackRequest: RollbackRequest, options?: RequestInit): Promise<rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse> => {
+
+  const res = await fetch(getRollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostUrl(modeKey,kind),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rollbackRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rollbackManagementV1PlatformInteractionModesModeKeyComponentsKindRollbackPostResponse
+}
+
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse200 = {
+  data: CatalogResponse
+  status: 200
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponseSuccess = (disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse200) & {
+  headers: Headers;
+};
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponseError = (disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse400 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse401 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse403 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse404 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse409 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse412 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse422 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse429 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse500 | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse503) & {
+  headers: Headers;
+};
+
+export type disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse = (disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponseSuccess | disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponseError)
+
+export const getDisableModeManagementV1PlatformInteractionModesModeKeyDisablePostUrl = (modeKey: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/disable`
+}
+
+/**
+ * @summary Disable Mode
+ */
+export const disableModeManagementV1PlatformInteractionModesModeKeyDisablePost = async (modeKey: string, options?: RequestInit): Promise<disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse> => {
+
+  const res = await fetch(getDisableModeManagementV1PlatformInteractionModesModeKeyDisablePostUrl(modeKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableModeManagementV1PlatformInteractionModesModeKeyDisablePostResponse
+}
+
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse200 = {
+  data: CatalogResponse
+  status: 200
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponseSuccess = (enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse200) & {
+  headers: Headers;
+};
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponseError = (enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse400 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse401 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse403 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse404 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse409 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse412 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse422 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse429 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse500 | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse503) & {
+  headers: Headers;
+};
+
+export type enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse = (enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponseSuccess | enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponseError)
+
+export const getEnableModeManagementV1PlatformInteractionModesModeKeyEnablePostUrl = (modeKey: string,) => {
+
+
+
+
+  return `/management/v1/platform/interaction-modes/${modeKey}/enable`
+}
+
+/**
+ * @summary Enable Mode
+ */
+export const enableModeManagementV1PlatformInteractionModesModeKeyEnablePost = async (modeKey: string, options?: RequestInit): Promise<enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse> => {
+
+  const res = await fetch(getEnableModeManagementV1PlatformInteractionModesModeKeyEnablePostUrl(modeKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableModeManagementV1PlatformInteractionModesModeKeyEnablePostResponse
+}
+
+
+export type listProfilesManagementV1PlatformProfilesGetResponse200 = {
+  data: CatalogResponse[]
+  status: 200
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listProfilesManagementV1PlatformProfilesGetResponseSuccess = (listProfilesManagementV1PlatformProfilesGetResponse200) & {
+  headers: Headers;
+};
+export type listProfilesManagementV1PlatformProfilesGetResponseError = (listProfilesManagementV1PlatformProfilesGetResponse400 | listProfilesManagementV1PlatformProfilesGetResponse401 | listProfilesManagementV1PlatformProfilesGetResponse403 | listProfilesManagementV1PlatformProfilesGetResponse404 | listProfilesManagementV1PlatformProfilesGetResponse409 | listProfilesManagementV1PlatformProfilesGetResponse412 | listProfilesManagementV1PlatformProfilesGetResponse422 | listProfilesManagementV1PlatformProfilesGetResponse429 | listProfilesManagementV1PlatformProfilesGetResponse500 | listProfilesManagementV1PlatformProfilesGetResponse503) & {
+  headers: Headers;
+};
+
+export type listProfilesManagementV1PlatformProfilesGetResponse = (listProfilesManagementV1PlatformProfilesGetResponseSuccess | listProfilesManagementV1PlatformProfilesGetResponseError)
+
+export const getListProfilesManagementV1PlatformProfilesGetUrl = () => {
+
+
+
+
+  return `/management/v1/platform/profiles`
+}
+
+/**
+ * @summary List Profiles
+ */
+export const listProfilesManagementV1PlatformProfilesGet = async ( options?: RequestInit): Promise<listProfilesManagementV1PlatformProfilesGetResponse> => {
+
+  const res = await fetch(getListProfilesManagementV1PlatformProfilesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listProfilesManagementV1PlatformProfilesGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listProfilesManagementV1PlatformProfilesGetResponse
+}
+
+
+export type createProfileManagementV1PlatformProfilesPostResponse201 = {
+  data: CatalogResponse
+  status: 201
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createProfileManagementV1PlatformProfilesPostResponseSuccess = (createProfileManagementV1PlatformProfilesPostResponse201) & {
+  headers: Headers;
+};
+export type createProfileManagementV1PlatformProfilesPostResponseError = (createProfileManagementV1PlatformProfilesPostResponse400 | createProfileManagementV1PlatformProfilesPostResponse401 | createProfileManagementV1PlatformProfilesPostResponse403 | createProfileManagementV1PlatformProfilesPostResponse404 | createProfileManagementV1PlatformProfilesPostResponse409 | createProfileManagementV1PlatformProfilesPostResponse412 | createProfileManagementV1PlatformProfilesPostResponse422 | createProfileManagementV1PlatformProfilesPostResponse429 | createProfileManagementV1PlatformProfilesPostResponse500 | createProfileManagementV1PlatformProfilesPostResponse503) & {
+  headers: Headers;
+};
+
+export type createProfileManagementV1PlatformProfilesPostResponse = (createProfileManagementV1PlatformProfilesPostResponseSuccess | createProfileManagementV1PlatformProfilesPostResponseError)
+
+export const getCreateProfileManagementV1PlatformProfilesPostUrl = () => {
+
+
+
+
+  return `/management/v1/platform/profiles`
+}
+
+/**
+ * @summary Create Profile
+ */
+export const createProfileManagementV1PlatformProfilesPost = async (profileCreate: ProfileCreate, options?: RequestInit): Promise<createProfileManagementV1PlatformProfilesPostResponse> => {
+
+  const res = await fetch(getCreateProfileManagementV1PlatformProfilesPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(profileCreate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createProfileManagementV1PlatformProfilesPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createProfileManagementV1PlatformProfilesPostResponse
+}
+
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse200 = {
+  data: CatalogResponse
+  status: 200
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponseSuccess = (getProfileManagementV1PlatformProfilesProfileKeyGetResponse200) & {
+  headers: Headers;
+};
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponseError = (getProfileManagementV1PlatformProfilesProfileKeyGetResponse400 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse401 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse403 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse404 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse409 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse412 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse422 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse429 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse500 | getProfileManagementV1PlatformProfilesProfileKeyGetResponse503) & {
+  headers: Headers;
+};
+
+export type getProfileManagementV1PlatformProfilesProfileKeyGetResponse = (getProfileManagementV1PlatformProfilesProfileKeyGetResponseSuccess | getProfileManagementV1PlatformProfilesProfileKeyGetResponseError)
+
+export const getGetProfileManagementV1PlatformProfilesProfileKeyGetUrl = (profileKey: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}`
+}
+
+/**
+ * @summary Get Profile
+ */
+export const getProfileManagementV1PlatformProfilesProfileKeyGet = async (profileKey: string, options?: RequestInit): Promise<getProfileManagementV1PlatformProfilesProfileKeyGetResponse> => {
+
+  const res = await fetch(getGetProfileManagementV1PlatformProfilesProfileKeyGetUrl(profileKey),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getProfileManagementV1PlatformProfilesProfileKeyGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getProfileManagementV1PlatformProfilesProfileKeyGetResponse
+}
+
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse200 = {
+  data: CatalogResponse
+  status: 200
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponseSuccess = (updateProfileManagementV1PlatformProfilesProfileKeyPutResponse200) & {
+  headers: Headers;
+};
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponseError = (updateProfileManagementV1PlatformProfilesProfileKeyPutResponse400 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse401 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse403 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse404 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse409 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse412 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse422 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse429 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse500 | updateProfileManagementV1PlatformProfilesProfileKeyPutResponse503) & {
+  headers: Headers;
+};
+
+export type updateProfileManagementV1PlatformProfilesProfileKeyPutResponse = (updateProfileManagementV1PlatformProfilesProfileKeyPutResponseSuccess | updateProfileManagementV1PlatformProfilesProfileKeyPutResponseError)
+
+export const getUpdateProfileManagementV1PlatformProfilesProfileKeyPutUrl = (profileKey: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}`
+}
+
+/**
+ * @summary Update Profile
+ */
+export const updateProfileManagementV1PlatformProfilesProfileKeyPut = async (profileKey: string,
+    profileUpdate: ProfileUpdate, options?: RequestInit): Promise<updateProfileManagementV1PlatformProfilesProfileKeyPutResponse> => {
+
+  const res = await fetch(getUpdateProfileManagementV1PlatformProfilesProfileKeyPutUrl(profileKey),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(profileUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateProfileManagementV1PlatformProfilesProfileKeyPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateProfileManagementV1PlatformProfilesProfileKeyPutResponse
+}
+
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse200 = {
+  data: LiveComponentResponse | VersionedComponentResponse
+  status: 200
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponseSuccess = (getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse200) & {
+  headers: Headers;
+};
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponseError = (getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse400 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse401 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse403 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse404 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse409 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse412 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse422 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse429 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse500 | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse503) & {
+  headers: Headers;
+};
+
+export type getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse = (getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponseSuccess | getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponseError)
+
+export const getGetComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetUrl = (profileKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}`
+}
+
+/**
+ * @summary Get Component
+ */
+export const getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGet = async (profileKey: string,
+    kind: string, options?: RequestInit): Promise<getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse> => {
+
+  const res = await fetch(getGetComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetUrl(profileKey,kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getComponentManagementV1PlatformProfilesProfileKeyComponentsKindGetResponse
+}
+
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse200 = {
+  data: VersionedComponentRevisionResponse
+  status: 200
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponseSuccess = (activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse200) & {
+  headers: Headers;
+};
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponseError = (activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse400 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse401 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse403 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse404 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse409 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse412 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse422 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse429 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse500 | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse503) & {
+  headers: Headers;
+};
+
+export type activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse = (activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponseSuccess | activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponseError)
+
+export const getActiveManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetUrl = (profileKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}/active`
+}
+
+/**
+ * @summary Active
+ */
+export const activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGet = async (profileKey: string,
+    kind: string, options?: RequestInit): Promise<activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse> => {
+
+  const res = await fetch(getActiveManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetUrl(profileKey,kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as activeManagementV1PlatformProfilesProfileKeyComponentsKindActiveGetResponse
+}
+
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponseSuccess = (discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse204) & {
+  headers: Headers;
+};
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponseError = (discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse400 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse401 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse403 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse404 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse409 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse412 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse422 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse429 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse500 | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse503) & {
+  headers: Headers;
+};
+
+export type discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse = (discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponseSuccess | discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponseError)
+
+export const getDiscardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteUrl = (profileKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}/draft`
+}
+
+/**
+ * @summary Discard Draft
+ */
+export const discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDelete = async (profileKey: string,
+    kind: string, options?: RequestInit): Promise<discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse> => {
+
+  const res = await fetch(getDiscardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteUrl(profileKey,kind),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as discardDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftDeleteResponse
+}
+
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse200 = {
+  data: VersionedComponentDraftResponse
+  status: 200
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponseSuccess = (getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse200) & {
+  headers: Headers;
+};
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponseError = (getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse400 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse401 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse403 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse404 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse409 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse412 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse422 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse429 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse500 | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse503) & {
+  headers: Headers;
+};
+
+export type getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse = (getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponseSuccess | getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponseError)
+
+export const getGetDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetUrl = (profileKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}/draft`
+}
+
+/**
+ * @summary Get Draft
+ */
+export const getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGet = async (profileKey: string,
+    kind: string, options?: RequestInit): Promise<getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse> => {
+
+  const res = await fetch(getGetDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetUrl(profileKey,kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftGetResponse
+}
+
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponseSuccess = (saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse200) & {
+  headers: Headers;
+};
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponseError = (saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse400 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse401 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse403 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse404 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse409 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse412 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse422 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse429 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse500 | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse503) & {
+  headers: Headers;
+};
+
+export type saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse = (saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponseSuccess | saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponseError)
+
+export const getSaveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutUrl = (profileKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}/draft`
+}
+
+/**
+ * @summary Save Draft
+ */
+export const saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPut = async (profileKey: string,
+    kind: string,
+    versionedComponentDraftWrite: VersionedComponentDraftWrite, options?: RequestInit): Promise<saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse> => {
+
+  const res = await fetch(getSaveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutUrl(profileKey,kind),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(versionedComponentDraftWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveDraftManagementV1PlatformProfilesProfileKeyComponentsKindDraftPutResponse
+}
+
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponseSuccess = (publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse200) & {
+  headers: Headers;
+};
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponseError = (publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse400 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse401 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse403 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse404 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse409 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse412 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse422 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse429 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse500 | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse503) & {
+  headers: Headers;
+};
+
+export type publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse = (publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponseSuccess | publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponseError)
+
+export const getPublishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostUrl = (profileKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}/publish`
+}
+
+/**
+ * @summary Publish
+ */
+export const publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPost = async (profileKey: string,
+    kind: string, options?: RequestInit): Promise<publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse> => {
+
+  const res = await fetch(getPublishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostUrl(profileKey,kind),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishManagementV1PlatformProfilesProfileKeyComponentsKindPublishPostResponse
+}
+
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse200 = {
+  data: VersionedComponentRevisionResponse[]
+  status: 200
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponseSuccess = (revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse200) & {
+  headers: Headers;
+};
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponseError = (revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse400 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse401 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse403 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse404 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse409 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse412 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse422 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse429 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse500 | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse503) & {
+  headers: Headers;
+};
+
+export type revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse = (revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponseSuccess | revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponseError)
+
+export const getRevisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetUrl = (profileKey: string,
+    kind: string,
+    params?: RevisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/management/v1/platform/profiles/${profileKey}/components/${kind}/revisions?${stringifiedParams}` : `/management/v1/platform/profiles/${profileKey}/components/${kind}/revisions`
+}
+
+/**
+ * @summary Revisions
+ */
+export const revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGet = async (profileKey: string,
+    kind: string,
+    params?: RevisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetParams, options?: RequestInit): Promise<revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse> => {
+
+  const res = await fetch(getRevisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetUrl(profileKey,kind,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionsManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsGetResponse
+}
+
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse200 = {
+  data: VersionedComponentRevisionResponse
+  status: 200
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponseSuccess = (revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse200) & {
+  headers: Headers;
+};
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponseError = (revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse400 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse401 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse403 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse404 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse409 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse412 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse422 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse429 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse500 | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse503) & {
+  headers: Headers;
+};
+
+export type revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse = (revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponseSuccess | revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponseError)
+
+export const getRevisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetUrl = (profileKey: string,
+    kind: string,
+    revisionNumber: number,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}/revisions/${revisionNumber}`
+}
+
+/**
+ * @summary Revision
+ */
+export const revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGet = async (profileKey: string,
+    kind: string,
+    revisionNumber: number, options?: RequestInit): Promise<revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse> => {
+
+  const res = await fetch(getRevisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetUrl(profileKey,kind,revisionNumber),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionManagementV1PlatformProfilesProfileKeyComponentsKindRevisionsRevisionNumberGetResponse
+}
+
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse200 = {
+  data: VersionedComponentResponse
+  status: 200
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponseSuccess = (rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse200) & {
+  headers: Headers;
+};
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponseError = (rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse400 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse401 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse403 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse404 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse409 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse412 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse422 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse429 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse500 | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse503) & {
+  headers: Headers;
+};
+
+export type rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse = (rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponseSuccess | rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponseError)
+
+export const getRollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostUrl = (profileKey: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/components/${kind}/rollback`
+}
+
+/**
+ * @summary Rollback
+ */
+export const rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPost = async (profileKey: string,
+    kind: string,
+    rollbackRequest: RollbackRequest, options?: RequestInit): Promise<rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse> => {
+
+  const res = await fetch(getRollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostUrl(profileKey,kind),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(rollbackRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rollbackManagementV1PlatformProfilesProfileKeyComponentsKindRollbackPostResponse
+}
+
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse200 = {
+  data: CatalogResponse
+  status: 200
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponseSuccess = (disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse200) & {
+  headers: Headers;
+};
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponseError = (disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse400 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse401 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse403 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse404 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse409 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse412 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse422 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse429 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse500 | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse503) & {
+  headers: Headers;
+};
+
+export type disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse = (disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponseSuccess | disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponseError)
+
+export const getDisableProfileManagementV1PlatformProfilesProfileKeyDisablePostUrl = (profileKey: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/disable`
+}
+
+/**
+ * @summary Disable Profile
+ */
+export const disableProfileManagementV1PlatformProfilesProfileKeyDisablePost = async (profileKey: string, options?: RequestInit): Promise<disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse> => {
+
+  const res = await fetch(getDisableProfileManagementV1PlatformProfilesProfileKeyDisablePostUrl(profileKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableProfileManagementV1PlatformProfilesProfileKeyDisablePostResponse
+}
+
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse200 = {
+  data: CatalogResponse
+  status: 200
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponseSuccess = (enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse200) & {
+  headers: Headers;
+};
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponseError = (enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse400 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse401 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse403 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse404 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse409 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse412 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse422 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse429 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse500 | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse503) & {
+  headers: Headers;
+};
+
+export type enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse = (enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponseSuccess | enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponseError)
+
+export const getEnableProfileManagementV1PlatformProfilesProfileKeyEnablePostUrl = (profileKey: string,) => {
+
+
+
+
+  return `/management/v1/platform/profiles/${profileKey}/enable`
+}
+
+/**
+ * @summary Enable Profile
+ */
+export const enableProfileManagementV1PlatformProfilesProfileKeyEnablePost = async (profileKey: string, options?: RequestInit): Promise<enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse> => {
+
+  const res = await fetch(getEnableProfileManagementV1PlatformProfilesProfileKeyEnablePostUrl(profileKey),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableProfileManagementV1PlatformProfilesProfileKeyEnablePostResponse
+}
+
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse200 = {
+  data: ProviderConnectionResponse[]
+  status: 200
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponseSuccess = (listConnectionsManagementV1ProvidersConnectionsGetResponse200) & {
+  headers: Headers;
+};
+export type listConnectionsManagementV1ProvidersConnectionsGetResponseError = (listConnectionsManagementV1ProvidersConnectionsGetResponse400 | listConnectionsManagementV1ProvidersConnectionsGetResponse401 | listConnectionsManagementV1ProvidersConnectionsGetResponse403 | listConnectionsManagementV1ProvidersConnectionsGetResponse404 | listConnectionsManagementV1ProvidersConnectionsGetResponse409 | listConnectionsManagementV1ProvidersConnectionsGetResponse412 | listConnectionsManagementV1ProvidersConnectionsGetResponse422 | listConnectionsManagementV1ProvidersConnectionsGetResponse429 | listConnectionsManagementV1ProvidersConnectionsGetResponse500 | listConnectionsManagementV1ProvidersConnectionsGetResponse503) & {
+  headers: Headers;
+};
+
+export type listConnectionsManagementV1ProvidersConnectionsGetResponse = (listConnectionsManagementV1ProvidersConnectionsGetResponseSuccess | listConnectionsManagementV1ProvidersConnectionsGetResponseError)
+
+export const getListConnectionsManagementV1ProvidersConnectionsGetUrl = () => {
+
+
+
+
+  return `/management/v1/providers/connections`
 }
 
 /**
  * @summary List Connections
  */
-export const listConnectionsV1ManagedResourcesProviderConnectionsGet = async ( options?: RequestInit): Promise<listConnectionsV1ManagedResourcesProviderConnectionsGetResponse> => {
+export const listConnectionsManagementV1ProvidersConnectionsGet = async ( options?: RequestInit): Promise<listConnectionsManagementV1ProvidersConnectionsGetResponse> => {
 
-  const res = await fetch(getListConnectionsV1ManagedResourcesProviderConnectionsGetUrl(),
+  const res = await fetch(getListConnectionsManagementV1ProvidersConnectionsGetUrl(),
   {
     ...options,
     method: 'GET'
@@ -1320,44 +4748,89 @@ export const listConnectionsV1ManagedResourcesProviderConnectionsGet = async ( o
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: listConnectionsV1ManagedResourcesProviderConnectionsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listConnectionsV1ManagedResourcesProviderConnectionsGetResponse
+  const data: listConnectionsManagementV1ProvidersConnectionsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listConnectionsManagementV1ProvidersConnectionsGetResponse
 }
 
 
-export type createConnectionV1ManagedResourcesProviderConnectionsPostResponse201 = {
-  data: unknown
+export type createConnectionManagementV1ProvidersConnectionsPostResponse201 = {
+  data: ProviderConnectionResponse
   status: 201
 }
 
-export type createConnectionV1ManagedResourcesProviderConnectionsPostResponse422 = {
-  data: HTTPValidationError
+export type createConnectionManagementV1ProvidersConnectionsPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type createConnectionV1ManagedResourcesProviderConnectionsPostResponseSuccess = (createConnectionV1ManagedResourcesProviderConnectionsPostResponse201) & {
+export type createConnectionManagementV1ProvidersConnectionsPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createConnectionManagementV1ProvidersConnectionsPostResponseSuccess = (createConnectionManagementV1ProvidersConnectionsPostResponse201) & {
   headers: Headers;
 };
-export type createConnectionV1ManagedResourcesProviderConnectionsPostResponseError = (createConnectionV1ManagedResourcesProviderConnectionsPostResponse422) & {
+export type createConnectionManagementV1ProvidersConnectionsPostResponseError = (createConnectionManagementV1ProvidersConnectionsPostResponse400 | createConnectionManagementV1ProvidersConnectionsPostResponse401 | createConnectionManagementV1ProvidersConnectionsPostResponse403 | createConnectionManagementV1ProvidersConnectionsPostResponse404 | createConnectionManagementV1ProvidersConnectionsPostResponse409 | createConnectionManagementV1ProvidersConnectionsPostResponse412 | createConnectionManagementV1ProvidersConnectionsPostResponse422 | createConnectionManagementV1ProvidersConnectionsPostResponse429 | createConnectionManagementV1ProvidersConnectionsPostResponse500 | createConnectionManagementV1ProvidersConnectionsPostResponse503) & {
   headers: Headers;
 };
 
-export type createConnectionV1ManagedResourcesProviderConnectionsPostResponse = (createConnectionV1ManagedResourcesProviderConnectionsPostResponseSuccess | createConnectionV1ManagedResourcesProviderConnectionsPostResponseError)
+export type createConnectionManagementV1ProvidersConnectionsPostResponse = (createConnectionManagementV1ProvidersConnectionsPostResponseSuccess | createConnectionManagementV1ProvidersConnectionsPostResponseError)
 
-export const getCreateConnectionV1ManagedResourcesProviderConnectionsPostUrl = () => {
-
-
+export const getCreateConnectionManagementV1ProvidersConnectionsPostUrl = () => {
 
 
-  return `/control-plane/managed-resources/provider-connections`
+
+
+  return `/management/v1/providers/connections`
 }
 
 /**
  * @summary Create Connection
  */
-export const createConnectionV1ManagedResourcesProviderConnectionsPost = async (providerConnectionCreate: ProviderConnectionCreate, options?: RequestInit): Promise<createConnectionV1ManagedResourcesProviderConnectionsPostResponse> => {
+export const createConnectionManagementV1ProvidersConnectionsPost = async (providerConnectionCreate: ProviderConnectionCreate, options?: RequestInit): Promise<createConnectionManagementV1ProvidersConnectionsPostResponse> => {
 
-  const res = await fetch(getCreateConnectionV1ManagedResourcesProviderConnectionsPostUrl(),
+  const res = await fetch(getCreateConnectionManagementV1ProvidersConnectionsPostUrl(),
   {
     ...options,
     method: 'POST',
@@ -1369,44 +4842,89 @@ export const createConnectionV1ManagedResourcesProviderConnectionsPost = async (
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: createConnectionV1ManagedResourcesProviderConnectionsPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createConnectionV1ManagedResourcesProviderConnectionsPostResponse
+  const data: createConnectionManagementV1ProvidersConnectionsPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createConnectionManagementV1ProvidersConnectionsPostResponse
 }
 
 
-export type getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse200 = {
-  data: unknown
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse200 = {
+  data: ProviderConnectionResponse
   status: 200
 }
 
-export type getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse422 = {
-  data: HTTPValidationError
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponseSuccess = (getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse200) & {
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponseSuccess = (getConnectionManagementV1ProvidersConnectionsIdGetResponse200) & {
   headers: Headers;
 };
-export type getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponseError = (getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse422) & {
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponseError = (getConnectionManagementV1ProvidersConnectionsIdGetResponse400 | getConnectionManagementV1ProvidersConnectionsIdGetResponse401 | getConnectionManagementV1ProvidersConnectionsIdGetResponse403 | getConnectionManagementV1ProvidersConnectionsIdGetResponse404 | getConnectionManagementV1ProvidersConnectionsIdGetResponse409 | getConnectionManagementV1ProvidersConnectionsIdGetResponse412 | getConnectionManagementV1ProvidersConnectionsIdGetResponse422 | getConnectionManagementV1ProvidersConnectionsIdGetResponse429 | getConnectionManagementV1ProvidersConnectionsIdGetResponse500 | getConnectionManagementV1ProvidersConnectionsIdGetResponse503) & {
   headers: Headers;
 };
 
-export type getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse = (getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponseSuccess | getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponseError)
+export type getConnectionManagementV1ProvidersConnectionsIdGetResponse = (getConnectionManagementV1ProvidersConnectionsIdGetResponseSuccess | getConnectionManagementV1ProvidersConnectionsIdGetResponseError)
 
-export const getGetConnectionV1ManagedResourcesProviderConnectionsResourceIdGetUrl = (resourceId: string,) => {
-
-
+export const getGetConnectionManagementV1ProvidersConnectionsIdGetUrl = (id: string,) => {
 
 
-  return `/control-plane/managed-resources/provider-connections/${resourceId}`
+
+
+  return `/management/v1/providers/connections/${id}`
 }
 
 /**
  * @summary Get Connection
  */
-export const getConnectionV1ManagedResourcesProviderConnectionsResourceIdGet = async (resourceId: string, options?: RequestInit): Promise<getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse> => {
+export const getConnectionManagementV1ProvidersConnectionsIdGet = async (id: string, options?: RequestInit): Promise<getConnectionManagementV1ProvidersConnectionsIdGetResponse> => {
 
-  const res = await fetch(getGetConnectionV1ManagedResourcesProviderConnectionsResourceIdGetUrl(resourceId),
+  const res = await fetch(getGetConnectionManagementV1ProvidersConnectionsIdGetUrl(id),
   {
     ...options,
     method: 'GET'
@@ -1418,45 +4936,90 @@ export const getConnectionV1ManagedResourcesProviderConnectionsResourceIdGet = a
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getConnectionV1ManagedResourcesProviderConnectionsResourceIdGetResponse
+  const data: getConnectionManagementV1ProvidersConnectionsIdGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getConnectionManagementV1ProvidersConnectionsIdGetResponse
 }
 
 
-export type updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse200 = {
-  data: unknown
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse200 = {
+  data: ProviderConnectionResponse
   status: 200
 }
 
-export type updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse422 = {
-  data: HTTPValidationError
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponseSuccess = (updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse200) & {
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponseSuccess = (updateConnectionManagementV1ProvidersConnectionsIdPutResponse200) & {
   headers: Headers;
 };
-export type updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponseError = (updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse422) & {
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponseError = (updateConnectionManagementV1ProvidersConnectionsIdPutResponse400 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse401 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse403 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse404 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse409 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse412 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse422 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse429 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse500 | updateConnectionManagementV1ProvidersConnectionsIdPutResponse503) & {
   headers: Headers;
 };
 
-export type updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse = (updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponseSuccess | updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponseError)
+export type updateConnectionManagementV1ProvidersConnectionsIdPutResponse = (updateConnectionManagementV1ProvidersConnectionsIdPutResponseSuccess | updateConnectionManagementV1ProvidersConnectionsIdPutResponseError)
 
-export const getUpdateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutUrl = (resourceId: string,) => {
-
-
+export const getUpdateConnectionManagementV1ProvidersConnectionsIdPutUrl = (id: string,) => {
 
 
-  return `/control-plane/managed-resources/provider-connections/${resourceId}`
+
+
+  return `/management/v1/providers/connections/${id}`
 }
 
 /**
  * @summary Update Connection
  */
-export const updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPut = async (resourceId: string,
-    providerConnectionUpdate: ProviderConnectionUpdate, options?: RequestInit): Promise<updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse> => {
+export const updateConnectionManagementV1ProvidersConnectionsIdPut = async (id: string,
+    providerConnectionUpdate: ProviderConnectionUpdate, options?: RequestInit): Promise<updateConnectionManagementV1ProvidersConnectionsIdPutResponse> => {
 
-  const res = await fetch(getUpdateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutUrl(resourceId),
+  const res = await fetch(getUpdateConnectionManagementV1ProvidersConnectionsIdPutUrl(id),
   {
     ...options,
     method: 'PUT',
@@ -1468,96 +5031,1973 @@ export const updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPut 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateConnectionV1ManagedResourcesProviderConnectionsResourceIdPutResponse
+  const data: updateConnectionManagementV1ProvidersConnectionsIdPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateConnectionManagementV1ProvidersConnectionsIdPutResponse
 }
 
 
-export type setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse200 = {
-  data: unknown
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse200 = {
+  data: ProviderConnectionResponse
   status: 200
 }
 
-export type setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse422 = {
-  data: HTTPValidationError
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponseSuccess = (setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse200) & {
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponseSuccess = (disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse200) & {
   headers: Headers;
 };
-export type setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponseError = (setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse422) & {
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponseError = (disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse400 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse401 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse403 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse404 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse409 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse412 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse422 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse429 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse500 | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse503) & {
   headers: Headers;
 };
 
-export type setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse = (setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponseSuccess | setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponseError)
+export type disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse = (disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponseSuccess | disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponseError)
 
-export const getSetConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostUrl = (resourceId: string,
-    operation: string,) => {
-
+export const getDisableConnectionManagementV1ProvidersConnectionsIdDisablePostUrl = (id: string,) => {
 
 
 
-  return `/control-plane/managed-resources/provider-connections/${resourceId}/${operation}`
+
+  return `/management/v1/providers/connections/${id}/disable`
 }
 
 /**
- * @summary Set Connection Enabled
+ * @summary Disable Connection
  */
-export const setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPost = async (resourceId: string,
-    operation: string,
-    generatedActorRequest: GeneratedActorRequest, options?: RequestInit): Promise<setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse> => {
+export const disableConnectionManagementV1ProvidersConnectionsIdDisablePost = async (id: string, options?: RequestInit): Promise<disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse> => {
 
-  const res = await fetch(getSetConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostUrl(resourceId,operation),
+  const res = await fetch(getDisableConnectionManagementV1ProvidersConnectionsIdDisablePostUrl(id),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(generatedActorRequest)
+    method: 'POST'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as setConnectionEnabledV1ManagedResourcesProviderConnectionsResourceIdOperationPostResponse
+  const data: disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableConnectionManagementV1ProvidersConnectionsIdDisablePostResponse
 }
 
 
-export type getComponentV1ScopesPlatformComponentsKindGetResponse200 = {
-  data: unknown
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse200 = {
+  data: ProviderConnectionResponse
   status: 200
 }
 
-export type getComponentV1ScopesPlatformComponentsKindGetResponse422 = {
-  data: HTTPValidationError
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getComponentV1ScopesPlatformComponentsKindGetResponseSuccess = (getComponentV1ScopesPlatformComponentsKindGetResponse200) & {
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponseSuccess = (enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse200) & {
   headers: Headers;
 };
-export type getComponentV1ScopesPlatformComponentsKindGetResponseError = (getComponentV1ScopesPlatformComponentsKindGetResponse422) & {
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponseError = (enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse400 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse401 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse403 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse404 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse409 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse412 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse422 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse429 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse500 | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse503) & {
   headers: Headers;
 };
 
-export type getComponentV1ScopesPlatformComponentsKindGetResponse = (getComponentV1ScopesPlatformComponentsKindGetResponseSuccess | getComponentV1ScopesPlatformComponentsKindGetResponseError)
+export type enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse = (enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponseSuccess | enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponseError)
 
-export const getGetComponentV1ScopesPlatformComponentsKindGetUrl = (kind: string,) => {
-
-
+export const getEnableConnectionManagementV1ProvidersConnectionsIdEnablePostUrl = (id: string,) => {
 
 
-  return `/control-plane/scopes/platform/components/${kind}`
+
+
+  return `/management/v1/providers/connections/${id}/enable`
+}
+
+/**
+ * @summary Enable Connection
+ */
+export const enableConnectionManagementV1ProvidersConnectionsIdEnablePost = async (id: string, options?: RequestInit): Promise<enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse> => {
+
+  const res = await fetch(getEnableConnectionManagementV1ProvidersConnectionsIdEnablePostUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableConnectionManagementV1ProvidersConnectionsIdEnablePostResponse
+}
+
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse200 = {
+  data: ProviderValidationResponse
+  status: 200
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponseSuccess = (validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse200) & {
+  headers: Headers;
+};
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponseError = (validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse400 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse401 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse403 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse404 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse409 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse412 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse422 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse429 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse500 | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse503) & {
+  headers: Headers;
+};
+
+export type validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse = (validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponseSuccess | validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponseError)
+
+export const getValidateConnectionManagementV1ProvidersConnectionsIdValidatePostUrl = (id: string,) => {
+
+
+
+
+  return `/management/v1/providers/connections/${id}/validate`
+}
+
+/**
+ * @summary Validate Connection
+ */
+export const validateConnectionManagementV1ProvidersConnectionsIdValidatePost = async (id: string, options?: RequestInit): Promise<validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse> => {
+
+  const res = await fetch(getValidateConnectionManagementV1ProvidersConnectionsIdValidatePostUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as validateConnectionManagementV1ProvidersConnectionsIdValidatePostResponse
+}
+
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse200 = {
+  data: ModelDeploymentResponse[]
+  status: 200
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponseSuccess = (listDeploymentsManagementV1ProvidersDeploymentsGetResponse200) & {
+  headers: Headers;
+};
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponseError = (listDeploymentsManagementV1ProvidersDeploymentsGetResponse400 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse401 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse403 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse404 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse409 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse412 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse422 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse429 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse500 | listDeploymentsManagementV1ProvidersDeploymentsGetResponse503) & {
+  headers: Headers;
+};
+
+export type listDeploymentsManagementV1ProvidersDeploymentsGetResponse = (listDeploymentsManagementV1ProvidersDeploymentsGetResponseSuccess | listDeploymentsManagementV1ProvidersDeploymentsGetResponseError)
+
+export const getListDeploymentsManagementV1ProvidersDeploymentsGetUrl = () => {
+
+
+
+
+  return `/management/v1/providers/deployments`
+}
+
+/**
+ * @summary List Deployments
+ */
+export const listDeploymentsManagementV1ProvidersDeploymentsGet = async ( options?: RequestInit): Promise<listDeploymentsManagementV1ProvidersDeploymentsGetResponse> => {
+
+  const res = await fetch(getListDeploymentsManagementV1ProvidersDeploymentsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listDeploymentsManagementV1ProvidersDeploymentsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listDeploymentsManagementV1ProvidersDeploymentsGetResponse
+}
+
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse201 = {
+  data: ModelDeploymentResponse
+  status: 201
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponseSuccess = (createDeploymentManagementV1ProvidersDeploymentsPostResponse201) & {
+  headers: Headers;
+};
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponseError = (createDeploymentManagementV1ProvidersDeploymentsPostResponse400 | createDeploymentManagementV1ProvidersDeploymentsPostResponse401 | createDeploymentManagementV1ProvidersDeploymentsPostResponse403 | createDeploymentManagementV1ProvidersDeploymentsPostResponse404 | createDeploymentManagementV1ProvidersDeploymentsPostResponse409 | createDeploymentManagementV1ProvidersDeploymentsPostResponse412 | createDeploymentManagementV1ProvidersDeploymentsPostResponse422 | createDeploymentManagementV1ProvidersDeploymentsPostResponse429 | createDeploymentManagementV1ProvidersDeploymentsPostResponse500 | createDeploymentManagementV1ProvidersDeploymentsPostResponse503) & {
+  headers: Headers;
+};
+
+export type createDeploymentManagementV1ProvidersDeploymentsPostResponse = (createDeploymentManagementV1ProvidersDeploymentsPostResponseSuccess | createDeploymentManagementV1ProvidersDeploymentsPostResponseError)
+
+export const getCreateDeploymentManagementV1ProvidersDeploymentsPostUrl = () => {
+
+
+
+
+  return `/management/v1/providers/deployments`
+}
+
+/**
+ * @summary Create Deployment
+ */
+export const createDeploymentManagementV1ProvidersDeploymentsPost = async (modelDeploymentCreate: ModelDeploymentCreate, options?: RequestInit): Promise<createDeploymentManagementV1ProvidersDeploymentsPostResponse> => {
+
+  const res = await fetch(getCreateDeploymentManagementV1ProvidersDeploymentsPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(modelDeploymentCreate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createDeploymentManagementV1ProvidersDeploymentsPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createDeploymentManagementV1ProvidersDeploymentsPostResponse
+}
+
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse200 = {
+  data: ModelDeploymentResponse
+  status: 200
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponseSuccess = (getDeploymentManagementV1ProvidersDeploymentsIdGetResponse200) & {
+  headers: Headers;
+};
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponseError = (getDeploymentManagementV1ProvidersDeploymentsIdGetResponse400 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse401 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse403 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse404 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse409 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse412 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse422 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse429 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse500 | getDeploymentManagementV1ProvidersDeploymentsIdGetResponse503) & {
+  headers: Headers;
+};
+
+export type getDeploymentManagementV1ProvidersDeploymentsIdGetResponse = (getDeploymentManagementV1ProvidersDeploymentsIdGetResponseSuccess | getDeploymentManagementV1ProvidersDeploymentsIdGetResponseError)
+
+export const getGetDeploymentManagementV1ProvidersDeploymentsIdGetUrl = (id: string,) => {
+
+
+
+
+  return `/management/v1/providers/deployments/${id}`
+}
+
+/**
+ * @summary Get Deployment
+ */
+export const getDeploymentManagementV1ProvidersDeploymentsIdGet = async (id: string, options?: RequestInit): Promise<getDeploymentManagementV1ProvidersDeploymentsIdGetResponse> => {
+
+  const res = await fetch(getGetDeploymentManagementV1ProvidersDeploymentsIdGetUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDeploymentManagementV1ProvidersDeploymentsIdGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDeploymentManagementV1ProvidersDeploymentsIdGetResponse
+}
+
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse200 = {
+  data: ModelDeploymentResponse
+  status: 200
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponseSuccess = (updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse200) & {
+  headers: Headers;
+};
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponseError = (updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse400 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse401 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse403 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse404 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse409 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse412 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse422 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse429 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse500 | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse503) & {
+  headers: Headers;
+};
+
+export type updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse = (updateDeploymentManagementV1ProvidersDeploymentsIdPutResponseSuccess | updateDeploymentManagementV1ProvidersDeploymentsIdPutResponseError)
+
+export const getUpdateDeploymentManagementV1ProvidersDeploymentsIdPutUrl = (id: string,) => {
+
+
+
+
+  return `/management/v1/providers/deployments/${id}`
+}
+
+/**
+ * @summary Update Deployment
+ */
+export const updateDeploymentManagementV1ProvidersDeploymentsIdPut = async (id: string,
+    modelDeploymentUpdate: ModelDeploymentUpdate, options?: RequestInit): Promise<updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse> => {
+
+  const res = await fetch(getUpdateDeploymentManagementV1ProvidersDeploymentsIdPutUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(modelDeploymentUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateDeploymentManagementV1ProvidersDeploymentsIdPutResponse
+}
+
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse200 = {
+  data: ModelDeploymentResponse
+  status: 200
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponseSuccess = (disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse200) & {
+  headers: Headers;
+};
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponseError = (disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse400 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse401 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse403 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse404 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse409 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse412 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse422 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse429 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse500 | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse503) & {
+  headers: Headers;
+};
+
+export type disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse = (disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponseSuccess | disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponseError)
+
+export const getDisableDeploymentManagementV1ProvidersDeploymentsIdDisablePostUrl = (id: string,) => {
+
+
+
+
+  return `/management/v1/providers/deployments/${id}/disable`
+}
+
+/**
+ * @summary Disable Deployment
+ */
+export const disableDeploymentManagementV1ProvidersDeploymentsIdDisablePost = async (id: string, options?: RequestInit): Promise<disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse> => {
+
+  const res = await fetch(getDisableDeploymentManagementV1ProvidersDeploymentsIdDisablePostUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableDeploymentManagementV1ProvidersDeploymentsIdDisablePostResponse
+}
+
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse200 = {
+  data: ModelDeploymentResponse
+  status: 200
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponseSuccess = (enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse200) & {
+  headers: Headers;
+};
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponseError = (enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse400 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse401 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse403 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse404 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse409 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse412 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse422 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse429 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse500 | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse503) & {
+  headers: Headers;
+};
+
+export type enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse = (enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponseSuccess | enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponseError)
+
+export const getEnableDeploymentManagementV1ProvidersDeploymentsIdEnablePostUrl = (id: string,) => {
+
+
+
+
+  return `/management/v1/providers/deployments/${id}/enable`
+}
+
+/**
+ * @summary Enable Deployment
+ */
+export const enableDeploymentManagementV1ProvidersDeploymentsIdEnablePost = async (id: string, options?: RequestInit): Promise<enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse> => {
+
+  const res = await fetch(getEnableDeploymentManagementV1ProvidersDeploymentsIdEnablePostUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableDeploymentManagementV1ProvidersDeploymentsIdEnablePostResponse
+}
+
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse200 = {
+  data: ProviderValidationResponse
+  status: 200
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponseSuccess = (validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse200) & {
+  headers: Headers;
+};
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponseError = (validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse400 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse401 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse403 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse404 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse409 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse412 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse422 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse429 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse500 | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse503) & {
+  headers: Headers;
+};
+
+export type validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse = (validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponseSuccess | validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponseError)
+
+export const getValidateDeploymentManagementV1ProvidersDeploymentsIdValidatePostUrl = (id: string,) => {
+
+
+
+
+  return `/management/v1/providers/deployments/${id}/validate`
+}
+
+/**
+ * @summary Validate Deployment
+ */
+export const validateDeploymentManagementV1ProvidersDeploymentsIdValidatePost = async (id: string, options?: RequestInit): Promise<validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse> => {
+
+  const res = await fetch(getValidateDeploymentManagementV1ProvidersDeploymentsIdValidatePostUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as validateDeploymentManagementV1ProvidersDeploymentsIdValidatePostResponse
+}
+
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse200 = {
+  data: RegistryEntryResponse[]
+  status: 200
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponseSuccess = (architecturesManagementV1RegistriesArchitecturesGetResponse200) & {
+  headers: Headers;
+};
+export type architecturesManagementV1RegistriesArchitecturesGetResponseError = (architecturesManagementV1RegistriesArchitecturesGetResponse400 | architecturesManagementV1RegistriesArchitecturesGetResponse401 | architecturesManagementV1RegistriesArchitecturesGetResponse403 | architecturesManagementV1RegistriesArchitecturesGetResponse404 | architecturesManagementV1RegistriesArchitecturesGetResponse409 | architecturesManagementV1RegistriesArchitecturesGetResponse412 | architecturesManagementV1RegistriesArchitecturesGetResponse422 | architecturesManagementV1RegistriesArchitecturesGetResponse429 | architecturesManagementV1RegistriesArchitecturesGetResponse500 | architecturesManagementV1RegistriesArchitecturesGetResponse503) & {
+  headers: Headers;
+};
+
+export type architecturesManagementV1RegistriesArchitecturesGetResponse = (architecturesManagementV1RegistriesArchitecturesGetResponseSuccess | architecturesManagementV1RegistriesArchitecturesGetResponseError)
+
+export const getArchitecturesManagementV1RegistriesArchitecturesGetUrl = () => {
+
+
+
+
+  return `/management/v1/registries/architectures`
+}
+
+/**
+ * @summary Architectures
+ */
+export const architecturesManagementV1RegistriesArchitecturesGet = async ( options?: RequestInit): Promise<architecturesManagementV1RegistriesArchitecturesGetResponse> => {
+
+  const res = await fetch(getArchitecturesManagementV1RegistriesArchitecturesGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: architecturesManagementV1RegistriesArchitecturesGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as architecturesManagementV1RegistriesArchitecturesGetResponse
+}
+
+
+export type componentsManagementV1RegistriesComponentsGetResponse200 = {
+  data: ComponentDefinitionResponse[]
+  status: 200
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type componentsManagementV1RegistriesComponentsGetResponseSuccess = (componentsManagementV1RegistriesComponentsGetResponse200) & {
+  headers: Headers;
+};
+export type componentsManagementV1RegistriesComponentsGetResponseError = (componentsManagementV1RegistriesComponentsGetResponse400 | componentsManagementV1RegistriesComponentsGetResponse401 | componentsManagementV1RegistriesComponentsGetResponse403 | componentsManagementV1RegistriesComponentsGetResponse404 | componentsManagementV1RegistriesComponentsGetResponse409 | componentsManagementV1RegistriesComponentsGetResponse412 | componentsManagementV1RegistriesComponentsGetResponse422 | componentsManagementV1RegistriesComponentsGetResponse429 | componentsManagementV1RegistriesComponentsGetResponse500 | componentsManagementV1RegistriesComponentsGetResponse503) & {
+  headers: Headers;
+};
+
+export type componentsManagementV1RegistriesComponentsGetResponse = (componentsManagementV1RegistriesComponentsGetResponseSuccess | componentsManagementV1RegistriesComponentsGetResponseError)
+
+export const getComponentsManagementV1RegistriesComponentsGetUrl = () => {
+
+
+
+
+  return `/management/v1/registries/components`
+}
+
+/**
+ * @summary Components
+ */
+export const componentsManagementV1RegistriesComponentsGet = async ( options?: RequestInit): Promise<componentsManagementV1RegistriesComponentsGetResponse> => {
+
+  const res = await fetch(getComponentsManagementV1RegistriesComponentsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: componentsManagementV1RegistriesComponentsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as componentsManagementV1RegistriesComponentsGetResponse
+}
+
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse200 = {
+  data: RegistryEntryResponse[]
+  status: 200
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponseSuccess = (deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse200) & {
+  headers: Headers;
+};
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponseError = (deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse400 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse401 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse403 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse404 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse409 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse412 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse422 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse429 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse500 | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse503) & {
+  headers: Headers;
+};
+
+export type deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse = (deploymentKindsManagementV1RegistriesDeploymentKindsGetResponseSuccess | deploymentKindsManagementV1RegistriesDeploymentKindsGetResponseError)
+
+export const getDeploymentKindsManagementV1RegistriesDeploymentKindsGetUrl = () => {
+
+
+
+
+  return `/management/v1/registries/deployment-kinds`
+}
+
+/**
+ * @summary Deployment Kinds
+ */
+export const deploymentKindsManagementV1RegistriesDeploymentKindsGet = async ( options?: RequestInit): Promise<deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse> => {
+
+  const res = await fetch(getDeploymentKindsManagementV1RegistriesDeploymentKindsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as deploymentKindsManagementV1RegistriesDeploymentKindsGetResponse
+}
+
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse200 = {
+  data: RegistryEntryResponse[]
+  status: 200
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponseSuccess = (integrationKindsManagementV1RegistriesIntegrationKindsGetResponse200) & {
+  headers: Headers;
+};
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponseError = (integrationKindsManagementV1RegistriesIntegrationKindsGetResponse400 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse401 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse403 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse404 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse409 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse412 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse422 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse429 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse500 | integrationKindsManagementV1RegistriesIntegrationKindsGetResponse503) & {
+  headers: Headers;
+};
+
+export type integrationKindsManagementV1RegistriesIntegrationKindsGetResponse = (integrationKindsManagementV1RegistriesIntegrationKindsGetResponseSuccess | integrationKindsManagementV1RegistriesIntegrationKindsGetResponseError)
+
+export const getIntegrationKindsManagementV1RegistriesIntegrationKindsGetUrl = () => {
+
+
+
+
+  return `/management/v1/registries/integration-kinds`
+}
+
+/**
+ * @summary Integration Kinds
+ */
+export const integrationKindsManagementV1RegistriesIntegrationKindsGet = async ( options?: RequestInit): Promise<integrationKindsManagementV1RegistriesIntegrationKindsGetResponse> => {
+
+  const res = await fetch(getIntegrationKindsManagementV1RegistriesIntegrationKindsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: integrationKindsManagementV1RegistriesIntegrationKindsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as integrationKindsManagementV1RegistriesIntegrationKindsGetResponse
+}
+
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse200 = {
+  data: RegistryEntryResponse[]
+  status: 200
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponseSuccess = (providerKindsManagementV1RegistriesProviderKindsGetResponse200) & {
+  headers: Headers;
+};
+export type providerKindsManagementV1RegistriesProviderKindsGetResponseError = (providerKindsManagementV1RegistriesProviderKindsGetResponse400 | providerKindsManagementV1RegistriesProviderKindsGetResponse401 | providerKindsManagementV1RegistriesProviderKindsGetResponse403 | providerKindsManagementV1RegistriesProviderKindsGetResponse404 | providerKindsManagementV1RegistriesProviderKindsGetResponse409 | providerKindsManagementV1RegistriesProviderKindsGetResponse412 | providerKindsManagementV1RegistriesProviderKindsGetResponse422 | providerKindsManagementV1RegistriesProviderKindsGetResponse429 | providerKindsManagementV1RegistriesProviderKindsGetResponse500 | providerKindsManagementV1RegistriesProviderKindsGetResponse503) & {
+  headers: Headers;
+};
+
+export type providerKindsManagementV1RegistriesProviderKindsGetResponse = (providerKindsManagementV1RegistriesProviderKindsGetResponseSuccess | providerKindsManagementV1RegistriesProviderKindsGetResponseError)
+
+export const getProviderKindsManagementV1RegistriesProviderKindsGetUrl = () => {
+
+
+
+
+  return `/management/v1/registries/provider-kinds`
+}
+
+/**
+ * @summary Provider Kinds
+ */
+export const providerKindsManagementV1RegistriesProviderKindsGet = async ( options?: RequestInit): Promise<providerKindsManagementV1RegistriesProviderKindsGetResponse> => {
+
+  const res = await fetch(getProviderKindsManagementV1RegistriesProviderKindsGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: providerKindsManagementV1RegistriesProviderKindsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as providerKindsManagementV1RegistriesProviderKindsGetResponse
+}
+
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse200 = {
+  data: SystemLiveComponentResponse
+  status: 200
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponseSuccess = (getLiveComponentManagementV1SystemComponentsKindGetResponse200) & {
+  headers: Headers;
+};
+export type getLiveComponentManagementV1SystemComponentsKindGetResponseError = (getLiveComponentManagementV1SystemComponentsKindGetResponse400 | getLiveComponentManagementV1SystemComponentsKindGetResponse401 | getLiveComponentManagementV1SystemComponentsKindGetResponse403 | getLiveComponentManagementV1SystemComponentsKindGetResponse404 | getLiveComponentManagementV1SystemComponentsKindGetResponse409 | getLiveComponentManagementV1SystemComponentsKindGetResponse412 | getLiveComponentManagementV1SystemComponentsKindGetResponse422 | getLiveComponentManagementV1SystemComponentsKindGetResponse429 | getLiveComponentManagementV1SystemComponentsKindGetResponse500 | getLiveComponentManagementV1SystemComponentsKindGetResponse503) & {
+  headers: Headers;
+};
+
+export type getLiveComponentManagementV1SystemComponentsKindGetResponse = (getLiveComponentManagementV1SystemComponentsKindGetResponseSuccess | getLiveComponentManagementV1SystemComponentsKindGetResponseError)
+
+export const getGetLiveComponentManagementV1SystemComponentsKindGetUrl = (kind: string,) => {
+
+
+
+
+  return `/management/v1/system/components/${kind}`
+}
+
+/**
+ * @summary Get Live Component
+ */
+export const getLiveComponentManagementV1SystemComponentsKindGet = async (kind: string, options?: RequestInit): Promise<getLiveComponentManagementV1SystemComponentsKindGetResponse> => {
+
+  const res = await fetch(getGetLiveComponentManagementV1SystemComponentsKindGetUrl(kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getLiveComponentManagementV1SystemComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getLiveComponentManagementV1SystemComponentsKindGetResponse
+}
+
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse200 = {
+  data: SystemLiveComponentResponse
+  status: 200
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponseSuccess = (setLiveComponentManagementV1SystemComponentsKindPutResponse200) & {
+  headers: Headers;
+};
+export type setLiveComponentManagementV1SystemComponentsKindPutResponseError = (setLiveComponentManagementV1SystemComponentsKindPutResponse400 | setLiveComponentManagementV1SystemComponentsKindPutResponse401 | setLiveComponentManagementV1SystemComponentsKindPutResponse403 | setLiveComponentManagementV1SystemComponentsKindPutResponse404 | setLiveComponentManagementV1SystemComponentsKindPutResponse409 | setLiveComponentManagementV1SystemComponentsKindPutResponse412 | setLiveComponentManagementV1SystemComponentsKindPutResponse422 | setLiveComponentManagementV1SystemComponentsKindPutResponse429 | setLiveComponentManagementV1SystemComponentsKindPutResponse500 | setLiveComponentManagementV1SystemComponentsKindPutResponse503) & {
+  headers: Headers;
+};
+
+export type setLiveComponentManagementV1SystemComponentsKindPutResponse = (setLiveComponentManagementV1SystemComponentsKindPutResponseSuccess | setLiveComponentManagementV1SystemComponentsKindPutResponseError)
+
+export const getSetLiveComponentManagementV1SystemComponentsKindPutUrl = (kind: string,) => {
+
+
+
+
+  return `/management/v1/system/components/${kind}`
+}
+
+/**
+ * @summary Set Live Component
+ */
+export const setLiveComponentManagementV1SystemComponentsKindPut = async (kind: string,
+    liveComponentWrite: LiveComponentWrite, options?: RequestInit): Promise<setLiveComponentManagementV1SystemComponentsKindPutResponse> => {
+
+  const res = await fetch(getSetLiveComponentManagementV1SystemComponentsKindPutUrl(kind),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(liveComponentWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setLiveComponentManagementV1SystemComponentsKindPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setLiveComponentManagementV1SystemComponentsKindPutResponse
+}
+
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse200 = {
+  data: SystemConfiguration
+  status: 200
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponseSuccess = (getSystemConfigurationManagementV1SystemConfigurationGetResponse200) & {
+  headers: Headers;
+};
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponseError = (getSystemConfigurationManagementV1SystemConfigurationGetResponse400 | getSystemConfigurationManagementV1SystemConfigurationGetResponse401 | getSystemConfigurationManagementV1SystemConfigurationGetResponse403 | getSystemConfigurationManagementV1SystemConfigurationGetResponse404 | getSystemConfigurationManagementV1SystemConfigurationGetResponse409 | getSystemConfigurationManagementV1SystemConfigurationGetResponse412 | getSystemConfigurationManagementV1SystemConfigurationGetResponse422 | getSystemConfigurationManagementV1SystemConfigurationGetResponse429 | getSystemConfigurationManagementV1SystemConfigurationGetResponse500 | getSystemConfigurationManagementV1SystemConfigurationGetResponse503) & {
+  headers: Headers;
+};
+
+export type getSystemConfigurationManagementV1SystemConfigurationGetResponse = (getSystemConfigurationManagementV1SystemConfigurationGetResponseSuccess | getSystemConfigurationManagementV1SystemConfigurationGetResponseError)
+
+export const getGetSystemConfigurationManagementV1SystemConfigurationGetUrl = () => {
+
+
+
+
+  return `/management/v1/system/configuration`
+}
+
+/**
+ * @summary Get System Configuration
+ */
+export const getSystemConfigurationManagementV1SystemConfigurationGet = async ( options?: RequestInit): Promise<getSystemConfigurationManagementV1SystemConfigurationGetResponse> => {
+
+  const res = await fetch(getGetSystemConfigurationManagementV1SystemConfigurationGetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSystemConfigurationManagementV1SystemConfigurationGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSystemConfigurationManagementV1SystemConfigurationGetResponse
+}
+
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse200 = {
+  data: SystemConfigurationApplyResult
+  status: 200
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponseSuccess = (applySystemConfigurationManagementV1SystemConfigurationPutResponse200) & {
+  headers: Headers;
+};
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponseError = (applySystemConfigurationManagementV1SystemConfigurationPutResponse400 | applySystemConfigurationManagementV1SystemConfigurationPutResponse401 | applySystemConfigurationManagementV1SystemConfigurationPutResponse403 | applySystemConfigurationManagementV1SystemConfigurationPutResponse404 | applySystemConfigurationManagementV1SystemConfigurationPutResponse409 | applySystemConfigurationManagementV1SystemConfigurationPutResponse412 | applySystemConfigurationManagementV1SystemConfigurationPutResponse422 | applySystemConfigurationManagementV1SystemConfigurationPutResponse429 | applySystemConfigurationManagementV1SystemConfigurationPutResponse500 | applySystemConfigurationManagementV1SystemConfigurationPutResponse503) & {
+  headers: Headers;
+};
+
+export type applySystemConfigurationManagementV1SystemConfigurationPutResponse = (applySystemConfigurationManagementV1SystemConfigurationPutResponseSuccess | applySystemConfigurationManagementV1SystemConfigurationPutResponseError)
+
+export const getApplySystemConfigurationManagementV1SystemConfigurationPutUrl = () => {
+
+
+
+
+  return `/management/v1/system/configuration`
+}
+
+/**
+ * @summary Apply System Configuration
+ */
+export const applySystemConfigurationManagementV1SystemConfigurationPut = async (systemConfigurationDesired: SystemConfigurationDesired, options?: RequestInit): Promise<applySystemConfigurationManagementV1SystemConfigurationPutResponse> => {
+
+  const res = await fetch(getApplySystemConfigurationManagementV1SystemConfigurationPutUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(systemConfigurationDesired)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: applySystemConfigurationManagementV1SystemConfigurationPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as applySystemConfigurationManagementV1SystemConfigurationPutResponse
+}
+
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse200 = {
+  data: SystemConfigurationPlan
+  status: 200
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponseSuccess = (planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse200) & {
+  headers: Headers;
+};
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponseError = (planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse400 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse401 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse403 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse404 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse409 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse412 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse422 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse429 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse500 | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse503) & {
+  headers: Headers;
+};
+
+export type planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse = (planSystemConfigurationManagementV1SystemConfigurationPlanPostResponseSuccess | planSystemConfigurationManagementV1SystemConfigurationPlanPostResponseError)
+
+export const getPlanSystemConfigurationManagementV1SystemConfigurationPlanPostUrl = () => {
+
+
+
+
+  return `/management/v1/system/configuration/plan`
+}
+
+/**
+ * @summary Plan System Configuration
+ */
+export const planSystemConfigurationManagementV1SystemConfigurationPlanPost = async (systemConfigurationDesired: SystemConfigurationDesired, options?: RequestInit): Promise<planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse> => {
+
+  const res = await fetch(getPlanSystemConfigurationManagementV1SystemConfigurationPlanPostUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(systemConfigurationDesired)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as planSystemConfigurationManagementV1SystemConfigurationPlanPostResponse
+}
+
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse200 = {
+  data: LiveComponentResponse | VersionedComponentResponse
+  status: 200
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponseSuccess = (getComponentManagementV1TenantsTenantIdComponentsKindGetResponse200) & {
+  headers: Headers;
+};
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponseError = (getComponentManagementV1TenantsTenantIdComponentsKindGetResponse400 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse401 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse403 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse404 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse409 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse412 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse422 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse429 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse500 | getComponentManagementV1TenantsTenantIdComponentsKindGetResponse503) & {
+  headers: Headers;
+};
+
+export type getComponentManagementV1TenantsTenantIdComponentsKindGetResponse = (getComponentManagementV1TenantsTenantIdComponentsKindGetResponseSuccess | getComponentManagementV1TenantsTenantIdComponentsKindGetResponseError)
+
+export const getGetComponentManagementV1TenantsTenantIdComponentsKindGetUrl = (tenantId: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/components/${kind}`
 }
 
 /**
  * @summary Get Component
  */
-export const getComponentV1ScopesPlatformComponentsKindGet = async (kind: string, options?: RequestInit): Promise<getComponentV1ScopesPlatformComponentsKindGetResponse> => {
+export const getComponentManagementV1TenantsTenantIdComponentsKindGet = async (tenantId: string,
+    kind: string, options?: RequestInit): Promise<getComponentManagementV1TenantsTenantIdComponentsKindGetResponse> => {
 
-  const res = await fetch(getGetComponentV1ScopesPlatformComponentsKindGetUrl(kind),
+  const res = await fetch(getGetComponentManagementV1TenantsTenantIdComponentsKindGetUrl(tenantId,kind),
   {
     ...options,
     method: 'GET'
@@ -1569,44 +7009,188 @@ export const getComponentV1ScopesPlatformComponentsKindGet = async (kind: string
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getComponentV1ScopesPlatformComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getComponentV1ScopesPlatformComponentsKindGetResponse
+  const data: getComponentManagementV1TenantsTenantIdComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getComponentManagementV1TenantsTenantIdComponentsKindGetResponse
 }
 
 
-export type activeV1ScopesPlatformComponentsKindActiveGetResponse200 = {
-  data: unknown
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse200 = {
+  data: LiveComponentResponse
   status: 200
 }
 
-export type activeV1ScopesPlatformComponentsKindActiveGetResponse422 = {
-  data: HTTPValidationError
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type activeV1ScopesPlatformComponentsKindActiveGetResponseSuccess = (activeV1ScopesPlatformComponentsKindActiveGetResponse200) & {
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponseSuccess = (setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse200) & {
   headers: Headers;
 };
-export type activeV1ScopesPlatformComponentsKindActiveGetResponseError = (activeV1ScopesPlatformComponentsKindActiveGetResponse422) & {
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponseError = (setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse400 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse401 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse403 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse404 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse409 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse412 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse422 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse429 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse500 | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse503) & {
   headers: Headers;
 };
 
-export type activeV1ScopesPlatformComponentsKindActiveGetResponse = (activeV1ScopesPlatformComponentsKindActiveGetResponseSuccess | activeV1ScopesPlatformComponentsKindActiveGetResponseError)
+export type setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse = (setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponseSuccess | setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponseError)
 
-export const getActiveV1ScopesPlatformComponentsKindActiveGetUrl = (kind: string,) => {
+export const getSetLiveComponentManagementV1TenantsTenantIdComponentsKindPutUrl = (tenantId: string,
+    kind: string,) => {
 
 
 
 
-  return `/control-plane/scopes/platform/components/${kind}/active`
+  return `/management/v1/tenants/${tenantId}/components/${kind}`
+}
+
+/**
+ * @summary Set Live Component
+ */
+export const setLiveComponentManagementV1TenantsTenantIdComponentsKindPut = async (tenantId: string,
+    kind: string,
+    liveComponentWrite: LiveComponentWrite, options?: RequestInit): Promise<setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse> => {
+
+  const res = await fetch(getSetLiveComponentManagementV1TenantsTenantIdComponentsKindPutUrl(tenantId,kind),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(liveComponentWrite)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setLiveComponentManagementV1TenantsTenantIdComponentsKindPutResponse
+}
+
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse200 = {
+  data: VersionedComponentRevisionResponse
+  status: 200
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponseSuccess = (activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse200) & {
+  headers: Headers;
+};
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponseError = (activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse400 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse401 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse403 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse404 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse409 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse412 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse422 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse429 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse500 | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse503) & {
+  headers: Headers;
+};
+
+export type activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse = (activeManagementV1TenantsTenantIdComponentsKindActiveGetResponseSuccess | activeManagementV1TenantsTenantIdComponentsKindActiveGetResponseError)
+
+export const getActiveManagementV1TenantsTenantIdComponentsKindActiveGetUrl = (tenantId: string,
+    kind: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/components/${kind}/active`
 }
 
 /**
  * @summary Active
  */
-export const activeV1ScopesPlatformComponentsKindActiveGet = async (kind: string, options?: RequestInit): Promise<activeV1ScopesPlatformComponentsKindActiveGetResponse> => {
+export const activeManagementV1TenantsTenantIdComponentsKindActiveGet = async (tenantId: string,
+    kind: string, options?: RequestInit): Promise<activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse> => {
 
-  const res = await fetch(getActiveV1ScopesPlatformComponentsKindActiveGetUrl(kind),
+  const res = await fetch(getActiveManagementV1TenantsTenantIdComponentsKindActiveGetUrl(tenantId,kind),
   {
     ...options,
     method: 'GET'
@@ -1618,53 +7202,91 @@ export const activeV1ScopesPlatformComponentsKindActiveGet = async (kind: string
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: activeV1ScopesPlatformComponentsKindActiveGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as activeV1ScopesPlatformComponentsKindActiveGetResponse
+  const data: activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as activeManagementV1TenantsTenantIdComponentsKindActiveGetResponse
 }
 
 
-export type discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse204 = {
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse204 = {
   data: void
   status: 204
 }
 
-export type discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse422 = {
-  data: HTTPValidationError
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponseSuccess = (discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse204) & {
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponseSuccess = (discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse204) & {
   headers: Headers;
 };
-export type discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponseError = (discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse422) & {
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponseError = (discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse400 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse401 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse403 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse404 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse409 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse412 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse422 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse429 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse500 | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse503) & {
   headers: Headers;
 };
 
-export type discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse = (discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponseSuccess | discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponseError)
+export type discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse = (discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponseSuccess | discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponseError)
 
-export const getDiscardDraftV1ScopesPlatformComponentsKindDraftDeleteUrl = (kind: string,
-    params: DiscardDraftV1ScopesPlatformComponentsKindDraftDeleteParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getDiscardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteUrl = (tenantId: string,
+    kind: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/control-plane/scopes/platform/components/${kind}/draft?${stringifiedParams}` : `/control-plane/scopes/platform/components/${kind}/draft`
+  return `/management/v1/tenants/${tenantId}/components/${kind}/draft`
 }
 
 /**
  * @summary Discard Draft
  */
-export const discardDraftV1ScopesPlatformComponentsKindDraftDelete = async (kind: string,
-    params: DiscardDraftV1ScopesPlatformComponentsKindDraftDeleteParams, options?: RequestInit): Promise<discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse> => {
+export const discardDraftManagementV1TenantsTenantIdComponentsKindDraftDelete = async (tenantId: string,
+    kind: string, options?: RequestInit): Promise<discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse> => {
 
-  const res = await fetch(getDiscardDraftV1ScopesPlatformComponentsKindDraftDeleteUrl(kind,params),
+  const res = await fetch(getDiscardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteUrl(tenantId,kind),
   {
     ...options,
     method: 'DELETE'
@@ -1676,44 +7298,91 @@ export const discardDraftV1ScopesPlatformComponentsKindDraftDelete = async (kind
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as discardDraftV1ScopesPlatformComponentsKindDraftDeleteResponse
+  const data: discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as discardDraftManagementV1TenantsTenantIdComponentsKindDraftDeleteResponse
 }
 
 
-export type getDraftV1ScopesPlatformComponentsKindDraftGetResponse200 = {
-  data: unknown
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse200 = {
+  data: VersionedComponentDraftResponse
   status: 200
 }
 
-export type getDraftV1ScopesPlatformComponentsKindDraftGetResponse422 = {
-  data: HTTPValidationError
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getDraftV1ScopesPlatformComponentsKindDraftGetResponseSuccess = (getDraftV1ScopesPlatformComponentsKindDraftGetResponse200) & {
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponseSuccess = (getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse200) & {
   headers: Headers;
 };
-export type getDraftV1ScopesPlatformComponentsKindDraftGetResponseError = (getDraftV1ScopesPlatformComponentsKindDraftGetResponse422) & {
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponseError = (getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse400 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse401 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse403 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse404 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse409 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse412 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse422 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse429 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse500 | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse503) & {
   headers: Headers;
 };
 
-export type getDraftV1ScopesPlatformComponentsKindDraftGetResponse = (getDraftV1ScopesPlatformComponentsKindDraftGetResponseSuccess | getDraftV1ScopesPlatformComponentsKindDraftGetResponseError)
+export type getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse = (getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponseSuccess | getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponseError)
 
-export const getGetDraftV1ScopesPlatformComponentsKindDraftGetUrl = (kind: string,) => {
+export const getGetDraftManagementV1TenantsTenantIdComponentsKindDraftGetUrl = (tenantId: string,
+    kind: string,) => {
 
 
 
 
-  return `/control-plane/scopes/platform/components/${kind}/draft`
+  return `/management/v1/tenants/${tenantId}/components/${kind}/draft`
 }
 
 /**
  * @summary Get Draft
  */
-export const getDraftV1ScopesPlatformComponentsKindDraftGet = async (kind: string, options?: RequestInit): Promise<getDraftV1ScopesPlatformComponentsKindDraftGetResponse> => {
+export const getDraftManagementV1TenantsTenantIdComponentsKindDraftGet = async (tenantId: string,
+    kind: string, options?: RequestInit): Promise<getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse> => {
 
-  const res = await fetch(getGetDraftV1ScopesPlatformComponentsKindDraftGetUrl(kind),
+  const res = await fetch(getGetDraftManagementV1TenantsTenantIdComponentsKindDraftGetUrl(tenantId,kind),
   {
     ...options,
     method: 'GET'
@@ -1725,132 +7394,271 @@ export const getDraftV1ScopesPlatformComponentsKindDraftGet = async (kind: strin
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getDraftV1ScopesPlatformComponentsKindDraftGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getDraftV1ScopesPlatformComponentsKindDraftGetResponse
+  const data: getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDraftManagementV1TenantsTenantIdComponentsKindDraftGetResponse
 }
 
 
-export type saveDraftV1ScopesPlatformComponentsKindDraftPutResponse200 = {
-  data: unknown
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse200 = {
+  data: VersionedComponentResponse
   status: 200
 }
 
-export type saveDraftV1ScopesPlatformComponentsKindDraftPutResponse422 = {
-  data: HTTPValidationError
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type saveDraftV1ScopesPlatformComponentsKindDraftPutResponseSuccess = (saveDraftV1ScopesPlatformComponentsKindDraftPutResponse200) & {
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponseSuccess = (saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse200) & {
   headers: Headers;
 };
-export type saveDraftV1ScopesPlatformComponentsKindDraftPutResponseError = (saveDraftV1ScopesPlatformComponentsKindDraftPutResponse422) & {
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponseError = (saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse400 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse401 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse403 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse404 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse409 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse412 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse422 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse429 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse500 | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse503) & {
   headers: Headers;
 };
 
-export type saveDraftV1ScopesPlatformComponentsKindDraftPutResponse = (saveDraftV1ScopesPlatformComponentsKindDraftPutResponseSuccess | saveDraftV1ScopesPlatformComponentsKindDraftPutResponseError)
+export type saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse = (saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponseSuccess | saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponseError)
 
-export const getSaveDraftV1ScopesPlatformComponentsKindDraftPutUrl = (kind: string,) => {
+export const getSaveDraftManagementV1TenantsTenantIdComponentsKindDraftPutUrl = (tenantId: string,
+    kind: string,) => {
 
 
 
 
-  return `/control-plane/scopes/platform/components/${kind}/draft`
+  return `/management/v1/tenants/${tenantId}/components/${kind}/draft`
 }
 
 /**
  * @summary Save Draft
  */
-export const saveDraftV1ScopesPlatformComponentsKindDraftPut = async (kind: string,
-    saveDraftRequest: SaveDraftRequest, options?: RequestInit): Promise<saveDraftV1ScopesPlatformComponentsKindDraftPutResponse> => {
+export const saveDraftManagementV1TenantsTenantIdComponentsKindDraftPut = async (tenantId: string,
+    kind: string,
+    versionedComponentDraftWrite: VersionedComponentDraftWrite, options?: RequestInit): Promise<saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse> => {
 
-  const res = await fetch(getSaveDraftV1ScopesPlatformComponentsKindDraftPutUrl(kind),
+  const res = await fetch(getSaveDraftManagementV1TenantsTenantIdComponentsKindDraftPutUrl(tenantId,kind),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(saveDraftRequest)
+    body: JSON.stringify(versionedComponentDraftWrite)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: saveDraftV1ScopesPlatformComponentsKindDraftPutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as saveDraftV1ScopesPlatformComponentsKindDraftPutResponse
+  const data: saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveDraftManagementV1TenantsTenantIdComponentsKindDraftPutResponse
 }
 
 
-export type publishV1ScopesPlatformComponentsKindPublishPostResponse200 = {
-  data: unknown
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse200 = {
+  data: VersionedComponentResponse
   status: 200
 }
 
-export type publishV1ScopesPlatformComponentsKindPublishPostResponse422 = {
-  data: HTTPValidationError
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type publishV1ScopesPlatformComponentsKindPublishPostResponseSuccess = (publishV1ScopesPlatformComponentsKindPublishPostResponse200) & {
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponseSuccess = (publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse200) & {
   headers: Headers;
 };
-export type publishV1ScopesPlatformComponentsKindPublishPostResponseError = (publishV1ScopesPlatformComponentsKindPublishPostResponse422) & {
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponseError = (publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse400 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse401 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse403 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse404 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse409 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse412 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse422 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse429 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse500 | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse503) & {
   headers: Headers;
 };
 
-export type publishV1ScopesPlatformComponentsKindPublishPostResponse = (publishV1ScopesPlatformComponentsKindPublishPostResponseSuccess | publishV1ScopesPlatformComponentsKindPublishPostResponseError)
+export type publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse = (publishManagementV1TenantsTenantIdComponentsKindPublishPostResponseSuccess | publishManagementV1TenantsTenantIdComponentsKindPublishPostResponseError)
 
-export const getPublishV1ScopesPlatformComponentsKindPublishPostUrl = (kind: string,) => {
+export const getPublishManagementV1TenantsTenantIdComponentsKindPublishPostUrl = (tenantId: string,
+    kind: string,) => {
 
 
 
 
-  return `/control-plane/scopes/platform/components/${kind}/publish`
+  return `/management/v1/tenants/${tenantId}/components/${kind}/publish`
 }
 
 /**
  * @summary Publish
  */
-export const publishV1ScopesPlatformComponentsKindPublishPost = async (kind: string,
-    publishRequest: PublishRequest, options?: RequestInit): Promise<publishV1ScopesPlatformComponentsKindPublishPostResponse> => {
+export const publishManagementV1TenantsTenantIdComponentsKindPublishPost = async (tenantId: string,
+    kind: string, options?: RequestInit): Promise<publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse> => {
 
-  const res = await fetch(getPublishV1ScopesPlatformComponentsKindPublishPostUrl(kind),
+  const res = await fetch(getPublishManagementV1TenantsTenantIdComponentsKindPublishPostUrl(tenantId,kind),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(publishRequest)
+    method: 'POST'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: publishV1ScopesPlatformComponentsKindPublishPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as publishV1ScopesPlatformComponentsKindPublishPostResponse
+  const data: publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishManagementV1TenantsTenantIdComponentsKindPublishPostResponse
 }
 
 
-export type revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse200 = {
-  data: unknown
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse200 = {
+  data: VersionedComponentRevisionResponse[]
   status: 200
 }
 
-export type revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse422 = {
-  data: HTTPValidationError
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type revisionsV1ScopesPlatformComponentsKindRevisionsGetResponseSuccess = (revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse200) & {
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponseSuccess = (revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse200) & {
   headers: Headers;
 };
-export type revisionsV1ScopesPlatformComponentsKindRevisionsGetResponseError = (revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse422) & {
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponseError = (revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse400 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse401 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse403 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse404 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse409 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse412 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse422 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse429 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse500 | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse503) & {
   headers: Headers;
 };
 
-export type revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse = (revisionsV1ScopesPlatformComponentsKindRevisionsGetResponseSuccess | revisionsV1ScopesPlatformComponentsKindRevisionsGetResponseError)
+export type revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse = (revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponseSuccess | revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponseError)
 
-export const getRevisionsV1ScopesPlatformComponentsKindRevisionsGetUrl = (kind: string,
-    params?: RevisionsV1ScopesPlatformComponentsKindRevisionsGetParams,) => {
+export const getRevisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetUrl = (tenantId: string,
+    kind: string,
+    params?: RevisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
@@ -1862,16 +7670,17 @@ export const getRevisionsV1ScopesPlatformComponentsKindRevisionsGetUrl = (kind: 
 
   const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/control-plane/scopes/platform/components/${kind}/revisions?${stringifiedParams}` : `/control-plane/scopes/platform/components/${kind}/revisions`
+  return stringifiedParams.length > 0 ? `/management/v1/tenants/${tenantId}/components/${kind}/revisions?${stringifiedParams}` : `/management/v1/tenants/${tenantId}/components/${kind}/revisions`
 }
 
 /**
  * @summary Revisions
  */
-export const revisionsV1ScopesPlatformComponentsKindRevisionsGet = async (kind: string,
-    params?: RevisionsV1ScopesPlatformComponentsKindRevisionsGetParams, options?: RequestInit): Promise<revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse> => {
+export const revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGet = async (tenantId: string,
+    kind: string,
+    params?: RevisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetParams, options?: RequestInit): Promise<revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse> => {
 
-  const res = await fetch(getRevisionsV1ScopesPlatformComponentsKindRevisionsGetUrl(kind,params),
+  const res = await fetch(getRevisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetUrl(tenantId,kind,params),
   {
     ...options,
     method: 'GET'
@@ -1883,46 +7692,93 @@ export const revisionsV1ScopesPlatformComponentsKindRevisionsGet = async (kind: 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revisionsV1ScopesPlatformComponentsKindRevisionsGetResponse
+  const data: revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionsManagementV1TenantsTenantIdComponentsKindRevisionsGetResponse
 }
 
 
-export type revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse200 = {
-  data: unknown
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse200 = {
+  data: VersionedComponentRevisionResponse
   status: 200
 }
 
-export type revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse422 = {
-  data: HTTPValidationError
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponseSuccess = (revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse200) & {
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponseSuccess = (revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse200) & {
   headers: Headers;
 };
-export type revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponseError = (revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse422) & {
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponseError = (revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse400 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse401 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse403 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse404 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse409 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse412 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse422 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse429 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse500 | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse503) & {
   headers: Headers;
 };
 
-export type revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse = (revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponseSuccess | revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponseError)
+export type revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse = (revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponseSuccess | revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponseError)
 
-export const getRevisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetUrl = (kind: string,
+export const getRevisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetUrl = (tenantId: string,
+    kind: string,
     revisionNumber: number,) => {
 
 
 
 
-  return `/control-plane/scopes/platform/components/${kind}/revisions/${revisionNumber}`
+  return `/management/v1/tenants/${tenantId}/components/${kind}/revisions/${revisionNumber}`
 }
 
 /**
  * @summary Revision
  */
-export const revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGet = async (kind: string,
-    revisionNumber: number, options?: RequestInit): Promise<revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse> => {
+export const revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGet = async (tenantId: string,
+    kind: string,
+    revisionNumber: number, options?: RequestInit): Promise<revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse> => {
 
-  const res = await fetch(getRevisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetUrl(kind,revisionNumber),
+  const res = await fetch(getRevisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetUrl(tenantId,kind,revisionNumber),
   {
     ...options,
     method: 'GET'
@@ -1934,45 +7790,92 @@ export const revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGet = 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revisionV1ScopesPlatformComponentsKindRevisionsRevisionNumberGetResponse
+  const data: revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as revisionManagementV1TenantsTenantIdComponentsKindRevisionsRevisionNumberGetResponse
 }
 
 
-export type rollbackV1ScopesPlatformComponentsKindRollbackPostResponse200 = {
-  data: unknown
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse200 = {
+  data: VersionedComponentResponse
   status: 200
 }
 
-export type rollbackV1ScopesPlatformComponentsKindRollbackPostResponse422 = {
-  data: HTTPValidationError
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type rollbackV1ScopesPlatformComponentsKindRollbackPostResponseSuccess = (rollbackV1ScopesPlatformComponentsKindRollbackPostResponse200) & {
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponseSuccess = (rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse200) & {
   headers: Headers;
 };
-export type rollbackV1ScopesPlatformComponentsKindRollbackPostResponseError = (rollbackV1ScopesPlatformComponentsKindRollbackPostResponse422) & {
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponseError = (rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse400 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse401 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse403 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse404 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse409 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse412 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse422 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse429 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse500 | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse503) & {
   headers: Headers;
 };
 
-export type rollbackV1ScopesPlatformComponentsKindRollbackPostResponse = (rollbackV1ScopesPlatformComponentsKindRollbackPostResponseSuccess | rollbackV1ScopesPlatformComponentsKindRollbackPostResponseError)
+export type rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse = (rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponseSuccess | rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponseError)
 
-export const getRollbackV1ScopesPlatformComponentsKindRollbackPostUrl = (kind: string,) => {
+export const getRollbackManagementV1TenantsTenantIdComponentsKindRollbackPostUrl = (tenantId: string,
+    kind: string,) => {
 
 
 
 
-  return `/control-plane/scopes/platform/components/${kind}/rollback`
+  return `/management/v1/tenants/${tenantId}/components/${kind}/rollback`
 }
 
 /**
  * @summary Rollback
  */
-export const rollbackV1ScopesPlatformComponentsKindRollbackPost = async (kind: string,
-    rollbackRequest: RollbackRequest, options?: RequestInit): Promise<rollbackV1ScopesPlatformComponentsKindRollbackPostResponse> => {
+export const rollbackManagementV1TenantsTenantIdComponentsKindRollbackPost = async (tenantId: string,
+    kind: string,
+    rollbackRequest: RollbackRequest, options?: RequestInit): Promise<rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse> => {
 
-  const res = await fetch(getRollbackV1ScopesPlatformComponentsKindRollbackPostUrl(kind),
+  const res = await fetch(getRollbackManagementV1TenantsTenantIdComponentsKindRollbackPostUrl(tenantId,kind),
   {
     ...options,
     method: 'POST',
@@ -1984,46 +7887,89 @@ export const rollbackV1ScopesPlatformComponentsKindRollbackPost = async (kind: s
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: rollbackV1ScopesPlatformComponentsKindRollbackPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as rollbackV1ScopesPlatformComponentsKindRollbackPostResponse
+  const data: rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as rollbackManagementV1TenantsTenantIdComponentsKindRollbackPostResponse
 }
 
 
-export type getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse200 = {
-  data: unknown
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse200 = {
+  data: TenantConfiguration
   status: 200
 }
 
-export type getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse422 = {
-  data: HTTPValidationError
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getComponentV1ScopesProfileProfileKeyComponentsKindGetResponseSuccess = (getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse200) & {
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponseSuccess = (getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse200) & {
   headers: Headers;
 };
-export type getComponentV1ScopesProfileProfileKeyComponentsKindGetResponseError = (getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse422) & {
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponseError = (getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse400 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse401 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse403 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse404 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse409 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse412 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse422 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse429 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse500 | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse503) & {
   headers: Headers;
 };
 
-export type getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse = (getComponentV1ScopesProfileProfileKeyComponentsKindGetResponseSuccess | getComponentV1ScopesProfileProfileKeyComponentsKindGetResponseError)
+export type getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse = (getConfigurationManagementV1TenantsTenantIdConfigurationGetResponseSuccess | getConfigurationManagementV1TenantsTenantIdConfigurationGetResponseError)
 
-export const getGetComponentV1ScopesProfileProfileKeyComponentsKindGetUrl = (profileKey: string,
-    kind: string,) => {
-
+export const getGetConfigurationManagementV1TenantsTenantIdConfigurationGetUrl = (tenantId: string,) => {
 
 
 
-  return `/control-plane/scopes/profile/${profileKey}/components/${kind}`
+
+  return `/management/v1/tenants/${tenantId}/configuration`
 }
 
 /**
- * @summary Get Component
+ * @summary Get Configuration
  */
-export const getComponentV1ScopesProfileProfileKeyComponentsKindGet = async (profileKey: string,
-    kind: string, options?: RequestInit): Promise<getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse> => {
+export const getConfigurationManagementV1TenantsTenantIdConfigurationGet = async (tenantId: string, options?: RequestInit): Promise<getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse> => {
 
-  const res = await fetch(getGetComponentV1ScopesProfileProfileKeyComponentsKindGetUrl(profileKey,kind),
+  const res = await fetch(getGetConfigurationManagementV1TenantsTenantIdConfigurationGetUrl(tenantId),
   {
     ...options,
     method: 'GET'
@@ -2035,321 +7981,373 @@ export const getComponentV1ScopesProfileProfileKeyComponentsKindGet = async (pro
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getComponentV1ScopesProfileProfileKeyComponentsKindGetResponse
+  const data: getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getConfigurationManagementV1TenantsTenantIdConfigurationGetResponse
 }
 
 
-export type activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse200 = {
-  data: unknown
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse200 = {
+  data: TenantConfigurationApplyResult
   status: 200
 }
 
-export type activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse422 = {
-  data: HTTPValidationError
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponseSuccess = (activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse200) & {
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponseSuccess = (applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse200) & {
   headers: Headers;
 };
-export type activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponseError = (activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse422) & {
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponseError = (applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse400 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse401 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse403 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse404 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse409 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse412 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse422 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse429 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse500 | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse503) & {
   headers: Headers;
 };
 
-export type activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse = (activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponseSuccess | activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponseError)
+export type applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse = (applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponseSuccess | applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponseError)
 
-export const getActiveV1ScopesProfileProfileKeyComponentsKindActiveGetUrl = (profileKey: string,
-    kind: string,) => {
-
+export const getApplyConfigurationManagementV1TenantsTenantIdConfigurationPutUrl = (tenantId: string,) => {
 
 
 
-  return `/control-plane/scopes/profile/${profileKey}/components/${kind}/active`
+
+  return `/management/v1/tenants/${tenantId}/configuration`
 }
 
 /**
- * @summary Active
+ * @summary Apply Configuration
  */
-export const activeV1ScopesProfileProfileKeyComponentsKindActiveGet = async (profileKey: string,
-    kind: string, options?: RequestInit): Promise<activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse> => {
+export const applyConfigurationManagementV1TenantsTenantIdConfigurationPut = async (tenantId: string,
+    tenantConfigurationDesired: TenantConfigurationDesired, options?: RequestInit): Promise<applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse> => {
 
-  const res = await fetch(getActiveV1ScopesProfileProfileKeyComponentsKindActiveGetUrl(profileKey,kind),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as activeV1ScopesProfileProfileKeyComponentsKindActiveGetResponse
-}
-
-
-export type discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse204 = {
-  data: void
-  status: 204
-}
-
-export type discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponseSuccess = (discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse204) & {
-  headers: Headers;
-};
-export type discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponseError = (discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse422) & {
-  headers: Headers;
-};
-
-export type discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse = (discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponseSuccess | discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponseError)
-
-export const getDiscardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteUrl = (profileKey: string,
-    kind: string,
-    params: DiscardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/control-plane/scopes/profile/${profileKey}/components/${kind}/draft?${stringifiedParams}` : `/control-plane/scopes/profile/${profileKey}/components/${kind}/draft`
-}
-
-/**
- * @summary Discard Draft
- */
-export const discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDelete = async (profileKey: string,
-    kind: string,
-    params: DiscardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteParams, options?: RequestInit): Promise<discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse> => {
-
-  const res = await fetch(getDiscardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteUrl(profileKey,kind,params),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as discardDraftV1ScopesProfileProfileKeyComponentsKindDraftDeleteResponse
-}
-
-
-export type getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponseSuccess = (getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse200) & {
-  headers: Headers;
-};
-export type getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponseError = (getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse422) & {
-  headers: Headers;
-};
-
-export type getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse = (getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponseSuccess | getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponseError)
-
-export const getGetDraftV1ScopesProfileProfileKeyComponentsKindDraftGetUrl = (profileKey: string,
-    kind: string,) => {
-
-
-
-
-  return `/control-plane/scopes/profile/${profileKey}/components/${kind}/draft`
-}
-
-/**
- * @summary Get Draft
- */
-export const getDraftV1ScopesProfileProfileKeyComponentsKindDraftGet = async (profileKey: string,
-    kind: string, options?: RequestInit): Promise<getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse> => {
-
-  const res = await fetch(getGetDraftV1ScopesProfileProfileKeyComponentsKindDraftGetUrl(profileKey,kind),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getDraftV1ScopesProfileProfileKeyComponentsKindDraftGetResponse
-}
-
-
-export type saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponseSuccess = (saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse200) & {
-  headers: Headers;
-};
-export type saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponseError = (saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse422) & {
-  headers: Headers;
-};
-
-export type saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse = (saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponseSuccess | saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponseError)
-
-export const getSaveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutUrl = (profileKey: string,
-    kind: string,) => {
-
-
-
-
-  return `/control-plane/scopes/profile/${profileKey}/components/${kind}/draft`
-}
-
-/**
- * @summary Save Draft
- */
-export const saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPut = async (profileKey: string,
-    kind: string,
-    saveDraftRequest: SaveDraftRequest, options?: RequestInit): Promise<saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse> => {
-
-  const res = await fetch(getSaveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutUrl(profileKey,kind),
+  const res = await fetch(getApplyConfigurationManagementV1TenantsTenantIdConfigurationPutUrl(tenantId),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(saveDraftRequest)
+    body: JSON.stringify(tenantConfigurationDesired)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as saveDraftV1ScopesProfileProfileKeyComponentsKindDraftPutResponse
+  const data: applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as applyConfigurationManagementV1TenantsTenantIdConfigurationPutResponse
 }
 
 
-export type publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse200 = {
-  data: unknown
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse200 = {
+  data: TenantConfigurationPlan
   status: 200
 }
 
-export type publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse422 = {
-  data: HTTPValidationError
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponseSuccess = (publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse200) & {
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponseSuccess = (planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse200) & {
   headers: Headers;
 };
-export type publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponseError = (publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse422) & {
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponseError = (planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse400 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse401 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse403 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse404 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse409 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse412 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse422 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse429 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse500 | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse503) & {
   headers: Headers;
 };
 
-export type publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse = (publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponseSuccess | publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponseError)
+export type planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse = (planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponseSuccess | planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponseError)
 
-export const getPublishV1ScopesProfileProfileKeyComponentsKindPublishPostUrl = (profileKey: string,
-    kind: string,) => {
-
+export const getPlanConfigurationManagementV1TenantsTenantIdConfigurationPlanPostUrl = (tenantId: string,) => {
 
 
 
-  return `/control-plane/scopes/profile/${profileKey}/components/${kind}/publish`
+
+  return `/management/v1/tenants/${tenantId}/configuration/plan`
 }
 
 /**
- * @summary Publish
+ * @summary Plan Configuration
  */
-export const publishV1ScopesProfileProfileKeyComponentsKindPublishPost = async (profileKey: string,
-    kind: string,
-    publishRequest: PublishRequest, options?: RequestInit): Promise<publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse> => {
+export const planConfigurationManagementV1TenantsTenantIdConfigurationPlanPost = async (tenantId: string,
+    tenantConfigurationDesired: TenantConfigurationDesired, options?: RequestInit): Promise<planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse> => {
 
-  const res = await fetch(getPublishV1ScopesProfileProfileKeyComponentsKindPublishPostUrl(profileKey,kind),
+  const res = await fetch(getPlanConfigurationManagementV1TenantsTenantIdConfigurationPlanPostUrl(tenantId),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(publishRequest)
+    body: JSON.stringify(tenantConfigurationDesired)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as publishV1ScopesProfileProfileKeyComponentsKindPublishPostResponse
+  const data: planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as planConfigurationManagementV1TenantsTenantIdConfigurationPlanPostResponse
 }
 
 
-export type revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse200 = {
-  data: unknown
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse200 = {
+  data: TenantConfigurationPublishResult
   status: 200
 }
 
-export type revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse422 = {
-  data: HTTPValidationError
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponseSuccess = (revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse200) & {
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponseSuccess = (publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse200) & {
   headers: Headers;
 };
-export type revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponseError = (revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse422) & {
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponseError = (publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse400 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse401 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse403 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse404 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse409 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse412 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse422 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse429 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse500 | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse503) & {
   headers: Headers;
 };
 
-export type revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse = (revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponseSuccess | revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponseError)
+export type publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse = (publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponseSuccess | publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponseError)
 
-export const getRevisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetUrl = (profileKey: string,
-    kind: string,
-    params?: RevisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getPublishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostUrl = (tenantId: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/control-plane/scopes/profile/${profileKey}/components/${kind}/revisions?${stringifiedParams}` : `/control-plane/scopes/profile/${profileKey}/components/${kind}/revisions`
+  return `/management/v1/tenants/${tenantId}/configuration/publish`
 }
 
 /**
- * @summary Revisions
+ * @summary Publish Configuration
  */
-export const revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGet = async (profileKey: string,
-    kind: string,
-    params?: RevisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetParams, options?: RequestInit): Promise<revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse> => {
+export const publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPost = async (tenantId: string, options?: RequestInit): Promise<publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse> => {
 
-  const res = await fetch(getRevisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetUrl(profileKey,kind,params),
+  const res = await fetch(getPublishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostUrl(tenantId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as publishConfigurationManagementV1TenantsTenantIdConfigurationPublishPostResponse
+}
+
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse200 = {
+  data: IntegrationConnectionResponse[]
+  status: 200
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponseSuccess = (listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse200) & {
+  headers: Headers;
+};
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponseError = (listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse400 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse401 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse403 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse404 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse409 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse412 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse422 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse429 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse500 | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse503) & {
+  headers: Headers;
+};
+
+export type listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse = (listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponseSuccess | listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponseError)
+
+export const getListIntegrationsManagementV1TenantsTenantIdIntegrationsGetUrl = (tenantId: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/integrations`
+}
+
+/**
+ * @summary List Integrations
+ */
+export const listIntegrationsManagementV1TenantsTenantIdIntegrationsGet = async (tenantId: string, options?: RequestInit): Promise<listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse> => {
+
+  const res = await fetch(getListIntegrationsManagementV1TenantsTenantIdIntegrationsGetUrl(tenantId),
   {
     ...options,
     method: 'GET'
@@ -2361,151 +8359,186 @@ export const revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGet = asyn
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revisionsV1ScopesProfileProfileKeyComponentsKindRevisionsGetResponse
+  const data: listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listIntegrationsManagementV1TenantsTenantIdIntegrationsGetResponse
 }
 
 
-export type revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse200 = {
-  data: unknown
-  status: 200
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse201 = {
+  data: IntegrationConnectionResponse
+  status: 201
 }
 
-export type revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse422 = {
-  data: HTTPValidationError
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponseSuccess = (revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse200) & {
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponseSuccess = (createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse201) & {
   headers: Headers;
 };
-export type revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponseError = (revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse422) & {
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponseError = (createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse400 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse401 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse403 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse404 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse409 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse412 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse422 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse429 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse500 | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse503) & {
   headers: Headers;
 };
 
-export type revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse = (revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponseSuccess | revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponseError)
+export type createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse = (createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponseSuccess | createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponseError)
 
-export const getRevisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetUrl = (profileKey: string,
-    kind: string,
-    revisionNumber: number,) => {
+export const getCreateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostUrl = (tenantId: string,) => {
 
 
 
 
-  return `/control-plane/scopes/profile/${profileKey}/components/${kind}/revisions/${revisionNumber}`
+  return `/management/v1/tenants/${tenantId}/integrations`
 }
 
 /**
- * @summary Revision
+ * @summary Create Integration Connection
  */
-export const revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGet = async (profileKey: string,
-    kind: string,
-    revisionNumber: number, options?: RequestInit): Promise<revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse> => {
+export const createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPost = async (tenantId: string,
+    integrationConnectionCreate: IntegrationConnectionCreate, options?: RequestInit): Promise<createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse> => {
 
-  const res = await fetch(getRevisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetUrl(profileKey,kind,revisionNumber),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revisionV1ScopesProfileProfileKeyComponentsKindRevisionsRevisionNumberGetResponse
-}
-
-
-export type rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponseSuccess = (rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse200) & {
-  headers: Headers;
-};
-export type rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponseError = (rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse422) & {
-  headers: Headers;
-};
-
-export type rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse = (rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponseSuccess | rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponseError)
-
-export const getRollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostUrl = (profileKey: string,
-    kind: string,) => {
-
-
-
-
-  return `/control-plane/scopes/profile/${profileKey}/components/${kind}/rollback`
-}
-
-/**
- * @summary Rollback
- */
-export const rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPost = async (profileKey: string,
-    kind: string,
-    rollbackRequest: RollbackRequest, options?: RequestInit): Promise<rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse> => {
-
-  const res = await fetch(getRollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostUrl(profileKey,kind),
+  const res = await fetch(getCreateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostUrl(tenantId),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(rollbackRequest)
+    body: JSON.stringify(integrationConnectionCreate)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as rollbackV1ScopesProfileProfileKeyComponentsKindRollbackPostResponse
+  const data: createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createIntegrationConnectionManagementV1TenantsTenantIdIntegrationsPostResponse
 }
 
 
-export type getComponentV1ScopesTenantTenantIdComponentsKindGetResponse200 = {
-  data: unknown
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse200 = {
+  data: IntegrationConnectionResponse
   status: 200
 }
 
-export type getComponentV1ScopesTenantTenantIdComponentsKindGetResponse422 = {
-  data: HTTPValidationError
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type getComponentV1ScopesTenantTenantIdComponentsKindGetResponseSuccess = (getComponentV1ScopesTenantTenantIdComponentsKindGetResponse200) & {
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponseSuccess = (getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse200) & {
   headers: Headers;
 };
-export type getComponentV1ScopesTenantTenantIdComponentsKindGetResponseError = (getComponentV1ScopesTenantTenantIdComponentsKindGetResponse422) & {
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponseError = (getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse400 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse401 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse403 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse404 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse409 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse412 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse422 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse429 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse500 | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse503) & {
   headers: Headers;
 };
 
-export type getComponentV1ScopesTenantTenantIdComponentsKindGetResponse = (getComponentV1ScopesTenantTenantIdComponentsKindGetResponseSuccess | getComponentV1ScopesTenantTenantIdComponentsKindGetResponseError)
+export type getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse = (getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponseSuccess | getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponseError)
 
-export const getGetComponentV1ScopesTenantTenantIdComponentsKindGetUrl = (tenantId: string,
-    kind: string,) => {
-
-
+export const getGetIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetUrl = (tenantId: string,
+    id: string,) => {
 
 
-  return `/control-plane/scopes/tenant/${tenantId}/components/${kind}`
+
+
+  return `/management/v1/tenants/${tenantId}/integrations/${id}`
 }
 
 /**
- * @summary Get Component
+ * @summary Get Integration Connection
  */
-export const getComponentV1ScopesTenantTenantIdComponentsKindGet = async (tenantId: string,
-    kind: string, options?: RequestInit): Promise<getComponentV1ScopesTenantTenantIdComponentsKindGetResponse> => {
+export const getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGet = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse> => {
 
-  const res = await fetch(getGetComponentV1ScopesTenantTenantIdComponentsKindGetUrl(tenantId,kind),
+  const res = await fetch(getGetIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetUrl(tenantId,id),
   {
     ...options,
     method: 'GET'
@@ -2517,321 +8550,474 @@ export const getComponentV1ScopesTenantTenantIdComponentsKindGet = async (tenant
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: getComponentV1ScopesTenantTenantIdComponentsKindGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getComponentV1ScopesTenantTenantIdComponentsKindGetResponse
+  const data: getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdGetResponse
 }
 
 
-export type activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse200 = {
-  data: unknown
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse200 = {
+  data: IntegrationConnectionResponse
   status: 200
 }
 
-export type activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse422 = {
-  data: HTTPValidationError
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type activeV1ScopesTenantTenantIdComponentsKindActiveGetResponseSuccess = (activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse200) & {
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponseSuccess = (updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse200) & {
   headers: Headers;
 };
-export type activeV1ScopesTenantTenantIdComponentsKindActiveGetResponseError = (activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse422) & {
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponseError = (updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse400 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse401 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse403 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse404 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse409 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse412 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse422 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse429 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse500 | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse503) & {
   headers: Headers;
 };
 
-export type activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse = (activeV1ScopesTenantTenantIdComponentsKindActiveGetResponseSuccess | activeV1ScopesTenantTenantIdComponentsKindActiveGetResponseError)
+export type updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse = (updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponseSuccess | updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponseError)
 
-export const getActiveV1ScopesTenantTenantIdComponentsKindActiveGetUrl = (tenantId: string,
-    kind: string,) => {
-
-
+export const getUpdateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutUrl = (tenantId: string,
+    id: string,) => {
 
 
-  return `/control-plane/scopes/tenant/${tenantId}/components/${kind}/active`
+
+
+  return `/management/v1/tenants/${tenantId}/integrations/${id}`
 }
 
 /**
- * @summary Active
+ * @summary Update Integration Connection
  */
-export const activeV1ScopesTenantTenantIdComponentsKindActiveGet = async (tenantId: string,
-    kind: string, options?: RequestInit): Promise<activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse> => {
+export const updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPut = async (tenantId: string,
+    id: string,
+    integrationConnectionUpdate: IntegrationConnectionUpdate, options?: RequestInit): Promise<updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse> => {
 
-  const res = await fetch(getActiveV1ScopesTenantTenantIdComponentsKindActiveGetUrl(tenantId,kind),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as activeV1ScopesTenantTenantIdComponentsKindActiveGetResponse
-}
-
-
-export type discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse204 = {
-  data: void
-  status: 204
-}
-
-export type discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponseSuccess = (discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse204) & {
-  headers: Headers;
-};
-export type discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponseError = (discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse422) & {
-  headers: Headers;
-};
-
-export type discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse = (discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponseSuccess | discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponseError)
-
-export const getDiscardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteUrl = (tenantId: string,
-    kind: string,
-    params: DiscardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/control-plane/scopes/tenant/${tenantId}/components/${kind}/draft?${stringifiedParams}` : `/control-plane/scopes/tenant/${tenantId}/components/${kind}/draft`
-}
-
-/**
- * @summary Discard Draft
- */
-export const discardDraftV1ScopesTenantTenantIdComponentsKindDraftDelete = async (tenantId: string,
-    kind: string,
-    params: DiscardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteParams, options?: RequestInit): Promise<discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse> => {
-
-  const res = await fetch(getDiscardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteUrl(tenantId,kind,params),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as discardDraftV1ScopesTenantTenantIdComponentsKindDraftDeleteResponse
-}
-
-
-export type getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponseSuccess = (getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse200) & {
-  headers: Headers;
-};
-export type getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponseError = (getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse422) & {
-  headers: Headers;
-};
-
-export type getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse = (getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponseSuccess | getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponseError)
-
-export const getGetDraftV1ScopesTenantTenantIdComponentsKindDraftGetUrl = (tenantId: string,
-    kind: string,) => {
-
-
-
-
-  return `/control-plane/scopes/tenant/${tenantId}/components/${kind}/draft`
-}
-
-/**
- * @summary Get Draft
- */
-export const getDraftV1ScopesTenantTenantIdComponentsKindDraftGet = async (tenantId: string,
-    kind: string, options?: RequestInit): Promise<getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse> => {
-
-  const res = await fetch(getGetDraftV1ScopesTenantTenantIdComponentsKindDraftGetUrl(tenantId,kind),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getDraftV1ScopesTenantTenantIdComponentsKindDraftGetResponse
-}
-
-
-export type saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse200 = {
-  data: unknown
-  status: 200
-}
-
-export type saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse422 = {
-  data: HTTPValidationError
-  status: 422
-}
-
-export type saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponseSuccess = (saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse200) & {
-  headers: Headers;
-};
-export type saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponseError = (saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse422) & {
-  headers: Headers;
-};
-
-export type saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse = (saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponseSuccess | saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponseError)
-
-export const getSaveDraftV1ScopesTenantTenantIdComponentsKindDraftPutUrl = (tenantId: string,
-    kind: string,) => {
-
-
-
-
-  return `/control-plane/scopes/tenant/${tenantId}/components/${kind}/draft`
-}
-
-/**
- * @summary Save Draft
- */
-export const saveDraftV1ScopesTenantTenantIdComponentsKindDraftPut = async (tenantId: string,
-    kind: string,
-    saveDraftRequest: SaveDraftRequest, options?: RequestInit): Promise<saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse> => {
-
-  const res = await fetch(getSaveDraftV1ScopesTenantTenantIdComponentsKindDraftPutUrl(tenantId,kind),
+  const res = await fetch(getUpdateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutUrl(tenantId,id),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(saveDraftRequest)
+    body: JSON.stringify(integrationConnectionUpdate)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as saveDraftV1ScopesTenantTenantIdComponentsKindDraftPutResponse
+  const data: updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateIntegrationConnectionManagementV1TenantsTenantIdIntegrationsIdPutResponse
 }
 
 
-export type publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse200 = {
-  data: unknown
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse200 = {
+  data: IntegrationConnectionResponse
   status: 200
 }
 
-export type publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse422 = {
-  data: HTTPValidationError
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type publishV1ScopesTenantTenantIdComponentsKindPublishPostResponseSuccess = (publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse200) & {
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponseSuccess = (disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse200) & {
   headers: Headers;
 };
-export type publishV1ScopesTenantTenantIdComponentsKindPublishPostResponseError = (publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse422) & {
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponseError = (disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse400 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse401 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse403 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse404 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse409 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse412 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse422 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse429 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse500 | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse503) & {
   headers: Headers;
 };
 
-export type publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse = (publishV1ScopesTenantTenantIdComponentsKindPublishPostResponseSuccess | publishV1ScopesTenantTenantIdComponentsKindPublishPostResponseError)
+export type disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse = (disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponseSuccess | disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponseError)
 
-export const getPublishV1ScopesTenantTenantIdComponentsKindPublishPostUrl = (tenantId: string,
-    kind: string,) => {
-
-
+export const getDisableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostUrl = (tenantId: string,
+    id: string,) => {
 
 
-  return `/control-plane/scopes/tenant/${tenantId}/components/${kind}/publish`
+
+
+  return `/management/v1/tenants/${tenantId}/integrations/${id}/disable`
 }
 
 /**
- * @summary Publish
+ * @summary Disable Integration
  */
-export const publishV1ScopesTenantTenantIdComponentsKindPublishPost = async (tenantId: string,
-    kind: string,
-    publishRequest: PublishRequest, options?: RequestInit): Promise<publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse> => {
+export const disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePost = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse> => {
 
-  const res = await fetch(getPublishV1ScopesTenantTenantIdComponentsKindPublishPostUrl(tenantId,kind),
+  const res = await fetch(getDisableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostUrl(tenantId,id),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(publishRequest)
+    method: 'POST'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as publishV1ScopesTenantTenantIdComponentsKindPublishPostResponse
+  const data: disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableIntegrationManagementV1TenantsTenantIdIntegrationsIdDisablePostResponse
 }
 
 
-export type revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse200 = {
-  data: unknown
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse200 = {
+  data: IntegrationConnectionResponse
   status: 200
 }
 
-export type revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse422 = {
-  data: HTTPValidationError
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponseSuccess = (revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse200) & {
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponseSuccess = (enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse200) & {
   headers: Headers;
 };
-export type revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponseError = (revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse422) & {
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponseError = (enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse400 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse401 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse403 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse404 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse409 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse412 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse422 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse429 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse500 | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse503) & {
   headers: Headers;
 };
 
-export type revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse = (revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponseSuccess | revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponseError)
+export type enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse = (enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponseSuccess | enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponseError)
 
-export const getRevisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetUrl = (tenantId: string,
-    kind: string,
-    params?: RevisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getEnableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostUrl = (tenantId: string,
+    id: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/control-plane/scopes/tenant/${tenantId}/components/${kind}/revisions?${stringifiedParams}` : `/control-plane/scopes/tenant/${tenantId}/components/${kind}/revisions`
+  return `/management/v1/tenants/${tenantId}/integrations/${id}/enable`
 }
 
 /**
- * @summary Revisions
+ * @summary Enable Integration
  */
-export const revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGet = async (tenantId: string,
-    kind: string,
-    params?: RevisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetParams, options?: RequestInit): Promise<revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse> => {
+export const enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePost = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse> => {
 
-  const res = await fetch(getRevisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetUrl(tenantId,kind,params),
+  const res = await fetch(getEnableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostUrl(tenantId,id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableIntegrationManagementV1TenantsTenantIdIntegrationsIdEnablePostResponse
+}
+
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse200 = {
+  data: IntegrationValidationResponse
+  status: 200
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponseSuccess = (validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse200) & {
+  headers: Headers;
+};
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponseError = (validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse400 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse401 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse403 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse404 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse409 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse412 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse422 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse429 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse500 | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse503) & {
+  headers: Headers;
+};
+
+export type validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse = (validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponseSuccess | validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponseError)
+
+export const getValidateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostUrl = (tenantId: string,
+    id: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/integrations/${id}/validate`
+}
+
+/**
+ * @summary Validate Integration
+ */
+export const validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePost = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse> => {
+
+  const res = await fetch(getValidateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostUrl(tenantId,id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as validateIntegrationManagementV1TenantsTenantIdIntegrationsIdValidatePostResponse
+}
+
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse200 = {
+  data: HandoffDestinationResponse[]
+  status: 200
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponseSuccess = (listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse200) & {
+  headers: Headers;
+};
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponseError = (listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse400 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse401 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse403 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse404 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse409 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse412 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse422 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse429 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse500 | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse503) & {
+  headers: Headers;
+};
+
+export type listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse = (listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponseSuccess | listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponseError)
+
+export const getListHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetUrl = (tenantId: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/handoff-destinations`
+}
+
+/**
+ * @summary List Handoff Destinations
+ */
+export const listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGet = async (tenantId: string, options?: RequestInit): Promise<listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse> => {
+
+  const res = await fetch(getListHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetUrl(tenantId),
   {
     ...options,
     method: 'GET'
@@ -2843,48 +9029,186 @@ export const revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGet = async (
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revisionsV1ScopesTenantTenantIdComponentsKindRevisionsGetResponse
+  const data: listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listHandoffDestinationsManagementV1TenantsTenantIdTelephonyHandoffDestinationsGetResponse
 }
 
 
-export type revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse200 = {
-  data: unknown
-  status: 200
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse201 = {
+  data: HandoffDestinationResponse
+  status: 201
 }
 
-export type revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse422 = {
-  data: HTTPValidationError
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponseSuccess = (revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse200) & {
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponseSuccess = (createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse201) & {
   headers: Headers;
 };
-export type revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponseError = (revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse422) & {
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponseError = (createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse400 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse401 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse403 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse404 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse409 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse412 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse422 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse429 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse500 | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse503) & {
   headers: Headers;
 };
 
-export type revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse = (revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponseSuccess | revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponseError)
+export type createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse = (createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponseSuccess | createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponseError)
 
-export const getRevisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetUrl = (tenantId: string,
-    kind: string,
-    revisionNumber: number,) => {
+export const getCreateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostUrl = (tenantId: string,) => {
 
 
 
 
-  return `/control-plane/scopes/tenant/${tenantId}/components/${kind}/revisions/${revisionNumber}`
+  return `/management/v1/tenants/${tenantId}/telephony/handoff-destinations`
 }
 
 /**
- * @summary Revision
+ * @summary Create Handoff Destination
  */
-export const revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGet = async (tenantId: string,
-    kind: string,
-    revisionNumber: number, options?: RequestInit): Promise<revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse> => {
+export const createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPost = async (tenantId: string,
+    handoffDestinationCreate: HandoffDestinationCreate, options?: RequestInit): Promise<createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse> => {
 
-  const res = await fetch(getRevisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetUrl(tenantId,kind,revisionNumber),
+  const res = await fetch(getCreateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostUrl(tenantId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(handoffDestinationCreate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsPostResponse
+}
+
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse200 = {
+  data: HandoffDestinationResponse
+  status: 200
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponseSuccess = (getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse200) & {
+  headers: Headers;
+};
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponseError = (getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse400 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse401 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse403 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse404 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse409 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse412 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse422 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse429 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse500 | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse503) & {
+  headers: Headers;
+};
+
+export type getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse = (getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponseSuccess | getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponseError)
+
+export const getGetHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetUrl = (tenantId: string,
+    id: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/handoff-destinations/${id}`
+}
+
+/**
+ * @summary Get Handoff Destination
+ */
+export const getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGet = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse> => {
+
+  const res = await fetch(getGetHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetUrl(tenantId,id),
   {
     ...options,
     method: 'GET'
@@ -2896,60 +9220,774 @@ export const revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumber
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as revisionV1ScopesTenantTenantIdComponentsKindRevisionsRevisionNumberGetResponse
+  const data: getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdGetResponse
 }
 
 
-export type rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse200 = {
-  data: unknown
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse200 = {
+  data: HandoffDestinationResponse
   status: 200
 }
 
-export type rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse422 = {
-  data: HTTPValidationError
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse422 = {
+  data: ErrorResponse
   status: 422
 }
 
-export type rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponseSuccess = (rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse200) & {
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponseSuccess = (updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse200) & {
   headers: Headers;
 };
-export type rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponseError = (rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse422) & {
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponseError = (updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse400 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse401 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse403 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse404 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse409 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse412 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse422 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse429 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse500 | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse503) & {
   headers: Headers;
 };
 
-export type rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse = (rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponseSuccess | rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponseError)
+export type updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse = (updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponseSuccess | updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponseError)
 
-export const getRollbackV1ScopesTenantTenantIdComponentsKindRollbackPostUrl = (tenantId: string,
-    kind: string,) => {
-
-
+export const getUpdateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutUrl = (tenantId: string,
+    id: string,) => {
 
 
-  return `/control-plane/scopes/tenant/${tenantId}/components/${kind}/rollback`
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/handoff-destinations/${id}`
 }
 
 /**
- * @summary Rollback
+ * @summary Update Handoff Destination
  */
-export const rollbackV1ScopesTenantTenantIdComponentsKindRollbackPost = async (tenantId: string,
-    kind: string,
-    rollbackRequest: RollbackRequest, options?: RequestInit): Promise<rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse> => {
+export const updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPut = async (tenantId: string,
+    id: string,
+    handoffDestinationUpdate: HandoffDestinationUpdate, options?: RequestInit): Promise<updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse> => {
 
-  const res = await fetch(getRollbackV1ScopesTenantTenantIdComponentsKindRollbackPostUrl(tenantId,kind),
+  const res = await fetch(getUpdateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutUrl(tenantId,id),
   {
     ...options,
-    method: 'POST',
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(rollbackRequest)
+    body: JSON.stringify(handoffDestinationUpdate)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as rollbackV1ScopesTenantTenantIdComponentsKindRollbackPostResponse
+  const data: updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdPutResponse
+}
+
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse200 = {
+  data: HandoffDestinationResponse
+  status: 200
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponseSuccess = (disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse200) & {
+  headers: Headers;
+};
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponseError = (disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse400 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse401 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse403 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse404 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse409 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse412 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse422 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse429 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse500 | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse503) & {
+  headers: Headers;
+};
+
+export type disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse = (disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponseSuccess | disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponseError)
+
+export const getDisableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostUrl = (tenantId: string,
+    id: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/handoff-destinations/${id}/disable`
+}
+
+/**
+ * @summary Disable Handoff Destination
+ */
+export const disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePost = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse> => {
+
+  const res = await fetch(getDisableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostUrl(tenantId,id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdDisablePostResponse
+}
+
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse200 = {
+  data: HandoffDestinationResponse
+  status: 200
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponseSuccess = (enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse200) & {
+  headers: Headers;
+};
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponseError = (enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse400 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse401 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse403 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse404 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse409 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse412 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse422 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse429 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse500 | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse503) & {
+  headers: Headers;
+};
+
+export type enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse = (enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponseSuccess | enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponseError)
+
+export const getEnableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostUrl = (tenantId: string,
+    id: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/handoff-destinations/${id}/enable`
+}
+
+/**
+ * @summary Enable Handoff Destination
+ */
+export const enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePost = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse> => {
+
+  const res = await fetch(getEnableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostUrl(tenantId,id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enableHandoffDestinationManagementV1TenantsTenantIdTelephonyHandoffDestinationsIdEnablePostResponse
+}
+
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse200 = {
+  data: PhoneNumberAssignmentResponse[]
+  status: 200
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponseSuccess = (listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse200) & {
+  headers: Headers;
+};
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponseError = (listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse400 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse401 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse403 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse404 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse409 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse412 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse422 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse429 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse500 | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse503) & {
+  headers: Headers;
+};
+
+export type listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse = (listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponseSuccess | listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponseError)
+
+export const getListPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetUrl = (tenantId: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/phone-number-assignments`
+}
+
+/**
+ * @summary List Phone Number Assignments
+ */
+export const listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGet = async (tenantId: string, options?: RequestInit): Promise<listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse> => {
+
+  const res = await fetch(getListPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetUrl(tenantId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGetResponse
+}
+
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse201 = {
+  data: PhoneNumberAssignmentResponse
+  status: 201
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponseSuccess = (createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse201) & {
+  headers: Headers;
+};
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponseError = (createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse400 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse401 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse403 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse404 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse409 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse412 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse422 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse429 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse500 | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse503) & {
+  headers: Headers;
+};
+
+export type createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse = (createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponseSuccess | createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponseError)
+
+export const getCreatePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostUrl = (tenantId: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/phone-number-assignments`
+}
+
+/**
+ * @summary Create Phone Number Assignment
+ */
+export const createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPost = async (tenantId: string,
+    phoneNumberAssignmentCreate: PhoneNumberAssignmentCreate, options?: RequestInit): Promise<createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse> => {
+
+  const res = await fetch(getCreatePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostUrl(tenantId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(phoneNumberAssignmentCreate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPostResponse
+}
+
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse200 = {
+  data: PhoneNumberAssignmentResponse
+  status: 200
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponseSuccess = (getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse200) & {
+  headers: Headers;
+};
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponseError = (getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse400 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse401 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse403 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse404 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse409 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse412 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse422 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse429 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse500 | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse503) & {
+  headers: Headers;
+};
+
+export type getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse = (getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponseSuccess | getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponseError)
+
+export const getGetPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetUrl = (tenantId: string,
+    id: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/phone-number-assignments/${id}`
+}
+
+/**
+ * @summary Get Phone Number Assignment
+ */
+export const getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGet = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse> => {
+
+  const res = await fetch(getGetPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetUrl(tenantId,id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdGetResponse
+}
+
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse200 = {
+  data: PhoneNumberAssignmentResponse
+  status: 200
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponseSuccess = (disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse200) & {
+  headers: Headers;
+};
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponseError = (disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse400 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse401 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse403 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse404 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse409 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse412 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse422 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse429 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse500 | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse503) & {
+  headers: Headers;
+};
+
+export type disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse = (disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponseSuccess | disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponseError)
+
+export const getDisablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostUrl = (tenantId: string,
+    id: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/phone-number-assignments/${id}/disable`
+}
+
+/**
+ * @summary Disable Phone Number Assignment
+ */
+export const disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePost = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse> => {
+
+  const res = await fetch(getDisablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostUrl(tenantId,id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as disablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdDisablePostResponse
+}
+
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse200 = {
+  data: PhoneNumberAssignmentResponse
+  status: 200
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse400 = {
+  data: ErrorResponse
+  status: 400
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse401 = {
+  data: ErrorResponse
+  status: 401
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse403 = {
+  data: ErrorResponse
+  status: 403
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse409 = {
+  data: ErrorResponse
+  status: 409
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse412 = {
+  data: ErrorResponse
+  status: 412
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse422 = {
+  data: ErrorResponse
+  status: 422
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse429 = {
+  data: ErrorResponse
+  status: 429
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse500 = {
+  data: ErrorResponse
+  status: 500
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse503 = {
+  data: ErrorResponse
+  status: 503
+}
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponseSuccess = (enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse200) & {
+  headers: Headers;
+};
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponseError = (enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse400 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse401 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse403 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse404 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse409 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse412 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse422 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse429 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse500 | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse503) & {
+  headers: Headers;
+};
+
+export type enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse = (enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponseSuccess | enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponseError)
+
+export const getEnablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostUrl = (tenantId: string,
+    id: string,) => {
+
+
+
+
+  return `/management/v1/tenants/${tenantId}/telephony/phone-number-assignments/${id}/enable`
+}
+
+/**
+ * @summary Enable Phone Number Assignment
+ */
+export const enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePost = async (tenantId: string,
+    id: string, options?: RequestInit): Promise<enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse> => {
+
+  const res = await fetch(getEnablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostUrl(tenantId,id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePostResponse
 }
 
 

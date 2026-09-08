@@ -6,6 +6,7 @@
  */
 
 export interface LLMCapabilitiesWrite {
+  kind: 'llm';
   supports_reasoning_effort: boolean;
   supports_temperature: boolean;
 }
