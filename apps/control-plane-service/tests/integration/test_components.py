@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
 
@@ -309,8 +310,16 @@ async def test_lifecycle_concurrency_and_http(migrated_database_url: str) -> Non
                 yield
 
         app = create_http_app(Lifecycle(), components)  # type: ignore[arg-type]
+        app.state.settings = SimpleNamespace(
+            control_plane_management_token=SimpleNamespace(
+                get_secret_value=lambda: "management-secret"
+            ),
+            control_plane_management_actor="http",
+        )
         async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": "Bearer management-secret"},
         ) as client:
             base = "/v1/scopes/tenant/tenant-http/components/example.settings"
             response = await client.put(
