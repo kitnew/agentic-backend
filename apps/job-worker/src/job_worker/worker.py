@@ -12,10 +12,11 @@ import time
 from base64 import b64encode
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, cast
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 import jsonata  # type: ignore[import-untyped]
@@ -26,21 +27,16 @@ from agentic_observability.domain import CoreMetrics, domain_span
 from agentic_observability.logging import install_trace_context_filter
 from agentic_observability.propagation import process_message_span, trace_context_fields
 from contracts import (
-    GoogleSheetsAppendValuesPlan,
-    GoogleSheetsAppendValuesResult,
+    CANONICAL_FIELD_NORMALIZERS,
+    HttpBodyBinding,
     HttpRequestPlanV1,
     HttpRequestResult,
+    IntegrationExecutionMaterial,
     IntegrationJob,
-    ManagedWebhookFailureResponse,
-    ManagedWebhookPostJsonPlan,
-    ManagedWebhookPostJsonResult,
-    ManagedWebhookSuccessResponse,
-    RuntimeIntegrationMaterial,
     WorkerError,
+    WorkerExecutionContext,
     WorkerResultReport,
 )
-from google.auth.transport.requests import Request as GoogleAuthRequest
-from google.oauth2 import service_account
 from jsonschema import (  # type: ignore[import-untyped]
     Draft202012Validator,
     FormatChecker,
@@ -58,10 +54,9 @@ from redis.asyncio import Redis
 from redis.exceptions import ResponseError
 
 logger = logging.getLogger(__name__)
-SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
 MAX_STRUCTURED_PAYLOAD_BYTES = 64_000
 MAX_OUTBOUND_ARTIFACT_SOURCE_BYTES = 32 * 1024 * 1024
-MAX_WEBHOOK_RESPONSE_BYTES = 64_000
+MAX_HTTP_RESPONSE_BYTES = 64_000
 
 
 class ExecutionError(RuntimeError):
@@ -82,7 +77,7 @@ class Settings:
     backend_url: str
     backend_audience: str
     service_secret: str
-    allow_insecure_webhooks: bool = False
+    allow_insecure_http_execution: bool = False
     provider_timeout_seconds: float = 10.0
     max_retries: int = 3
     stale_idle_ms: int = 30_000
@@ -119,8 +114,8 @@ class Settings:
             backend_url=os.environ["BACKEND_CORE_URL"].rstrip("/"),
             backend_audience=os.getenv("INTERNAL_API_AUDIENCE", "backend-core"),
             service_secret=os.environ["JOB_WORKER_SERVICE_SECRET"],
-            allow_insecure_webhooks=os.getenv(
-                "ALLOW_INSECURE_MANAGED_WEBHOOKS", "false"
+            allow_insecure_http_execution=os.getenv(
+                "ALLOW_INSECURE_HTTP_EXECUTION", "false"
             ).lower()
             == "true",
             provider_timeout_seconds=float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "10")),
@@ -207,7 +202,7 @@ class RecordingStorage:
 
 
 @dataclass(frozen=True)
-class ResolvedManagedWebhookConnection:
+class ResolvedHttpConnection:
     url: str
     api_key: str | None
     api_key_header: str | None
@@ -215,7 +210,7 @@ class ResolvedManagedWebhookConnection:
     allowed_hosts: frozenset[str]
 
 
-class ManagedWebhookPostJsonHandler:
+class HttpExecutionHandler:
     def __init__(
         self,
         client: httpx.AsyncClient,
@@ -227,108 +222,16 @@ class ManagedWebhookPostJsonHandler:
 
     async def execute(
         self,
-        plan: ManagedWebhookPostJsonPlan | HttpRequestPlanV1,
-        material: RuntimeIntegrationMaterial,
+        plan: HttpRequestPlanV1,
+        material: IntegrationExecutionMaterial,
         bodies: dict[str, AsyncIterator[bytes]] | None = None,
-    ) -> ManagedWebhookPostJsonResult | HttpRequestResult:
-        if isinstance(plan, HttpRequestPlanV1):
-            return await self._execute_http(plan, material, bodies)
-        connection = self._connection(plan, material)
-        parsed = urlparse(connection.url)
-        if parsed.scheme not in (
-            {"https", "http"} if self._allow_insecure else {"https"}
-        ):
-            raise ExecutionError(
-                "provider_permanent_error",
-                "Managed webhook requires HTTPS",
-                transient=False,
-            )
-        if not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
-            raise ExecutionError(
-                "provider_permanent_error",
-                "Managed webhook URL is invalid",
-                transient=False,
-            )
-        try:
-            hostname = self._normalized_hostname(parsed.hostname)
-            port = parsed.port
-        except ValueError as error:
-            raise ExecutionError(
-                "provider_permanent_error",
-                "Managed webhook URL is invalid",
-                transient=False,
-            ) from error
-        try:
-            address = ipaddress.ip_address(hostname)
-        except ValueError:
-            address = None
-        if port not in {None, 443 if parsed.scheme == "https" else 80}:
-            raise ExecutionError(
-                "provider_permanent_error",
-                "Managed webhook URL port is not allowed",
-                transient=False,
-            )
-        if address is not None or hostname not in connection.allowed_hosts:
-            raise ExecutionError(
-                "provider_permanent_error",
-                "Managed webhook destination is not allowed",
-                transient=False,
-            )
-        encoded = self._bounded_payload(plan)
-        if len(encoded.encode()) > 64_000:
-            raise ExecutionError(
-                "request_too_large",
-                "Managed webhook request is too large",
-                transient=False,
-            )
-        if plan.body_bindings:
-            body_streams = bodies or {}
-            if {binding.payload_path for binding in plan.body_bindings} != set(
-                body_streams
-            ):
-                raise ExecutionError(
-                    "artifact_body_unavailable",
-                    "Managed webhook artifact body is unavailable",
-                    transient=False,
-                )
-            content: bytes | AsyncIterator[bytes] = self._stream_payload(
-                plan, body_streams
-            )
-        else:
-            content = encoded.encode()
-        headers = dict(connection.static_headers)
-        headers.update({
-            "Content-Type": "application/json",
-            "X-Operation-Id": str(plan.operation_id),
-        })
-        if connection.api_key and connection.api_key_header:
-            headers[connection.api_key_header] = connection.api_key
-        try:
-            async with self._client.stream(
-                "POST",
-                connection.url,
-                headers=headers,
-                content=content,
-                timeout=plan.timeout_seconds,
-                follow_redirects=False,
-            ) as response:
-                self._validate_status(response.status_code)
-                return await self._result(plan, response)
-        except httpx.TimeoutException as error:
-            raise ExecutionError(
-                "provider_timeout", "Managed webhook timed out", transient=True
-            ) from error
-        except httpx.TransportError as error:
-            raise ExecutionError(
-                "provider_transient_error",
-                "Managed webhook transport failed",
-                transient=True,
-            ) from error
+    ) -> HttpRequestResult:
+        return await self._execute_http(plan, material, bodies)
 
     async def _execute_http(
         self,
         plan: HttpRequestPlanV1,
-        material: RuntimeIntegrationMaterial,
+        material: IntegrationExecutionMaterial,
         bodies: dict[str, AsyncIterator[bytes]] | None,
     ) -> HttpRequestResult:
         connection = self._connection(plan, material)
@@ -357,7 +260,9 @@ class ManagedWebhookPostJsonHandler:
                         transient=False,
                     )
                 if plan.body_bindings:
-                    body_paths = {binding.payload_path for binding in plan.body_bindings}
+                    body_paths = {
+                        binding.payload_path for binding in plan.body_bindings
+                    }
                     if len(body_paths) != len(plan.body_bindings):
                         raise ExecutionError(
                             "artifact_body_invalid",
@@ -375,7 +280,11 @@ class ManagedWebhookPostJsonHandler:
                     body = structured
                 self._set_header(headers, "Content-Type", "application/json")
             elif not isinstance(plan.payload, str):
-                raise ExecutionError("request_mapping_failed", "Text request must evaluate to a string", transient=False)
+                raise ExecutionError(
+                    "request_mapping_failed",
+                    "Text request must evaluate to a string",
+                    transient=False,
+                )
             else:
                 body = plan.payload.encode()
                 if plan.request.content_type:
@@ -397,7 +306,7 @@ class ManagedWebhookPostJsonHandler:
             async with self._client.stream(
                 plan.method,
                 parsed,
-                params=plan.query,
+                params=cast(Any, plan.query),
                 headers=headers,
                 content=body,
                 timeout=plan.timeout_seconds,
@@ -412,21 +321,40 @@ class ManagedWebhookPostJsonHandler:
                     data=data,
                 )
         except httpx.TimeoutException as error:
-            raise ExecutionError("provider_timeout", "HTTP request timed out", transient=True) from error
+            raise ExecutionError(
+                "provider_timeout", "HTTP request timed out", transient=True
+            ) from error
         except httpx.TransportError as error:
-            raise ExecutionError("provider_transient_error", "HTTP transport failed", transient=True) from error
+            raise ExecutionError(
+                "provider_transient_error", "HTTP transport failed", transient=True
+            ) from error
 
     @staticmethod
     def _operation_url(endpoint: str, path: object) -> str:
         if path is None:
             return endpoint
         if not isinstance(path, str) or not path or path.startswith("//"):
-            raise ExecutionError("invalid_http_path", "HTTP operation path is invalid", transient=False)
+            raise ExecutionError(
+                "invalid_http_path", "HTTP operation path is invalid", transient=False
+            )
         parsed = urlparse(path)
-        if parsed.scheme or parsed.netloc or parsed.username or parsed.password or parsed.fragment or parsed.query:
-            raise ExecutionError("invalid_http_path", "HTTP operation path must be relative", transient=False)
+        if (
+            parsed.scheme
+            or parsed.netloc
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+            or parsed.query
+        ):
+            raise ExecutionError(
+                "invalid_http_path",
+                "HTTP operation path must be relative",
+                transient=False,
+            )
         base = urlparse(endpoint)
-        return base._replace(path=base.path.rstrip("/") + "/" + path.lstrip("/")).geturl()
+        return base._replace(
+            path=base.path.rstrip("/") + "/" + path.lstrip("/")
+        ).geturl()
 
     @staticmethod
     def _set_header(headers: dict[str, str], name: str, value: str) -> None:
@@ -439,20 +367,34 @@ class ManagedWebhookPostJsonHandler:
     @staticmethod
     def _validate_url(url: str, allowed_hosts: frozenset[str]) -> str:
         parsed = urlparse(url)
-        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
-            raise ExecutionError("provider_permanent_error", "HTTP URL is invalid", transient=False)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
+        ):
+            raise ExecutionError(
+                "provider_permanent_error", "HTTP URL is invalid", transient=False
+            )
         try:
-            hostname = ManagedWebhookPostJsonHandler._normalized_hostname(parsed.hostname)
+            hostname = HttpExecutionHandler._normalized_hostname(parsed.hostname)
             port = parsed.port
         except ValueError as error:
-            raise ExecutionError("provider_permanent_error", "HTTP URL is invalid", transient=False) from error
+            raise ExecutionError(
+                "provider_permanent_error", "HTTP URL is invalid", transient=False
+            ) from error
         try:
             ipaddress.ip_address(hostname)
             is_ip = True
         except ValueError:
             is_ip = False
         if port not in {None, 443} or is_ip or hostname not in allowed_hosts:
-            raise ExecutionError("provider_permanent_error", "HTTP destination is not allowed", transient=False)
+            raise ExecutionError(
+                "provider_permanent_error",
+                "HTTP destination is not allowed",
+                transient=False,
+            )
         return url
 
     @staticmethod
@@ -460,21 +402,43 @@ class ManagedWebhookPostJsonHandler:
         if 200 <= status_code < 300 or (accepted and status_code in accepted):
             return
         if status_code in {408, 429} or status_code >= 500:
-            raise ExecutionError("provider_transient_error", "HTTP request returned a retryable error", transient=True)
-        raise ExecutionError("provider_permanent_error", "HTTP request returned an unsupported status", transient=False)
+            raise ExecutionError(
+                "provider_transient_error",
+                "HTTP request returned a retryable error",
+                transient=True,
+            )
+        raise ExecutionError(
+            "provider_permanent_error",
+            "HTTP request returned an unsupported status",
+            transient=False,
+        )
 
-    async def _decode_http_response(self, plan: HttpRequestPlanV1, response: httpx.Response) -> object | None:
+    async def _decode_http_response(
+        self, plan: HttpRequestPlanV1, response: httpx.Response
+    ) -> object | None:
         if plan.response.codec == "none":
             body: object = None
         else:
             raw = await self._bounded_response(response)
             try:
-                body = json.loads(raw) if plan.response.codec == "json" else raw.decode()
+                body = (
+                    json.loads(raw) if plan.response.codec == "json" else raw.decode()
+                )
             except (ValueError, UnicodeDecodeError) as error:
-                raise ExecutionError("response_decode_failed", "HTTP response does not match its codec", transient=False) from error
+                raise ExecutionError(
+                    "response_decode_failed",
+                    "HTTP response does not match its codec",
+                    transient=False,
+                ) from error
         if plan.response.mapping is None:
             return body
-        context = {"response": {"status_code": response.status_code, "content_type": response.headers.get("content-type", ""), "body": body}}
+        context: dict[str, object] = {
+            "response": {
+                "status_code": response.status_code,
+                "content_type": response.headers.get("content-type", ""),
+                "body": body,
+            }
+        }
         return self._evaluate_template(plan.response.mapping, context)
 
     @staticmethod
@@ -482,231 +446,92 @@ class ManagedWebhookPostJsonHandler:
         if isinstance(template, dict):
             if set(template) == {"$expr"} and isinstance(template["$expr"], str):
                 return jsonata.Jsonata(template["$expr"]).evaluate(context)
-            return {key: ManagedWebhookPostJsonHandler._evaluate_template(value, context) for key, value in template.items()}
+            return {
+                key: HttpExecutionHandler._evaluate_template(value, context)
+                for key, value in template.items()
+            }
         if isinstance(template, list):
-            return [ManagedWebhookPostJsonHandler._evaluate_template(value, context) for value in template]
+            return [
+                HttpExecutionHandler._evaluate_template(value, context)
+                for value in template
+            ]
         return template
 
     @staticmethod
     def _connection(
-        plan: ManagedWebhookPostJsonPlan, material: RuntimeIntegrationMaterial
-    ) -> ResolvedManagedWebhookConnection:
-        if (
-            material.integration_id != plan.integration_id
-            or material.provider != "http"
-        ):
-            raise ExecutionError(
-                "integration_material_invalid",
-                "Managed webhook integration material is invalid",
-                transient=False,
-            )
-        url = material.endpoint
-        api_key = (material.secret or {}).get("api_key")
-        allowed_hosts = material.allowed_hosts
-        header = material.authentication_header
+        plan: HttpRequestPlanV1,
+        material: IntegrationExecutionMaterial,
+    ) -> ResolvedHttpConnection:
+        config = material.config
+        authentication = config.get("authentication", {})
+        security = config.get("security", {})
+        url = config.get("endpoint")
+        header = (
+            authentication.get("header_name")
+            if isinstance(authentication, dict)
+            and authentication.get("type") == "api_key_header"
+            else None
+        )
+        headers = config.get("headers", {})
+        additional_hosts = (
+            security.get("additional_allowed_hosts", [])
+            if isinstance(security, dict)
+            else []
+        )
         if (
             not isinstance(url, str)
-            or not url
-            or (api_key is not None and not isinstance(api_key, str))
-            or (header is not None and not isinstance(header, str))
-            or not isinstance(allowed_hosts, list)
+            or not isinstance(headers, dict)
+            or not isinstance(additional_hosts, list)
         ):
             raise ExecutionError(
                 "integration_material_invalid",
-                "Managed webhook integration material is invalid",
+                "HTTP integration material is invalid",
                 transient=False,
             )
+        endpoint_host = urlparse(url).hostname
         try:
             hosts = frozenset(
-                ManagedWebhookPostJsonHandler._normalized_hostname(host)
-                for host in allowed_hosts
+                HttpExecutionHandler._normalized_hostname(host)
+                for host in [endpoint_host, *additional_hosts]
             )
         except (TypeError, ValueError) as error:
             raise ExecutionError(
                 "integration_material_invalid",
-                "Managed webhook integration material is invalid",
+                "HTTP integration material is invalid",
                 transient=False,
             ) from error
-        return ResolvedManagedWebhookConnection(url, api_key, header, material.static_headers, hosts)
+        return ResolvedHttpConnection(
+            url,
+            material.secret,
+            header if isinstance(header, str) else None,
+            {str(name): str(value) for name, value in headers.items()},
+            hosts,
+        )
 
     @staticmethod
     def _normalized_hostname(value: object) -> str:
         if not isinstance(value, str):
-            raise TypeError("managed webhook allowed_hosts must be a string list")
+            raise TypeError("HTTP allowed_hosts must be a string list")
         hostname = value.rstrip(".").lower()
         if not hostname or not re.fullmatch(
             r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
             hostname,
         ):
-            raise ValueError("managed webhook allowed host is invalid")
+            raise ValueError("HTTP allowed host is invalid")
         return hostname
-
-    @staticmethod
-    def _validate_status(status_code: int) -> None:
-        if status_code == 429 or status_code == 408 or status_code >= 500:
-            raise ExecutionError(
-                "provider_transient_error",
-                "Managed webhook returned a retryable error",
-                transient=True,
-            )
-        if status_code in {400, 401, 403, 404, 410}:
-            raise ExecutionError(
-                "provider_permanent_error",
-                "Managed webhook rejected the request",
-                transient=False,
-            )
-        if status_code < 200 or status_code >= 300:
-            raise ExecutionError(
-                "provider_permanent_error",
-                "Managed webhook returned an unsupported status",
-                transient=False,
-            )
-
-    async def _result(
-        self, plan: ManagedWebhookPostJsonPlan, response: httpx.Response
-    ) -> ManagedWebhookPostJsonResult:
-        if plan.response is not None:
-            if plan.response.mode == "status_only":
-                assert plan.response.success_output is not None
-            data: dict[str, object] | str = (
-                cast(dict[str, object], plan.response.success_output)
-                if plan.response.mode == "status_only"
-                else self._map_response(
-                    plan,
-                    response,
-                    await self._bounded_response(response),
-                )
-            )
-            self._validate_output(plan.response.output_schema, data)
-            return ManagedWebhookPostJsonResult(
-                result_type="managed_webhook.post_json.v1",
-                status="succeeded",
-                operation_id=plan.operation_id,
-                reference=None,
-                deduplicated=False,
-                data=data,
-            )
-        if plan.response_contract == "http_2xx":
-            return ManagedWebhookPostJsonResult(
-                result_type="managed_webhook.post_json.v1",
-                status="succeeded",
-                operation_id=plan.operation_id,
-                reference=None,
-                deduplicated=False,
-            )
-        content = await self._bounded_response(response)
-        content_type = response.headers.get("content-type", "")
-        if "application/json" not in content_type.lower():
-            raise ExecutionError(
-                "response_contract_invalid",
-                "Managed webhook response must be JSON",
-                transient=False,
-            )
-        try:
-            raw = json.loads(content)
-            if raw.get("status") == "failed":
-                failure = ManagedWebhookFailureResponse.model_validate(raw)
-                raise ExecutionError(
-                    failure.error.code,
-                    failure.error.message,
-                    transient=failure.error.retryable,
-                )
-            success = ManagedWebhookSuccessResponse.model_validate(raw)
-        except ExecutionError:
-            raise
-        except Exception as error:
-            raise ExecutionError(
-                "response_contract_invalid",
-                "Managed webhook response contract is invalid",
-                transient=False,
-            ) from error
-        if success.operation_id != plan.operation_id:
-            raise ExecutionError(
-                "operation_id_mismatch",
-                "Managed webhook operation ID mismatch",
-                transient=False,
-            )
-        return ManagedWebhookPostJsonResult(
-            result_type="managed_webhook.post_json.v1",
-            status="succeeded",
-            operation_id=success.operation_id,
-            reference=success.result.reference,
-            deduplicated=success.result.deduplicated,
-            data=success.result.data,
-        )
 
     @staticmethod
     async def _bounded_response(response: httpx.Response) -> bytes:
         content = bytearray()
         async for chunk in response.aiter_bytes():
             content.extend(chunk)
-            if len(content) > MAX_WEBHOOK_RESPONSE_BYTES:
+            if len(content) > MAX_HTTP_RESPONSE_BYTES:
                 raise ExecutionError(
                     "response_too_large",
-                    "Managed webhook response is too large",
+                    "HTTP response is too large",
                     transient=False,
                 )
         return bytes(content)
-
-    @staticmethod
-    def _map_response(
-        plan: ManagedWebhookPostJsonPlan,
-        response: httpx.Response,
-        content: bytes,
-    ) -> dict[str, object] | str:
-        configured = plan.response
-        if configured is None or configured.mapping is None:
-            raise ExecutionError(
-                "response_contract_invalid",
-                "Managed webhook response configuration is invalid",
-                transient=False,
-            )
-        content_type = response.headers.get("content-type", "")
-        media_type = content_type.partition(";")[0].strip().lower()
-        try:
-            if configured.mode == "json":
-                if media_type != "application/json" and not media_type.endswith(
-                    "+json"
-                ):
-                    raise ValueError
-                body: object = json.loads(content)
-            elif configured.mode == "text":
-                if media_type != "text/plain":
-                    raise ValueError
-                body = content.decode("utf-8")
-            else:
-                raise ValueError
-        except (UnicodeDecodeError, ValueError) as error:
-            raise ExecutionError(
-                "response_contract_invalid",
-                "Managed webhook response does not match the configured mode",
-                transient=False,
-            ) from error
-        context = {
-            "response": {
-                "status_code": response.status_code,
-                "content_type": media_type,
-                "body": body,
-            }
-        }
-        try:
-            encoded = json.dumps(context, ensure_ascii=False, separators=(",", ":"))
-            if len(encoded.encode()) > MAX_WEBHOOK_RESPONSE_BYTES:
-                raise ValueError
-            mapped = jsonata.Jsonata(configured.mapping).evaluate(json.loads(encoded))
-            output = json.dumps(mapped, ensure_ascii=False, separators=(",", ":"))
-            if len(output.encode()) > MAX_WEBHOOK_RESPONSE_BYTES:
-                raise ValueError
-            decoded = json.loads(output)
-            if not isinstance(decoded, (dict, str)):
-                raise TypeError
-        except Exception as error:
-            raise ExecutionError(
-                "response_mapping_failed",
-                "Managed webhook response mapping failed",
-                transient=False,
-            ) from error
-        return cast(dict[str, object] | str, decoded)
 
     @staticmethod
     def _validate_output(schema: dict[str, object], output: object) -> None:
@@ -717,21 +542,9 @@ class ManagedWebhookPostJsonHandler:
         except JsonSchemaValidationError as error:
             raise ExecutionError(
                 "response_output_invalid",
-                "Managed webhook semantic result is invalid",
+                "HTTP semantic result is invalid",
                 transient=False,
             ) from error
-
-    @staticmethod
-    def _bounded_payload(plan: ManagedWebhookPostJsonPlan) -> str:
-        return json.dumps(plan.payload, ensure_ascii=False, separators=(",", ":"))
-
-    async def _stream_payload(
-        self,
-        plan: ManagedWebhookPostJsonPlan,
-        bodies: dict[str, AsyncIterator[bytes]],
-    ) -> AsyncIterator[bytes]:
-        async for chunk in self._stream_json(plan.payload, "", bodies):
-            yield chunk
 
     async def _stream_json(
         self,
@@ -754,7 +567,7 @@ class ManagedWebhookPostJsonHandler:
             except UnicodeDecodeError as error:
                 raise ExecutionError(
                     "artifact_body_invalid",
-                    "Managed webhook artifact body is not UTF-8 text",
+                    "HTTP artifact body is not UTF-8 text",
                     transient=False,
                 ) from error
             yield b'"'
@@ -783,180 +596,6 @@ class ManagedWebhookPostJsonHandler:
             yield b"]"
             return
         yield json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
-
-
-class GoogleSheetsAppendValuesHandler:
-    def __init__(self, client: httpx.AsyncClient) -> None:
-        self._client = client
-
-    async def execute(
-        self, plan: GoogleSheetsAppendValuesPlan, material: RuntimeIntegrationMaterial
-    ) -> GoogleSheetsAppendValuesResult:
-        token = await self._access_token(plan, material)
-        headers = {"Authorization": f"Bearer {token}"}
-        lookup = self._range(plan.sheet_name, plan.idempotency.lookup_range)
-        lookup_started = time.perf_counter()
-        try:
-            response = await self._client.get(
-                self._values_url(plan.spreadsheet_id, lookup),
-                headers=headers,
-                params={"majorDimension": "ROWS"},
-            )
-            self._raise_provider_error(response, lookup=True)
-            rows = response.json().get("values", [])
-            for row_index, row in enumerate(rows, start=1):
-                column = plan.idempotency.operation_id_column_index
-                if len(row) > column and str(row[column]) == str(
-                    plan.idempotency.operation_id
-                ):
-                    logger.info(
-                        "capability_provider_idempotency_lookup_completed",
-                        extra={
-                            "plan_type": plan.plan_type,
-                            "latency_ms": round(
-                                (time.perf_counter() - lookup_started) * 1000
-                            ),
-                            "found": True,
-                        },
-                    )
-                    return GoogleSheetsAppendValuesResult(
-                        result_type=plan.plan_type,
-                        status="succeeded",
-                        updated_range=self._existing_range(plan, row_index),
-                        updated_rows=1,
-                        deduplicated=True,
-                    )
-            logger.info(
-                "capability_provider_idempotency_lookup_completed",
-                extra={
-                    "plan_type": plan.plan_type,
-                    "latency_ms": round((time.perf_counter() - lookup_started) * 1000),
-                    "found": False,
-                },
-            )
-            target = self._range(plan.sheet_name, plan.append_range)
-            append_started = time.perf_counter()
-            response = await self._client.post(
-                f"{self._values_url(plan.spreadsheet_id, target)}:append",
-                headers=headers,
-                params={
-                    "valueInputOption": plan.value_input_option,
-                    "insertDataOption": "INSERT_ROWS",
-                },
-                json={"majorDimension": "ROWS", "values": plan.rows},
-            )
-            self._raise_provider_error(response, lookup=False)
-            updates = response.json().get("updates", {})
-            updated_range = updates.get("updatedRange")
-            updated_rows = updates.get("updatedRows")
-            if (
-                not isinstance(updated_range, str)
-                or not isinstance(updated_rows, int)
-                or updated_rows < 1
-            ):
-                raise ExecutionError(
-                    "provider_permanent_error",
-                    "Google Sheets returned an invalid append result",
-                    transient=False,
-                )
-            logger.info(
-                "capability_provider_append_completed",
-                extra={
-                    "plan_type": plan.plan_type,
-                    "latency_ms": round((time.perf_counter() - append_started) * 1000),
-                    "status": "succeeded",
-                },
-            )
-            return GoogleSheetsAppendValuesResult(
-                result_type=plan.plan_type,
-                status="succeeded",
-                updated_range=updated_range,
-                updated_rows=updated_rows,
-                deduplicated=False,
-            )
-        except httpx.TimeoutException as error:
-            raise ExecutionError(
-                "provider_timeout", "Google Sheets request timed out", transient=True
-            ) from error
-        except httpx.TransportError as error:
-            raise ExecutionError(
-                "provider_transient_error",
-                "Google Sheets transport failed",
-                transient=True,
-            ) from error
-
-    @staticmethod
-    async def _access_token(
-        plan: GoogleSheetsAppendValuesPlan, material: RuntimeIntegrationMaterial
-    ) -> str:
-        account = (material.secret or {}).get("service_account")
-        if (
-            material.integration_id != plan.integration_id
-            or material.provider != "google_sheets"
-            or not isinstance(account, dict)
-        ):
-            raise ExecutionError(
-                "integration_material_invalid",
-                "Google Sheets integration material is invalid",
-                transient=False,
-            )
-        try:
-            credentials = service_account.Credentials.from_service_account_info(
-                account, scopes=[SHEETS_SCOPE]
-            )
-            await asyncio.to_thread(credentials.refresh, GoogleAuthRequest())
-        except Exception as error:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Google credential could not be refreshed",
-                transient=False,
-            ) from error
-        if credentials.token is None:
-            raise ExecutionError(
-                "credential_resolution_failed",
-                "Google credential returned no access token",
-                transient=False,
-            )
-        return credentials.token
-
-    @staticmethod
-    def _range(sheet_name: str, cell_range: str) -> str:
-        escaped = sheet_name.replace("'", "''")
-        return f"'{escaped}'!{cell_range}"
-
-    @staticmethod
-    def _values_url(spreadsheet_id: str, cell_range: str) -> str:
-        return f"https://sheets.googleapis.com/v4/spreadsheets/{quote(spreadsheet_id, safe='')}/values/{quote(cell_range, safe='')}"
-
-    @staticmethod
-    def _existing_range(plan: GoogleSheetsAppendValuesPlan, row_index: int) -> str:
-        columns = plan.append_range.split(":", 1)
-        start = re.sub(r"[^A-Za-z]", "", columns[0]) or "A"
-        end = re.sub(r"[^A-Za-z]", "", columns[-1]) or start
-        lookup_start = plan.idempotency.lookup_range.split(":", 1)[0]
-        match = re.search(r"([1-9][0-9]*)$", lookup_start)
-        sheet_row = row_index + (int(match.group(1)) - 1 if match else 0)
-        return f"{plan.sheet_name}!{start}{sheet_row}:{end}{sheet_row}"
-
-    @staticmethod
-    def _raise_provider_error(response: httpx.Response, *, lookup: bool) -> None:
-        if response.status_code < 400:
-            return
-        if response.status_code in {401, 403}:
-            code = "provider_authentication_failed"
-            transient = False
-        elif response.status_code == 429:
-            code = "provider_rate_limited"
-            transient = True
-        elif response.status_code >= 500:
-            code = "provider_transient_error"
-            transient = True
-        else:
-            code = "idempotency_lookup_failed" if lookup else "provider_permanent_error"
-            transient = False
-        raise ExecutionError(
-            code, "Google Sheets operation failed", transient=transient
-        )
 
 
 class BackendClient:
@@ -1002,7 +641,7 @@ class BackendClient:
 
     async def integration_material(
         self, invocation_id: UUID, job_id: UUID, job: IntegrationJob
-    ) -> RuntimeIntegrationMaterial:
+    ) -> IntegrationExecutionMaterial:
         try:
             response = await self._client.get(
                 f"{self._settings.backend_url}/internal/v1/capability-invocations/"
@@ -1010,9 +649,7 @@ class BackendClient:
                 params={
                     "job_id": str(job_id),
                     "call_id": str(job.call_id) if job.call_id else None,
-                    "execution_snapshot_id": str(job.execution_snapshot_id)
-                    if job.execution_snapshot_id
-                    else None,
+                    "execution_id": str(job.execution_id),
                 },
                 headers={"Authorization": f"Bearer {self._token()}"},
             )
@@ -1022,7 +659,20 @@ class BackendClient:
                 "Integration material is temporarily unavailable",
                 transient=True,
             ) from error
-        return self._material_response(response)
+        if response.is_error:
+            raise ExecutionError(
+                "integration_material_unavailable",
+                "Integration material is unavailable",
+                transient=response.status_code >= 500,
+            )
+        try:
+            return IntegrationExecutionMaterial.model_validate(response.json())
+        except (ValidationError, ValueError) as error:
+            raise ExecutionError(
+                "integration_material_invalid",
+                "Integration material is invalid",
+                transient=False,
+            ) from error
 
     async def finalization_context(
         self, call_id: UUID, finalization_id: UUID, command_id: UUID
@@ -1051,7 +701,7 @@ class BackendClient:
         finalization_id: UUID,
         action_id: str,
         command_id: UUID,
-    ) -> HttpRequestPlanV1:
+    ) -> tuple[WorkerExecutionContext, dict[str, object]]:
         response = await self._client.get(
             f"{self._settings.backend_url}/internal/v1/calls/{call_id}/post-call-actions/{action_id}",
             params={
@@ -1061,7 +711,22 @@ class BackendClient:
             headers={"Authorization": f"Bearer {self._token()}"},
         )
         response.raise_for_status()
-        return HttpRequestPlanV1.model_validate(response.json())
+        value = response.json()
+        try:
+            if not isinstance(value, dict) or not isinstance(
+                value["mapping_context"], dict
+            ):
+                raise TypeError
+            return (
+                WorkerExecutionContext.model_validate(value["worker_context"]),
+                value["mapping_context"],
+            )
+        except (KeyError, TypeError, ValidationError) as error:
+            raise ExecutionError(
+                "execution_context_invalid",
+                "Post-call execution context is invalid",
+                transient=False,
+            ) from error
 
     async def post_call_action_material(
         self,
@@ -1069,7 +734,7 @@ class BackendClient:
         finalization_id: UUID,
         action_id: str,
         command_id: UUID,
-    ) -> RuntimeIntegrationMaterial:
+    ) -> IntegrationExecutionMaterial:
         try:
             response = await self._client.get(
                 f"{self._settings.backend_url}/internal/v1/calls/{call_id}/"
@@ -1089,7 +754,7 @@ class BackendClient:
         return self._material_response(response)
 
     @staticmethod
-    def _material_response(response: httpx.Response) -> RuntimeIntegrationMaterial:
+    def _material_response(response: httpx.Response) -> IntegrationExecutionMaterial:
         if response.is_error:
             raise ExecutionError(
                 "integration_material_unavailable",
@@ -1097,7 +762,7 @@ class BackendClient:
                 transient=response.status_code >= 500,
             )
         try:
-            return RuntimeIntegrationMaterial.model_validate(response.json())
+            return IntegrationExecutionMaterial.model_validate(response.json())
         except (ValidationError, ValueError) as error:
             raise ExecutionError(
                 "integration_material_invalid",
@@ -1224,21 +889,311 @@ class BackendClient:
         return value
 
 
+def _nested(value: dict[str, object], path: str) -> object:
+    current: object = value
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise ExecutionError(
+                "input_constraint_rejected",
+                "Constrained input is unavailable",
+                transient=False,
+            )
+        current = current[part]
+    return current
+
+
+def _bind_input(
+    definition: dict[str, object], tool_args: dict[str, object]
+) -> tuple[dict[str, object], dict[str, object]]:
+    schema = definition.get("agent_input_schema")
+    if not isinstance(schema, dict):
+        raise ExecutionError(
+            "execution_context_invalid",
+            "Action input schema is invalid",
+            transient=False,
+        )
+    try:
+        Draft202012Validator(schema, format_checker=FormatChecker()).validate(tool_args)
+    except JsonSchemaValidationError as error:
+        raise ExecutionError(
+            "invalid_agent_input", "Action input is invalid", transient=False
+        ) from error
+    inputs = dict(tool_args)
+    business: dict[str, object] = {}
+    bindings = definition.get("bindings", {})
+    if not isinstance(bindings, dict):
+        raise ExecutionError(
+            "execution_context_invalid", "Action bindings are invalid", transient=False
+        )
+    for source, target_value in bindings.items():
+        if (
+            not isinstance(source, str)
+            or not isinstance(target_value, str)
+            or source not in inputs
+        ):
+            raise ExecutionError(
+                "execution_context_invalid",
+                "Action binding is invalid",
+                transient=False,
+            )
+        value = inputs[source]
+        normalizer = CANONICAL_FIELD_NORMALIZERS.get(target_value)
+        if normalizer == "trim" and isinstance(value, str):
+            value = value.strip()
+        elif normalizer == "e164":
+            if not isinstance(value, str):
+                raise ExecutionError(
+                    "invalid_canonical_field",
+                    "Phone number must be a string",
+                    transient=False,
+                )
+            value = re.sub(r"[\s()-]", "", value)
+            if value.startswith("00"):
+                value = f"+{value[2:]}"
+            if not re.fullmatch(r"\+[1-9][0-9]{7,14}", value):
+                raise ExecutionError(
+                    "invalid_canonical_field",
+                    "Phone number must be E.164",
+                    transient=False,
+                )
+        inputs[source] = value
+        current = business
+        parts = target_value.split(".")
+        for part in parts[:-1]:
+            child = current.setdefault(part, {})
+            if not isinstance(child, dict):
+                raise ExecutionError(
+                    "execution_context_invalid",
+                    "Action binding is invalid",
+                    transient=False,
+                )
+            current = child
+        current[parts[-1]] = value
+    return inputs, business
+
+
+def _target_http_plan(
+    job: IntegrationJob, context: WorkerExecutionContext
+) -> HttpRequestPlanV1:
+    action = context.action
+    definition = action.get("definition")
+    execution = action.get("execution_plan")
+    if not isinstance(definition, dict) or not isinstance(execution, dict):
+        raise ExecutionError(
+            "execution_context_invalid",
+            "Action execution context is invalid",
+            transient=False,
+        )
+    inputs, business = _bind_input(definition, job.tool_args)
+    mapping_context: dict[str, object] = {
+        "inputs": inputs,
+        "business": business,
+        "metadata": job.metadata,
+    }
+    constraints = definition.get("input_constraints", [])
+    if not isinstance(constraints, list):
+        raise ExecutionError(
+            "execution_context_invalid",
+            "Action constraints are invalid",
+            transient=False,
+        )
+    timezone = str(job.metadata.get("timezone", "UTC"))
+    for constraint in constraints:
+        if not isinstance(constraint, dict) or constraint.get("kind") != "date_range":
+            raise ExecutionError(
+                "execution_context_invalid",
+                "Action constraint is invalid",
+                transient=False,
+            )
+        try:
+            start = date.fromisoformat(str(_nested(business, str(constraint["start"]))))
+            end = date.fromisoformat(str(_nested(business, str(constraint["end"]))))
+        except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError) as error:
+            raise ExecutionError(
+                "input_constraint_rejected", "Date range is invalid", transient=False
+            ) from error
+        if end <= start or (
+            constraint.get("start_not_in_past")
+            and start < datetime.now(ZoneInfo(timezone)).date()
+        ):
+            raise ExecutionError(
+                "input_constraint_rejected", "Date range is invalid", transient=False
+            )
+    policy = definition.get("business_policy", {})
+    if not isinstance(policy, dict):
+        raise ExecutionError(
+            "execution_context_invalid", "Action policy is invalid", transient=False
+        )
+    if policy.get("requires_caller_phone") and not job.metadata.get("caller_phone"):
+        raise ExecutionError(
+            "business_policy_rejected", "Caller phone is required", transient=False
+        )
+    if policy.get("requires_final_confirmation") and not job.confirmed:
+        raise ExecutionError(
+            "business_policy_rejected",
+            "Final confirmation is required",
+            transient=False,
+        )
+    request = execution.get("request", {"codec": "none"})
+    if not isinstance(request, dict):
+        raise ExecutionError(
+            "execution_context_invalid", "HTTP request is invalid", transient=False
+        )
+    payload = None
+    if request.get("codec") != "none":
+        mapping = request.get("mapping")
+        if mapping is None:
+            raise ExecutionError(
+                "request_mapping_failed",
+                "HTTP request mapping is required",
+                transient=False,
+            )
+        payload = HttpExecutionHandler._evaluate_template(mapping, mapping_context)
+    raw_path = execution.get("path")
+    path = HttpExecutionHandler._evaluate_template(raw_path, mapping_context)
+    if path is not None and not isinstance(path, str):
+        raise ExecutionError(
+            "request_mapping_failed", "HTTP path mapping is invalid", transient=False
+        )
+    raw_query = execution.get("query")
+    query = None
+    if raw_query is not None:
+        if not isinstance(raw_query, dict):
+            raise ExecutionError(
+                "execution_context_invalid", "HTTP query is invalid", transient=False
+            )
+        query = {
+            str(name): HttpExecutionHandler._evaluate_template(value, mapping_context)
+            for name, value in raw_query.items()
+        }
+    return HttpRequestPlanV1(
+        operation_id=job.capability_invocation_id,
+        method=execution["method"],
+        path=path,
+        query=cast(Any, query),
+        headers=execution.get("headers", {}),
+        request=cast(Any, request),
+        response=execution.get("response", {"codec": "none"}),
+        payload=payload,
+        timeout_seconds=execution["timeout_seconds"],
+        success_statuses=execution.get("success_statuses"),
+        result_schema=definition.get("result_schema"),
+    )
+
+
+def _post_call_http_plan(
+    context: WorkerExecutionContext,
+    mapping_context: dict[str, object],
+    operation_id: UUID,
+) -> HttpRequestPlanV1:
+    action = context.action
+    definition = action.get("definition")
+    execution = action.get("execution_plan")
+    if (
+        action.get("phase") != "post_call"
+        or not isinstance(definition, dict)
+        or not isinstance(execution, dict)
+    ):
+        raise ExecutionError(
+            "execution_context_invalid",
+            "Post-call execution context is invalid",
+            transient=False,
+        )
+    request = execution.get("request", {"codec": "none"})
+    if not isinstance(request, dict):
+        raise ExecutionError(
+            "execution_context_invalid", "HTTP request is invalid", transient=False
+        )
+    payload: object | None = None
+    if request.get("codec") != "none":
+        mapping = request.get("mapping")
+        if mapping is None:
+            raise ExecutionError(
+                "request_mapping_failed",
+                "HTTP request mapping is required",
+                transient=False,
+            )
+        payload = HttpExecutionHandler._evaluate_template(mapping, mapping_context)
+    bindings: list[HttpBodyBinding] = []
+
+    def body_references(value: object, path: str = "") -> object:
+        if isinstance(value, dict):
+            if set(value) == {"artifact_representation_id"}:
+                try:
+                    bindings.append(
+                        HttpBodyBinding(
+                            representation_id=UUID(
+                                str(value["artifact_representation_id"])
+                            ),
+                            payload_path=path,
+                        )
+                    )
+                except ValueError as error:
+                    raise ExecutionError(
+                        "artifact_body_invalid",
+                        "Artifact body reference is invalid",
+                        transient=False,
+                    ) from error
+                return None
+            return {
+                key: body_references(
+                    child, f"{path}/{key.replace('~', '~0').replace('/', '~1')}"
+                )
+                for key, child in value.items()
+            }
+        if isinstance(value, list):
+            return [
+                body_references(child, f"{path}/{index}")
+                for index, child in enumerate(value)
+            ]
+        return value
+
+    payload = body_references(payload)
+    path = HttpExecutionHandler._evaluate_template(
+        execution.get("path"), mapping_context
+    )
+    if path is not None and not isinstance(path, str):
+        raise ExecutionError(
+            "request_mapping_failed", "HTTP path mapping is invalid", transient=False
+        )
+    raw_query = execution.get("query")
+    query = (
+        {
+            str(name): HttpExecutionHandler._evaluate_template(value, mapping_context)
+            for name, value in raw_query.items()
+        }
+        if isinstance(raw_query, dict)
+        else None
+    )
+    return HttpRequestPlanV1(
+        operation_id=operation_id,
+        method=execution["method"],
+        path=path,
+        query=cast(Any, query),
+        headers=execution.get("headers", {}),
+        request=cast(Any, request),
+        response=execution.get("response", {"codec": "none"}),
+        payload=payload,
+        body_bindings=bindings,
+        timeout_seconds=execution["timeout_seconds"],
+        success_statuses=execution.get("success_statuses"),
+        result_schema=definition.get("result_schema"),
+    )
+
+
 class CapabilityWorker:
     def __init__(
         self,
         settings: Settings,
         redis: Redis,
         backend: BackendClient,
-        sheets: GoogleSheetsAppendValuesHandler,
-        webhooks: ManagedWebhookPostJsonHandler | None = None,
+        webhooks: HttpExecutionHandler | None = None,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
         self._settings = settings
         self._redis = redis
         self._backend = backend
-        self._sheets = sheets
         self._webhooks = webhooks
         self._tracer = tracer
         self._metrics = metrics
@@ -1318,7 +1273,7 @@ class CapabilityWorker:
                 "invocation_id": str(job.capability_invocation_id),
                 "job_id": str(job.job_id),
                 "redis_message_id": message_id,
-                "plan_type": job.execution_plan.plan_type,
+                "plan_type": "http.request.v1",
                 "attempt": job.attempt,
                 "latency_ms": round((started - job.created_at).total_seconds() * 1000),
             },
@@ -1326,6 +1281,17 @@ class CapabilityWorker:
         provider_started = time.perf_counter()
         capability_name, capability_version, operation_id = _capability_identity(job)
         try:
+            context = WorkerExecutionContext.model_validate(job.worker_context)
+            if (
+                context.execution_id != job.execution_id
+                or context.action.get("phase") != "runtime"
+            ):
+                raise ExecutionError(
+                    "execution_context_invalid",
+                    "Worker execution context is invalid",
+                    transient=False,
+                )
+            plan = _target_http_plan(job, context)
             with domain_span(
                 self._tracer,
                 "capability.execute",
@@ -1335,64 +1301,34 @@ class CapabilityWorker:
                     "operation.id": operation_id,
                 },
             ):
-                plan_type = job.execution_plan.plan_type
-                if plan_type not in {
-                    "google_sheets.append_values.v1",
-                    "http.request.v1",
-                    "managed_webhook.post_json.v1",
-                }:
-                    raise ExecutionError(
-                        "unknown_plan_type",
-                        "Execution plan type is unsupported",
-                        transient=False,
-                    )
                 logger.info(
                     "capability_provider_call_started",
                     extra={
                         "invocation_id": str(job.capability_invocation_id),
                         "job_id": str(job.job_id),
-                        "plan_type": job.execution_plan.plan_type,
+                        "plan_type": "http.request.v1",
                         "attempt": job.attempt,
                     },
                 )
                 material = await self._backend.integration_material(
                     job.capability_invocation_id, job.job_id, job
                 )
-                result: (
-                    GoogleSheetsAppendValuesResult
-                    | HttpRequestResult
-                    | ManagedWebhookPostJsonResult
-                )
-                if plan_type == "google_sheets.append_values.v1":
-                    result = await self._sheets.execute(job.execution_plan, material)
-                elif plan_type == "http.request.v1":
-                    if self._webhooks is None:
-                        raise ExecutionError(
-                            "unknown_plan_type",
-                            "HTTP handler is unavailable",
-                            transient=False,
-                        )
-                    result = await self._webhooks.execute(job.execution_plan, material)
-                elif plan_type == "managed_webhook.post_json.v1":
-                    if self._webhooks is None:
-                        raise ExecutionError(
-                            "unknown_plan_type",
-                            "Webhook handler is unavailable",
-                            transient=False,
-                        )
-                    result = await self._webhooks.execute(job.execution_plan, material)
-                else:
+                result: HttpRequestResult
+                if self._webhooks is None:
                     raise ExecutionError(
                         "unknown_plan_type",
-                        "Webhook handler is unavailable",
+                        "HTTP handler is unavailable",
                         transient=False,
                     )
+                result = await self._webhooks.execute(plan, material)
+                if plan.result_schema is not None:
+                    self._webhooks._validate_output(plan.result_schema, result.data)
                 logger.info(
                     "capability_provider_call_completed",
                     extra={
                         "invocation_id": str(job.capability_invocation_id),
                         "job_id": str(job.job_id),
-                        "plan_type": job.execution_plan.plan_type,
+                        "plan_type": "http.request.v1",
                         "attempt": job.attempt,
                         "latency_ms": round(
                             (time.perf_counter() - provider_started) * 1000
@@ -1425,7 +1361,7 @@ class CapabilityWorker:
                         "invocation_id": str(job.capability_invocation_id),
                         "job_id": str(job.job_id),
                         "redis_message_id": message_id,
-                        "plan_type": job.execution_plan.plan_type,
+                        "plan_type": "http.request.v1",
                         "attempt": retried.attempt,
                     },
                 )
@@ -1452,11 +1388,7 @@ class CapabilityWorker:
             attempt=job.attempt,
             started_at=started,
             completed_at=datetime.now(UTC),
-            provider_reference=(
-                result.updated_range
-                if isinstance(result, GoogleSheetsAppendValuesResult)
-                else result.reference
-            ),
+            provider_reference=result.reference,
             trace_context=job.trace_context,
         )
         try:
@@ -1533,21 +1465,12 @@ class CapabilityWorker:
 
 
 def _capability_identity(job: IntegrationJob) -> tuple[str, str, str]:
-    plan = job.execution_plan
-    if isinstance(plan, HttpRequestPlanV1):
-        capability = plan.capability or {}
-        return (
-            str(capability.get("semantic_key", "http")),
-            str(capability.get("semantic_version", "v1")),
-            str(plan.operation_id),
-        )
-    if isinstance(plan, ManagedWebhookPostJsonPlan):
-        return (
-            plan.capability.semantic_key,
-            str(plan.capability.semantic_version),
-            str(plan.operation_id),
-        )
-    return "google_sheets.append_values", "v1", str(plan.idempotency.operation_id)
+    action = job.worker_context.action
+    return (
+        str(action.get("key", "http")) if isinstance(action, dict) else "http",
+        "frozen",
+        str(job.capability_invocation_id),
+    )
 
 
 async def run_worker(settings: Settings) -> None:
@@ -1601,9 +1524,9 @@ async def run_worker(settings: Settings) -> None:
                     tracer_provider=telemetry.tracer_provider,  # type: ignore[arg-type]
                     meter_provider=telemetry.meter_provider,  # type: ignore[arg-type]
                 )
-            webhooks = ManagedWebhookPostJsonHandler(
+            webhooks = HttpExecutionHandler(
                 provider_client,
-                allow_insecure=settings.allow_insecure_webhooks,
+                allow_insecure=settings.allow_insecure_http_execution,
             )
             backend = BackendClient(
                 settings, backend_client, RecordingStorage(settings)
@@ -1612,7 +1535,6 @@ async def run_worker(settings: Settings) -> None:
                 settings,
                 redis,
                 backend,
-                GoogleSheetsAppendValuesHandler(provider_client),
                 webhooks,
                 tracer,
                 metrics,

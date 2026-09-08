@@ -31,7 +31,6 @@ async def test_bootstrap_starts_without_nats_or_outbox_dependencies() -> None:
             ),
             control_plane_encryption_key="MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
             voice_agent_service_secret="voice-agent-test-secret",
-            job_worker_service_secret="job-worker-test-secret",
             backend_core_service_secret="backend-core-test-secret",
         ),
         database,  # type: ignore[arg-type]

@@ -19,14 +19,11 @@ def settings(database_url: str) -> Settings:
         control_plane_management_actor="ignored-legacy-actor",
         control_plane_management_scopes="resources:read,resources:write",
         voice_agent_service_secret="voice-secret",
-        job_worker_service_secret="worker-secret",
         backend_core_service_secret="backend-secret",
     )
 
 
-async def create_assignment(
-    client: AsyncClient, tenant_id: str, phone: str, key: str
-):
+async def create_assignment(client: AsyncClient, tenant_id: str, phone: str, key: str):
     return await client.post(
         f"/management/v1/tenants/{tenant_id}/telephony/phone-number-assignments",
         headers={"Idempotency-Key": key},
@@ -71,7 +68,11 @@ async def test_assignment_normalization_uniqueness_routing_and_replay(
             first_enabled = await enable(client, "tenant-a", first, "enable-first")
             second_enabled = await enable(client, "tenant-a", second, "enable-second")
             assert first_enabled.status_code == second_enabled.status_code == 200
-            assert first_enabled.json()["enabled"] is second_enabled.json()["enabled"] is True
+            assert (
+                first_enabled.json()["enabled"]
+                is second_enabled.json()["enabled"]
+                is True
+            )
 
             route = await app.state.telephony.resolve_inbound("+421 900 111 111")
             replay_route = await app.state.telephony.resolve_inbound("+421900111111")
@@ -106,12 +107,15 @@ async def test_assignment_normalization_uniqueness_routing_and_replay(
             )
             assert conflict.status_code == 409
             async with database.sessions() as session:
-                assert await session.scalar(
-                    text(
-                        "SELECT count(*) FROM control_plane.idempotency_replays "
-                        "WHERE idempotency_key = 'failed-enable-duplicate'"
+                assert (
+                    await session.scalar(
+                        text(
+                            "SELECT count(*) FROM control_plane.idempotency_replays "
+                            "WHERE idempotency_key = 'failed-enable-duplicate'"
+                        )
                     )
-                ) == 0
+                    == 0
+                )
 
             disabled = await client.post(
                 f"/management/v1/tenants/tenant-a/telephony/phone-number-assignments/{first.json()['id']}/disable",
@@ -128,13 +132,13 @@ async def test_assignment_normalization_uniqueness_routing_and_replay(
                 client, "tenant-b", duplicate, "failed-enable-duplicate"
             )
             assert replacement.status_code == 200
-            replaced_route = await app.state.telephony.resolve_inbound(
-                "+421900111111"
-            )
+            replaced_route = await app.state.telephony.resolve_inbound("+421900111111")
             assert replaced_route.tenant_id == "tenant-b"
             assert replaced_route.route_version != route.route_version
 
-            replay = await enable(client, "tenant-b", duplicate, "failed-enable-duplicate")
+            replay = await enable(
+                client, "tenant-b", duplicate, "failed-enable-duplicate"
+            )
             assert replay.status_code == 200
             assert replay.json() == replacement.json()
             another = await create_assignment(
@@ -331,11 +335,17 @@ async def test_replay_write_failure_rolls_back_assignment_creation(
             assert response.status_code == 500
             assert response.json()["code"] == "internal_error"
         async with database.sessions() as session:
-            assert await session.scalar(
-                text("SELECT count(*) FROM control_plane.phone_number_assignments")
-            ) == 0
-            assert await session.scalar(
-                text("SELECT count(*) FROM control_plane.idempotency_replays")
-            ) == 0
+            assert (
+                await session.scalar(
+                    text("SELECT count(*) FROM control_plane.phone_number_assignments")
+                )
+                == 0
+            )
+            assert (
+                await session.scalar(
+                    text("SELECT count(*) FROM control_plane.idempotency_replays")
+                )
+                == 0
+            )
     finally:
         await database.close()

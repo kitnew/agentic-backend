@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -24,7 +24,11 @@ type MappingTemplate = MappingScalar | ExpressionNode | dict[str, object] | list
 def _validate_mapping(value: object) -> object:
     if isinstance(value, dict):
         if "$expr" in value:
-            if set(value) != {"$expr"} or not isinstance(value["$expr"], str) or not value["$expr"].strip():
+            if (
+                set(value) != {"$expr"}
+                or not isinstance(value["$expr"], str)
+                or not value["$expr"].strip()
+            ):
                 raise ValueError("expression nodes must contain only a non-empty $expr")
             return value
         for item in value.values():
@@ -45,7 +49,11 @@ class HttpRequestSpec(_HttpModel):
     @field_validator("mapping")
     @classmethod
     def mapping_is_typed(cls, value: MappingTemplate | None) -> MappingTemplate | None:
-        return _validate_mapping(value) if value is not None else None
+        return (
+            cast(MappingTemplate, _validate_mapping(value))
+            if value is not None
+            else None
+        )
 
 
 class HttpResponseSpec(_HttpModel):
@@ -55,7 +63,11 @@ class HttpResponseSpec(_HttpModel):
     @field_validator("mapping")
     @classmethod
     def mapping_is_typed(cls, value: MappingTemplate | None) -> MappingTemplate | None:
-        return _validate_mapping(value) if value is not None else None
+        return (
+            cast(MappingTemplate, _validate_mapping(value))
+            if value is not None
+            else None
+        )
 
 
 class HttpBodyBinding(_HttpModel):
@@ -70,14 +82,20 @@ class HttpOperation(_HttpModel):
     path: str | ExpressionNode | None = None
     query: dict[str, MappingTemplate] | None = None
     headers: dict[str, str] = Field(default_factory=dict)
-    request: HttpRequestSpec = Field(default_factory=lambda: HttpRequestSpec(codec="none"))
-    response: HttpResponseSpec = Field(default_factory=lambda: HttpResponseSpec(codec="none"))
+    request: HttpRequestSpec = Field(
+        default_factory=lambda: HttpRequestSpec(codec="none")
+    )
+    response: HttpResponseSpec = Field(
+        default_factory=lambda: HttpResponseSpec(codec="none")
+    )
     timeout_seconds: float = Field(gt=0, le=60)
     success_statuses: list[int] | None = Field(default=None, max_length=20)
 
     @field_validator("query")
     @classmethod
-    def query_is_typed(cls, value: dict[str, MappingTemplate] | None) -> dict[str, MappingTemplate] | None:
+    def query_is_typed(
+        cls, value: dict[str, MappingTemplate] | None
+    ) -> dict[str, MappingTemplate] | None:
         if value is not None:
             for item in value.values():
                 _validate_mapping(item)
@@ -86,33 +104,51 @@ class HttpOperation(_HttpModel):
     @field_validator("headers")
     @classmethod
     def headers_are_non_system(cls, value: dict[str, str]) -> dict[str, str]:
-        if any(name.lower() in RESERVED_HTTP_HEADERS or any(char in name for char in "\r\n:") or any(char in header for char in "\r\n") for name, header in value.items()):
+        if any(
+            name.lower() in RESERVED_HTTP_HEADERS
+            or any(char in name for char in "\r\n:")
+            or any(char in header for char in "\r\n")
+            for name, header in value.items()
+        ):
             raise ValueError("operation headers contain a reserved or invalid header")
         return value
 
     @field_validator("path")
     @classmethod
-    def path_is_relative(cls, value: str | ExpressionNode | None) -> str | ExpressionNode | None:
+    def path_is_relative(
+        cls, value: str | ExpressionNode | None
+    ) -> str | ExpressionNode | None:
         if isinstance(value, str):
             parsed = urlsplit(value)
-            if not value or value.startswith("//") or parsed.scheme or parsed.netloc or parsed.username or parsed.password or parsed.fragment or parsed.query:
+            if (
+                not value
+                or value.startswith("//")
+                or parsed.scheme
+                or parsed.netloc
+                or parsed.username
+                or parsed.password
+                or parsed.fragment
+                or parsed.query
+            ):
                 raise ValueError("HTTP operation path must be relative")
         return value
 
 
 class HttpRequestPlanV1(_HttpModel):
     plan_type: Literal["http.request.v1"] = "http.request.v1"
-    integration_id: UUID
     operation_id: UUID
-    capability: object | None = None
     body_bindings: list[HttpBodyBinding] = Field(default_factory=list)
     payload: object | None = None
     method: Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
     path: str | ExpressionNode | None = None
     query: dict[str, MappingTemplate] | None = None
     headers: dict[str, str] = Field(default_factory=dict)
-    request: HttpRequestSpec = Field(default_factory=lambda: HttpRequestSpec(codec="none"))
-    response: HttpResponseSpec = Field(default_factory=lambda: HttpResponseSpec(codec="none"))
+    request: HttpRequestSpec = Field(
+        default_factory=lambda: HttpRequestSpec(codec="none")
+    )
+    response: HttpResponseSpec = Field(
+        default_factory=lambda: HttpResponseSpec(codec="none")
+    )
     timeout_seconds: float = Field(gt=0, le=60)
     success_statuses: list[int] | None = Field(default=None, max_length=20)
     result_schema: dict[str, object] | None = None

@@ -21,7 +21,7 @@ def call() -> CallSession:
     return CallSession(
         id=uuid4(),
         tenant_id=uuid4(),
-        execution_snapshot_id=uuid4(),
+        execution_id=uuid4(),
         channel=CallChannel.WEB,
         direction=CallDirection.INBOUND,
         provider="livekit",
@@ -49,12 +49,17 @@ class Session:
         if self.recording is None:
             return None
         values = set(query.compile().params.values())
-        return self.recording if values & {
-            self.recording.id,
-            self.recording.call_id,
-            self.recording.egress_id,
-            RecordingStatus.READY,
-        } else None
+        return (
+            self.recording
+            if values
+            & {
+                self.recording.id,
+                self.recording.call_id,
+                self.recording.egress_id,
+                RecordingStatus.READY,
+            }
+            else None
+        )
 
     async def get(self, model, key):
         if model is CallSession and key == self.call.id:

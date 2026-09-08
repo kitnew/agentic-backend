@@ -40,7 +40,6 @@ from .models import HandoffDestination as HandoffRow
 from .models import IntegrationConnection as IntegrationRow
 from .models import LiveComponent as LiveComponentRow
 from .models import ModelDeployment as DeploymentRow
-from .models import PhoneNumberAssignment as PhoneRow
 from .models import ProviderConnection as ConnectionRow
 
 _PLATFORM_KINDS = ("SystemPrompt",)
@@ -135,7 +134,6 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                 credentials[row.id] = self._credential(row, number)
         integrations = await self._integrations(session, tenant_id)
         handoffs = await self._handoffs(session, tenant_id)
-        phone = await self._phone(session, tenant_id)
         return RuntimeResolutionState(
             components,
             live_components,
@@ -144,7 +142,6 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
             credentials,
             integrations,
             handoffs,
-            phone,
         )
 
     @staticmethod
@@ -292,21 +289,6 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                 "generation": row.generation,
             }
             for row in sorted(rows, key=lambda row: row.key)
-        )
-
-    @staticmethod
-    async def _phone(session: AsyncSession, tenant_id: str) -> dict[str, object] | None:
-        row = await session.scalar(
-            select(PhoneRow).where(PhoneRow.tenant_id == tenant_id, PhoneRow.enabled)
-        )
-        return (
-            None
-            if row is None
-            else {
-                "id": row.id,
-                "phone_number": row.phone_number,
-                "generation": row.generation,
-            }
         )
 
     @staticmethod

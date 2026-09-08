@@ -1,6 +1,5 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any, cast
 from uuid import UUID
 
@@ -50,10 +49,7 @@ class ExecutionResolution:
     agent: ResolvedTenantAgent
     prompts: dict[str, object]
     knowledge: dict[str, object]
-    capabilities: tuple[dict[str, object], ...]
-    post_call: tuple[dict[str, object], ...]
     handoff: tuple[Mapping[str, object], ...]
-    phone_assignment: Mapping[str, object] | None
     provenance: dict[str, object]
     actions: tuple[dict[str, object], ...]
     integration_bindings: Mapping[str, UUID]
@@ -66,15 +62,6 @@ class ExecutionResolution:
 def compose_instructions(*parts: str) -> str:
     """Legacy prompt ordering, without clock/runtime-only additions."""
     return "\n\n".join(part for part in parts if part)
-
-
-def _tool_name(action_key: str) -> str:
-    value = action_key.replace(".", "_")
-    return (
-        value
-        if len(value) <= 64
-        else f"{value[:55]}_{sha256(action_key.encode()).hexdigest()[:8]}"
-    )
 
 
 class ExecutionResolver:
@@ -172,8 +159,6 @@ class ExecutionResolver:
                     "unknown_actions": sorted(unknown),
                 },
             )
-        enabled = []
-        post_call = []
         target_actions = []
         integration_bindings: dict[str, UUID] = {}
         for key, value in definitions.value.actions.items():
@@ -186,10 +171,6 @@ class ExecutionResolver:
                 UUID, integration["id"]
             )
             target_actions.append(self._target_action(key, value))
-            if isinstance(value, RuntimeActionDefinition):
-                enabled.append(self._capability(key, value, integration))
-            elif isinstance(value, PostCallActionDefinition):
-                post_call.append(self._post_call(key, value, integration))
         handoff = tuple(sorted(state.handoffs, key=lambda row: str(row["key"])))
         return ExecutionResolution(
             tenant_id,
@@ -208,10 +189,7 @@ class ExecutionResolver:
                 "content": knowledge.value.content,
                 "provenance": self._provenance(knowledge),
             },
-            tuple(enabled),
-            tuple(post_call),
             handoff,
-            state.phone_assignment,
             {
                 "agent": self._provenance(agent),
                 "profile_selection": self._provenance(selection),
@@ -237,48 +215,6 @@ class ExecutionResolver:
             "definition": raw,
             "execution_plan": execution,
             "integration": {"semantic_key": integration_key},
-        }
-
-    def _capability(
-        self,
-        key: str,
-        value: RuntimeActionDefinition,
-        integration: Mapping[str, object],
-    ) -> dict[str, object]:
-        execution = cast(dict[str, object], value.execution.model_dump(mode="json"))
-        execution["connection_id"] = integration["id"]
-        execution.pop("integration_key")
-        return {
-            "semantic_key": key,
-            "semantic_version": 1,
-            "tool_name": _tool_name(key),
-            "enabled": True,
-            "description": value.description,
-            "announcement": value.announcement,
-            "input_schema": value.agent_input_schema,
-            "bindings": value.bindings,
-            "input_constraints": value.input_constraints,
-            "policy": value.business_policy,
-            "execution": execution,
-            "result_schema": value.result_schema,
-        }
-
-    def _post_call(
-        self,
-        key: str,
-        action: PostCallActionDefinition,
-        integration: Mapping[str, object],
-    ) -> dict[str, object]:
-        execution = cast(dict[str, object], action.execution.model_dump(mode="json"))
-        execution["connection_id"] = integration["id"]
-        execution.pop("integration_key")
-        return {
-            "action_id": key,
-            "inputs": {
-                key: value.model_dump(mode="json")
-                for key, value in action.artifact_inputs.items()
-            },
-            "execution": execution,
         }
 
     @staticmethod

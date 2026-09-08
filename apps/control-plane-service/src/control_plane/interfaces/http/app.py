@@ -3,7 +3,28 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, status
+from contracts import (
+    BackendExecutionContext,
+    CreateExecutionRequest,
+    ErrorResponse,
+    HandoffExecutionMaterial,
+    InboundRoute,
+    IntegrationExecutionMaterial,
+    RuntimeSecretMaterial,
+    RuntimeSecretSlot,
+    VoiceExecutionContext,
+    WorkerExecutionContext,
+)
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status,
+)
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
@@ -19,7 +40,6 @@ from control_plane.application.components import ComponentService
 from control_plane.application.credentials import CredentialService
 from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
-    RuntimeSecretSlot,
 )
 from control_plane.application.integrations import (
     IntegrationService,
@@ -51,10 +71,6 @@ from control_plane.application.platform_configuration import (
     PlatformConfigurationService,
 )
 from control_plane.application.providers import ProviderService
-from control_plane.application.runtime_materialization import (
-    ExecutionSnapshotService,
-)
-from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.application.system_configuration import (
     SystemConfiguration,
     SystemConfigurationApplyResult,
@@ -64,7 +80,6 @@ from control_plane.application.system_configuration import (
     SystemConfigurationPlan,
     SystemConfigurationPreconditionFailed,
     SystemConfigurationService,
-    ValidationIssue,
 )
 from control_plane.application.telephony import TelephonyService
 from control_plane.application.tenant_configuration import (
@@ -140,17 +155,6 @@ from control_plane.interfaces.http.service_auth import (
     require_service_scope,
 )
 from control_plane.runtime.lifecycle import ServiceLifecycle
-
-
-class ErrorResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    code: str
-    message: str
-    issues: list[ValidationIssue] | None = None
-    details: dict[str, object] | None = None
-    request_id: str
-
 
 MANAGEMENT_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     code: {"model": ErrorResponse}
@@ -412,10 +416,11 @@ class InboundRouteResponse(BaseModel):
 
 _runtime_secret_auth = Depends(require_service_scope("runtime-secret:materialize"))
 _integration_material_auth = Depends(require_service_scope("integration-material:read"))
-_snapshot_materialize_auth = Depends(
-    require_service_scope("execution-snapshot:materialize")
-)
-_snapshot_read_auth = Depends(require_service_scope("execution-snapshot:read"))
+_execution_create_auth = Depends(require_service_scope("execution:create"))
+_voice_context_auth = Depends(require_service_scope("execution:voice-context:read"))
+_worker_context_auth = Depends(require_service_scope("execution:worker-context:read"))
+_handoff_material_auth = Depends(require_service_scope("handoff-material:read"))
+_telephony_resolve_auth = Depends(require_service_scope("telephony:resolve"))
 _credential_read_auth = Depends(require_management_permission("resources:read"))
 _credential_write_auth = Depends(require_management_permission("credentials:write"))
 
@@ -522,8 +527,6 @@ class ComponentDefinitionResponse(BaseModel):
 def create_http_app(
     lifecycle: ServiceLifecycle,
     components: ComponentService | None = None,
-    runtime_resolver: RuntimeResolver | None = None,
-    runtime_materialization: ExecutionSnapshotService | None = None,
     execution_materialization: ExecutionMaterializationService | None = None,
     credentials: CredentialService | None = None,
     providers: ProviderService | None = None,
@@ -545,8 +548,6 @@ def create_http_app(
     app.state.settings = None
     app.state.lifecycle = lifecycle
     app.state.components = components
-    app.state.runtime_resolver = runtime_resolver
-    app.state.runtime_materialization = runtime_materialization
     app.state.execution_materialization = execution_materialization
     app.state.credentials = credentials
     app.state.providers = providers
@@ -567,11 +568,9 @@ def create_http_app(
     @app.middleware("http")
     async def management_boundary(request: Request, call_next):
         target = request.url.path.startswith("/management/v1/")
+        structured = request.url.path.startswith(("/management/v1/", "/internal/v1/"))
         request.state.request_id = str(uuid4())
-        if target or (
-            request.url.path.startswith("/v1/")
-            and not request.url.path.startswith("/v1/runtime/resolve")
-        ):
+        if target or request.url.path.startswith("/v1/"):
             try:
                 request.state.management_principal = require_management_token(request)
             except HTTPException as error:
@@ -591,7 +590,7 @@ def create_http_app(
         try:
             return await call_next(request)
         except Exception:
-            if target:
+            if structured:
                 return _management_error(
                     request,
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -602,10 +601,12 @@ def create_http_app(
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, exc: HTTPException) -> JSONResponse:
-        if request.url.path.startswith("/management/v1/"):
+        if request.url.path.startswith(("/management/v1/", "/internal/v1/")):
             code = (
                 "permission_denied"
                 if exc.status_code == status.HTTP_403_FORBIDDEN
+                else "unauthenticated"
+                if exc.status_code == status.HTTP_401_UNAUTHORIZED
                 else "invalid_request"
             )
             return _management_error(
@@ -619,7 +620,7 @@ def create_http_app(
     async def validation_error(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        if request.url.path.startswith("/management/v1/"):
+        if request.url.path.startswith(("/management/v1/", "/internal/v1/")):
             issues = [
                 {
                     "code": error["type"],
@@ -662,7 +663,7 @@ def create_http_app(
             code = status.HTTP_404_NOT_FOUND
         else:
             code = status.HTTP_409_CONFLICT
-        if request.url.path.startswith("/management/v1/"):
+        if request.url.path.startswith(("/management/v1/", "/internal/v1/")):
             return _management_error(request, code, exc.code, str(exc))
         return JSONResponse(
             status_code=code,
@@ -681,7 +682,7 @@ def create_http_app(
             code = status.HTTP_412_PRECONDITION_FAILED
         else:
             code = status.HTTP_409_CONFLICT
-        if request.url.path.startswith("/management/v1/"):
+        if request.url.path.startswith(("/management/v1/", "/internal/v1/")):
             return _management_error(request, code, exc.code, str(exc))
         return JSONResponse(
             status_code=code,
@@ -690,8 +691,20 @@ def create_http_app(
 
     @app.exception_handler(RuntimeResolutionError)
     async def runtime_resolution_error(
-        _request: Request, exc: RuntimeResolutionError
+        request: Request, exc: RuntimeResolutionError
     ) -> JSONResponse:
+        if request.url.path.startswith(("/management/v1/", "/internal/v1/")):
+            return _management_error(
+                request,
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "runtime_resolution_failed",
+                "execution configuration could not be resolved",
+                details={
+                    "reason": exc.reason,
+                    "details": exc.details,
+                    "attempts": exc.attempts,
+                },
+            )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=jsonable_encoder(
@@ -818,102 +831,7 @@ def create_http_app(
             _target_component_router(include_live=True),
             prefix="/management/v1/tenants/{tenant_id}",
         )
-    if runtime_resolver is not None:
-
-        @app.get("/v1/runtime/resolve/tenant/{tenant_id}")
-        async def resolve_runtime(request: Request, tenant_id: str) -> Any:
-            resolver: RuntimeResolver = request.app.state.runtime_resolver
-            return jsonable_encoder(await resolver.resolve_runtime(tenant_id))
-
-    if runtime_materialization is not None:
-
-        @app.post(
-            "/v1/execution-snapshots/materialize/tenant/{tenant_id}",
-            status_code=status.HTTP_201_CREATED,
-        )
-        async def materialize_execution_snapshot(
-            request: Request, tenant_id: str
-        ) -> Any:
-            service: ExecutionSnapshotService = (
-                request.app.state.runtime_materialization
-            )
-            return jsonable_encoder(await service.materialize(tenant_id))
-
-        @app.get("/v1/execution-snapshots/{snapshot_id}")
-        async def get_execution_snapshot(request: Request, snapshot_id: UUID) -> Any:
-            service: ExecutionSnapshotService = (
-                request.app.state.runtime_materialization
-            )
-            snapshot = await service.get_snapshot(snapshot_id)
-            if snapshot is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-            return jsonable_encoder(snapshot)
-
-        @app.post(
-            "/internal/v1/execution-snapshots/materialize/tenant/{tenant_id}",
-            status_code=status.HTTP_201_CREATED,
-        )
-        async def materialize_internal(
-            request: Request,
-            tenant_id: str,
-            _principal: ServicePrincipal = _snapshot_materialize_auth,
-        ) -> Any:
-            return jsonable_encoder(
-                await request.app.state.runtime_materialization.materialize(tenant_id)
-            )
-
-        @app.get("/internal/v1/execution-snapshots/{snapshot_id}")
-        async def read_internal(
-            request: Request,
-            snapshot_id: UUID,
-            _principal: ServicePrincipal = _snapshot_read_auth,
-        ) -> Any:
-            snapshot = await request.app.state.runtime_materialization.get_snapshot(
-                snapshot_id
-            )
-            if snapshot is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-            return jsonable_encoder(snapshot)
-
-    if execution_materialization is not None:
-
-        @app.post("/internal/v1/execution-snapshots/{snapshot_id}/secrets/{slot}")
-        async def materialize_runtime_secret(
-            request: Request,
-            snapshot_id: UUID,
-            slot: RuntimeSecretSlot,
-            _principal: ServicePrincipal = _runtime_secret_auth,
-        ) -> JSONResponse:
-            service: ExecutionMaterializationService = (
-                request.app.state.execution_materialization
-            )
-            material = await service.legacy_runtime_secret(snapshot_id, slot)
-            return JSONResponse(
-                jsonable_encoder(_runtime_secret_response(material)),
-                headers=_secret_headers(),
-            )
-
-    if execution_materialization is not None:
-
-        @app.post(
-            "/internal/v1/tenants/{tenant_id}/integration-connections/{connection_id}/execution-material"
-        )
-        async def materialize_integration_execution(
-            request: Request,
-            tenant_id: str,
-            connection_id: UUID,
-            _principal: ServicePrincipal = _integration_material_auth,
-        ) -> JSONResponse:
-            service: ExecutionMaterializationService = (
-                request.app.state.execution_materialization
-            )
-            material = await service.legacy_integration_material(
-                tenant_id, connection_id
-            )
-            return JSONResponse(
-                jsonable_encoder(_integration_material_response(material)),
-                headers=_secret_headers(),
-            )
+    app.include_router(_internal_router(), prefix="/internal/v1")
 
     def management_openapi() -> dict[str, Any]:
         if app.openapi_schema is not None:
@@ -965,6 +883,120 @@ def _openapi_header(operation: dict[str, Any], name: str) -> None:
             "schema": {"type": "string", "minLength": 1},
         }
     )
+
+
+def _internal_router() -> APIRouter:
+    router = APIRouter(responses=MANAGEMENT_ERROR_RESPONSES)
+
+    @router.post(
+        "/executions",
+        response_model=BackendExecutionContext,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_execution(
+        request: Request,
+        body: CreateExecutionRequest,
+        idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
+        principal: ServicePrincipal = _execution_create_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            await request.app.state.execution_materialization.create_execution(
+                body.tenant_id,
+                body.context,
+                principal=principal.subject,
+                idempotency_key=idempotency_key,
+            )
+        )
+
+    @router.get(
+        "/executions/{execution_id}/voice-context",
+        response_model=VoiceExecutionContext,
+    )
+    async def voice_context(
+        request: Request,
+        execution_id: UUID,
+        _principal: ServicePrincipal = _voice_context_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            await request.app.state.execution_materialization.voice_context(
+                execution_id
+            )
+        )
+
+    @router.get(
+        "/executions/{execution_id}/worker-context",
+        response_model=WorkerExecutionContext,
+    )
+    async def worker_context(
+        request: Request,
+        execution_id: UUID,
+        action_key: Annotated[str, Query(min_length=1)],
+        _principal: ServicePrincipal = _worker_context_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            await request.app.state.execution_materialization.worker_context(
+                execution_id, action_key
+            )
+        )
+
+    @router.post(
+        "/executions/{execution_id}/secrets/{slot}",
+        response_model=RuntimeSecretMaterial,
+    )
+    async def runtime_secret(
+        request: Request,
+        execution_id: UUID,
+        slot: RuntimeSecretSlot,
+        _principal: ServicePrincipal = _runtime_secret_auth,
+    ) -> JSONResponse:
+        material = await request.app.state.execution_materialization.runtime_secret(
+            execution_id, slot
+        )
+        return JSONResponse(jsonable_encoder(material), headers=_secret_headers())
+
+    @router.post(
+        "/executions/{execution_id}/integrations/{integration_key}/material",
+        response_model=IntegrationExecutionMaterial,
+    )
+    async def integration_material(
+        request: Request,
+        execution_id: UUID,
+        integration_key: str,
+        _principal: ServicePrincipal = _integration_material_auth,
+    ) -> JSONResponse:
+        material = (
+            await request.app.state.execution_materialization.integration_material(
+                execution_id, integration_key
+            )
+        )
+        return JSONResponse(jsonable_encoder(material), headers=_secret_headers())
+
+    @router.post(
+        "/executions/{execution_id}/handoff/{destination_key}/material",
+        response_model=HandoffExecutionMaterial,
+    )
+    async def handoff_material(
+        request: Request,
+        execution_id: UUID,
+        destination_key: str,
+        _principal: ServicePrincipal = _handoff_material_auth,
+    ) -> JSONResponse:
+        material = await request.app.state.execution_materialization.handoff_material(
+            execution_id, destination_key
+        )
+        return JSONResponse(jsonable_encoder(material), headers=_secret_headers())
+
+    @router.get("/telephony/inbound-route", response_model=InboundRoute)
+    async def inbound_route(
+        request: Request,
+        phone_number: Annotated[str, Query(min_length=1, max_length=64)],
+        _principal: ServicePrincipal = _telephony_resolve_auth,
+    ) -> Any:
+        return jsonable_encoder(
+            await request.app.state.telephony.resolve_inbound(phone_number)
+        )
+
+    return router
 
 
 def _system_configuration_router() -> APIRouter:
@@ -1501,47 +1533,6 @@ def _management_error(
     if details is not None:
         content["details"] = details
     return JSONResponse(content, status_code=status_code, headers=headers)
-
-
-def _runtime_secret_response(value: object) -> dict[str, object]:
-    from control_plane.application.execution_materialization import (
-        LegacyRuntimeSecretMaterial,
-    )
-
-    assert isinstance(value, LegacyRuntimeSecretMaterial)
-    return {
-        "snapshot_id": value.snapshot_id,
-        "slot": value.slot,
-        "secret": value.secret,
-        "credential_ref": value.credential_ref,
-        "credential_generation": value.credential_generation,
-        "credential_version_id": value.credential_version_id,
-        "credential_version_number": value.credential_version_number,
-        "provider_connection_ref": value.provider_connection_ref,
-        "provider_connection_generation": value.provider_connection_generation,
-        "model_deployment_ref": value.model_deployment_ref,
-        "model_deployment_generation": value.model_deployment_generation,
-    }
-
-
-def _integration_material_response(value: object) -> dict[str, object]:
-    from control_plane.application.execution_materialization import (
-        LegacyIntegrationExecutionMaterial,
-    )
-
-    assert isinstance(value, LegacyIntegrationExecutionMaterial)
-    return {
-        "tenant_id": value.tenant_id,
-        "integration_connection_id": value.integration_connection_id,
-        "integration_connection_generation": value.integration_connection_generation,
-        "integration_kind": value.integration_kind,
-        "config": value.config,
-        "secret": value.secret,
-        "credential_ref": value.credential_ref,
-        "credential_generation": value.credential_generation,
-        "credential_version_id": value.credential_version_id,
-        "credential_version_number": value.credential_version_number,
-    }
 
 
 def _address(request: Request, kind: str) -> ComponentAddress:

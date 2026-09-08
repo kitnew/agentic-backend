@@ -18,7 +18,6 @@ def settings(database_url: str) -> Settings:
         control_plane_management_actor="management:alice",
         control_plane_management_scopes="resources:read,resources:write,credentials:write,configuration:read,configuration:write,configuration:publish",
         voice_agent_service_secret="voice-secret",
-        job_worker_service_secret="worker-secret",
         backend_core_service_secret="backend-secret",
     )
 

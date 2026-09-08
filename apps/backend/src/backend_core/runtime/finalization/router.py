@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from contracts import HttpRequestPlanV1, RuntimeIntegrationMaterial
+from contracts import IntegrationExecutionMaterial
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
@@ -54,6 +54,7 @@ def service(session: DatabaseSession, request: Request) -> FinalizationService:
 
 Service = Annotated[FinalizationService, Depends(service)]
 
+
 @router.get(
     "/{call_id}/finalization-context",
     dependencies=[Depends(require_internal_scope("finalization-context:read"))],
@@ -72,7 +73,6 @@ async def finalization_context(
 
 @router.get(
     "/{call_id}/post-call-actions/{action_id}",
-    response_model=HttpRequestPlanV1,
     dependencies=[Depends(require_internal_scope("post-call-action:read"))],
 )
 async def post_call_action(
@@ -81,9 +81,9 @@ async def post_call_action(
     finalization_id: UUID,
     command_id: UUID,
     finalization: Service,
-) -> HttpRequestPlanV1:
+) -> dict[str, object]:
     try:
-        return await finalization.action_plan(
+        return await finalization.action_context(
             call_id, finalization_id, action_id, command_id
         )
     except FinalizationError as error:
@@ -92,7 +92,7 @@ async def post_call_action(
 
 @router.get(
     "/{call_id}/post-call-actions/{action_id}/integration-material",
-    response_model=RuntimeIntegrationMaterial,
+    response_model=IntegrationExecutionMaterial,
     dependencies=[Depends(require_internal_scope("integration-material:read"))],
 )
 async def post_call_action_material(
@@ -102,16 +102,18 @@ async def post_call_action_material(
     command_id: UUID,
     finalization: Service,
     session: DatabaseSession,
-) -> RuntimeIntegrationMaterial:
+) -> IntegrationExecutionMaterial:
     try:
-        plan = await finalization.action_plan(
-            call_id, finalization_id, action_id, command_id
-        )
         call = await session.get(CallSession, call_id)
         if call is None:
             raise FinalizationError("call not found")
+        context = await finalization.worker_context(call, action_id)
+        integration = context.integration
+        integration_key = integration.get("semantic_key") if integration else None
+        if not isinstance(integration_key, str):
+            raise FinalizationError("post-call integration is unavailable")
         return await finalization.control_plane_material(
-            call.tenant_id, plan.integration_id
+            call.execution_id, integration_key
         )
     except FinalizationError as error:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(error)) from error

@@ -8,7 +8,6 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
-    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -18,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy import (
     text as sql_text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend_core.platform.database import Base
@@ -43,7 +43,9 @@ class CallSessionStatus(StrEnum):
 class CallSession(Base):
     __tablename__ = "call_sessions"
     __table_args__ = (
-        CheckConstraint("execution_snapshot_id IS NOT NULL", name="ck_call_sessions_snapshot_required"),
+        CheckConstraint(
+            "execution_id IS NOT NULL", name="ck_call_sessions_execution_required"
+        ),
         UniqueConstraint(
             "provider",
             "provider_call_id",
@@ -106,9 +108,9 @@ class CallSession(Base):
             name="fk_call_sessions_tenant_id_tenants",
         ),
     )
-    phone_assignment_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
-    phone_assignment_generation: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    execution_snapshot_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    route_version: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    execution_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    backend_execution_context: Mapped[dict[str, object]] = mapped_column(JSONB)
     channel: Mapped[CallChannel] = mapped_column(
         Enum(
             CallChannel,

@@ -39,7 +39,10 @@ def test_target_request_bodies_cannot_override_ownership_or_identity() -> None:
         "phone_number": "+421900222222",
     }
     for model, value in (
-        (PhoneNumberAssignmentCreate, {"phone_number": "+421900111111", "tenant_id": "other"}),
+        (
+            PhoneNumberAssignmentCreate,
+            {"phone_number": "+421900111111", "tenant_id": "other"},
+        ),
         (
             HandoffDestinationCreate,
             {
@@ -71,25 +74,37 @@ def test_openapi_exposes_only_target_telephony_management_contract() -> None:
     destination = "/management/v1/tenants/{tenant_id}/telephony/handoff-destinations"
 
     assert set(paths[assignment]) == {"get", "post"}
-    assert set(paths[f"{assignment}/{{id}}"] ) == {"get"}
+    assert set(paths[f"{assignment}/{{id}}"]) == {"get"}
     assert f"{assignment}/{{id}}/enable" in paths
     assert f"{assignment}/{{id}}/disable" in paths
     assert set(paths[destination]) == {"get", "post"}
-    assert set(paths[f"{destination}/{{id}}"] ) == {"get", "put"}
+    assert set(paths[f"{destination}/{{id}}"]) == {"get", "put"}
     assert f"{destination}/{{id}}/enable" in paths
     assert f"{destination}/{{id}}/disable" in paths
-    assert not any("/internal/v1/telephony/inbound-route" == path for path in paths)
-    assert not any("/internal/v1/telephony/phone-number-assignments" in path for path in paths)
-    assert not any("/v1/managed-resources/phone-number-assignments" in path for path in paths)
-    assert not any("/v1/managed-resources/handoff-destinations" in path for path in paths)
+    assert "/internal/v1/telephony/inbound-route" in paths
+    assert not any(
+        "/internal/v1/telephony/phone-number-assignments" in path for path in paths
+    )
+    assert not any(
+        "/v1/managed-resources/phone-number-assignments" in path for path in paths
+    )
+    assert not any(
+        "/v1/managed-resources/handoff-destinations" in path for path in paths
+    )
 
     models = schema["components"]["schemas"]
     assert set(models["PhoneNumberAssignmentCreate"]["properties"]) == {"phone_number"}
     assert set(models["PhoneNumberAssignmentResponse"]["properties"]) == {
-        "id", "tenant_id", "phone_number", "enabled", "created_at", "updated_at"
+        "id",
+        "tenant_id",
+        "phone_number",
+        "enabled",
+        "created_at",
+        "updated_at",
     }
     assert set(models["HandoffDestinationUpdate"]["properties"]) == {
-        "description", "phone_number"
+        "description",
+        "phone_number",
     }
     assert "TenantConfiguration" not in models
 

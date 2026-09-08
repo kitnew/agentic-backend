@@ -1,8 +1,8 @@
-from dataclasses import fields
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import uuid4
 
+import jwt
 import pytest
 from control_plane.application.command_support import IdempotencyKeyReused
 from control_plane.application.components import ComponentService
@@ -18,10 +18,8 @@ from control_plane.application.execution_materialization import (
 )
 from control_plane.application.execution_resolver import ExecutionResolver
 from control_plane.application.ports.repositories import ComponentRepository
-from control_plane.application.runtime_materialization import (
-    ExecutionSnapshotService,
-)
 from control_plane.application.runtime_resolver import RuntimeResolver
+from control_plane.bootstrap import create_app
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
@@ -49,6 +47,7 @@ from control_plane.infrastructure.persistence.models import (
     HandoffDestination,
     IdempotencyReplay,
     IntegrationConnection,
+    PhoneNumberAssignment,
     ProfileCatalogEntry,
 )
 from control_plane.infrastructure.persistence.models import (
@@ -63,10 +62,37 @@ from control_plane.infrastructure.persistence.runtime_execution_snapshots import
 from control_plane.infrastructure.persistence.runtime_resolution import (
     SqlAlchemyRuntimeResolutionReader,
 )
+from control_plane.settings import Settings
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import DBAPIError
 
 from .test_system_configuration import KEY, desired, setup
+
+
+def service_token(service: str, scopes: list[str], secret: str) -> str:
+    now = datetime.now(UTC)
+    return jwt.encode(
+        {
+            "service": service,
+            "sub": service,
+            "aud": "control-plane-service",
+            "iat": now,
+            "exp": now + timedelta(minutes=1),
+            "scopes": scopes,
+        },
+        secret,
+        algorithm="HS256",
+    )
+
+
+def api_settings(database_url: str) -> Settings:
+    return Settings(
+        database_url=database_url,
+        control_plane_encryption_key=KEY,
+        voice_agent_service_secret="v" * 32,
+        backend_core_service_secret="b" * 32,
+    )
 
 
 def component_service(database: Database):
@@ -110,9 +136,7 @@ async def configure_tenant(
             {"content": "knowledge"},
         ),
         (
-            ComponentAddress(
-                ComponentKind("AgentPersonality"), TenantScope(tenant_id)
-            ),
+            ComponentAddress(ComponentKind("AgentPersonality"), TenantScope(tenant_id)),
             {
                 "identity": "default",
                 "display_name": "Amélia",
@@ -139,9 +163,7 @@ async def configure_tenant(
         ),
     )
     for address, value in versioned:
-        draft = await components.save_draft(
-            address, value, None, None, "test"
-        )
+        draft = await components.save_draft(address, value, None, None, "test")
         await components.publish_draft(address, draft.version, "test")
     async with database.sessions.begin() as session:
         live = SqlAlchemyLiveComponentRepository(session)
@@ -280,45 +302,6 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
 
 
 @pytest.mark.asyncio
-async def test_runtime_materialization_is_one_repeatable_read_write_transaction(
-    migrated_database_url: str,
-) -> None:
-    database = Database(migrated_database_url)
-    components = component_service(database)
-    system, _, refs = await setup(database)
-    registry = default_component_definition_registry()
-    reader = SqlAlchemyRuntimeResolutionReader(database.sessions)
-    resolver = RuntimeResolver(registry, ProviderKindRegistry(), reader)
-    materializer = ExecutionSnapshotService(
-        database.sessions,
-        resolver,
-        reader,
-        SqlAlchemyExecutionSnapshotRepository(database.sessions),
-        ExecutionResolver(registry, resolver),
-    )
-
-    async def publish(kind: str, value: dict[str, object]):
-        address = ComponentAddress(
-            ComponentKind(kind),
-            TenantScope("materialize"),
-        )
-        draft = await components.save_draft(address, value, None, None, "test")
-        return await components.publish_draft(address, draft.version, "test")
-
-    try:
-        await system.apply(desired(refs), "*", "test", "materialize-system")
-        await configure_tenant(database, components, "materialize")
-        first = await materializer.materialize_runtime("materialize")
-        second = await materializer.materialize_runtime("materialize")
-        assert first.snapshot_id != second.snapshot_id
-        assert first.content_hash == second.content_hash
-        assert await materializer.get_snapshot(first.snapshot_id) == first
-        assert "ciphertext" not in str(first).lower()
-    finally:
-        await database.close()
-
-
-@pytest.mark.asyncio
 async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
     migrated_database_url: str,
 ) -> None:
@@ -368,32 +351,61 @@ async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
                         created_by="test",
                         updated_by="test",
                     ),
+                    PhoneNumberAssignment(
+                        tenant_id="slice-12",
+                        phone_number="+421900000002",
+                        enabled=True,
+                        generation=1,
+                        created_by="test",
+                        updated_by="test",
+                    ),
                 ]
             )
         await configure_tenant(database, components, "slice-12", actions)
-        service = execution_service(database)
+        app = create_app(api_settings(migrated_database_url), database=database)
+        service = app.state.execution_materialization
+        headers = {
+            "Authorization": "Bearer "
+            + service_token(
+                "backend-core",
+                [
+                    "execution:create",
+                    "execution:voice-context:read",
+                    "execution:worker-context:read",
+                    "integration-material:read",
+                    "handoff-material:read",
+                    "telephony:resolve",
+                ],
+                "b" * 32,
+            ),
+            "Idempotency-Key": "execution-1",
+        }
 
-        created = await service.create_execution(
-            "slice-12",
-            {"call_id": "call-1"},
-            principal="service:backend",
-            idempotency_key="execution-1",
-        )
-        replay = await service.create_execution(
-            "slice-12",
-            {"call_id": "call-1"},
-            principal="service:backend",
-            idempotency_key="execution-1",
-        )
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/internal/v1/executions",
+                headers=headers,
+                json={"tenant_id": "slice-12", "context": {"call_id": "call-1"}},
+            )
+            replay_response = await client.post(
+                "/internal/v1/executions",
+                headers=headers,
+                json={"tenant_id": "slice-12", "context": {"call_id": "call-1"}},
+            )
+        assert response.status_code == replay_response.status_code == 201
+        created = BackendExecutionContext.model_validate(response.json())
+        replay = BackendExecutionContext.model_validate(replay_response.json())
         assert replay == created
         with pytest.raises(IdempotencyKeyReused):
             await service.create_execution(
                 "slice-12",
                 {"call_id": "different"},
-                principal="service:backend",
+                principal="backend-core",
                 idempotency_key="execution-1",
             )
-        assert {field.name for field in fields(created)} == {
+        assert set(type(created).model_fields) == {
             "execution_id",
             "tenant_id",
             "architecture",
@@ -402,17 +414,62 @@ async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
             "metadata",
         }
 
-        voice = await service.voice_context(created.execution_id)
-        runtime_worker = await service.worker_context(
-            created.execution_id, "booking.check"
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            voice_response = await client.get(
+                f"/internal/v1/executions/{created.execution_id}/voice-context",
+                headers=headers,
+            )
+            runtime_worker_response = await client.get(
+                f"/internal/v1/executions/{created.execution_id}/worker-context",
+                headers=headers,
+                params={"action_key": "booking.check"},
+            )
+            post_call_worker_response = await client.get(
+                f"/internal/v1/executions/{created.execution_id}/worker-context",
+                headers=headers,
+                params={"action_key": "booking.archive"},
+            )
+        voice = VoiceExecutionContext.model_validate(voice_response.json())
+        runtime_worker = WorkerExecutionContext.model_validate(
+            runtime_worker_response.json()
         )
-        post_call_worker = await service.worker_context(
-            created.execution_id, "booking.archive"
+        post_call_worker = WorkerExecutionContext.model_validate(
+            post_call_worker_response.json()
         )
+        voice_headers = {
+            "Authorization": "Bearer "
+            + service_token("voice-agent", ["runtime-secret:materialize"], "v" * 32)
+        }
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            route_response = await client.get(
+                "/internal/v1/telephony/inbound-route",
+                headers=headers,
+                params={"phone_number": "+421900000002"},
+            )
+            integration_response = await client.post(
+                f"/internal/v1/executions/{created.execution_id}/integrations/booking/material",
+                headers=headers,
+            )
+            handoff_response = await client.post(
+                f"/internal/v1/executions/{created.execution_id}/handoff/reception/material",
+                headers=headers,
+            )
+            secret_response = await client.post(
+                f"/internal/v1/executions/{created.execution_id}/secrets/llm",
+                headers=voice_headers,
+            )
+        assert route_response.json()["tenant_id"] == created.tenant_id
+        assert IntegrationExecutionMaterial.model_validate(integration_response.json())
+        assert HandoffExecutionMaterial.model_validate(handoff_response.json())
+        assert RuntimeSecretMaterial.model_validate(secret_response.json())
         assert isinstance(created, BackendExecutionContext)
         assert isinstance(voice, VoiceExecutionContext)
         assert isinstance(runtime_worker, WorkerExecutionContext)
-        assert {field.name for field in fields(voice)} == {
+        assert set(type(voice).model_fields) == {
             "execution_id",
             "tenant",
             "agent",
@@ -422,7 +479,7 @@ async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
             "actions",
             "handoff",
         }
-        assert {field.name for field in fields(runtime_worker)} == {
+        assert set(type(runtime_worker).model_fields) == {
             "execution_id",
             "tenant_id",
             "action",
@@ -446,15 +503,29 @@ async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
             "system-b",
         )
         service._reader = None
-        frozen = await service.voice_context(created.execution_id)
-        frozen_worker = await service.worker_context(
-            created.execution_id, "booking.check"
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            frozen_response = await client.get(
+                f"/internal/v1/executions/{created.execution_id}/voice-context",
+                headers=headers,
+            )
+            frozen_worker_response = await client.get(
+                f"/internal/v1/executions/{created.execution_id}/worker-context",
+                headers=headers,
+                params={"action_key": "booking.check"},
+            )
+            replay_after_mutation_response = await client.post(
+                "/internal/v1/executions",
+                headers=headers,
+                json={"tenant_id": "slice-12", "context": {"call_id": "call-1"}},
+            )
+        frozen = VoiceExecutionContext.model_validate(frozen_response.json())
+        frozen_worker = WorkerExecutionContext.model_validate(
+            frozen_worker_response.json()
         )
-        replay_after_mutation = await service.create_execution(
-            "slice-12",
-            {"call_id": "call-1"},
-            principal="service:backend",
-            idempotency_key="execution-1",
+        replay_after_mutation = BackendExecutionContext.model_validate(
+            replay_after_mutation_response.json()
         )
         assert frozen == voice
         assert frozen_worker == runtime_worker
@@ -464,23 +535,21 @@ async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
         integration = await service.integration_material(
             created.execution_id, "booking"
         )
-        handoff = await service.handoff_material(
-            created.execution_id, "reception"
-        )
+        handoff = await service.handoff_material(created.execution_id, "reception")
         secret = await service.runtime_secret(
             created.execution_id, RuntimeSecretSlot.LLM
         )
         assert isinstance(integration, IntegrationExecutionMaterial)
         assert isinstance(handoff, HandoffExecutionMaterial)
         assert isinstance(secret, RuntimeSecretMaterial)
-        assert {field.name for field in fields(integration)} == {
+        assert set(type(integration).model_fields) == {
             "integration_kind",
             "config",
             "secret",
         }
-        assert {field.name for field in fields(secret)} == {"slot", "secret"}
+        assert set(type(secret).model_fields) == {"slot", "secret"}
         assert integration.secret == "secret"
-        assert {field.name for field in fields(handoff)} == {
+        assert set(type(handoff).model_fields) == {
             "destination_key",
             "phone_number",
         }
@@ -578,14 +647,17 @@ async def test_slice_12_failed_creation_persists_no_snapshot_or_replay(
                 idempotency_key="missing",
             )
         async with database.sessions() as session:
-            assert await session.scalar(
-                select(func.count()).select_from(SnapshotRow)
-            ) == 0
-            assert await session.scalar(
-                select(func.count())
-                .select_from(IdempotencyReplay)
-                .where(IdempotencyReplay.operation == "execution.create")
-            ) == 0
+            assert (
+                await session.scalar(select(func.count()).select_from(SnapshotRow)) == 0
+            )
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(IdempotencyReplay)
+                    .where(IdempotencyReplay.operation == "execution.create")
+                )
+                == 0
+            )
     finally:
         await database.close()
 
@@ -627,14 +699,17 @@ async def test_slice_12_replay_failure_rolls_back_snapshot(
             )
 
         async with database.sessions() as session:
-            assert await session.scalar(
-                select(func.count()).select_from(SnapshotRow)
-            ) == 0
-            assert await session.scalar(
-                select(func.count())
-                .select_from(IdempotencyReplay)
-                .where(IdempotencyReplay.operation == "execution.create")
-            ) == 0
+            assert (
+                await session.scalar(select(func.count()).select_from(SnapshotRow)) == 0
+            )
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(IdempotencyReplay)
+                    .where(IdempotencyReplay.operation == "execution.create")
+                )
+                == 0
+            )
     finally:
         await database.close()
 

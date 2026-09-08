@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from agentic_observability.domain import CoreMetrics
@@ -8,7 +8,7 @@ from contracts import (
     CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
     CapabilityInvocationResponse,
-    RuntimeIntegrationMaterial,
+    IntegrationExecutionMaterial,
     WorkerResultReport,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -51,7 +51,7 @@ def build_service(
         CapabilityInvocationRepository(session),
         CallSessionRepository(session),
         ConversationRepository(session),
-        execution_context,
+        cast(ExecutionContextReader, execution_context),
         tracer,
         metrics,
     )
@@ -180,22 +180,22 @@ async def get_invocation(
 
 @runtime_router.get(
     "/{invocation_id}/integration-material",
-    response_model=RuntimeIntegrationMaterial,
+    response_model=IntegrationExecutionMaterial,
     dependencies=[Depends(require_internal_scope("integration-material:read"))],
 )
 async def integration_material(
     invocation_id: UUID,
     job_id: UUID,
+    execution_id: UUID,
     integrations: IntegrationResolver,
     call_id: UUID | None = None,
-    execution_snapshot_id: UUID | None = None,
-) -> RuntimeIntegrationMaterial:
+) -> IntegrationExecutionMaterial:
     try:
         return await integrations.resolve(
             invocation_id,
             job_id,
             call_id=call_id,
-            execution_snapshot_id=execution_snapshot_id,
+            execution_id=execution_id,
         )
     except IntegrationConnectionError as error:
         raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error

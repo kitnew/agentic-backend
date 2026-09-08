@@ -7,7 +7,10 @@ from json import dumps, loads
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from scripts.export_control_plane_openapi import export_control_plane_openapi
+from scripts.export_control_plane_openapi import (
+    _referenced_schemas,
+    export_control_plane_openapi,
+)
 from scripts.generate_admin_client import generate, snapshot
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +20,15 @@ GENERATED = ROOT / "packages/admin-client/src/admin_client/control_plane"
 
 def generator_schema(path: Path) -> None:
     document = loads(path.read_text())
+    document["paths"] = {
+        route: operations
+        for route, operations in document["paths"].items()
+        if not route.startswith("/internal/v1/")
+    }
     schemas = document["components"]["schemas"]
+    document["components"]["schemas"] = schemas = _referenced_schemas(
+        document["paths"], schemas
+    )
     for name, schema in schemas.items():
         schema["title"] = name.replace("-", "_")
     for name in ("MappingTemplate-Input", "MappingTemplate-Output"):

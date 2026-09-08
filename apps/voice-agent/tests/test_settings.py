@@ -15,6 +15,7 @@ def test_settings_require_service_bootstrap(monkeypatch: pytest.MonkeyPatch) -> 
         monkeypatch.setenv(name, value)
     settings = VoiceAgentSettings()  # type: ignore[call-arg]
     assert settings.control_plane_url == "http://control-plane-service:8000"
+    assert settings.control_plane_api_audience == "control-plane-service"
 
 
 def test_provider_environment_is_not_a_setting() -> None:

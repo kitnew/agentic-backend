@@ -14,7 +14,8 @@ from contracts import (
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
     IntegrationJob,
-    RuntimeCapabilityBinding,
+    VoiceExecutionContext,
+    WorkerExecutionContext,
     WorkerResultReport,
 )
 from opentelemetry.trace import Tracer
@@ -25,12 +26,7 @@ from backend_core.modules.calls.repository import CallSessionRepository
 from backend_core.modules.conversations.repository import ConversationRepository
 from backend_core.runtime.capabilities.domain import (
     CapabilityValidationError,
-    compile_plan,
-    enforce_input_constraints,
-    normalize_input,
     semantic_result,
-    validate_agent_input,
-    validate_result_for_plan,
 )
 from backend_core.runtime.capabilities.execution import (
     TechnicalResultProjectionError,
@@ -66,7 +62,7 @@ class CapabilityInvocationService:
 
     async def _validate_request(
         self, call_id: UUID, request: CapabilityInvocationRequest
-    ) -> tuple[Any, UUID, RuntimeCapabilityBinding, dict[str, object]]:
+    ) -> tuple[Any, WorkerExecutionContext, VoiceExecutionContext]:
         call = await self._calls.get(call_id)
         if call is None:
             raise CapabilityValidationError("call_not_found", "Call does not exist")
@@ -75,52 +71,39 @@ class CapabilityInvocationService:
                 "call_not_active", "Call does not allow capability execution"
             )
         try:
-            runtime_profile = await self._execution_context.capability(call, request.capability)
-            payload_timezone = (await self._execution_context.snapshot(call)).agent or {}
-            timezone = str(payload_timezone.get("timezone", "UTC"))
+            worker = await self._execution_context.worker(call, request.capability)
+            voice = await self._execution_context.read(call)
         except ValueError as error:
             raise CapabilityValidationError(
-                "configuration_invalid", "Execution snapshot is unavailable"
+                "configuration_invalid", "Execution context is unavailable"
             ) from error
-        pin_id = call.execution_snapshot_id
-        if not runtime_profile.enabled:
+        if worker.action.get("phase") != "runtime":
             raise CapabilityValidationError(
-                "capability_disabled", "Capability is disabled"
+                "capability_unavailable", "Action is not available at runtime"
             )
-        validate_agent_input(runtime_profile.input_schema, request.agent_input)
-        canonical = normalize_input(
-            request.agent_input,
-            runtime_profile.bindings,
-        )
-        enforce_input_constraints(
-            canonical,
-            timezone,
-            runtime_profile.input_constraints,
-        )
-        if (
-            runtime_profile.policy.requires_caller_phone
-            and call.caller_phone_e164 is None
-        ):
-            raise CapabilityValidationError(
-                "caller_phone_unavailable",
-                "Caller phone is required for capability execution",
-                "metadata.caller_phone",
-            )
-        assert pin_id is not None
-        return call, pin_id, runtime_profile, canonical
+        return call, worker, voice
 
     async def prepare_confirmation(
         self, call_id: UUID, request: CapabilityInvocationRequest
     ) -> CapabilityConfirmationResponse:
-        call, pin_id, profile, canonical = await self._validate_request(call_id, request)
-        policy = profile.policy
-        if not policy.requires_final_confirmation:
+        call, worker, _voice = await self._validate_request(call_id, request)
+        definition = worker.action.get("definition")
+        policy = (
+            definition.get("business_policy", {})
+            if isinstance(definition, dict)
+            else {}
+        )
+        if not isinstance(policy, dict) or not policy.get(
+            "requires_final_confirmation", False
+        ):
             raise CapabilityValidationError(
                 "confirmation_not_required", "Capability does not require confirmation"
             )
         payload_hash = sha256(
-            f"{pin_id}:{profile.semantic_key}:{profile.semantic_version}:".encode()
-            + json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+            f"{worker.execution_id}:{request.capability}:".encode()
+            + json.dumps(
+                request.agent_input, sort_keys=True, separators=(",", ":")
+            ).encode()
         ).hexdigest()
         existing = await self._invocations.get_confirmation_by_tool_call(
             call.tenant_id, call.id, request.tool_call_id
@@ -132,12 +115,12 @@ class CapabilityInvocationService:
         ):
             return CapabilityConfirmationResponse(
                 id=existing.id,
-                summary=canonical,
+                summary=request.agent_input,
                 expires_at=existing.expires_at,
             )
         now = datetime.now(UTC)
         if existing is not None:
-            existing.canonical_input = canonical
+            existing.canonical_input = request.agent_input
             existing.agent_input = request.agent_input
             existing.payload_hash = payload_hash
             existing.status = "pending_confirmation"
@@ -147,17 +130,16 @@ class CapabilityInvocationService:
             await self._invocations.flush()
             return CapabilityConfirmationResponse(
                 id=existing.id,
-                summary=canonical,
+                summary=request.agent_input,
                 expires_at=existing.expires_at,
             )
         confirmation = CapabilityConfirmation(
             tenant_id=call.tenant_id,
             call_id=call.id,
             tool_call_id=request.tool_call_id,
-            semantic_key=profile.semantic_key,
-            semantic_version=profile.semantic_version,
-            execution_snapshot_id=call.execution_snapshot_id,
-            canonical_input=canonical,
+            semantic_key=request.capability,
+            execution_id=call.execution_id,
+            canonical_input=request.agent_input,
             agent_input=request.agent_input,
             payload_hash=payload_hash,
             status="pending_confirmation",
@@ -166,7 +148,7 @@ class CapabilityInvocationService:
         await self._invocations.add_confirmation(confirmation)
         return CapabilityConfirmationResponse(
             id=confirmation.id,
-            summary=canonical,
+            summary=request.agent_input,
             expires_at=confirmation.expires_at,
         )
 
@@ -198,17 +180,17 @@ class CapabilityInvocationService:
             capability=confirmation.semantic_key,
             agent_input=confirmation.agent_input,
         )
-        _, _, _, pin_id, profile, canonical = await self._validate_request(
-            call_id, request
-        )
+        _call, worker, _voice = await self._validate_request(call_id, request)
         payload_hash = sha256(
-            f"{pin_id}:{profile.semantic_key}:{profile.semantic_version}:".encode()
-            + json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
+            f"{worker.execution_id}:{request.capability}:".encode()
+            + json.dumps(
+                request.agent_input, sort_keys=True, separators=(",", ":")
+            ).encode()
         ).hexdigest()
         if payload_hash != confirmation.payload_hash:
             confirmation.status = "cancelled"
             raise CapabilityValidationError(
-                "confirmation_conflict", "Confirmation snapshot has changed"
+                "confirmation_conflict", "Frozen confirmation input has changed"
             )
         invocation, created = await self.invoke(
             call_id, request, skip_confirmation=True
@@ -235,7 +217,6 @@ class CapabilityInvocationService:
                 span.set_attribute("tenant.id", str(invocation.tenant_id))
                 span.set_attribute("conversation.id", str(invocation.conversation_id))
                 span.set_attribute("capability.name", invocation.semantic_key)
-                span.set_attribute("capability.version", invocation.semantic_version)
             return invocation, created
 
     async def _invoke(
@@ -265,10 +246,19 @@ class CapabilityInvocationService:
                 },
             )
             return existing, False
-        call, _pin_id, profile, canonical = await self._validate_request(call_id, request)
-        semantic_key = profile.semantic_key
-        policy = profile.policy
-        if policy.requires_final_confirmation and not skip_confirmation:
+        call, worker, voice = await self._validate_request(call_id, request)
+        semantic_key = str(worker.action["key"])
+        definition = worker.action.get("definition")
+        policy = (
+            definition.get("business_policy", {})
+            if isinstance(definition, dict)
+            else {}
+        )
+        if (
+            isinstance(policy, dict)
+            and policy.get("requires_final_confirmation", False)
+            and not skip_confirmation
+        ):
             raise CapabilityValidationError(
                 "confirmation_required",
                 "Capability confirmation is required before execution",
@@ -278,9 +268,8 @@ class CapabilityInvocationService:
             extra={
                 "tenant_id": str(call.tenant_id),
                 "call_id": str(call.id),
-                "semantic_key": profile.semantic_key,
-                "semantic_version": profile.semantic_version,
-                "execution_snapshot_id": str(call.execution_snapshot_id),
+                "semantic_key": semantic_key,
+                "execution_id": str(call.execution_id),
             },
         )
         conversation = await self._conversations.get_for_call(call.id)
@@ -292,22 +281,23 @@ class CapabilityInvocationService:
         invocation_id = uuid4()
         job_id = uuid4()
         now = datetime.now(UTC)
-        plan = compile_plan(
-            profile,
-            canonical,
-            operation_id=invocation_id,
-            call_id=call.id,
-            tool_call_id=request.tool_call_id,
-            integration_id=profile.execution.connection_id,
-            caller_phone=call.caller_phone_e164 or "",
-            semantic_key=semantic_key,
-        )
         job = IntegrationJob(
             job_id=job_id,
             capability_invocation_id=invocation_id,
             call_id=call.id,
-            execution_snapshot_id=call.execution_snapshot_id,
-            execution_plan=plan,
+            execution_id=call.execution_id,
+            worker_context=worker,
+            tool_args=request.agent_input,
+            metadata={
+                "operation_id": str(invocation_id),
+                "invocation_id": str(invocation_id),
+                "source": "voice_agent",
+                "caller_phone": call.caller_phone_e164 or "",
+                "call_id": str(call.id),
+                "tool_call_id": request.tool_call_id,
+                "timezone": str(voice.tenant.get("timezone", "UTC")),
+            },
+            confirmed=skip_confirmation,
             created_at=now,
             expires_at=now + timedelta(minutes=10),
         )
@@ -317,11 +307,10 @@ class CapabilityInvocationService:
             call_id=call.id,
             conversation_id=conversation.id,
             tool_call_id=request.tool_call_id,
-            semantic_key=profile.semantic_key,
-            semantic_version=profile.semantic_version,
-            execution_snapshot_id=call.execution_snapshot_id,
-            canonical_input=canonical,
-            execution_plan=plan.model_dump(mode="json"),
+            semantic_key=semantic_key,
+            execution_id=call.execution_id,
+            canonical_input=request.agent_input,
+            worker_context=worker.model_dump(mode="json"),
             operation_id=invocation_id,
             job_id=job_id,
         )
@@ -356,10 +345,8 @@ class CapabilityInvocationService:
                     "call_id": str(call.id),
                     "invocation_id": str(invocation_id),
                     "job_id": str(job_id),
-                    "semantic_key": profile.semantic_key,
-                    "semantic_version": profile.semantic_version,
-                    "execution_snapshot_id": str(call.execution_snapshot_id),
-                    "plan_type": plan.plan_type,
+                    "semantic_key": semantic_key,
+                    "execution_id": str(call.execution_id),
                 },
             )
         return created_invocation, created
@@ -392,7 +379,6 @@ class CapabilityInvocationService:
                 raise CapabilityValidationError(
                     "result_missing", "Successful worker report has no result"
                 )
-            validate_result_for_plan(invocation.execution_plan, report.result)
             try:
                 outcome = project_execution_outcome(report.result)
             except TechnicalResultProjectionError as error:
@@ -422,7 +408,7 @@ class CapabilityInvocationService:
         if self._metrics is not None:
             self._metrics.capability_completed(
                 name=invocation.semantic_key,
-                version=str(invocation.semantic_version),
+                version="execution",
                 status="succeeded" if report.status == "succeeded" else "failed",
                 duration_seconds=max(
                     0.0,
@@ -451,8 +437,7 @@ class CapabilityInvocationService:
                 "invocation_id": str(invocation.id),
                 "job_id": str(invocation.job_id),
                 "semantic_key": invocation.semantic_key,
-                "semantic_version": invocation.semantic_version,
-                "execution_snapshot_id": str(invocation.execution_snapshot_id),
+                "execution_id": str(invocation.execution_id),
                 "status": invocation.status.value,
                 "attempt": report.attempt,
                 "latency_ms": round(
@@ -470,7 +455,6 @@ def invocation_response(
         id=invocation.id,
         call_id=invocation.call_id,
         semantic_key=invocation.semantic_key,
-        semantic_version=invocation.semantic_version,
         status=invocation.status,
         semantic_result=invocation.semantic_result,
         error_code=invocation.error_code,

@@ -23,9 +23,6 @@ from control_plane.application.platform_configuration import (
 )
 from control_plane.application.ports.repositories import ComponentRepository
 from control_plane.application.providers import ProviderService
-from control_plane.application.runtime_materialization import (
-    ExecutionSnapshotService,
-)
 from control_plane.application.runtime_resolver import RuntimeResolver
 from control_plane.application.system_configuration import SystemConfigurationService
 from control_plane.application.telephony import TelephonyService
@@ -221,23 +218,9 @@ def create_app(
         and resolution_reader is not None
         else None
     )
-    runtime_materialization = (
-        ExecutionSnapshotService(
-            database.sessions,
-            runtime_resolver,
-            resolution_reader,
-            SqlAlchemyExecutionSnapshotRepository(database.sessions),
-            ExecutionResolver(registry, runtime_resolver),
-            execution_materialization,
-        )
-        if runtime_resolver is not None and resolution_reader is not None
-        else None
-    )
     app = create_http_app(
         ServiceLifecycle(database, telemetry),
         components,
-        runtime_resolver=runtime_resolver,
-        runtime_materialization=runtime_materialization,
         execution_materialization=execution_materialization,
         credentials=credentials,
         providers=providers,

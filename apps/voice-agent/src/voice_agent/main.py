@@ -15,8 +15,7 @@ from contracts import (
     HumanHandoffRequest,
     InboundSipClaimRequest,
     LiveKitJobMetadata,
-    RuntimeCapabilityDefinition,
-    VoiceAgentRuntimeContext,
+    VoiceExecutionContext,
 )
 from livekit import agents, rtc
 from livekit.agents import llm
@@ -51,27 +50,29 @@ def log_user_transcript(event: object) -> None:
 
 
 def log_runtime_binding(
-    settings: VoiceAgentSettings, context: VoiceAgentRuntimeContext
+    settings: VoiceAgentSettings, context: VoiceExecutionContext
 ) -> None:
-    if context.voice_runtime is None:
+    if context.architecture == "realtime":
         logger.info(
             "Realtime runtime binding resolved",
-            extra={"call_session_id": str(context.call_session_id)},
+            extra={"execution_id": str(context.execution_id)},
         )
         return
-    runtime = context.voice_runtime
+    runtime = context.runtime
+    llm = cast(dict[str, Any], runtime["llm"])
+    stt = cast(dict[str, Any], runtime["stt"])
+    tts = cast(dict[str, Any], runtime["tts"])
     logger.info(
         "Voice runtime binding resolved",
         extra={
-            "call_session_id": str(context.call_session_id),
-            "voice_runtime_revision_id": str(context.voice_runtime_revision_id),
-            "llm_provider": runtime.llm.provider,
-            "llm_logical_model": runtime.llm.model,
-            "stt_provider": runtime.stt.provider,
-            "stt_model": runtime.stt.model,
-            "tts_provider": runtime.tts.provider,
-            "tts_model": runtime.tts.model,
-            "tts_voice_id": runtime.tts.voice_id,
+            "execution_id": str(context.execution_id),
+            "llm_provider": llm["provider_kind"],
+            "llm_logical_model": llm["deployment_config"].get("model"),
+            "stt_provider": stt["provider_kind"],
+            "stt_model": stt["deployment_config"].get("model_id"),
+            "tts_provider": tts["provider_kind"],
+            "tts_model": tts["deployment_config"].get("model_id"),
+            "tts_voice_id": tts["voice"],
         },
     )
 
@@ -143,29 +144,29 @@ async def resolve_call_session_id(
     return claim.call_session_id
 
 
-def assemble_instructions(context: VoiceAgentRuntimeContext) -> str:
-    local_now = datetime.now(ZoneInfo(context.timezone))
+def assemble_instructions(context: VoiceExecutionContext) -> str:
+    timezone = str(context.tenant["timezone"])
+    local_now = datetime.now(ZoneInfo(timezone))
     return "\n\n".join(
         part
         for part in (
-            context.prompt.system_prompt,
-            context.prompt.profile_prompt,
-            context.prompt.tenant_prompt,
-            f"Locale: {context.locale}",
-            f"Timezone: {context.timezone}",
+            str(context.prompts["system"]),
+            str(context.prompts["profile"]),
+            str(context.prompts["tenant"]),
+            f"Locale: {context.tenant['locale']}",
+            f"Timezone: {timezone}",
             f"Current local date: {local_now.date().isoformat()}",
             f"Current local time: {local_now.strftime('%H:%M:%S')}",
-            f"Conversation scope: {context.conversation_scope}",
             "Use a capability tool when its inputs are known. Do not promise success before its result. Capability results are authoritative for the requested operation.",
             "Use the calculator whenever exact arithmetic is required. It performs one operation per call; decompose multi-step calculations into sequential calls and pass each result forward. It does not interpret business meaning. percentage(A, B) means B percent of A.",
-            context.prompt.knowledge_context,
+            str(context.prompts["knowledge"]),
         )
         if part
     )
 
 
 def build_agent_tools(
-    context: VoiceAgentRuntimeContext,
+    context: VoiceExecutionContext,
     backend: BackendClient,
     call_id: UUID,
     on_handoff: Callable[[], None] | None = None,
@@ -200,26 +201,27 @@ def build_agent_tools(
         ),
         *(
             [handoff_tool(context, backend, call_id, on_handoff)]
-            if context.handoff_destinations
+            if context.handoff
             else []
         ),
         *[
             capability_tool(tool, backend, call_id, recorder)
-            for tool in context.capabilities
+            for tool in context.actions
         ],
     ]
 
 
 def handoff_tool(
-    runtime: VoiceAgentRuntimeContext,
+    runtime: VoiceExecutionContext,
     backend: BackendClient,
     call_id: UUID,
     on_handoff: Callable[[], None] | None = None,
 ) -> llm.RawFunctionTool:
-    destinations = runtime.handoff_destinations
-    description = "; ".join(
-        f"{key}: {value.description}" for key, value in destinations.items()
-    )
+    destinations = {
+        str(item["destination_key"]): str(item["description"])
+        for item in runtime.handoff
+    }
+    description = "; ".join(f"{key}: {value}" for key, value in destinations.items())
 
     async def invoke(
         context: agents.RunContext[Any],
@@ -284,24 +286,36 @@ def handoff_tool(
 
 
 def capability_tool(
-    definition: RuntimeCapabilityDefinition,
+    action: dict[str, object],
     backend: BackendClient,
     call_id: UUID,
     capability_recorder: Callable[..., None] | None = None,
 ) -> llm.RawFunctionTool:
     recorder = capability_recorder or record_capability_execution
+    key = str(action["key"])
+    definition = cast(dict[str, object], action["definition"])
+    tool_name = key.replace(".", "_")
+    if len(tool_name) > 64:
+        tool_name = f"{tool_name[:55]}_{hashlib.sha256(key.encode()).hexdigest()[:8]}"
+    policy = cast(dict[str, object], definition.get("business_policy", {}))
+    requires_confirmation = bool(policy.get("requires_final_confirmation", False))
+    announcement = definition["announcement"]
+    if isinstance(announcement, dict):
+        announcement = announcement.get(str(action.get("locale", ""))) or next(
+            iter(announcement.values())
+        )
     pending_confirmation: dict[str, object] = {}
 
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
     ) -> Any:
-        announcement = context.session.say(
-            definition.announcement,
+        speech = context.session.say(
+            str(announcement),
             allow_interruptions=False,
             add_to_chat_ctx=False,
         )
-        await announcement
+        await speech
         started = time.perf_counter()
         executed = False
         status = "failed"
@@ -310,11 +324,11 @@ def capability_tool(
         try:
             request = CapabilityInvocationRequest(
                 tool_call_id=context.function_call.call_id,
-                capability=definition.tool_name,
+                capability=key,
                 agent_input=raw_arguments,
             )
             pending_id = pending_confirmation.get("id")
-            if not definition.requires_confirmation:
+            if not requires_confirmation:
                 executed = True
                 invocation = await backend.invoke_capability(call_id, request)
             elif (
@@ -373,8 +387,8 @@ def capability_tool(
         finally:
             if executed:
                 recorder(
-                    name=definition.semantic_key,
-                    version=str(definition.semantic_version),
+                    name=key,
+                    version="execution",
                     status=status,
                     duration_seconds=time.perf_counter() - started,
                     error_type=error_type,
@@ -385,9 +399,9 @@ def capability_tool(
         llm.RawFunctionTool,
         agents.function_tool(
             raw_schema={
-                "name": definition.tool_name,
-                "description": definition.description,
-                "parameters": definition.input_schema,
+                "name": tool_name,
+                "description": str(definition["description"]),
+                "parameters": cast(dict[str, object], definition["agent_input_schema"]),
             }
         )(invoke),
     )
@@ -468,41 +482,37 @@ async def run_job(
         context = await backend.runtime_context(call_id)
         logger.info(
             "Voice runtime context loaded",
-            extra={"call_session_id": str(call_id), "room": context.room_name},
+            extra={"call_session_id": str(call_id), "room": ctx.room.name},
         )
         log_runtime_binding(settings, context)
         prompt_cache_key = (
             "voice-agent-prompt:"
             + hashlib.sha256(
-                f"{context.prompt.system_prompt}\0{context.prompt.profile_prompt}".encode()
+                f"{context.prompts['system']}\0{context.prompts['profile']}".encode()
             ).hexdigest()
         )
         telemetry = current_voice_telemetry()
         secrets = {}
-        if context.execution_snapshot_id is not None:
-            slots = (
-                ("model", "input_transcription")
-                if context.architecture == "realtime"
-                else ("stt", "llm", "tts")
-            )
-            secrets = {
-                slot: await backend.runtime_secret(context.execution_snapshot_id, slot)
-                for slot in slots
-            }
+        slots = (
+            ("model", "input_transcription")
+            if context.architecture == "realtime"
+            else ("stt", "llm", "tts")
+        )
+        secrets = {
+            slot: await backend.runtime_secret(context.execution_id, slot)
+            for slot in slots
+        }
         if context.architecture == "realtime":
-            if context.snapshot_runtime is None:
-                raise ValueError("realtime execution snapshot is missing runtime")
-            session = create_realtime_session(settings, context.snapshot_runtime, secrets)
+            runtime = cast(dict[str, Any], context.runtime["realtime"])
+            session = create_realtime_session(settings, runtime, secrets)
         else:
-            if context.voice_runtime is None:
-                raise ValueError("cascade execution snapshot is missing runtime")
+            runtime = {**context.runtime, "locale": context.tenant["locale"]}
             session = create_agent_session(
                 settings,
-                context.voice_runtime,
+                runtime,
                 prompt_cache_key,
                 telemetry.metrics if telemetry is not None else None,
                 secrets,
-                context.snapshot_runtime,
             )
         persistence = ConversationPersistence(backend, call_id)
         terminalizer = SessionTerminalizer(finalizer, persistence)
@@ -586,7 +596,7 @@ async def run_job(
         if not closed.done():
             try:
                 await session.generate_reply(
-                    instructions=context.greeting,
+                    instructions=str(context.agent["greeting"]),
                     input_modality="audio",
                 )
             except Exception:

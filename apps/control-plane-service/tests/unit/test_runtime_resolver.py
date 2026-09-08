@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import UUID
@@ -49,8 +48,6 @@ from control_plane.domain.runtime_resolution import (
     RuntimeResolutionError,
     SpeechHintStatus,
 )
-from control_plane.interfaces.http import create_http_app
-from httpx import ASGITransport, AsyncClient
 
 TENANT = "tenant-a"
 NOW = datetime(2026, 1, 1, tzinfo=UTC)
@@ -81,12 +78,6 @@ class Reader:
 
     async def load(self, _tenant_id: str) -> RuntimeResolutionState:
         return self.state
-
-
-class Lifecycle:
-    @asynccontextmanager
-    async def lifespan(self, _app):
-        yield
 
 
 def component(
@@ -556,7 +547,8 @@ def test_target_execution_state_does_not_embed_component_provenance() -> None:
     execution = resolver.resolve_state(TENANT, enriched)
     assert "provenance" not in str(execution.actions).lower()
     assert all(
-        set(action) == {
+        set(action)
+        == {
             "key",
             "phase",
             "definition",
@@ -820,47 +812,3 @@ async def test_repeated_resolution_is_deterministic_and_contains_no_secret() -> 
 
     assert first == second
     assert "plaintext-api-key" not in repr(first)
-
-
-@pytest.mark.asyncio
-async def test_http_returns_typed_resolution_without_plaintext() -> None:
-    app = create_http_app(
-        Lifecycle(),  # type: ignore[arg-type]
-        runtime_resolver=resolver(state()),
-    )
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get(f"/v1/runtime/resolve/tenant/{TENANT}")
-
-    assert response.status_code == 200
-    assert response.json()["selected"]["architecture"] == "realtime"
-    assert response.json()["attempts"] == [
-        {"architecture": "realtime", "status": "selected", "failure": None}
-    ]
-    assert "plaintext-api-key" not in response.text
-
-
-@pytest.mark.asyncio
-async def test_http_returns_structured_unresolvable_response() -> None:
-    app = create_http_app(
-        Lifecycle(),  # type: ignore[arg-type]
-        runtime_resolver=resolver(without_component(state(), "Architecture")),
-    )
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get(f"/v1/runtime/resolve/tenant/{TENANT}")
-
-    assert response.status_code == 422
-    assert response.json()["detail"] == {
-        "code": "runtime_resolution_failed",
-        "reason": "MISSING_TENANT_COMPONENT",
-        "details": {
-            "tenant_id": TENANT,
-            "component_kind": "Architecture",
-        },
-        "attempts": [],
-    }

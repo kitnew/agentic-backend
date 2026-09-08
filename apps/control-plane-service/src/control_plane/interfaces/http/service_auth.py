@@ -9,16 +9,17 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
 
 VOICE_AGENT = "voice-agent"
-JOB_WORKER = "job-worker"
 BACKEND_CORE = "backend-core"
 SERVICE_SCOPES = {
     VOICE_AGENT: frozenset({"runtime-secret:materialize"}),
-    JOB_WORKER: frozenset({"integration-material:read"}),
     BACKEND_CORE: frozenset(
         {
-            "execution-snapshot:materialize",
-            "execution-snapshot:read",
+            "telephony:resolve",
+            "execution:create",
+            "execution:voice-context:read",
+            "execution:worker-context:read",
             "integration-material:read",
+            "handoff-material:read",
         }
     ),
 }
@@ -69,7 +70,6 @@ def require_service_scope(scope: str) -> Callable[..., ServicePrincipal]:
                 settings,
                 {
                     VOICE_AGENT: "voice_agent_service_secret",
-                    JOB_WORKER: "job_worker_service_secret",
                     BACKEND_CORE: "backend_core_service_secret",
                 }[service],
             ).get_secret_value()

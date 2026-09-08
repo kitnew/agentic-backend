@@ -45,7 +45,11 @@ class Repository:
         return [self.provisioning_state]
 
     async def provisioning_for(self, tenant_id, assignment_id):
-        return self.provisioning_state if assignment_id == self.assignment.assignment_id else None
+        return (
+            self.provisioning_state
+            if assignment_id == self.assignment.assignment_id
+            else None
+        )
 
     async def add(self, value):
         self.provisioning_state = value
@@ -66,14 +70,6 @@ class LiveKit:
         return "ST_inbound", "ST_outbound", "SDR_shared"
 
 
-class ControlPlane:
-    def __init__(self, repository):
-        self.repository = repository
-
-    async def list_enabled_phone_assignments(self):
-        return [self.repository.assignment] if self.repository.assignment else []
-
-
 @pytest.mark.asyncio
 async def test_reconciliation_persists_failure_then_retries_with_stored_ids() -> None:
     repository = Repository()
@@ -84,7 +80,7 @@ async def test_reconciliation_persists_failure_then_retries_with_stored_ids() ->
         sip_provider_password=None,
         livekit_agent_name="voice-agent",
     )
-    service = PlatformTelephonyService(repository, livekit, settings, ControlPlane(repository))  # type: ignore[arg-type]
+    service = PlatformTelephonyService(repository, livekit, settings)  # type: ignore[arg-type]
 
     failed = await service.reconcile()
     assert failed.overall == "error"
@@ -107,10 +103,6 @@ async def test_reconciliation_persists_failure_then_retries_with_stored_ids() ->
     assert livekit.calls[-1]["outbound_trunk_id"] == "ST_outbound"
     assert livekit.calls[-1]["dispatch_rule_id"] == "SDR_shared"
 
-    repository.assignment.phone_number = "+421551234568"
-    await service.reconcile()
-    assert livekit.calls[-1]["numbers"] == ["+421551234568"]
-    repository.assignment = None
     await service.reconcile()
     assert livekit.calls[-1]["numbers"] == []
 
@@ -134,7 +126,9 @@ async def test_pending_publish_is_reconciled_automatically_after_commit(
 
     class Repository:
         async def platform(self):
-            return SimpleNamespace(provisioning_status=TelephonyProvisioningStatus.READY)
+            return SimpleNamespace(
+                provisioning_status=TelephonyProvisioningStatus.READY
+            )
 
         async def provisioning(self):
             return [SimpleNamespace(status=TelephonyProvisioningStatus.PENDING.value)]
@@ -148,7 +142,9 @@ async def test_pending_publish_is_reconciled_automatically_after_commit(
             calls += 1
             raise asyncio.CancelledError
 
-    monkeypatch.setattr(telephony_module, "TelephonyRepository", lambda _session: Repository())
+    monkeypatch.setattr(
+        telephony_module, "TelephonyRepository", lambda _session: Repository()
+    )
     monkeypatch.setattr(telephony_module, "PlatformTelephonyService", Service)
     task = asyncio.create_task(
         PlatformTelephonyReconciler(Database(), object(), object(), object()).run(0)  # type: ignore[arg-type]

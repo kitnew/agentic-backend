@@ -25,8 +25,9 @@ from redis.exceptions import ResponseError
 from job_worker.worker import (
     BackendClient,
     ExecutionError,
-    ManagedWebhookPostJsonHandler,
+    HttpExecutionHandler,
     Settings,
+    _post_call_http_plan,
 )
 
 CommandHandler = Callable[
@@ -125,9 +126,7 @@ class GenerateCallSummaryHandler:
 
 
 class ExecutePostCallActionHandler:
-    def __init__(
-        self, backend: BackendClient, webhooks: ManagedWebhookPostJsonHandler
-    ) -> None:
+    def __init__(self, backend: BackendClient, webhooks: HttpExecutionHandler) -> None:
         self._backend = backend
         self._webhooks = webhooks
 
@@ -142,12 +141,13 @@ class ExecutePostCallActionHandler:
             raise ExecutionError(
                 "invalid_command", "Invalid action command", transient=False
             )
-        plan = await self._backend.post_call_action(
+        context, mapping_context = await self._backend.post_call_action(
             command.call_id,
             command.finalization_id,
             command.action_id,
             envelope.message_id,
         )
+        plan = _post_call_http_plan(context, mapping_context, envelope.message_id)
         material = await self._backend.post_call_action_material(
             command.call_id,
             command.finalization_id,

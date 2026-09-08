@@ -1,11 +1,7 @@
 import json
 from dataclasses import dataclass, field
 
-from contracts import (
-    GoogleSheetsAppendValuesResult,
-    HttpRequestResult,
-    TechnicalResult,
-)
+from contracts import HttpRequestResult, TechnicalResult
 
 type JsonValue = (
     str | int | float | bool | None | list["JsonValue"] | dict[str, "JsonValue"]
@@ -34,11 +30,6 @@ def _json_data(value: object) -> object:
 
 
 def project_execution_outcome(result: TechnicalResult) -> ExecutionOutcome:
-    if isinstance(result, GoogleSheetsAppendValuesResult):
-        return ExecutionOutcome(
-            reference=result.updated_range,
-            deduplicated=result.deduplicated,
-        )
     if isinstance(result, HttpRequestResult):
         return ExecutionOutcome(
             reference=result.reference,

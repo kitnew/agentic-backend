@@ -43,7 +43,6 @@ def settings(
         database_url=database_url,
         control_plane_encryption_key=KEY,
         voice_agent_service_secret="voice-secret",
-        job_worker_service_secret="worker-secret",
         backend_core_service_secret="backend-secret",
         control_plane_management_token="management-token",
         control_plane_management_actor=actor,

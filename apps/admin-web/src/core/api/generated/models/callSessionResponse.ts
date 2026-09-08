@@ -18,7 +18,7 @@ export interface CallSessionResponse {
   created_at: string;
   direction: CallDirection;
   ended_at: string | null;
-  execution_snapshot_id: string;
+  execution_id: string;
   failure_reason: string | null;
   handoff_destination: string | null;
   handoff_participant_identity: string | null;

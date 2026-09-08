@@ -1,12 +1,9 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-
-from contracts.capability import RuntimeCapabilityDefinition
-from contracts.voice_runtime import EffectiveVoiceRuntime
 
 
 class _VoiceModel(BaseModel):
@@ -61,13 +58,6 @@ class InboundSipClaimResponse(_VoiceModel):
     created: bool
 
 
-class HandoffDestinationDefinition(_VoiceModel):
-    description: str = Field(min_length=1, max_length=1000)
-    ref: UUID | None = None
-    key: str | None = None
-    generation: int | None = Field(default=None, ge=1)
-
-
 class HumanHandoffRequest(_VoiceModel):
     tool_call_id: str = Field(min_length=1, max_length=255)
     destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
@@ -77,35 +67,6 @@ class HumanHandoffRequest(_VoiceModel):
 class HumanHandoffResponse(_VoiceModel):
     status: Literal["transferred"] = "transferred"
     destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
-
-
-class VoiceAgentPrompt(_VoiceModel):
-    system_prompt: str = Field(min_length=1)
-    profile_prompt: str = ""
-    tenant_prompt: str = ""
-    knowledge_context: str = ""
-    knowledge_base_revision_id: UUID | None = None
-
-
-class VoiceAgentRuntimeContext(_VoiceModel):
-    call_session_id: UUID
-    execution_snapshot_id: UUID
-    architecture: Literal["cascade", "realtime"] = "cascade"
-    voice_runtime: EffectiveVoiceRuntime | None = None
-    snapshot_runtime: dict[str, Any] | None = None
-    room_name: str = Field(min_length=1, max_length=255)
-    locale: str = Field(min_length=1, max_length=35)
-    timezone: str = Field(min_length=1, max_length=64)
-    agent_display_name: str = Field(min_length=1, max_length=100)
-    agent_profile: str = Field(default="default", min_length=1, max_length=100)
-    greeting: str = Field(min_length=1, max_length=1000)
-    conversation_scope: str = Field(min_length=1, max_length=64)
-    prompt: VoiceAgentPrompt
-    capabilities: list[RuntimeCapabilityDefinition] = Field(default_factory=list)
-    handoff_destinations: dict[str, HandoffDestinationDefinition] = Field(
-        default_factory=dict
-    )
-    voice_runtime_revision_id: UUID
 
 
 class CallLifecycleResponse(_VoiceModel):

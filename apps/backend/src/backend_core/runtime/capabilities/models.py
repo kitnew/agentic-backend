@@ -51,8 +51,7 @@ class CapabilityInvocation(Base):
     conversation_id: Mapped[UUID] = mapped_column(Uuid)
     tool_call_id: Mapped[str] = mapped_column(String(255))
     semantic_key: Mapped[str] = mapped_column(String(128))
-    semantic_version: Mapped[int] = mapped_column(Integer)
-    execution_snapshot_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    execution_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     status: Mapped[CapabilityInvocationStatus] = mapped_column(
         Enum(
             CapabilityInvocationStatus,
@@ -63,7 +62,7 @@ class CapabilityInvocation(Base):
         server_default=CapabilityInvocationStatus.PENDING.value,
     )
     canonical_input: Mapped[dict[str, object]] = mapped_column(JSONB)
-    execution_plan: Mapped[dict[str, object]] = mapped_column(JSONB)
+    worker_context: Mapped[dict[str, object]] = mapped_column(JSONB)
     operation_id: Mapped[UUID] = mapped_column(Uuid, unique=True)
     job_id: Mapped[UUID] = mapped_column(Uuid)
     technical_result: Mapped[dict[str, object] | None] = mapped_column(
@@ -113,8 +112,7 @@ class CapabilityConfirmation(Base):
     call_id: Mapped[UUID] = mapped_column(Uuid)
     tool_call_id: Mapped[str] = mapped_column(String(255))
     semantic_key: Mapped[str] = mapped_column(String(128))
-    semantic_version: Mapped[int] = mapped_column(Integer)
-    execution_snapshot_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
+    execution_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)
     canonical_input: Mapped[dict[str, object]] = mapped_column(JSONB)
     agent_input: Mapped[dict[str, object]] = mapped_column(JSONB)
     payload_hash: Mapped[str] = mapped_column(String(64))

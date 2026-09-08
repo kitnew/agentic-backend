@@ -17,8 +17,9 @@ from contracts import (
     HumanHandoffResponse,
     InboundSipClaimRequest,
     InboundSipClaimResponse,
-    VoiceAgentRuntimeContext,
+    RuntimeSecretMaterial,
     VoiceCallObservation,
+    VoiceExecutionContext,
 )
 
 from voice_agent.settings import VoiceAgentSettings
@@ -102,32 +103,37 @@ class BackendClient:
         assert last_error is not None
         raise last_error
 
-    async def runtime_context(self, call_id: UUID) -> VoiceAgentRuntimeContext:
+    async def runtime_context(self, call_id: UUID) -> VoiceExecutionContext:
         response = await self.request(
             "GET",
             f"/internal/v1/calls/{call_id}/runtime-context",
             "call-session:runtime-context:read",
         )
-        return VoiceAgentRuntimeContext.model_validate(response.json())
+        return VoiceExecutionContext.model_validate(response.json())
 
-    async def runtime_secret(self, snapshot_id: UUID, slot: str) -> str:
+    async def runtime_secret(self, execution_id: UUID, slot: str) -> str:
         now = datetime.now(UTC)
         token = jwt.encode(
-            {"sub": "voice-agent", "service": "voice-agent", "aud": "control-plane-service",
-             "iat": now, "exp": now + timedelta(seconds=60),
-             "scopes": ["runtime-secret:materialize"]},
-            self._settings.voice_agent_service_secret.get_secret_value(), algorithm="HS256"
+            {
+                "sub": "voice-agent",
+                "service": "voice-agent",
+                "aud": self._settings.control_plane_api_audience,
+                "iat": now,
+                "exp": now + timedelta(seconds=60),
+                "scopes": ["runtime-secret:materialize"],
+            },
+            self._settings.voice_agent_service_secret.get_secret_value(),
+            algorithm="HS256",
         )
-        async with httpx.AsyncClient(base_url=self._settings.control_plane_url.rstrip("/"), timeout=5.0) as client:
+        async with httpx.AsyncClient(
+            base_url=self._settings.control_plane_url.rstrip("/"), timeout=5.0
+        ) as client:
             response = await client.post(
-                f"/internal/v1/execution-snapshots/{snapshot_id}/secrets/{slot}",
+                f"/internal/v1/executions/{execution_id}/secrets/{slot}",
                 headers={"Authorization": f"Bearer {token}"},
             )
         response.raise_for_status()
-        value = response.json().get("secret")
-        if not isinstance(value, str) or not value:
-            raise ValueError("Control Plane returned an invalid runtime secret")
-        return value
+        return RuntimeSecretMaterial.model_validate(response.json()).secret
 
     async def claim_inbound_sip(
         self, request: InboundSipClaimRequest

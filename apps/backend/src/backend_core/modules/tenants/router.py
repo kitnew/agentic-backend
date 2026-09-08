@@ -89,9 +89,9 @@ async def tenant_telephony_status(
 ) -> TenantTelephonyStatus:
     if await TenantRepository(session).get(tenant_id) is None:
         raise HTTPException(status_code=404, detail="tenant not found")
-    return await TenantTelephonyStatusService(
-        TelephonyRepository(session)
-    ).show(tenant_id)
+    return await TenantTelephonyStatusService(TelephonyRepository(session)).show(
+        tenant_id
+    )
 
 
 @router.get("", response_model=list[TenantResponse])
@@ -113,7 +113,6 @@ def platform_telephony_service(
         TelephonyRepository(session),
         request.app.state.livekit,
         request.app.state.settings,
-        request.app.state.control_plane,
         request.app.state.outbox_tracer,
         request.app.state.core_metrics,
     )

@@ -7,11 +7,11 @@ from uuid import UUID, uuid4
 from agentic_observability.domain import CoreMetrics, domain_span
 from contracts import (
     ConversationPersistenceStatus,
+    HandoffExecutionMaterial,
     HumanHandoffRequest,
     HumanHandoffResponse,
     InboundSipClaimRequest,
-    RuntimeHandoffDestination,
-    VoiceAgentRuntimeContext,
+    VoiceExecutionContext,
 )
 from opentelemetry.trace import Tracer
 from sqlalchemy.exc import IntegrityError
@@ -22,7 +22,6 @@ from backend_core.modules.calls.errors import (
     CallSessionConflictError,
     CallSessionNotFoundError,
     CallSessionRouteUnavailableError,
-    CallSessionTelephonyNotReadyError,
     HumanHandoffError,
 )
 from backend_core.modules.calls.events import call_event
@@ -81,22 +80,20 @@ class CallSessionService:
         self._control_plane = control_plane
         self._execution_context = ExecutionContextReader(control_plane)
 
-    async def _snapshot(self, tenant_id: UUID):
-        snapshot = await self._control_plane.materialize_execution_snapshot(tenant_id)
-        if snapshot.tenant_id != str(tenant_id):
+    async def _execution(
+        self,
+        tenant_id: UUID,
+        idempotency_key: str,
+        context: dict[str, object] | None = None,
+    ):
+        execution = await self._control_plane.create_execution(
+            tenant_id,
+            idempotency_key=idempotency_key,
+            context=context,
+        )
+        if execution.tenant_id != str(tenant_id):
             raise CallSessionConfigUnavailableError
-        return snapshot
-
-    @staticmethod
-    def _require_snapshot_assignment(snapshot, assignment, phone_number: str) -> None:
-        value = snapshot.execution.get("phone_assignment")
-        if not isinstance(value, dict) or (
-            str(value.get("assignment_id", value.get("id")))
-            != str(assignment.assignment_id)
-            or str(value.get("generation")) != str(assignment.generation)
-            or value.get("phone_number") != phone_number
-        ):
-            raise CallSessionRouteUnavailableError
+        return execution
 
     def _phone_hash(self, value: str) -> str:
         if self._privacy_key is None:
@@ -128,34 +125,27 @@ class CallSessionService:
         if called_number is None:
             raise CallSessionRouteUnavailableError
         try:
-            assignment = await self._control_plane.resolve_phone_number(called_number)
-            tenant = await self._tenants.get_for_update(assignment.tenant_id)
+            route = await self._control_plane.resolve_phone_number(called_number)
+            tenant = await self._tenants.get_for_update(UUID(route.tenant_id))
         except Exception as error:
             raise CallSessionRouteUnavailableError from error
         if tenant is None or tenant.status is not TenantStatus.ACTIVE:
             if self._metrics is not None:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
-        provisioning = await self._routes.provisioning_for(
-            tenant.id, assignment.assignment_id
+        execution = await self._execution(
+            tenant.id,
+            f"call:{data.provider}:{data.provider_call_id}",
+            {"caller_phone": data.caller_phone_e164, "called_phone": called_number},
         )
-        if (
-            provisioning is None
-            or provisioning.status != "ready"
-            or provisioning.desired_generation != assignment.generation
-            or provisioning.applied_generation != assignment.generation
-        ):
-            raise CallSessionTelephonyNotReadyError
-        snapshot = await self._snapshot(tenant.id)
-        if snapshot.tenant_id != str(tenant.id):
+        if execution.tenant_id != str(tenant.id):
             raise CallSessionRouteUnavailableError
-        self._require_snapshot_assignment(snapshot, assignment, called_number)
 
         call = CallSession(
             tenant_id=tenant.id,
-            phone_assignment_id=assignment.assignment_id,
-            phone_assignment_generation=assignment.generation,
-            execution_snapshot_id=snapshot.snapshot_id,
+            route_version=route.route_version,
+            execution_id=execution.execution_id,
+            backend_execution_context=execution.model_dump(mode="json"),
             channel=CallChannel.SIP,
             direction=CallDirection.INBOUND,
             provider=data.provider,
@@ -214,28 +204,21 @@ class CallSessionService:
             return existing, False
 
         try:
-            assignment = await self._control_plane.resolve_phone_number(called_number)
-            tenant = await self._tenants.get_for_update(assignment.tenant_id)
+            route = await self._control_plane.resolve_phone_number(called_number)
+            tenant = await self._tenants.get_for_update(UUID(route.tenant_id))
         except Exception as error:
             raise CallSessionRouteUnavailableError from error
         if tenant is None or tenant.status is not TenantStatus.ACTIVE:
             if self._metrics is not None:
                 self._metrics.telephony_routing_failure("unknown_did")
             raise CallSessionRouteUnavailableError
-        provisioning = await self._routes.provisioning_for(
-            tenant.id, assignment.assignment_id
+        execution = await self._execution(
+            tenant.id,
+            f"call:livekit:{data.sip_call_id_full or data.sip_call_id}",
+            {"caller_phone": caller_number, "called_phone": called_number},
         )
-        if (
-            provisioning is None
-            or provisioning.status != "ready"
-            or provisioning.desired_generation != assignment.generation
-            or provisioning.applied_generation != assignment.generation
-        ):
-            raise CallSessionTelephonyNotReadyError
-        snapshot = await self._snapshot(tenant.id)
-        if snapshot.tenant_id != str(tenant.id):
+        if execution.tenant_id != str(tenant.id):
             raise CallSessionRouteUnavailableError
-        self._require_snapshot_assignment(snapshot, assignment, called_number)
         logger.info(
             "Inbound SIP DID resolved",
             extra={
@@ -246,9 +229,9 @@ class CallSessionService:
 
         call = CallSession(
             tenant_id=tenant.id,
-            phone_assignment_id=assignment.assignment_id,
-            phone_assignment_generation=assignment.generation,
-            execution_snapshot_id=snapshot.snapshot_id,
+            route_version=route.route_version,
+            execution_id=execution.execution_id,
+            backend_execution_context=execution.model_dump(mode="json"),
             channel=CallChannel.SIP,
             direction=CallDirection.INBOUND,
             provider="livekit",
@@ -367,8 +350,6 @@ class CallSessionService:
             raise TenantNotFoundError
         if tenant.status is not TenantStatus.ACTIVE:
             raise CallSessionConfigUnavailableError
-        snapshot = await self._snapshot(tenant.id)
-
         call_id = uuid4()
         room_name = f"call_{call_id}"
         provider_call_id = (
@@ -376,10 +357,16 @@ class CallSessionService:
             if idempotency_key is not None
             else room_name
         )
+        execution = await self._execution(
+            tenant.id,
+            f"call:livekit:{provider_call_id}",
+            {"caller_phone": MANUAL_TEST_CALLER_PHONE},
+        )
         call = CallSession(
             id=call_id,
             tenant_id=tenant.id,
-            execution_snapshot_id=snapshot.snapshot_id,
+            execution_id=execution.execution_id,
+            backend_execution_context=execution.model_dump(mode="json"),
             channel=CallChannel.WEB,
             direction=CallDirection.INBOUND,
             provider="livekit",
@@ -424,7 +411,7 @@ class CallSessionService:
     async def get_runtime_context(
         self,
         call_id: UUID,
-    ) -> VoiceAgentRuntimeContext:
+    ) -> VoiceExecutionContext:
         call = await self.get(call_id)
         try:
             return await self._execution_context.read(call)
@@ -457,14 +444,9 @@ class CallSessionService:
         tenant = await self._tenants.get(call.tenant_id)
         if tenant is None or tenant.status is not TenantStatus.ACTIVE:
             raise HumanHandoffError("call_not_transferable")
-        phone_number, destinations = await self._pinned_handoff(call, data.destination)
-        if not phone_number or not destinations:
+        phone_number, destination = await self._pinned_handoff(call, data.destination)
+        if not phone_number:
             raise HumanHandoffError("handoff_not_configured")
-        destination = destinations.get(data.destination)
-        if destination is None:
-            if self._metrics is not None:
-                self._metrics.telephony_handoff_failure("unknown_destination")
-            raise HumanHandoffError("unknown_destination")
         platform = await self._routes.platform()
         if (
             platform.outbound_trunk_id is None
@@ -510,45 +492,19 @@ class CallSessionService:
         return HumanHandoffResponse(destination=data.destination)
 
     async def _pinned_handoff(
-        self, call: CallSession, requested_destination: str | None = None
-    ) -> tuple[str | None, dict[str, RuntimeHandoffDestination]]:
-        if call.execution_snapshot_id is not None:
-            if self._execution_context is None or self._control_plane is None:
+        self, call: CallSession, requested_destination: str
+    ) -> tuple[str, HandoffExecutionMaterial]:
+        if call.execution_id is not None:
+            if self._control_plane is None:
                 raise HumanHandoffError("telephony_not_ready")
             try:
-                destinations = await self._execution_context.handoff(call)
-                selected = destinations.get(requested_destination or "")
-                if selected is None or selected.ref is None:
-                    raise HumanHandoffError("unknown_destination")
                 material = await self._control_plane.handoff_material(
-                    call.execution_snapshot_id,
-                    requested_destination or "",
+                    call.execution_id,
+                    requested_destination,
                 )
-                phone = material.get("phone_number")
-                if not isinstance(phone, str):
+                if call.called_phone_e164 is None:
                     raise HumanHandoffError("telephony_not_ready")
-                assignments = await self._control_plane.list_enabled_phone_assignments()
-                current = next(
-                    (item for item in assignments if item.tenant_id == call.tenant_id),
-                    None,
-                )
-                if current is None:
-                    raise HumanHandoffError("telephony_not_ready")
-                provisioning = await self._routes.provisioning_for(
-                    call.tenant_id, current.assignment_id
-                )
-                if (
-                    provisioning is None
-                    or provisioning.status != "ready"
-                    or provisioning.desired_generation != current.generation
-                    or provisioning.applied_generation != current.generation
-                ):
-                    raise HumanHandoffError("telephony_not_ready")
-                return current.phone_number, {
-                    requested_destination or "": RuntimeHandoffDestination(
-                        description=selected.description, phone_number=phone
-                    )
-                }
+                return call.called_phone_e164, material
             except (ValueError, KeyError, TypeError, RuntimeError) as error:
                 raise HumanHandoffError("telephony_not_ready") from error
         raise HumanHandoffError("telephony_not_ready")

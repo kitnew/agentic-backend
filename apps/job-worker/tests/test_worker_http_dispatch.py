@@ -4,16 +4,13 @@ from uuid import uuid4
 import httpx
 import pytest
 from contracts import (
-    HttpRequestPlanV1,
     HttpRequestResult,
-    HttpRequestSpec,
-    HttpResponseSpec,
+    IntegrationExecutionMaterial,
     IntegrationJob,
-    RuntimeIntegrationMaterial,
 )
 from job_worker.worker import (
     CapabilityWorker,
-    ManagedWebhookPostJsonHandler,
+    HttpExecutionHandler,
     Settings,
 )
 
@@ -27,24 +24,19 @@ class Redis:
 
 
 class Backend:
-    def __init__(self, material: RuntimeIntegrationMaterial) -> None:
+    def __init__(self, material: IntegrationExecutionMaterial) -> None:
         self.material = material
         self.material_job: IntegrationJob | None = None
         self.reported = None
 
     async def integration_material(
         self, _invocation_id, _job_id, job: IntegrationJob
-    ) -> RuntimeIntegrationMaterial:
+    ) -> IntegrationExecutionMaterial:
         self.material_job = job
         return self.material
 
     async def report(self, report) -> None:
         self.reported = report
-
-
-class Sheets:
-    async def execute(self, *_args) -> None:
-        raise AssertionError("generic HTTP dispatch must not use Sheets")
 
 
 def settings() -> Settings:
@@ -61,9 +53,10 @@ def settings() -> Settings:
 
 
 @pytest.mark.asyncio
-async def test_http_request_plan_dispatches_to_http_and_reports_generic_result() -> None:
-    integration_id = uuid4()
-    operation_id = uuid4()
+async def test_http_request_plan_dispatches_to_http_and_reports_generic_result() -> (
+    None
+):
+    execution_id = uuid4()
     seen: dict[str, object] = {}
 
     async def send(request: httpx.Request) -> httpx.Response:
@@ -74,34 +67,60 @@ async def test_http_request_plan_dispatches_to_http_and_reports_generic_result()
     client = httpx.AsyncClient(transport=httpx.MockTransport(send))
     redis = Redis()
     backend = Backend(
-        RuntimeIntegrationMaterial(
-            integration_id=integration_id,
-            kind="http",
-            provider="http",
-            endpoint="https://api.example.com/v1",
-            allowed_hosts=["api.example.com"],
-            connection_revision=2,
-            credential_version=1,
+        IntegrationExecutionMaterial(
+            integration_kind="http",
+            config={
+                "endpoint": "https://api.example.com/v1",
+                "headers": {},
+                "authentication": {"type": "none"},
+                "security": {"additional_allowed_hosts": []},
+            },
         )
-    )
-    plan = HttpRequestPlanV1(
-        integration_id=integration_id,
-        operation_id=operation_id,
-        capability={"semantic_key": "reservation.check_availability", "semantic_version": 1},
-        method="PATCH",
-        path="/reservations",
-        request=HttpRequestSpec(codec="json"),
-        response=HttpResponseSpec(codec="json"),
-        payload={"room_count": 1},
-        timeout_seconds=5,
     )
     now = datetime.now(UTC)
     job = IntegrationJob(
         job_id=uuid4(),
         capability_invocation_id=uuid4(),
         call_id=uuid4(),
-        execution_snapshot_id=uuid4(),
-        execution_plan=plan,
+        execution_id=execution_id,
+        worker_context={
+            "execution_id": str(execution_id),
+            "tenant_id": "tenant-a",
+            "action": {
+                "key": "reservation.check_availability",
+                "phase": "runtime",
+                "definition": {
+                    "agent_input_schema": {
+                        "type": "object",
+                        "properties": {"room_count": {"type": "integer"}},
+                        "required": ["room_count"],
+                        "additionalProperties": False,
+                    },
+                    "bindings": {},
+                    "input_constraints": [],
+                    "business_policy": {},
+                    "result_schema": {
+                        "type": "object",
+                        "properties": {"accepted": {"type": "boolean"}},
+                        "required": ["accepted"],
+                    },
+                },
+                "execution_plan": {
+                    "method": "PATCH",
+                    "path": "/reservations",
+                    "headers": {},
+                    "request": {
+                        "codec": "json",
+                        "mapping": {"room_count": {"$expr": "inputs.room_count"}},
+                    },
+                    "response": {"codec": "json"},
+                    "timeout_seconds": 5,
+                },
+                "integration": {"semantic_key": "reservation-api"},
+            },
+            "integration": {"semantic_key": "reservation-api"},
+        },
+        tool_args={"room_count": 1},
         created_at=now,
         expires_at=now + timedelta(minutes=10),
     )
@@ -109,8 +128,7 @@ async def test_http_request_plan_dispatches_to_http_and_reports_generic_result()
         settings(),
         redis,
         backend,
-        Sheets(),
-        ManagedWebhookPostJsonHandler(client),
+        HttpExecutionHandler(client),
     )
 
     try:
@@ -123,7 +141,8 @@ async def test_http_request_plan_dispatches_to_http_and_reports_generic_result()
         "url": "https://api.example.com/v1/reservations",
     }
     assert backend.material_job is not None
-    assert backend.material_job.execution_plan.plan_type == "http.request.v1"
+    assert backend.material_job.execution_id == execution_id
+    assert "execution_plan" not in backend.material_job.model_fields_set
     assert isinstance(backend.reported.result, HttpRequestResult)
     assert backend.reported.result.result_type == "http.request.v1"
     assert backend.reported.result.data == {"accepted": True}

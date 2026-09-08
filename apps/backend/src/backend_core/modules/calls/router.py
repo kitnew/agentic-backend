@@ -14,8 +14,8 @@ from contracts import (
     InboundSipClaimRequest,
     InboundSipClaimResponse,
     LiveKitJobMetadata,
-    VoiceAgentRuntimeContext,
     VoiceCallObservation,
+    VoiceExecutionContext,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from opentelemetry.trace import Tracer
@@ -193,7 +193,7 @@ def call_http_exception(error: Exception) -> HTTPException:
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "code": "tenant_configuration_not_runtime_ready",
-                "message": "tenant has no published runtime snapshot",
+                "message": "tenant has no resolvable execution configuration",
             },
         )
     return HTTPException(
@@ -425,13 +425,13 @@ async def get_test_voice_session(
 
 @runtime_router.get(
     "/{call_id}/runtime-context",
-    response_model=VoiceAgentRuntimeContext,
+    response_model=VoiceExecutionContext,
     dependencies=[Depends(require_internal_scope("call-session:runtime-context:read"))],
 )
 async def get_call_runtime_context(
     call_id: UUID,
     service: CallSessionServiceDependency,
-) -> VoiceAgentRuntimeContext:
+) -> VoiceExecutionContext:
     try:
         return await service.get_runtime_context(call_id)
     except (

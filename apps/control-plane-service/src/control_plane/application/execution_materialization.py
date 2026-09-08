@@ -1,10 +1,17 @@
 from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+from contracts import (
+    BackendExecutionContext,
+    HandoffExecutionMaterial,
+    IntegrationExecutionMaterial,
+    RuntimeSecretMaterial,
+    RuntimeSecretSlot,
+    VoiceExecutionContext,
+    WorkerExecutionContext,
+)
 from contracts.integration import HttpConnectionConfiguration
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -52,102 +59,6 @@ from control_plane.infrastructure.persistence.runtime_execution_snapshots import
 CREATE_EXECUTION_OPERATION = "execution.create"
 
 
-class RuntimeSecretSlot(StrEnum):
-    LLM = "llm"
-    STT = "stt"
-    TTS = "tts"
-    MODEL = "model"
-    INPUT_TRANSCRIPTION = "input_transcription"
-
-
-@dataclass(frozen=True, slots=True)
-class BackendExecutionContext:
-    execution_id: UUID
-    tenant_id: str
-    architecture: str
-    backend_actions: Mapping[str, object]
-    handoff: tuple[Mapping[str, object], ...]
-    metadata: Mapping[str, object]
-
-
-@dataclass(frozen=True, slots=True)
-class VoiceExecutionContext:
-    execution_id: UUID
-    tenant: Mapping[str, object]
-    agent: Mapping[str, object]
-    architecture: str
-    prompts: Mapping[str, object]
-    runtime: Mapping[str, object]
-    actions: tuple[Mapping[str, object], ...]
-    handoff: tuple[Mapping[str, object], ...]
-
-
-@dataclass(frozen=True, slots=True)
-class WorkerExecutionContext:
-    execution_id: UUID
-    tenant_id: str
-    action: Mapping[str, object]
-    integration: Mapping[str, object] | None
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeSecretMaterial:
-    slot: RuntimeSecretSlot
-    secret: str
-
-    def __repr__(self) -> str:
-        return f"RuntimeSecretMaterial(slot={self.slot!r}, secret='***')"
-
-
-@dataclass(frozen=True, slots=True)
-class IntegrationExecutionMaterial:
-    integration_kind: str
-    config: Mapping[str, object]
-    secret: str | None
-
-    def __repr__(self) -> str:
-        secret = "***" if self.secret else None
-        return (
-            "IntegrationExecutionMaterial("
-            f"integration_kind={self.integration_kind!r}, secret={secret!r})"
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class HandoffExecutionMaterial:
-    destination_key: str
-    phone_number: str
-
-
-@dataclass(frozen=True, slots=True)
-class LegacyRuntimeSecretMaterial:
-    snapshot_id: UUID
-    slot: RuntimeSecretSlot
-    secret: str
-    credential_ref: UUID
-    credential_generation: int
-    credential_version_id: UUID
-    credential_version_number: int
-    provider_connection_ref: UUID
-    provider_connection_generation: int
-    model_deployment_ref: UUID
-    model_deployment_generation: int
-
-
-@dataclass(frozen=True, slots=True)
-class LegacyIntegrationExecutionMaterial:
-    tenant_id: str
-    integration_connection_id: UUID
-    integration_connection_generation: int
-    integration_kind: str
-    config: dict[str, object]
-    secret: str | None
-    credential_ref: UUID | None
-    credential_generation: int | None
-    credential_version_id: UUID | None
-    credential_version_number: int | None
-
-
 class ExecutionMaterializationService:
     def __init__(
         self,
@@ -176,20 +87,8 @@ class ExecutionMaterializationService:
             context or {},
             principal=principal,
             idempotency_key=idempotency_key,
-            return_snapshot=False,
         )
         assert isinstance(result, BackendExecutionContext)
-        return result
-
-    async def create_snapshot(self, tenant_id: str) -> ExecutionSnapshot:
-        result = await self._create(
-            tenant_id,
-            {},
-            principal=None,
-            idempotency_key=None,
-            return_snapshot=True,
-        )
-        assert isinstance(result, ExecutionSnapshot)
         return result
 
     async def _create(
@@ -199,13 +98,14 @@ class ExecutionMaterializationService:
         *,
         principal: str | None,
         idempotency_key: str | None,
-        return_snapshot: bool,
-    ) -> BackendExecutionContext | ExecutionSnapshot:
+    ) -> BackendExecutionContext:
         fingerprint = request_fingerprint(
             {"tenant_id": tenant_id, "context": dict(context)}
         )
         async with self._sessions.begin() as session:
-            await session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
+            await session.execute(
+                text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+            )
             replays = SqlAlchemyIdempotencyRepository(session)
             if principal is not None and idempotency_key is not None:
                 replay = await replays.get(
@@ -219,7 +119,7 @@ class ExecutionMaterializationService:
                     snapshot = await self._required_snapshot(
                         session, UUID(str(replay.logical_result["execution_id"]))
                     )
-                    return snapshot if return_snapshot else self._backend(snapshot)
+                    return self._backend(snapshot)
 
             if self._resolver is None or self._reader is None:
                 raise RuntimeError("execution creation is not configured")
@@ -231,15 +131,7 @@ class ExecutionMaterializationService:
                 tenant_id,
                 resolution.runtime,
                 {
-                    "runtime": resolution.runtime.selected,
                     "agent": resolution.agent,
-                    "prompts": resolution.prompts,
-                    "knowledge": resolution.knowledge,
-                    "capabilities": resolution.capabilities,
-                    "post_call": resolution.post_call,
-                    "handoff": resolution.handoff,
-                    "phone_assignment": resolution.phone_assignment,
-                    "provenance": resolution.provenance,
                     "target": target,
                 },
             )
@@ -267,10 +159,7 @@ class ExecutionMaterializationService:
                     fingerprint,
                     {"execution_id": str(persisted.execution_id)},
                 )
-            return persisted if return_snapshot else self._backend(persisted)
-
-    async def get_snapshot(self, execution_id: UUID) -> ExecutionSnapshot | None:
-        return await self._snapshots.get(execution_id)
+            return self._backend(persisted)
 
     async def backend_context(self, execution_id: UUID) -> BackendExecutionContext:
         return self._backend(await self._load_snapshot(execution_id))
@@ -279,14 +168,20 @@ class ExecutionMaterializationService:
         snapshot = await self._load_snapshot(execution_id)
         value = self._mapping(self._target(snapshot)["voice"])
         return VoiceExecutionContext(
-            execution_id,
-            self._mapping(value["tenant"]),
-            self._mapping(value["agent"]),
-            str(value["architecture"]),
-            self._mapping(value["prompts"]),
-            self._mapping(value["runtime"]),
-            tuple(self._mapping(item) for item in cast(list[object], value["actions"])),
-            tuple(self._mapping(item) for item in cast(list[object], value["handoff"])),
+            execution_id=execution_id,
+            tenant=dict(self._mapping(value["tenant"])),
+            agent=dict(self._mapping(value["agent"])),
+            architecture=str(value["architecture"]),
+            prompts=dict(self._mapping(value["prompts"])),
+            runtime=dict(self._mapping(value["runtime"])),
+            actions=[
+                dict(self._mapping(item))
+                for item in cast(list[object], value["actions"])
+            ],
+            handoff=[
+                dict(self._mapping(item))
+                for item in cast(list[object], value["handoff"])
+            ],
         )
 
     async def worker_context(
@@ -299,10 +194,12 @@ class ExecutionMaterializationService:
             raise ManagedResourceNotFound("execution action not found")
         integration = action.get("integration")
         return WorkerExecutionContext(
-            execution_id,
-            snapshot.tenant_id,
-            action,
-            self._mapping(integration) if integration is not None else None,
+            execution_id=execution_id,
+            tenant_id=snapshot.tenant_id,
+            action=dict(action),
+            integration=(
+                dict(self._mapping(integration)) if integration is not None else None
+            ),
         )
 
     async def runtime_secret(
@@ -315,7 +212,7 @@ class ExecutionMaterializationService:
                 self._runtime_credential_id(snapshot, slot),
                 snapshot.tenant_id,
             )
-            return RuntimeSecretMaterial(slot, secret)
+            return RuntimeSecretMaterial(slot=slot, secret=secret)
 
     async def integration_material(
         self, execution_id: UUID, integration_key: str
@@ -346,9 +243,9 @@ class ExecutionMaterializationService:
                     session, connection.credential_id, snapshot.tenant_id
                 )
             return IntegrationExecutionMaterial(
-                connection.integration_kind,
-                config.model_dump(mode="json"),
-                secret,
+                integration_kind=connection.integration_kind,
+                config=config.model_dump(mode="json"),
+                secret=secret,
             )
 
     async def handoff_material(
@@ -367,85 +264,12 @@ class ExecutionMaterializationService:
                 or destination.tenant_id != snapshot.tenant_id
                 or destination.key != destination_key
             ):
-                raise ManagedResourceNotFound(
-                    "execution handoff destination not found"
-                )
+                raise ManagedResourceNotFound("execution handoff destination not found")
             if not destination.enabled:
                 raise ManagedResourceConflict("handoff destination is not enabled")
-            return HandoffExecutionMaterial(destination_key, destination.phone_number)
-
-    async def legacy_runtime_secret(
-        self, snapshot_id: UUID, slot: RuntimeSecretSlot
-    ) -> LegacyRuntimeSecretMaterial:
-        async with self._sessions.begin() as session:
-            snapshot = await self._required_snapshot(session, snapshot_id)
-            resource = self._runtime_resource(snapshot, slot)
-            secret, credential, version = await self._active_secret(
-                session,
-                resource.credential.credential_ref,
-                snapshot.tenant_id,
-            )
-            return LegacyRuntimeSecretMaterial(
-                snapshot_id,
-                slot,
-                secret,
-                credential.id,
-                credential.generation,
-                version.id,
-                version.version_number,
-                resource.connection.ref.value,
-                resource.connection.generation,
-                resource.deployment.ref.value,
-                resource.deployment.generation,
-            )
-
-    async def legacy_integration_material(
-        self, tenant_id: str, connection_id: UUID
-    ) -> LegacyIntegrationExecutionMaterial:
-        async with self._sessions.begin() as session:
-            connection = await session.get(IntegrationConnection, connection_id)
-            if connection is None or connection.tenant_id != tenant_id:
-                raise ManagedResourceNotFound("integration connection not found")
-            if connection.integration_kind != "http" or not connection.enabled:
-                raise ManagedResourceConflict(
-                    "integration connection is not enabled HTTP"
-                )
-            config = self._integration_config(connection)
-            if config.authentication.type == "none":
-                if connection.credential_id is not None:
-                    raise ManagedResourceConflict(
-                        "HTTP no-auth connection has a credential"
-                    )
-                return LegacyIntegrationExecutionMaterial(
-                    tenant_id,
-                    connection.id,
-                    connection.generation,
-                    "http",
-                    config.model_dump(mode="json"),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-            if connection.credential_id is None:
-                raise ManagedResourceConflict(
-                    "HTTP API-key connection has no credential"
-                )
-            secret, credential, version = await self._active_secret(
-                session, connection.credential_id, tenant_id
-            )
-            return LegacyIntegrationExecutionMaterial(
-                tenant_id,
-                connection.id,
-                connection.generation,
-                "http",
-                config.model_dump(mode="json"),
-                secret,
-                credential.id,
-                credential.generation,
-                version.id,
-                version.version_number,
+            return HandoffExecutionMaterial(
+                destination_key=destination_key,
+                phone_number=destination.phone_number,
             )
 
     async def _load_snapshot(self, execution_id: UUID) -> ExecutionSnapshot:
@@ -470,12 +294,15 @@ class ExecutionMaterializationService:
     def _backend(self, snapshot: ExecutionSnapshot) -> BackendExecutionContext:
         value = self._mapping(self._target(snapshot)["backend"])
         return BackendExecutionContext(
-            snapshot.execution_id,
-            snapshot.tenant_id,
-            str(value["architecture"]),
-            self._mapping(value["backend_actions"]),
-            tuple(self._mapping(item) for item in cast(list[object], value["handoff"])),
-            self._mapping(value["metadata"]),
+            execution_id=snapshot.execution_id,
+            tenant_id=snapshot.tenant_id,
+            architecture=str(value["architecture"]),
+            backend_actions=dict(self._mapping(value["backend_actions"])),
+            handoff=[
+                dict(self._mapping(item))
+                for item in cast(list[object], value["handoff"])
+            ],
+            metadata=dict(self._mapping(value["metadata"])),
         )
 
     @staticmethod
@@ -534,9 +361,7 @@ class ExecutionMaterializationService:
             },
             "actions": actions,
             "bindings": {
-                "runtime_secrets": self._runtime_bindings(
-                    resolution.runtime.selected
-                ),
+                "runtime_secrets": self._runtime_bindings(resolution.runtime.selected),
                 "integrations": {
                     str(key): str(value)
                     for key, value in resolution.integration_bindings.items()
@@ -555,21 +380,28 @@ class ExecutionMaterializationService:
     @classmethod
     def _voice_runtime(cls, runtime: ResolvedRuntime) -> dict[str, object]:
         if isinstance(runtime, ResolvedCascadeRuntime):
+            policy = runtime.execution.policy.model_dump(mode="json")
             return {
                 "stt": {
                     **cls._without_deployment_ref(runtime.stt.defaults),
                     "language": runtime.stt.language,
                     "speech_hints": cls._plain(runtime.stt.speech_hints),
                     **cls._provider_semantics(runtime.stt.resource),
+                    "speech_activity": policy["speech_activity"],
+                    "commit": policy["stt_commit"],
+                    "endpointing": policy["endpointing"],
                 },
                 "llm": {
                     **cls._without_deployment_ref(runtime.llm.parameters),
                     **cls._provider_semantics(runtime.llm.resource),
+                    "interruption": policy["interruption"],
+                    "response_scheduling": policy["response_scheduling"],
                 },
                 "tts": {
                     **cls._without_deployment_ref(runtime.tts.defaults),
                     "voice": runtime.tts.voice,
                     **cls._provider_semantics(runtime.tts.resource),
+                    "tokenizer": policy["tokenizer"],
                 },
                 "realtime": None,
             }
@@ -584,9 +416,7 @@ class ExecutionMaterializationService:
                     "speech_hints": cls._plain(
                         runtime.input_transcription.speech_hints
                     ),
-                    **cls._provider_semantics(
-                        runtime.input_transcription.resource
-                    ),
+                    **cls._provider_semantics(runtime.input_transcription.resource),
                 },
                 "voice": runtime.voice,
                 "turn_completion": cls._plain(runtime.turn_completion),
@@ -628,8 +458,7 @@ class ExecutionMaterializationService:
             if isinstance(runtime, ResolvedCascadeRuntime)
             else {
                 RuntimeSecretSlot.MODEL: runtime.model.resource,
-                RuntimeSecretSlot.INPUT_TRANSCRIPTION:
-                    runtime.input_transcription.resource,
+                RuntimeSecretSlot.INPUT_TRANSCRIPTION: runtime.input_transcription.resource,
             }
         )
         return {
@@ -662,9 +491,7 @@ class ExecutionMaterializationService:
         ):
             raise ManagedResourceNotFound("execution integration not found")
         if connection.integration_kind != "http" or not connection.enabled:
-            raise ManagedResourceConflict(
-                "integration connection is not enabled HTTP"
-            )
+            raise ManagedResourceConflict("integration connection is not enabled HTTP")
 
     @staticmethod
     def _integration_config(
@@ -691,8 +518,7 @@ class ExecutionMaterializationService:
             if isinstance(runtime, ResolvedCascadeRuntime)
             else {
                 RuntimeSecretSlot.MODEL: runtime.model.resource,
-                RuntimeSecretSlot.INPUT_TRANSCRIPTION:
-                    runtime.input_transcription.resource,
+                RuntimeSecretSlot.INPUT_TRANSCRIPTION: runtime.input_transcription.resource,
             }
         )
         resource = resources.get(slot)
@@ -712,8 +538,7 @@ class ExecutionMaterializationService:
             raise RuntimeError("secret materialization is not configured")
         credential = await session.get(Credential, credential_id)
         if credential is None or (
-            credential.scope_type == "tenant"
-            and credential.tenant_id != tenant_id
+            credential.scope_type == "tenant" and credential.tenant_id != tenant_id
         ):
             raise ManagedResourceNotFound("credential not found")
         if credential.status != "active" or credential.active_version_id is None:

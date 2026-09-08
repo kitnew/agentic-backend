@@ -70,6 +70,33 @@ def control_plane_openapi() -> dict[str, Any]:
     return schema
 
 
+def _referenced_schemas(paths: object, schemas: dict[str, object]) -> dict[str, object]:
+    required: set[str] = set()
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            reference = value.get("$ref")
+            if isinstance(reference, str) and reference.startswith(
+                "#/components/schemas/"
+            ):
+                required.add(reference.rsplit("/", 1)[-1])
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(paths)
+    while True:
+        previous = len(required)
+        for name in tuple(required):
+            visit(schemas[name])
+        if len(required) == previous:
+            return {
+                name: schema for name, schema in schemas.items() if name in required
+            }
+
+
 def export_control_plane_openapi(output: Path = DEFAULT_OUTPUT) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     schema = control_plane_openapi()
@@ -80,6 +107,17 @@ def export_control_plane_openapi(output: Path = DEFAULT_OUTPUT) -> None:
             path: operation
             for path, operation in schema["paths"].items()
             if path.startswith("/management/v1/")
+        },
+    }
+    browser_schema["components"] = {
+        **schema["components"],
+        "schemas": _referenced_schemas(
+            browser_schema["paths"], schema["components"]["schemas"]
+        ),
+        "securitySchemes": {
+            "ManagementToken": schema["components"]["securitySchemes"][
+                "ManagementToken"
+            ]
         },
     }
     DEFAULT_BROWSER_OUTPUT.write_bytes(

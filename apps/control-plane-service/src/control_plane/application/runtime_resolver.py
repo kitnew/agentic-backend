@@ -102,7 +102,6 @@ class RuntimeResolutionState:
     credentials: Mapping[UUID, Credential]
     integrations: Mapping[UUID, Mapping[str, object]] = field(default_factory=dict)
     handoffs: tuple[Mapping[str, object], ...] = ()
-    phone_assignment: Mapping[str, object] | None = None
 
 
 class RuntimeResolutionReader(Protocol):

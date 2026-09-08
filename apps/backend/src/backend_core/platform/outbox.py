@@ -152,13 +152,10 @@ class OutboxDispatcher:
                         "semantic_key": invocation.semantic_key
                         if invocation is not None
                         else None,
-                        "semantic_version": invocation.semantic_version
+                        "execution_id": str(invocation.execution_id)
                         if invocation is not None
                         else None,
-                        "execution_snapshot_id": str(invocation.execution_snapshot_id)
-                        if invocation is not None
-                        else None,
-                        "plan_type": invocation.execution_plan.get("plan_type")
+                        "execution_context": "worker"
                         if invocation is not None
                         else None,
                         "status": "queued",

@@ -1,9 +1,12 @@
 from collections.abc import Mapping
+from typing import cast
 
 from contracts.http_operation import ExpressionNode, MappingTemplate
 
 
-def evaluate_template(template: MappingTemplate, context: Mapping[str, object]) -> object:
+def evaluate_template(
+    template: MappingTemplate, context: Mapping[str, object]
+) -> object:
     from backend_core.runtime.capabilities.domain import JsonataMappingEngine
 
     engine = JsonataMappingEngine()
@@ -22,10 +25,12 @@ def evaluate_template(template: MappingTemplate, context: Mapping[str, object]) 
     return visit(template)
 
 
-def evaluate_query(query: dict[str, MappingTemplate] | None, context: Mapping[str, object]) -> dict[str, object] | None:
+def evaluate_query(
+    query: dict[str, MappingTemplate] | None, context: Mapping[str, object]
+) -> dict[str, object] | None:
     if query is None:
         return None
-    value = evaluate_template(query, context)
+    value = evaluate_template(cast(MappingTemplate, query), context)
     if not isinstance(value, dict):
         raise TypeError("HTTP query template must evaluate to an object")
     return {key: item for key, item in value.items() if item is not None}

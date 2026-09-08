@@ -146,14 +146,21 @@ def upgrade() -> None:
         sa.Column("value", postgresql.JSONB(), nullable=False),
         sa.Column("schema_version", sa.Integer(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("updated_by", sa.String(255), nullable=False),
         sa.CheckConstraint(
             "(scope_type = 'system' AND scope_key IS NULL) OR "
             "(scope_type = 'tenant' AND scope_key IS NOT NULL AND scope_key <> '')",
             name="ck_live_component_scope",
         ),
-        sa.CheckConstraint("schema_version >= 1", name="ck_live_component_schema_version"),
+        sa.CheckConstraint(
+            "schema_version >= 1", name="ck_live_component_schema_version"
+        ),
         sa.CheckConstraint("generation >= 1", name="ck_live_component_generation"),
         schema=SCHEMA,
     )
@@ -222,7 +229,12 @@ def upgrade() -> None:
         sa.Column("idempotency_key", sa.String(255), nullable=False),
         sa.Column("request_fingerprint", sa.String(64), nullable=False),
         sa.Column("logical_result", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.UniqueConstraint(
             "principal",
             "operation",
@@ -240,35 +252,77 @@ def upgrade() -> None:
         sa.Column("active_version_id", sa.Uuid()),
         sa.Column("status", sa.String(16), server_default="active", nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True)),
         sa.Column("revoked_by", sa.String(255)),
-        sa.CheckConstraint("status IN ('active', 'revoked')", name="ck_credential_status"),
-        sa.CheckConstraint("(scope_type = 'platform' AND tenant_id IS NULL) OR (scope_type = 'tenant' AND tenant_id IS NOT NULL AND tenant_id <> '')", name="ck_credential_scope"),
-        sa.CheckConstraint("(status = 'active' AND revoked_at IS NULL AND revoked_by IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL)", name="ck_credential_revocation"),
+        sa.CheckConstraint(
+            "status IN ('active', 'revoked')", name="ck_credential_status"
+        ),
+        sa.CheckConstraint(
+            "(scope_type = 'platform' AND tenant_id IS NULL) OR (scope_type = 'tenant' AND tenant_id IS NOT NULL AND tenant_id <> '')",
+            name="ck_credential_scope",
+        ),
+        sa.CheckConstraint(
+            "(status = 'active' AND revoked_at IS NULL AND revoked_by IS NULL) OR (status = 'revoked' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL)",
+            name="ck_credential_revocation",
+        ),
         sa.CheckConstraint("generation >= 1", name="ck_credential_generation"),
         schema=SCHEMA,
     )
     op.create_table(
         "credential_versions",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("credential_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.credentials.id"), nullable=False),
+        sa.Column(
+            "credential_id",
+            sa.Uuid(),
+            sa.ForeignKey(f"{SCHEMA}.credentials.id"),
+            nullable=False,
+        ),
         sa.Column("version_number", sa.Integer(), nullable=False),
         sa.Column("key_id", sa.String(255), nullable=False),
         sa.Column("algorithm", sa.String(64), nullable=False),
         sa.Column("nonce", sa.LargeBinary(), nullable=False),
         sa.Column("ciphertext", sa.LargeBinary(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
         sa.Column("retired_at", sa.DateTime(timezone=True)),
         sa.CheckConstraint("version_number >= 1", name="ck_credential_version_number"),
-        sa.UniqueConstraint("credential_id", "version_number", name="uq_credential_version_number"),
-        sa.UniqueConstraint("id", "credential_id", name="uq_credential_version_identity"),
+        sa.UniqueConstraint(
+            "credential_id", "version_number", name="uq_credential_version_number"
+        ),
+        sa.UniqueConstraint(
+            "id", "credential_id", name="uq_credential_version_identity"
+        ),
         schema=SCHEMA,
     )
-    op.create_index("uq_credential_active_version", "credential_versions", ["credential_id"], unique=True, schema=SCHEMA, postgresql_where=sa.text("retired_at IS NULL"))
-    op.create_foreign_key("fk_credential_active_version", "credentials", "credential_versions", ["active_version_id", "id"], ["id", "credential_id"], source_schema=SCHEMA, referent_schema=SCHEMA)
+    op.create_index(
+        "uq_credential_active_version",
+        "credential_versions",
+        ["credential_id"],
+        unique=True,
+        schema=SCHEMA,
+        postgresql_where=sa.text("retired_at IS NULL"),
+    )
+    op.create_foreign_key(
+        "fk_credential_active_version",
+        "credentials",
+        "credential_versions",
+        ["active_version_id", "id"],
+        ["id", "credential_id"],
+        source_schema=SCHEMA,
+        referent_schema=SCHEMA,
+    )
     op.execute(
         """
         CREATE FUNCTION control_plane.reject_credential_scope_change() RETURNS trigger
@@ -323,13 +377,28 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("key", sa.String(255), nullable=False, unique=True),
         sa.Column("provider_kind", sa.String(64), nullable=False),
-        sa.Column("credential_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.credentials.id"), nullable=False),
+        sa.Column(
+            "credential_id",
+            sa.Uuid(),
+            sa.ForeignKey(f"{SCHEMA}.credentials.id"),
+            nullable=False,
+        ),
         sa.Column("connection_config", postgresql.JSONB(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("updated_by", sa.String(255), nullable=False),
         sa.CheckConstraint("generation >= 1", name="ck_provider_connection_generation"),
         schema=SCHEMA,
@@ -358,15 +427,30 @@ def upgrade() -> None:
         "model_deployments",
         sa.Column("id", sa.Uuid(), primary_key=True),
         sa.Column("key", sa.String(255), nullable=False, unique=True),
-        sa.Column("connection_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.provider_connections.id"), nullable=False),
+        sa.Column(
+            "connection_id",
+            sa.Uuid(),
+            sa.ForeignKey(f"{SCHEMA}.provider_connections.id"),
+            nullable=False,
+        ),
         sa.Column("deployment_kind", sa.String(32), nullable=False),
         sa.Column("deployment_config", postgresql.JSONB(), nullable=False),
         sa.Column("capabilities", postgresql.JSONB(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("updated_by", sa.String(255), nullable=False),
         sa.CheckConstraint(
             "deployment_kind IN ('llm', 'realtime', 'stt', 'tts')",
@@ -406,15 +490,31 @@ def upgrade() -> None:
         sa.Column("key", sa.String(255), nullable=False),
         sa.Column("integration_kind", sa.String(64), nullable=False),
         sa.Column("config", postgresql.JSONB(), nullable=False),
-        sa.Column("credential_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.credentials.id")),
+        sa.Column(
+            "credential_id", sa.Uuid(), sa.ForeignKey(f"{SCHEMA}.credentials.id")
+        ),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("updated_by", sa.String(255), nullable=False),
-        sa.CheckConstraint("generation >= 1", name="ck_integration_connection_generation"),
-        sa.UniqueConstraint("tenant_id", "key", name="uq_integration_connection_tenant_key"),
+        sa.CheckConstraint(
+            "generation >= 1", name="ck_integration_connection_generation"
+        ),
+        sa.UniqueConstraint(
+            "tenant_id", "key", name="uq_integration_connection_tenant_key"
+        ),
         schema=SCHEMA,
     )
     op.execute(
@@ -447,12 +547,24 @@ def upgrade() -> None:
         sa.Column("phone_number", sa.String(16), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("updated_by", sa.String(255), nullable=False),
         sa.CheckConstraint("generation >= 1", name="ck_handoff_destination_generation"),
-        sa.UniqueConstraint("tenant_id", "key", name="uq_handoff_destination_tenant_key"),
+        sa.UniqueConstraint(
+            "tenant_id", "key", name="uq_handoff_destination_tenant_key"
+        ),
         schema=SCHEMA,
     )
     op.execute(
@@ -482,11 +594,23 @@ def upgrade() -> None:
         sa.Column("phone_number", sa.String(16), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("created_by", sa.String(255), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("updated_by", sa.String(255), nullable=False),
-        sa.CheckConstraint("generation >= 1", name="ck_phone_number_assignment_generation"),
+        sa.CheckConstraint(
+            "generation >= 1", name="ck_phone_number_assignment_generation"
+        ),
         schema=SCHEMA,
     )
     op.create_index(
@@ -526,11 +650,21 @@ def upgrade() -> None:
         sa.Column("payload", postgresql.JSONB(), nullable=False),
         sa.Column("content_hash", sa.String(64), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("schema_version IN (1, 2)", name="ck_execution_snapshot_schema_version"),
-        sa.CheckConstraint("architecture IN ('cascade', 'realtime')", name="ck_execution_snapshot_architecture"),
+        sa.CheckConstraint(
+            "schema_version = 2", name="ck_execution_snapshot_schema_version"
+        ),
+        sa.CheckConstraint(
+            "architecture IN ('cascade', 'realtime')",
+            name="ck_execution_snapshot_architecture",
+        ),
         schema=SCHEMA,
     )
-    op.create_index("ix_execution_snapshot_tenant_created", "execution_snapshots", ["tenant_id", "created_at"], schema=SCHEMA)
+    op.create_index(
+        "ix_execution_snapshot_tenant_created",
+        "execution_snapshots",
+        ["tenant_id", "created_at"],
+        schema=SCHEMA,
+    )
     op.execute(
         """
         CREATE FUNCTION control_plane.reject_execution_snapshot_update() RETURNS trigger
@@ -549,40 +683,78 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP TRIGGER execution_snapshot_immutable ON control_plane.execution_snapshots")
+    op.execute(
+        "DROP TRIGGER execution_snapshot_immutable ON control_plane.execution_snapshots"
+    )
     op.execute("DROP FUNCTION control_plane.reject_execution_snapshot_update()")
-    op.drop_index("ix_execution_snapshot_tenant_created", table_name="execution_snapshots", schema=SCHEMA)
+    op.drop_index(
+        "ix_execution_snapshot_tenant_created",
+        table_name="execution_snapshots",
+        schema=SCHEMA,
+    )
     op.drop_table("execution_snapshots", schema=SCHEMA)
-    op.drop_index("uq_phone_number_assignment_enabled_phone", table_name="phone_number_assignments", schema=SCHEMA)
-    op.execute("DROP TRIGGER phone_number_assignment_identity_immutable ON control_plane.phone_number_assignments")
-    op.execute("DROP FUNCTION control_plane.reject_phone_number_assignment_identity_change()")
+    op.drop_index(
+        "uq_phone_number_assignment_enabled_phone",
+        table_name="phone_number_assignments",
+        schema=SCHEMA,
+    )
+    op.execute(
+        "DROP TRIGGER phone_number_assignment_identity_immutable ON control_plane.phone_number_assignments"
+    )
+    op.execute(
+        "DROP FUNCTION control_plane.reject_phone_number_assignment_identity_change()"
+    )
     op.drop_table("phone_number_assignments", schema=SCHEMA)
-    op.execute("DROP TRIGGER handoff_destination_identity_immutable ON control_plane.handoff_destinations")
-    op.execute("DROP FUNCTION control_plane.reject_handoff_destination_identity_change()")
+    op.execute(
+        "DROP TRIGGER handoff_destination_identity_immutable ON control_plane.handoff_destinations"
+    )
+    op.execute(
+        "DROP FUNCTION control_plane.reject_handoff_destination_identity_change()"
+    )
     op.drop_table("handoff_destinations", schema=SCHEMA)
-    op.execute("DROP TRIGGER integration_connection_identity_immutable ON control_plane.integration_connections")
-    op.execute("DROP FUNCTION control_plane.reject_integration_connection_identity_change()")
+    op.execute(
+        "DROP TRIGGER integration_connection_identity_immutable ON control_plane.integration_connections"
+    )
+    op.execute(
+        "DROP FUNCTION control_plane.reject_integration_connection_identity_change()"
+    )
     op.drop_table("integration_connections", schema=SCHEMA)
-    op.execute("DROP TRIGGER model_deployment_identity_immutable ON control_plane.model_deployments")
+    op.execute(
+        "DROP TRIGGER model_deployment_identity_immutable ON control_plane.model_deployments"
+    )
     op.execute("DROP FUNCTION control_plane.reject_model_deployment_identity_change()")
     op.drop_table("model_deployments", schema=SCHEMA)
-    op.execute("DROP TRIGGER provider_connection_identity_immutable ON control_plane.provider_connections")
-    op.execute("DROP FUNCTION control_plane.reject_provider_connection_identity_change()")
+    op.execute(
+        "DROP TRIGGER provider_connection_identity_immutable ON control_plane.provider_connections"
+    )
+    op.execute(
+        "DROP FUNCTION control_plane.reject_provider_connection_identity_change()"
+    )
     op.drop_table("provider_connections", schema=SCHEMA)
-    op.execute("DROP TRIGGER credential_version_immutable ON control_plane.credential_versions")
+    op.execute(
+        "DROP TRIGGER credential_version_immutable ON control_plane.credential_versions"
+    )
     op.execute("DROP FUNCTION control_plane.reject_credential_version_mutation()")
     op.execute("DROP TRIGGER credential_scope_immutable ON control_plane.credentials")
     op.execute("DROP FUNCTION control_plane.reject_credential_scope_change()")
-    op.drop_constraint("fk_credential_active_version", "credentials", schema=SCHEMA, type_="foreignkey")
-    op.drop_index("uq_credential_active_version", table_name="credential_versions", schema=SCHEMA)
+    op.drop_constraint(
+        "fk_credential_active_version", "credentials", schema=SCHEMA, type_="foreignkey"
+    )
+    op.drop_index(
+        "uq_credential_active_version", table_name="credential_versions", schema=SCHEMA
+    )
     op.drop_table("credential_versions", schema=SCHEMA)
     op.drop_table("credentials", schema=SCHEMA)
     op.drop_table("idempotency_replays", schema=SCHEMA)
     for table_name in ("interaction_mode_catalog", "profile_catalog"):
-        op.execute(f"DROP TRIGGER {table_name}_key_immutable ON control_plane.{table_name}")
+        op.execute(
+            f"DROP TRIGGER {table_name}_key_immutable ON control_plane.{table_name}"
+        )
         op.drop_table(table_name, schema=SCHEMA)
     op.execute("DROP FUNCTION control_plane.reject_catalog_key_change()")
-    op.drop_index("uq_live_component_address", table_name="live_components", schema=SCHEMA)
+    op.drop_index(
+        "uq_live_component_address", table_name="live_components", schema=SCHEMA
+    )
     op.drop_table("live_components", schema=SCHEMA)
     op.drop_constraint(
         "fk_configuration_component_active_revision",

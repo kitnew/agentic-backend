@@ -8,11 +8,9 @@ import jwt
 import pytest
 from contracts import (
     CapabilityInvocationStatus,
-    EffectiveVoiceRuntime,
     HumanHandoffResponse,
     InboundSipClaimResponse,
-    RuntimeCapabilityDefinition,
-    VoiceAgentRuntimeContext,
+    VoiceExecutionContext,
 )
 from livekit import agents, rtc
 from livekit.agents.beta.tools import EndCallTool
@@ -60,77 +58,154 @@ def settings(**overrides: object) -> VoiceAgentSettings:
     return VoiceAgentSettings.model_validate(values)
 
 
-def runtime_context() -> VoiceAgentRuntimeContext:
-    return VoiceAgentRuntimeContext(
-        call_session_id=uuid4(),
-        execution_snapshot_id=uuid4(),
-        voice_runtime_revision_id=uuid4(),
-        voice_runtime=runtime_settings(),
-        room_name="call_test",
-        locale="sk-SK",
-        timezone="Europe/Bratislava",
-        agent_display_name="Amelia",
-        greeting="Dobry den",
-        conversation_scope="property_only",
-        prompt={
-            "system_prompt": "System prompt",
-            "profile_prompt": "Profile prompt",
-            "tenant_prompt": "Tenant prompt",
-            "knowledge_context": "Knowledge",
-            "knowledge_base_revision_id": uuid4(),
+def runtime_context() -> VoiceExecutionContext:
+    return VoiceExecutionContext(
+        execution_id=uuid4(),
+        tenant={"locale": "sk-SK", "timezone": "Europe/Bratislava"},
+        agent={"name": "Amelia", "personality": "helpful", "greeting": "Dobry den"},
+        architecture="classic",
+        prompts={
+            "system": "System prompt",
+            "profile": "Profile prompt",
+            "tenant": "Tenant prompt",
+            "knowledge": "Knowledge",
         },
+        runtime=target_runtime(),
+        actions=[],
+        handoff=[],
     )
 
 
-def runtime_settings(**overrides: object) -> EffectiveVoiceRuntime:
-    payload: dict[str, object] = {
-        "locale": "sk-SK",
-        "llm": {
-            "provider": "azure_openai",
-            "model": "model-a",
-            "max_completion_tokens": 256,
-            "temperature": 0,
-        },
-        "stt": {
-            "provider": "elevenlabs",
-            "model": "scribe_v2_realtime",
-            "server_vad": {
-                "silence_threshold_seconds": 0.35,
-                "activity_threshold": 0.35,
-                "min_speech_ms": 100,
-                "min_silence_ms": 350,
-            },
-        },
-        "tts": {
-            "provider": "elevenlabs",
-            "model": "eleven_flash_v2_5",
-            "voice_id": "voice-id",
-            "min_sentence_chars": 20,
-        },
-        "local_vad": {
-            "min_speech_seconds": 0.05,
-            "min_silence_seconds": 0.25,
-            "activation_threshold": 0.5,
-        },
-        "turn": {
-            "detection": "stt",
-            "min_endpointing_delay_seconds": 0.1,
-            "max_endpointing_delay_seconds": 0.7,
-        },
+def target_runtime() -> dict[str, object]:
+    policy = {
         "interruption": {
             "enabled": True,
             "min_duration_seconds": 0.5,
             "min_words": 0,
-            "false_interruption_timeout_seconds": 2.0,
+            "false_interruption_timeout_seconds": 2,
             "resume_after_false_interruption": True,
         },
         "response_scheduling": {
-            "preemptive_generation": True,
-            "preemptive_tts": True,
+            "preemptive_generation": False,
+            "preemptive_tts": False,
         },
     }
-    payload.update(overrides)
-    return EffectiveVoiceRuntime.model_validate(payload)
+    return {
+        "llm": {
+            "provider_kind": "azure_openai",
+            "deployment_config": {"model": "model-a"},
+            "connection_config": {},
+            "max_completion_tokens": 256,
+            "temperature": 0,
+            "reasoning_effort": "none",
+            **policy,
+        },
+        "stt": {
+            "provider_kind": "elevenlabs",
+            "deployment_config": {"model_id": "scribe_v2_realtime"},
+            "connection_config": {},
+            "speech_hints": {"keyterms": {"values": []}},
+            "speech_activity": {
+                "min_speech_seconds": 0.05,
+                "min_silence_seconds": 0.25,
+                "activation_threshold": 0.5,
+            },
+            "commit": {
+                "strategy": "provider_vad",
+                "provider_vad": {
+                    "silence_threshold_seconds": 0.35,
+                    "threshold": 0.35,
+                    "min_speech_ms": 100,
+                    "min_silence_ms": 350,
+                },
+            },
+            "endpointing": {"min_delay_seconds": 0.1, "max_delay_seconds": 0.7},
+        },
+        "tts": {
+            "provider_kind": "elevenlabs",
+            "deployment_config": {"model_id": "eleven_flash_v2_5"},
+            "connection_config": {},
+            "voice": "voice-id",
+            "tokenizer": {"min_sentence_chars": 20},
+        },
+        "realtime": {},
+    }
+
+
+def runtime_action(
+    key: str, *, announcement: str = "I will process that now."
+) -> dict[str, object]:
+    return {
+        "key": key,
+        "phase": "runtime",
+        "definition": {
+            "description": "Execute the requested action.",
+            "announcement": announcement,
+            "agent_input_schema": {"type": "object"},
+            "business_policy": {},
+        },
+        "execution_plan": {},
+        "integration": {"semantic_key": "test"},
+    }
+
+
+def runtime_settings(**overrides: object) -> dict[str, object]:
+    runtime = target_runtime()
+    runtime["locale"] = "sk-SK"
+    llm = runtime["llm"]
+    stt = runtime["stt"]
+    tts = runtime["tts"]
+    assert isinstance(llm, dict) and isinstance(stt, dict) and isinstance(tts, dict)
+    llm["deployment_config"] = {
+        "model": "model-a",
+        "deployment_name": "deployment",
+        "api_version": "2025-01-01-preview",
+    }
+    llm["connection_config"] = {"endpoint": "https://test.openai.azure.com"}
+    if isinstance(value := overrides.get("llm"), dict):
+        llm.update(
+            {
+                key: item
+                for key, item in value.items()
+                if key not in {"provider", "model"}
+            }
+        )
+        llm["provider_kind"] = value.get("provider", llm["provider_kind"])
+        llm["deployment_config"]["model"] = value.get(
+            "model", llm["deployment_config"]["model"]
+        )
+    if isinstance(value := overrides.get("stt"), dict):
+        stt["provider_kind"] = value.get("provider", stt["provider_kind"])
+        stt["deployment_config"]["model_id"] = value.get(
+            "model", stt["deployment_config"]["model_id"]
+        )
+        stt["speech_hints"]["keyterms"]["values"] = value.get("keyterms", [])
+        vad = value.get("server_vad", {})
+        stt["commit"]["provider_vad"] = {
+            "silence_threshold_seconds": vad.get("silence_threshold_seconds", 0.35),
+            "threshold": vad.get("activity_threshold", 0.35),
+            "min_speech_ms": vad.get("min_speech_ms", 100),
+            "min_silence_ms": vad.get("min_silence_ms", 350),
+        }
+    if isinstance(value := overrides.get("tts"), dict):
+        tts["provider_kind"] = value.get("provider", tts["provider_kind"])
+        tts["deployment_config"]["model_id"] = value.get(
+            "model", tts["deployment_config"]["model_id"]
+        )
+        tts["voice"] = value.get("voice_id", tts["voice"])
+        tts["tokenizer"]["min_sentence_chars"] = value.get("min_sentence_chars", 20)
+    if isinstance(value := overrides.get("local_vad"), dict):
+        stt["speech_activity"] = value
+    if isinstance(value := overrides.get("turn"), dict):
+        stt["endpointing"] = {
+            "min_delay_seconds": value.get("min_endpointing_delay_seconds", 0.1),
+            "max_delay_seconds": value.get("max_endpointing_delay_seconds", 0.7),
+        }
+    if isinstance(value := overrides.get("interruption"), dict):
+        llm["interruption"] = value
+    if isinstance(value := overrides.get("response_scheduling"), dict):
+        llm["response_scheduling"] = value
+    return runtime
 
 
 def test_llm_behavior_options_follow_runtime_model() -> None:
@@ -176,24 +251,16 @@ def test_realtime_factory_uses_snapshot_runtime_values(
         settings(),
         {
             "model": {
-                "resource": {
-                    "deployment": {
-                        "deployment_config": {
-                            "model": "realtime-model",
-                            "deployment_name": "realtime-deployment",
-                            "api_version": "2026-02-01",
-                        }
-                    },
-                    "connection": {
-                        "connection_config": {"endpoint": "https://realtime.example"}
-                    },
-                }
+                "deployment_config": {
+                    "model": "realtime-model",
+                    "deployment_name": "realtime-deployment",
+                    "api_version": "2026-02-01",
+                },
+                "connection_config": {"endpoint": "https://realtime.example"},
             },
             "voice": "custom-voice",
             "input_transcription": {
-                "resource": {
-                    "deployment": {"deployment_config": {"model": "transcribe-model"}}
-                },
+                "deployment_config": {"model": "transcribe-model"},
                 "language": "sk",
             },
         },
@@ -416,7 +483,6 @@ def test_prompt_assembly_uses_only_runtime_material() -> None:
     assert "Timezone: Europe/Bratislava" in instructions
     assert "Current local date: " in instructions
     assert "Current local time: " in instructions
-    assert "Conversation scope: property_only" in instructions
 
 
 @pytest.mark.parametrize(
@@ -508,12 +574,15 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
     call_id = uuid4()
     backend = Backend()
     handed_off: list[bool] = []
-    runtime = VoiceAgentRuntimeContext.model_validate(
+    runtime = VoiceExecutionContext.model_validate(
         {
             **runtime_context().model_dump(),
-            "handoff_destinations": {
-                "reception": {"description": "Reservations and reception requests"}
-            },
+            "handoff": [
+                {
+                    "destination_key": "reception",
+                    "description": "Reservations and reception requests",
+                }
+            ],
         }
     )
     tools = build_agent_tools(runtime, backend, call_id)  # type: ignore[arg-type]
@@ -560,13 +629,9 @@ async def test_capability_timeout_returns_only_safe_semantics() -> None:
     context = SimpleNamespace(
         session=Session(), function_call=SimpleNamespace(call_id="tool-call")
     )
-    definition = RuntimeCapabilityDefinition(
-        semantic_key="reservation.submit_request",
-        semantic_version=1,
-        tool_name="reservation_submit_request",
-        description="Submit a reservation request.",
+    definition = runtime_action(
+        "reservation.submit_request",
         announcement="I will submit your reservation request now.",
-        input_schema={"type": "object"},
     )
     tool = capability_tool(definition, Backend(), uuid4())  # type: ignore[arg-type]
     result = await tool._func(context, {})  # type: ignore[attr-defined,arg-type]
@@ -595,13 +660,9 @@ async def test_availability_capability_records_success_without_arguments() -> No
         async def say(self, text, **kwargs):
             return None
 
-    definition = RuntimeCapabilityDefinition(
-        semantic_key="reservation.check_availability",
-        semantic_version=1,
-        tool_name="reservation_check_availability",
-        description="Check availability.",
+    definition = runtime_action(
+        "reservation.check_availability",
         announcement="I will check availability.",
-        input_schema={"type": "object"},
     )
     tool = capability_tool(  # type: ignore[arg-type]
         definition,
@@ -618,7 +679,7 @@ async def test_availability_capability_records_success_without_arguments() -> No
     assert result == {"status": "available"}
     assert len(recorded) == 1
     assert recorded[0]["name"] == "reservation.check_availability"
-    assert recorded[0]["version"] == "1"
+    assert recorded[0]["version"] == "execution"
     assert recorded[0]["status"] == "ok"
     assert recorded[0]["error_type"] is None
     assert recorded[0]["duration_seconds"] >= 0
@@ -642,13 +703,9 @@ async def test_capability_with_empty_success_result_returns_submitted() -> None:
         async def say(self, text, **kwargs):
             return None
 
-    definition = RuntimeCapabilityDefinition(
-        semantic_key="reservation.create_request",
-        semantic_version=1,
-        tool_name="reservation_create_request",
-        description="Submit a reservation request.",
+    definition = runtime_action(
+        "reservation.create_request",
         announcement="I will submit your reservation request.",
-        input_schema={"type": "object"},
     )
     tool = capability_tool(
         definition,
@@ -744,23 +801,6 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         ),
         "voice-agent-prompt:test",
         secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
-        snapshot_runtime={
-            "llm": {
-                "resource": {
-                    "deployment": {
-                        "deployment_config": {
-                            "deployment_name": "deployment",
-                            "api_version": "2025-01-01-preview",
-                        }
-                    },
-                    "connection": {
-                        "connection_config": {
-                            "endpoint": "https://test.openai.azure.com"
-                        }
-                    },
-                }
-            }
-        },
     )
     try:
         assert isinstance(session.stt, elevenlabs.STT)
@@ -818,30 +858,13 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
 async def test_provider_factory_enables_manual_scribe_commit_without_changing_turn_mode() -> (
     None
 ):
-    payload = runtime_settings().model_dump()
-    payload["stt"]["local_vad_commit"]["enabled"] = True  # type: ignore[index]
+    payload = runtime_settings()
+    payload["stt"]["commit"]["strategy"] = "local_vad"  # type: ignore[index]
     session = create_agent_session(
         settings(),
-        EffectiveVoiceRuntime.model_validate(payload),
+        payload,
         "voice-agent-prompt:test",
         secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
-        snapshot_runtime={
-            "llm": {
-                "resource": {
-                    "deployment": {
-                        "deployment_config": {
-                            "deployment_name": "deployment",
-                            "api_version": "2025-01-01-preview",
-                        }
-                    },
-                    "connection": {
-                        "connection_config": {
-                            "endpoint": "https://test.openai.azure.com"
-                        }
-                    },
-                }
-            }
-        },
     )
     try:
         assert isinstance(session.stt, LocalVadCommitSTT)
@@ -876,23 +899,6 @@ async def test_provider_factory_passes_tenant_keyterms_to_elevenlabs() -> None:
         ),
         "voice-agent-prompt:test",
         secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
-        snapshot_runtime={
-            "llm": {
-                "resource": {
-                    "deployment": {
-                        "deployment_config": {
-                            "deployment_name": "deployment",
-                            "api_version": "2025-01-01-preview",
-                        }
-                    },
-                    "connection": {
-                        "connection_config": {
-                            "endpoint": "https://test.openai.azure.com"
-                        }
-                    },
-                }
-            }
-        },
     )
     try:
         assert session.stt._opts.keyterms == ["Kováčska", "Penzión Grand"]
@@ -927,23 +933,6 @@ async def test_provider_factory_passes_low_latency_tts_and_stt_candidates() -> N
         runtime,
         "voice-agent-prompt:test",
         secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
-        snapshot_runtime={
-            "llm": {
-                "resource": {
-                    "deployment": {
-                        "deployment_config": {
-                            "deployment_name": "deployment",
-                            "api_version": "2025-01-01-preview",
-                        }
-                    },
-                    "connection": {
-                        "connection_config": {
-                            "endpoint": "https://test.openai.azure.com"
-                        }
-                    },
-                }
-            }
-        },
     )
     try:
         provider_stt = session.stt
@@ -971,23 +960,6 @@ async def test_provider_factory_uses_runtime_logical_azure_model() -> None:
         ),
         "voice-agent-prompt:test",
         secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
-        snapshot_runtime={
-            "llm": {
-                "resource": {
-                    "deployment": {
-                        "deployment_config": {
-                            "deployment_name": "deployment",
-                            "api_version": "2025-01-01-preview",
-                        }
-                    },
-                    "connection": {
-                        "connection_config": {
-                            "endpoint": "https://test.openai.azure.com"
-                        }
-                    },
-                }
-            }
-        },
     )
     try:
         assert session.llm._opts.model == "model-b"
@@ -1017,6 +989,7 @@ def test_close_reason_mapping(
 @pytest.mark.asyncio
 async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -> None:
     context = runtime_context()
+    call_id = uuid4()
 
     class FakeBackend:
         def __init__(self) -> None:
@@ -1026,7 +999,7 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
         async def runtime_context(self, call_id):
             return context
 
-        async def runtime_secret(self, snapshot_id, slot):
+        async def runtime_secret(self, execution_id, slot):
             return f"{slot}-secret"
 
         async def activate(self, call_id) -> None:
@@ -1067,10 +1040,8 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
     )
 
     class Context:
-        job = SimpleNamespace(
-            metadata=f'{{"call_session_id":"{context.call_session_id}"}}'
-        )
-        room = object()
+        job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
+        room = SimpleNamespace(name="room")
 
         def add_shutdown_callback(self, callback) -> None:
             return None
@@ -1091,21 +1062,22 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = runtime_context()
+    claimed_call_id = uuid4()
     order: list[str] = []
 
     class FakeBackend:
         async def claim_inbound_sip(self, request):
             order.append("claim")
             return InboundSipClaimResponse(
-                call_session_id=context.call_session_id, created=True
+                call_session_id=claimed_call_id, created=True
             )
 
         async def runtime_context(self, call_id):
             order.append("runtime-context")
-            assert call_id == context.call_session_id
+            assert call_id == claimed_call_id
             return context
 
-        async def runtime_secret(self, snapshot_id, slot):
+        async def runtime_secret(self, execution_id, slot):
             return f"{slot}-secret"
 
         async def observe(self, call_id, observation_type: str) -> None:
@@ -1195,9 +1167,12 @@ async def test_successful_handoff_relinquishes_without_completing_call(
 ) -> None:
     context = runtime_context().model_copy(
         update={
-            "handoff_destinations": {"reception": {"description": "Reception requests"}}
+            "handoff": [
+                {"destination_key": "reception", "description": "Reception requests"}
+            ]
         }
     )
+    call_id = uuid4()
 
     class Backend:
         def __init__(self) -> None:
@@ -1206,7 +1181,7 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         async def runtime_context(self, call_id):
             return context
 
-        async def runtime_secret(self, snapshot_id, slot):
+        async def runtime_secret(self, execution_id, slot):
             return f"{slot}-secret"
 
         async def observe(
@@ -1261,10 +1236,8 @@ async def test_successful_handoff_relinquishes_without_completing_call(
             return None
 
     class Context:
-        job = SimpleNamespace(
-            metadata=f'{{"call_session_id":"{context.call_session_id}"}}'
-        )
-        room = object()
+        job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
+        room = SimpleNamespace(name="room")
 
         def add_shutdown_callback(self, callback) -> None:
             return None
@@ -1304,6 +1277,7 @@ async def test_session_close_terminalizes_while_session_is_alive(
     close_reason: agents.CloseReason,
 ) -> None:
     context = runtime_context()
+    call_id = uuid4()
 
     class FakeBackend:
         def __init__(self) -> None:
@@ -1313,7 +1287,7 @@ async def test_session_close_terminalizes_while_session_is_alive(
         async def runtime_context(self, call_id):
             return context
 
-        async def runtime_secret(self, snapshot_id, slot):
+        async def runtime_secret(self, execution_id, slot):
             return f"{slot}-secret"
 
         async def observe(self, call_id, observation_type: str) -> None:
@@ -1357,10 +1331,8 @@ async def test_session_close_terminalizes_while_session_is_alive(
     monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: session)
 
     class Context:
-        job = SimpleNamespace(
-            metadata=f'{{"call_session_id":"{context.call_session_id}"}}'
-        )
-        room = object()
+        job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
+        room = SimpleNamespace(name="room")
         shutdown = None
 
         def add_shutdown_callback(self, callback) -> None:

@@ -16,12 +16,12 @@ import uuid
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
 import openai as openai_sdk
-from contracts import VoiceAgentRuntimeContext
+from contracts import VoiceExecutionContext
 from livekit.agents import llm
 from livekit.agents.voice.generation import update_instructions
 from livekit.plugins import openai
@@ -72,14 +72,15 @@ def metric_stats(values: list[float]) -> dict[str, float | None]:
     }
 
 
-def prompt_cache_key(context: VoiceAgentRuntimeContext) -> str:
-    stable_prefix = f"{context.prompt.system_prompt}\0{context.prompt.profile_prompt}"
+def prompt_cache_key(context: VoiceExecutionContext) -> str:
+    stable_prefix = f"{context.prompts['system']}\0{context.prompts['profile']}"
     return "voice-agent-prompt:" + hashlib.sha256(stable_prefix.encode()).hexdigest()
 
 
 def request_shape(
-    context: VoiceAgentRuntimeContext,
+    context: VoiceExecutionContext,
     backend: BackendClient,
+    call_id: UUID,
     user_text: str,
     cache_bust: str | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
@@ -93,11 +94,11 @@ def request_shape(
     update_instructions(
         chat_ctx, instructions=instructions, add_if_missing=True, modality="audio"
     )
-    chat_ctx.add_message(role="assistant", content=[context.greeting])
+    chat_ctx.add_message(role="assistant", content=[str(context.agent["greeting"])])
     chat_ctx.add_message(role="user", content=[user_text])
     messages, _ = chat_ctx.to_provider_format(format="openai")
     tools = llm.ToolContext(
-        build_agent_tools(context, backend, context.call_session_id)
+        build_agent_tools(context, backend, call_id)
     ).parse_function_tools("openai", strict=True)
     return messages, tools, cache_key
 
@@ -121,29 +122,33 @@ def frozen_request_shape(
 
 def provider(
     settings: VoiceAgentSettings,
-    context: VoiceAgentRuntimeContext,
+    context: VoiceExecutionContext,
     backend: str,
     model: str,
     azure_deployment: str,
+    azure_api_key: str,
 ) -> openai.LLM:
+    llm_runtime = cast(dict[str, Any], context.runtime["llm"])
+    connection = cast(dict[str, Any], llm_runtime["connection_config"])
+    deployment = cast(dict[str, Any], llm_runtime["deployment_config"])
     options = {
         "model": model,
         "timeout": httpx.Timeout(settings.provider_timeout_seconds),
         "max_completion_tokens": 256,
-        **llm_behavior_options(context.voice_runtime),
+        **llm_behavior_options(context.runtime),
     }
     if backend == "azure":
         return openai.LLM.with_azure(
             azure_deployment=azure_deployment,
-            azure_endpoint=azure_endpoint(settings.azure_openai_endpoint),
-            api_version=settings.azure_openai_api_version,
-            api_key=settings.azure_openai_api_key.get_secret_value(),
-            **options,
+            azure_endpoint=azure_endpoint(str(connection["endpoint"])),
+            api_version=str(deployment["api_version"]),
+            api_key=azure_api_key,
+            **options,  # type: ignore[arg-type]
         )
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise SystemExit("OPENAI_API_KEY is required for --backend openai")
-    return openai.LLM(api_key=api_key, **options)
+    return openai.LLM(api_key=api_key, **options)  # type: ignore[arg-type]
 
 
 def safe_error(error: Exception) -> dict[str, Any]:
@@ -220,7 +225,9 @@ async def run_request(
                             current["id"] = call.id or current["id"]
                             if call.function is not None:
                                 current["name"] = call.function.name or current["name"]
-                                current["arguments"] += call.function.arguments or ""
+                                current["arguments"] = (current["arguments"] or "") + (
+                                    call.function.arguments or ""
+                                )
             error = None
             break
         except Exception as exc:  # noqa: BLE001 - production adapter retries provider failures
@@ -354,11 +361,9 @@ def calculator_probe_result(row: dict[str, Any]) -> dict[str, Any]:
 
 async def load_context(
     args: argparse.Namespace, settings: VoiceAgentSettings, backend: BackendClient
-) -> VoiceAgentRuntimeContext:
+) -> VoiceExecutionContext:
     if args.context_json:
-        return VoiceAgentRuntimeContext.model_validate_json(
-            args.context_json.read_text()
-        )
+        return VoiceExecutionContext.model_validate_json(args.context_json.read_text())
     return await backend.runtime_context(args.call_id)
 
 
@@ -366,11 +371,13 @@ async def run_interleaved(
     args: argparse.Namespace,
     settings: VoiceAgentSettings,
     backend: BackendClient,
-    context: VoiceAgentRuntimeContext,
+    context: VoiceExecutionContext,
 ) -> None:
     messages, tools, cache_key = frozen_request_shape(
         args.request_json,
-        request_shape(context, backend, args.user_text, None),
+        request_shape(
+            context, backend, args.call_id or UUID(int=0), args.user_text, None
+        ),
     )
     workload_hash = hashlib.sha256(
         json.dumps(
@@ -383,8 +390,9 @@ async def run_interleaved(
     warmups: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
     block_times: list[dict[str, Any]] = []
-    behavior = llm_behavior_options(context.voice_runtime)
+    behavior = llm_behavior_options(context.runtime)
     active_arms: list[tuple[str, str, str, str | None]] = []
+    azure_api_key = await backend.runtime_secret(context.execution_id, "llm")
     try:
         for arm, backend_name, model, deployment in INTERLEAVED_ARMS:
             try:
@@ -394,6 +402,7 @@ async def run_interleaved(
                     backend_name,
                     model,
                     deployment or model,
+                    azure_api_key,
                 )
                 for attempt in range(1, 6):
                     row = await run_request(
@@ -515,7 +524,9 @@ async def run_interleaved(
             "blocks": args.interleaved_blocks,
             "requests_per_arm_per_block": args.block_iterations,
             "concurrency": 1,
-            "reasoning_effort": context.voice_runtime.llm.reasoning_effort,
+            "reasoning_effort": cast(dict[str, Any], context.runtime["llm"]).get(
+                "reasoning_effort"
+            ),
             "max_completion_tokens": 256,
             "stream": True,
             "block_times": block_times,
@@ -557,15 +568,37 @@ async def async_main(args: argparse.Namespace) -> None:
         if args.interleaved_blocks:
             await run_interleaved(args, settings, backend, context)
             return
-        model = args.model or context.voice_runtime.llm.model
-        azure_deployment = args.azure_deployment or settings.azure_openai_deployment
+        deployment = cast(
+            dict[str, Any],
+            cast(dict[str, Any], context.runtime["llm"])["deployment_config"],
+        )
+        model = (
+            args.model or deployment.get("model") or deployment.get("deployment_name")
+        )
+        if not isinstance(model, str) or not model:
+            raise SystemExit("VoiceExecutionContext has no LLM model")
+        azure_deployment = args.azure_deployment or deployment.get("deployment_name")
+        if not isinstance(azure_deployment, str) or not azure_deployment:
+            raise SystemExit("VoiceExecutionContext has no Azure deployment")
+        azure_api_key = await backend.runtime_secret(context.execution_id, "llm")
         llm_provider = provider(
-            settings, context, args.backend, model, azure_deployment
+            settings,
+            context,
+            args.backend,
+            model,
+            azure_deployment,
+            azure_api_key,
         )
         rows: list[dict[str, Any]] = []
         warm_shape = frozen_request_shape(
             args.request_json,
-            request_shape(context, backend, args.user_text, None),
+            request_shape(
+                context,
+                backend,
+                args.call_id or UUID(int=0),
+                args.user_text,
+                None,
+            ),
         )
         workloads = (
             ("warm", "cache_busted") if args.workload == "both" else (args.workload,)
@@ -575,7 +608,11 @@ async def async_main(args: argparse.Namespace) -> None:
                 for index in range(args.iterations):
                     messages, tools, cache_key = (
                         request_shape(
-                            context, backend, args.user_text, uuid.uuid4().hex
+                            context,
+                            backend,
+                            args.call_id or UUID(int=0),
+                            args.user_text,
+                            uuid.uuid4().hex,
                         )
                         if workload == "cache_busted"
                         else warm_shape
@@ -594,7 +631,7 @@ async def async_main(args: argparse.Namespace) -> None:
                         model=model,
                         cache_key=cache_key,
                         service_tier=tier,
-                        behavior=llm_behavior_options(context.voice_runtime),
+                        behavior=llm_behavior_options(context.runtime),
                         timeout_seconds=settings.provider_timeout_seconds,
                         retry_limit=settings.provider_retry_limit,
                     )
@@ -615,17 +652,21 @@ async def async_main(args: argparse.Namespace) -> None:
             "provider": args.backend,
             "deployment": azure_deployment if args.backend == "azure" else None,
             "api_version": (
-                settings.azure_openai_api_version if args.backend == "azure" else "v1"
+                deployment.get("api_version") if args.backend == "azure" else "v1"
             ),
             "requested_model": model,
-            "reasoning_effort": context.voice_runtime.llm.reasoning_effort,
-            "temperature": context.voice_runtime.llm.temperature,
+            "reasoning_effort": cast(dict[str, Any], context.runtime["llm"]).get(
+                "reasoning_effort"
+            ),
+            "temperature": cast(dict[str, Any], context.runtime["llm"]).get(
+                "temperature"
+            ),
             "max_completion_tokens": 256,
             "stream": True,
             "timeout_seconds": settings.provider_timeout_seconds,
             "retry_limit": settings.provider_retry_limit,
             "concurrency": 1,
-            "call_session_id": str(context.call_session_id),
+            "execution_id": str(context.execution_id),
         }
         (args.output_dir / "raw.json").write_text(
             json.dumps({"metadata": metadata, "results": rows}, indent=2) + "\n"

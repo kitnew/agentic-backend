@@ -191,7 +191,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.database,
                 app.state.livekit,
                 app.state.settings,
-                app.state.control_plane,
                 tracer=tracer,
                 metrics=metrics,
             ).run(app.state.settings.telephony_reconciliation_interval_seconds)

@@ -66,7 +66,7 @@ async def test_worker_disabled_does_not_bootstrap_telemetry(monkeypatch) -> None
     )
     monkeypatch.setattr(
         worker_module,
-        "ManagedWebhookPostJsonHandler",
+        "HttpExecutionHandler",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("startup failed")),
     )
 
@@ -103,7 +103,7 @@ async def test_worker_enabled_instruments_created_clients_and_cleans_up_failure(
     )
     monkeypatch.setattr(
         worker_module,
-        "ManagedWebhookPostJsonHandler",
+        "HttpExecutionHandler",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("startup failed")),
     )
 

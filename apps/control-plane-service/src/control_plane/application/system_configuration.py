@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Any
 
+from contracts import ValidationIssue
 from pydantic import BaseModel, ConfigDict
 
 from control_plane.application.command_support import (
@@ -61,13 +62,6 @@ class SystemConfigurationDesired(BaseModel):
 
 class SystemConfiguration(SystemConfigurationDesired):
     pass
-
-
-@dataclass(frozen=True, slots=True)
-class ValidationIssue:
-    code: str
-    path: str
-    message: str
 
 
 @dataclass(frozen=True, slots=True)

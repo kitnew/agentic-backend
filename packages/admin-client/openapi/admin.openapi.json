@@ -177,9 +177,9 @@
             ],
             "title": "Ended At"
           },
-          "execution_snapshot_id": {
+          "execution_id": {
             "format": "uuid",
-            "title": "Execution Snapshot Id",
+            "title": "Execution Id",
             "type": "string"
           },
           "failure_reason": {
@@ -344,7 +344,7 @@
         "required": [
           "id",
           "tenant_id",
-          "execution_snapshot_id",
+          "execution_id",
           "channel",
           "direction",
           "provider",

@@ -29,7 +29,7 @@ class CallSessionResponse:
         created_at (datetime.datetime):
         direction (CallDirection):
         ended_at (datetime.datetime | None):
-        execution_snapshot_id (UUID):
+        execution_id (UUID):
         failure_reason (None | str):
         handoff_destination (None | str):
         handoff_participant_identity (None | str):
@@ -59,7 +59,7 @@ class CallSessionResponse:
     created_at: datetime.datetime
     direction: CallDirection
     ended_at: datetime.datetime | None
-    execution_snapshot_id: UUID
+    execution_id: UUID
     failure_reason: None | str
     handoff_destination: None | str
     handoff_participant_identity: None | str
@@ -111,7 +111,7 @@ class CallSessionResponse:
         else:
             ended_at = self.ended_at
 
-        execution_snapshot_id = str(self.execution_snapshot_id)
+        execution_id = str(self.execution_id)
 
         failure_reason: None | str
         failure_reason = self.failure_reason
@@ -177,7 +177,7 @@ class CallSessionResponse:
                 "created_at": created_at,
                 "direction": direction,
                 "ended_at": ended_at,
-                "execution_snapshot_id": execution_snapshot_id,
+                "execution_id": execution_id,
                 "failure_reason": failure_reason,
                 "handoff_destination": handoff_destination,
                 "handoff_participant_identity": handoff_participant_identity,
@@ -269,7 +269,7 @@ class CallSessionResponse:
 
         ended_at = _parse_ended_at(d.pop("ended_at"))
 
-        execution_snapshot_id = UUID(d.pop("execution_snapshot_id"))
+        execution_id = UUID(d.pop("execution_id"))
 
         def _parse_failure_reason(data: object) -> None | str:
             if data is None:
@@ -395,7 +395,7 @@ class CallSessionResponse:
             created_at=created_at,
             direction=direction,
             ended_at=ended_at,
-            execution_snapshot_id=execution_snapshot_id,
+            execution_id=execution_id,
             failure_reason=failure_reason,
             handoff_destination=handoff_destination,
             handoff_participant_identity=handoff_participant_identity,

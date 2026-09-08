@@ -8,7 +8,6 @@ from backend_core.runtime.finalization.models import (
     WorkStatus,
 )
 from backend_core.runtime.finalization.service import FinalizationService
-from contracts import RuntimeHttpExecution, RuntimePostCallAction
 
 
 class _Session:
@@ -57,10 +56,9 @@ async def test_terminal_post_call_failure_does_not_block_next_ordered_action() -
     )
 
     async def _actions():
-        execution = RuntimeHttpExecution(connection_id=uuid4(), method="POST", timeout_seconds=5)
         return [
-            RuntimePostCallAction(action_id="first", execution=execution),
-            RuntimePostCallAction(action_id="second", execution=execution),
+            {"key": "first", "definition": {"artifact_inputs": {}}},
+            {"key": "second", "definition": {"artifact_inputs": {}}},
         ]
 
     await service._schedule(finalization, uuid4())

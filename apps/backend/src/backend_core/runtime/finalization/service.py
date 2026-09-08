@@ -8,15 +8,10 @@ from contracts import (
     CallEventPayload,
     CommandResult,
     ExecutePostCallAction,
-    ExpressionNode,
     GenerateCallSummary,
-    HttpBodyBinding,
-    HttpRequestPlanV1,
     MaterializeArtifactRepresentation,
     MessageEnvelope,
-    PostCallActionInput,
-    RuntimePostCallAction,
-    RuntimePostCallInput,
+    WorkerExecutionContext,
     command_envelope,
 )
 from opentelemetry.trace import Tracer
@@ -27,7 +22,6 @@ from backend_core.application.messaging import CommandBus
 from backend_core.modules.calls.models import CallSession
 from backend_core.modules.conversations.models import Conversation, ConversationMessage
 from backend_core.platform.control_plane import ControlPlaneClient
-from backend_core.runtime.capabilities.mapping import evaluate_query, evaluate_template
 from backend_core.runtime.execution_context import ExecutionContextReader
 from backend_core.runtime.finalization.models import (
     ArtifactRepresentation,
@@ -62,12 +56,19 @@ class FinalizationService:
         self._tracer = tracer
         self._execution_context = execution_context
 
-    async def control_plane_material(self, tenant_id: UUID, connection_id: UUID):
+    async def control_plane_material(self, execution_id: UUID, integration_key: str):
         if self._control_plane is None:
             raise FinalizationError("integration material unavailable")
         return await self._control_plane.integration_execution_material(
-            tenant_id, connection_id
+            execution_id, integration_key
         )
+
+    async def worker_context(
+        self, call: CallSession, action_key: str
+    ) -> WorkerExecutionContext:
+        if self._execution_context is None:
+            raise FinalizationError("execution context unavailable")
+        return await self._execution_context.worker(call, action_key)
 
     async def start(self, event: MessageEnvelope) -> CallFinalization:
         with domain_span(
@@ -105,7 +106,7 @@ class FinalizationService:
         self._session.add_all(
             PostCallActionExecution(
                 finalization_id=finalization.id,
-                action_id=action.action_id,
+                action_id=str(action["key"]),
                 status=WorkStatus.PENDING,
             )
             for action in actions
@@ -260,13 +261,13 @@ class FinalizationService:
             raise FinalizationError("summary command is not current")
         return await self._conversation_context(call_id)
 
-    async def action_plan(
+    async def action_context(
         self,
         call_id: UUID,
         finalization_id: UUID,
         action_id: str,
         command_id: UUID,
-    ) -> HttpRequestPlanV1:
+    ) -> dict[str, object]:
         call = await self._session.get(CallSession, call_id)
         finalization = await self._session.get(CallFinalization, finalization_id)
         execution = await self._session.scalar(
@@ -287,43 +288,14 @@ class FinalizationService:
             raise FinalizationError("finalization context not found")
         action = self._action(await self._actions(call), action_id)
         inputs: dict[str, object] = {}
-        available_bodies: set[UUID] = set()
-        for name, requested in action.inputs.items():
-            inputs[name], body_ids = await self._mapping_input(finalization, requested)
-            available_bodies.update(body_ids)
-        context = await self._mapping_context(call, inputs)
-        payload = None
-        if action.execution.request.codec != "none":
-            if action.execution.request.mapping is None:
-                raise FinalizationError("HTTP request mapping is required")
-            payload = evaluate_template(action.execution.request.mapping, context)
-            payload, body_bindings = self._body_bindings(payload)
-        else:
-            body_bindings = []
-        if (
-            not {binding.representation_id for binding in body_bindings}
-            <= available_bodies
-        ):
-            raise FinalizationError("action references an unavailable artifact body")
-        path = action.execution.path
-        if isinstance(path, ExpressionNode):
-            path = evaluate_template(path, context)
-        query = evaluate_query(action.execution.query, context)
-        return HttpRequestPlanV1(
-            integration_id=action.execution.connection_id,
-            operation_id=command_id,
-            method=action.execution.method,
-            path=path,
-            query=query,
-            headers=action.execution.headers,
-            request=action.execution.request,
-            response=action.execution.response,
-            payload=payload,
-            body_bindings=body_bindings,
-            timeout_seconds=action.execution.timeout_seconds,
-            success_statuses=action.execution.success_statuses,
-            result_schema=action.execution.result_schema,
-        )
+        for name, requested in self._artifact_inputs(action).items():
+            inputs[name], _ = await self._mapping_input(finalization, requested)
+        return {
+            "worker_context": (await self.worker_context(call, action_id)).model_dump(
+                mode="json"
+            ),
+            "mapping_context": await self._mapping_context(call, inputs),
+        }
 
     async def materialization_source(
         self, representation_id: UUID, command_id: UUID
@@ -377,9 +349,9 @@ class FinalizationService:
             raise FinalizationError("artifact representation is unavailable")
         action = self._action(await self._actions(call), execution.action_id)
         if not any(
-            requested.artifact == representation.artifact_type
-            and requested.representation == representation.representation
-            for requested in action.inputs.values()
+            requested["artifact"] == representation.artifact_type
+            and requested["representation"] == representation.representation
+            for requested in self._artifact_inputs(action).values()
         ):
             raise FinalizationError("artifact representation is unavailable")
         return representation, representation.content
@@ -435,9 +407,9 @@ class FinalizationService:
             raise FinalizationError("artifact representation is unavailable")
         action = self._action(await self._actions(call), execution.action_id)
         if not any(
-            requested.artifact == representation.artifact_type
-            and requested.representation == representation.representation
-            for requested in action.inputs.values()
+            requested["artifact"] == representation.artifact_type
+            and requested["representation"] == representation.representation
+            for requested in self._artifact_inputs(action).values()
         ):
             raise FinalizationError("artifact representation is unavailable")
         return representation
@@ -497,19 +469,19 @@ class FinalizationService:
         )
         by_id = {execution.action_id: execution for execution in executions}
         for action in actions:
-            execution = by_id[action.action_id]
+            execution = by_id[str(action["key"])]
             if execution.status is not WorkStatus.PENDING:
                 continue
             ready = True
-            for requested in action.inputs.values():
-                key = (requested.artifact, requested.representation)
+            for requested in self._artifact_inputs(action).values():
+                key = (str(requested["artifact"]), str(requested["representation"]))
                 stored = representations.get(key)
                 if self._input_ready(finalization, requested, recording, stored):
                     continue
                 if (
                     recording is not None
                     and recording.status is RecordingStatus.FAILED
-                    and requested.artifact == "call_recording"
+                    and requested["artifact"] == "call_recording"
                 ):
                     self._fail(
                         finalization,
@@ -533,7 +505,7 @@ class FinalizationService:
                     ExecutePostCallAction(
                         call_id=finalization.call_id,
                         finalization_id=finalization.id,
-                        action_id=action.action_id,
+                        action_id=str(action["key"]),
                     ),
                     tenant_id=finalization.tenant_id,
                     correlation_id=finalization.call_id,
@@ -548,7 +520,9 @@ class FinalizationService:
         ):
             finalization.status = (
                 FinalizationStatus.FAILED
-                if any(execution.status is WorkStatus.FAILED for execution in executions)
+                if any(
+                    execution.status is WorkStatus.FAILED for execution in executions
+                )
                 else FinalizationStatus.COMPLETED
             )
             finalization.completed_at = datetime.now(UTC)
@@ -556,11 +530,11 @@ class FinalizationService:
     async def _materialize(
         self,
         finalization: CallFinalization,
-        requested: PostCallActionInput | RuntimePostCallInput,
+        requested: dict[str, object],
         causation_id: UUID,
         recording: CallRecording | None,
     ) -> ArtifactRepresentation:
-        if requested.artifact == "call_recording":
+        if requested["artifact"] == "call_recording":
             assert recording is not None and recording.byte_size is not None
             representation = ArtifactRepresentation(
                 id=uuid4(),
@@ -592,8 +566,8 @@ class FinalizationService:
             id=representation_id,
             tenant_id=finalization.tenant_id,
             call_id=finalization.call_id,
-            artifact_type=requested.artifact,
-            representation=requested.representation,
+            artifact_type=str(requested["artifact"]),
+            representation=str(requested["representation"]),
             status=WorkStatus.PROCESSING,
             command_id=command.message_id,
         )
@@ -605,31 +579,31 @@ class FinalizationService:
     @staticmethod
     def _input_ready(
         finalization: CallFinalization,
-        requested: PostCallActionInput | RuntimePostCallInput,
+        requested: dict[str, object],
         recording: CallRecording | None,
         stored: ArtifactRepresentation | None,
     ) -> bool:
         if (
-            requested.artifact == "transcript"
-            and requested.representation == "raw_json"
+            requested["artifact"] == "transcript"
+            and requested["representation"] == "raw_json"
         ):
             return True
-        if requested.artifact == "call_summary":
+        if requested["artifact"] == "call_summary":
             return finalization.summary is not None
         if (
-            requested.artifact == "call_recording"
-            and requested.representation == "original"
+            requested["artifact"] == "call_recording"
+            and requested["representation"] == "original"
         ):
             return recording is not None and recording.status is RecordingStatus.READY
         return stored is not None and stored.status is WorkStatus.COMPLETED
 
     @staticmethod
     def _source_ready(
-        requested: PostCallActionInput | RuntimePostCallInput,
+        requested: dict[str, object],
         recording: CallRecording | None,
     ) -> bool:
-        return requested.artifact == "transcript" or (
-            requested.artifact == "call_recording"
+        return requested["artifact"] == "transcript" or (
+            requested["artifact"] == "call_recording"
             and recording is not None
             and recording.status is RecordingStatus.READY
         )
@@ -637,20 +611,20 @@ class FinalizationService:
     async def _input_value(
         self,
         finalization: CallFinalization,
-        requested: PostCallActionInput | RuntimePostCallInput,
+        requested: dict[str, object],
     ) -> object:
         if (
-            requested.artifact == "transcript"
-            and requested.representation == "raw_json"
+            requested["artifact"] == "transcript"
+            and requested["representation"] == "raw_json"
         ):
             return await self._transcript(finalization.call_id)
-        if requested.artifact == "call_summary":
+        if requested["artifact"] == "call_summary":
             if finalization.summary is None:
                 raise FinalizationError("summary representation is unavailable")
             return finalization.summary
         if (
-            requested.artifact == "call_recording"
-            and requested.representation == "original"
+            requested["artifact"] == "call_recording"
+            and requested["representation"] == "original"
         ):
             recording = await self._session.scalar(
                 select(CallRecording).where(
@@ -668,8 +642,8 @@ class FinalizationService:
         stored = await self._session.scalar(
             select(ArtifactRepresentation).where(
                 ArtifactRepresentation.call_id == finalization.call_id,
-                ArtifactRepresentation.artifact_type == requested.artifact,
-                ArtifactRepresentation.representation == requested.representation,
+                ArtifactRepresentation.artifact_type == requested["artifact"],
+                ArtifactRepresentation.representation == requested["representation"],
                 ArtifactRepresentation.status == WorkStatus.COMPLETED,
             )
         )
@@ -680,14 +654,15 @@ class FinalizationService:
     async def _mapping_input(
         self,
         finalization: CallFinalization,
-        requested: PostCallActionInput | RuntimePostCallInput,
+        requested: dict[str, object],
     ) -> tuple[object, set[UUID]]:
-        if requested.representation == "base64_text":
+        if requested["representation"] == "base64_text":
             stored = await self._session.scalar(
                 select(ArtifactRepresentation).where(
                     ArtifactRepresentation.call_id == finalization.call_id,
-                    ArtifactRepresentation.artifact_type == requested.artifact,
-                    ArtifactRepresentation.representation == requested.representation,
+                    ArtifactRepresentation.artifact_type == requested["artifact"],
+                    ArtifactRepresentation.representation
+                    == requested["representation"],
                     ArtifactRepresentation.status == WorkStatus.COMPLETED,
                 )
             )
@@ -707,56 +682,12 @@ class FinalizationService:
             )
         return (
             {
-                "artifact": requested.artifact,
-                "representation": requested.representation,
+                "artifact": requested["artifact"],
+                "representation": requested["representation"],
                 "value": await self._input_value(finalization, requested),
             },
             set(),
         )
-
-    @staticmethod
-    def _body_bindings(
-        value: object, path: str = ""
-    ) -> tuple[dict[str, object], list[HttpBodyBinding]]:
-        if not isinstance(value, dict):
-            raise FinalizationError("post-call mapping must return an object")
-
-        def visit(
-            item: object, item_path: str
-        ) -> tuple[object, list[HttpBodyBinding]]:
-            if isinstance(item, dict):
-                if set(item) == {_BODY_REFERENCE_KEY}:
-                    try:
-                        return None, [
-                            HttpBodyBinding(
-                                representation_id=UUID(str(item[_BODY_REFERENCE_KEY])),
-                                payload_path=item_path,
-                            )
-                        ]
-                    except ValueError as error:
-                        raise FinalizationError(
-                            "artifact body reference is invalid"
-                        ) from error
-                mapped: dict[str, object] = {}
-                bindings: list[HttpBodyBinding] = []
-                for key, child in item.items():
-                    escaped = key.replace("~", "~0").replace("/", "~1")
-                    mapped[key], child_bindings = visit(child, f"{item_path}/{escaped}")
-                    bindings.extend(child_bindings)
-                return mapped, bindings
-            if isinstance(item, list):
-                mapped_list: list[object] = []
-                bindings = []
-                for index, child in enumerate(item):
-                    mapped_item, child_bindings = visit(child, f"{item_path}/{index}")
-                    mapped_list.append(mapped_item)
-                    bindings.extend(child_bindings)
-                return mapped_list, bindings
-            return item, []
-
-        payload, bindings = visit(value, path)
-        assert isinstance(payload, dict)
-        return payload, bindings
 
     async def _conversation_context(self, call_id: UUID) -> dict[str, object]:
         return {"call_id": str(call_id), "messages": await self._transcript(call_id)}
@@ -769,10 +700,9 @@ class FinalizationService:
         )
         if conversation is None:
             raise FinalizationError("conversation not found")
-        snapshot = await self._execution_context.snapshot(call)
-        agent = snapshot.agent or {}
-        agent_id = agent.get("agent_profile")
-        agent_name = agent.get("display_name")
+        if self._execution_context is None:
+            raise FinalizationError("execution context unavailable")
+        voice = await self._execution_context.read(call)
         return {
             "call_id": str(call.id),
             "call": {
@@ -783,8 +713,8 @@ class FinalizationService:
                 "ended_at": call.ended_at.isoformat() if call.ended_at else None,
             },
             "agent": {
-                "id": agent_id,
-                "name": agent_name,
+                "id": voice.agent.get("personality"),
+                "name": voice.agent.get("name"),
             },
             "inputs": inputs,
         }
@@ -809,24 +739,40 @@ class FinalizationService:
         ]
 
     @staticmethod
-    def _action(
-        actions: list[RuntimePostCallAction], action_id: str
-    ) -> RuntimePostCallAction:
+    def _action(actions: list[dict[str, object]], action_id: str) -> dict[str, object]:
         action = next(
-            (item for item in actions if item.action_id == action_id),
+            (item for item in actions if item.get("key") == action_id),
             None,
         )
         if action is None:
             raise FinalizationError("post-call action not found")
         return action
 
-    async def _actions(
-        self, call: CallSession
-    ) -> list[RuntimePostCallAction]:
+    @staticmethod
+    def _artifact_inputs(action: dict[str, object]) -> dict[str, dict[str, object]]:
+        definition = action.get("definition")
+        inputs = (
+            definition.get("artifact_inputs") if isinstance(definition, dict) else None
+        )
+        if not isinstance(inputs, dict) or not all(
+            isinstance(value, dict) for value in inputs.values()
+        ):
+            raise FinalizationError("post-call action inputs are invalid")
+        return inputs
+
+    async def _actions(self, call: CallSession) -> list[dict[str, object]]:
         try:
-            return await self._execution_context.post_call_actions(call)
+            if self._execution_context is None:
+                raise ValueError
+            backend = self._execution_context.backend(call)
+            actions = backend.backend_actions.get("post_call")
+            if not isinstance(actions, list) or not all(
+                isinstance(action, dict) for action in actions
+            ):
+                raise ValueError
+            return actions
         except (AttributeError, ValueError) as error:
-            raise FinalizationError("execution snapshot unavailable") from error
+            raise FinalizationError("execution context unavailable") from error
 
     @staticmethod
     def _fail(finalization: CallFinalization, error: str) -> None:

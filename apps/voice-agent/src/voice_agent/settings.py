@@ -13,12 +13,15 @@ class VoiceAgentSettings(BaseSettings):
     livekit_agent_name: Annotated[str, Field(min_length=1, max_length=128)]
 
     backend_core_url: Annotated[str, Field(min_length=1)]
-    control_plane_url: Annotated[str, Field(min_length=1)] = "http://control-plane-service:8000"
+    control_plane_url: Annotated[str, Field(min_length=1)] = (
+        "http://control-plane-service:8000"
+    )
+    control_plane_api_audience: Annotated[str, Field(min_length=1)] = (
+        "control-plane-service"
+    )
     internal_api_audience: Annotated[str, Field(min_length=1)] = "backend-core"
     voice_agent_service_secret: Annotated[SecretStr, Field(min_length=32)]
     backend_http_timeout_seconds: Annotated[float, Field(gt=0)] = 10.0
-
-
     provider_timeout_seconds: Annotated[float, Field(gt=0)] = 10.0
     provider_retry_limit: Annotated[int, Field(ge=0)] = 3
     participant_wait_timeout_seconds: Annotated[float, Field(gt=0)] = 300.0

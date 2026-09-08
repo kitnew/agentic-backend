@@ -92,10 +92,8 @@ class RecordingService:
             return None
         if recording.status in {RecordingStatus.READY, RecordingStatus.FAILED}:
             return recording
-        if (
-            result.room_name
-            != (await self._session.get(CallSession, recording.call_id)).room_name
-        ):  # type: ignore[union-attr]
+        call = await self._session.get(CallSession, recording.call_id)
+        if call is None or result.room_name != call.room_name:
             raise ValueError("egress room does not match recording call")
         if result.status in {"starting", "active", "ending"}:
             recording.status = RecordingStatus.RECORDING
