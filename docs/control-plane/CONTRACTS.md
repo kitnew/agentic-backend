@@ -412,6 +412,34 @@ Hidden orchestration:
 
 `TenantConfigurationDesired` is a **complete desired document**, not a patch.
 
+### 5.4 Initial high-level apply
+
+`SystemConfiguration.apply`, `PlatformConfiguration.apply`, and
+`TenantConfiguration.apply` may initialize an absent semantic aggregate from a
+complete desired document. The initial mutation uses:
+
+```http
+If-None-Match: *
+Idempotency-Key: <opaque-client-generated-key>
+```
+
+Subsequent mutations use the opaque aggregate ETag returned by `GET` or `apply`:
+
+```http
+If-Match: "<opaque-etag>"
+Idempotency-Key: <opaque-client-generated-key>
+```
+
+If neither required concurrency precondition is supplied, the server returns
+`428 Precondition Required`. If `If-None-Match: *` is supplied after the
+aggregate already exists, the server returns `412 Precondition Failed`.
+`If-Match` and `If-None-Match` must not be supplied together.
+
+High-level apply is create-or-update at the **semantic aggregate** level. It does
+not implicitly create managed resources. `plan` remains read-only and is usable
+before initialization. `GET` of an uninitialized aggregate remains absent rather
+than returning a synthetic empty configuration.
+
 ---
 
 ## 6. Low-level Management API
@@ -1588,6 +1616,7 @@ Example:
 | `404`  | requested resource does not exist       |
 | `409`  | domain/state conflict                   |
 | `412`  | stale `If-Match` / ETag                 |
+| `428`  | required concurrency precondition was not supplied |
 | `422`  | semantic validation failure             |
 | `429`  | rate limited                            |
 | `503`  | required dependency/service unavailable |

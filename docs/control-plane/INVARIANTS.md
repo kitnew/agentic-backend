@@ -36,6 +36,7 @@
   - [10.1 SystemConfiguration](#101-systemconfiguration)
   - [10.2 PlatformConfiguration](#102-platformconfiguration)
   - [10.3 TenantConfiguration](#103-tenantconfiguration)
+  - [10.4 High-level initialization](#104-high-level-initialization)
 - [11. Credential invariants](#11-credential-invariants)
 - [12. Provider invariants](#12-provider-invariants)
 - [13. Telephony invariants](#13-telephony-invariants)
@@ -380,6 +381,24 @@
 
 12. High-level tenant configuration validation includes cross-object/reference
     checks required for a coherent configuration.
+
+### 10.4 High-level initialization
+
+1. A normal high-level workflow can initialize an absent `SystemConfiguration`,
+   `PlatformConfiguration`, or `TenantConfiguration` without caller orchestration
+   of low-level component APIs.
+
+2. Initial high-level apply has the same atomicity guarantees as subsequent apply.
+
+3. Initial apply uses `If-None-Match: *`; subsequent mutations use an opaque ETag
+   with `If-Match`.
+
+4. First apply preserves the normal lifecycle distinction: live values become
+   immediately active, while versioned values become drafts and require publish.
+
+5. Initial high-level apply does not implicitly create managed resources.
+
+6. Plan is usable against absent aggregate state and does not mutate state.
 
 ---
 
