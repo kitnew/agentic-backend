@@ -6,6 +6,7 @@ from control_plane.application.ports.repositories import (
     ComponentRepository,
     CredentialRepository,
     LiveComponentRepository,
+    PlatformRepository,
     ProviderRepository,
     SystemConfigurationRepository,
 )
@@ -32,4 +33,8 @@ SystemConfigurationCommandScope = Callable[
     AbstractAsyncContextManager[
         tuple[SystemConfigurationRepository, IdempotencyRepository]
     ],
+]
+
+PlatformCommandScope = Callable[
+    [], AbstractAsyncContextManager[tuple[PlatformRepository, IdempotencyRepository]]
 ]

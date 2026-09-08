@@ -30,7 +30,7 @@ class ConfigurationComponent(Base):
     __tablename__ = "configuration_components"
     __table_args__ = (
         CheckConstraint(
-            "(scope_type = 'platform' AND scope_key IS NULL) OR (scope_type IN ('tenant', 'profile') AND scope_key IS NOT NULL AND scope_key <> '')",
+            "(scope_type = 'platform' AND scope_key IS NULL) OR (scope_type IN ('tenant', 'profile', 'interaction_mode') AND scope_key IS NOT NULL AND scope_key <> '')",
             name="ck_configuration_component_scope",
         ),
         Index(
@@ -164,6 +164,57 @@ class LiveComponent(Base):
     value: Mapped[dict[str, Any]] = mapped_column(JSONB)
     schema_version: Mapped[int] = mapped_column(Integer)
     generation: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
+class ProfileCatalogEntry(Base):
+    __tablename__ = "profile_catalog"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('enabled', 'disabled')", name="ck_profile_catalog_status"
+        ),
+        CheckConstraint("generation >= 1", name="ck_profile_catalog_generation"),
+        {"schema": SCHEMA},
+    )
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(String(2000))
+    status: Mapped[str] = mapped_column(String(16))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[str] = mapped_column(String(255))
+
+
+class InteractionModeCatalogEntry(Base):
+    __tablename__ = "interaction_mode_catalog"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('enabled', 'disabled')",
+            name="ck_interaction_mode_catalog_status",
+        ),
+        CheckConstraint(
+            "generation >= 1", name="ck_interaction_mode_catalog_generation"
+        ),
+        {"schema": SCHEMA},
+    )
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(String(2000))
+    status: Mapped[str] = mapped_column(String(16))
+    generation: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

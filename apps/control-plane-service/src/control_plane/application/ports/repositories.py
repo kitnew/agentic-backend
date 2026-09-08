@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
+from control_plane.domain.catalogs import CatalogStatus, InteractionMode, Profile
 from control_plane.domain.components import ComponentAddress, ComponentDefinition
 from control_plane.domain.live_components import LiveComponentState
 from control_plane.domain.managed_resources import (
@@ -40,7 +41,7 @@ class StoredRevision(Protocol):
 
 class ComponentRepository(Protocol):
     async def get_component(
-        self, address: ComponentAddress
+        self, address: ComponentAddress, *, lock: bool = False
     ) -> tuple[bool, StoredDraft | None, StoredRevision | None]: ...
 
     async def save_draft(
@@ -102,6 +103,33 @@ class SystemConfigurationRepository(LiveComponentRepository, Protocol):
     async def get_credential(
         self, ref: CredentialRef, *, lock: bool = False
     ) -> Credential: ...
+
+
+class PlatformRepository(ComponentRepository, Protocol):
+    async def get_profile(self, key: str, *, lock: bool = False) -> Profile | None: ...
+    async def list_profiles(self, *, lock: bool = False) -> Sequence[Profile]: ...
+    async def put_profile(
+        self,
+        key: str,
+        name: str,
+        description: str,
+        status: CatalogStatus,
+        actor: str,
+    ) -> Profile: ...
+    async def get_interaction_mode(
+        self, key: str, *, lock: bool = False
+    ) -> InteractionMode | None: ...
+    async def list_interaction_modes(
+        self, *, lock: bool = False
+    ) -> Sequence[InteractionMode]: ...
+    async def put_interaction_mode(
+        self,
+        key: str,
+        name: str,
+        description: str,
+        status: CatalogStatus,
+        actor: str,
+    ) -> InteractionMode: ...
 
 
 class CredentialRepository(Protocol):

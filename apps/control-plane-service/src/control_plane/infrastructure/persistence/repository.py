@@ -48,7 +48,9 @@ from .models import ConfigurationComponentDraft as DraftRow
 from .models import ConfigurationComponentRevision as RevisionRow
 from .models import Credential as CredentialRow
 from .models import IntegrationConnection as IntegrationConnectionRow
+from .models import InteractionModeCatalogEntry as InteractionModeCatalogRow
 from .models import ModelDeployment as ModelDeploymentRow
+from .models import ProfileCatalogEntry as ProfileCatalogRow
 from .models import ProviderConnection as ProviderConnectionRow
 
 
@@ -96,6 +98,7 @@ class SqlAlchemyComponentRepository:
         actor: str,
     ) -> DraftRow:
         async with self._session(write=True) as session:
+            await self._validate_prompt_catalog_reference(session, address)
             await session.execute(
                 insert(ComponentRow)
                 .values(
@@ -163,6 +166,7 @@ class SqlAlchemyComponentRepository:
         definition: ComponentDefinition[Any],
     ) -> RevisionRow:
         async with self._session(write=True) as session:
+            await self._validate_prompt_catalog_reference(session, address)
             component = await self._locked_component(session, address)
             draft = await session.get(DraftRow, component.id, with_for_update=True)
             if draft is None:
@@ -195,6 +199,26 @@ class SqlAlchemyComponentRepository:
             await session.flush()
             await session.refresh(revision)
             return revision
+
+    @staticmethod
+    async def _validate_prompt_catalog_reference(
+        session: AsyncSession, address: ComponentAddress
+    ) -> None:
+        row_type = (
+            ProfileCatalogRow
+            if str(address.kind) == "ProfilePrompt"
+            else InteractionModeCatalogRow
+            if str(address.kind) == "InteractionPrompt"
+            else None
+        )
+        if row_type is None:
+            return
+        if (
+            not address.scope.key
+            or await session.get(row_type, address.scope.key) is None
+        ):
+            label = "profile" if row_type is ProfileCatalogRow else "interaction mode"
+            raise InvalidComponentValue(f"{label} catalog entry does not exist")
 
     async def rollback(
         self,
@@ -455,10 +479,13 @@ class SqlAlchemyComponentRepository:
         )
 
     async def get_component(
-        self, address: ComponentAddress
+        self, address: ComponentAddress, *, lock: bool = False
     ) -> tuple[bool, DraftRow | None, RevisionRow | None]:
         async with self._session() as session:
-            component = await session.scalar(self._component(address))
+            statement = self._component(address)
+            component = await session.scalar(
+                statement.with_for_update() if lock else statement
+            )
             if component is None:
                 return False, None, None
             draft = await session.get(DraftRow, component.id)

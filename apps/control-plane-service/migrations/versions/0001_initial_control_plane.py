@@ -37,7 +37,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "(scope_type = 'platform' AND scope_key IS NULL) OR (scope_type IN ('tenant', 'profile') AND scope_key IS NOT NULL AND scope_key <> '')",
+            "(scope_type = 'platform' AND scope_key IS NULL) OR (scope_type IN ('tenant', 'profile', 'interaction_mode') AND scope_key IS NOT NULL AND scope_key <> '')",
             name="ck_configuration_component_scope",
         ),
         schema=SCHEMA,
@@ -165,6 +165,55 @@ def upgrade() -> None:
         schema=SCHEMA,
         postgresql_nulls_not_distinct=True,
     )
+    for table_name, prefix in (
+        ("profile_catalog", "profile_catalog"),
+        ("interaction_mode_catalog", "interaction_mode_catalog"),
+    ):
+        op.create_table(
+            table_name,
+            sa.Column("key", sa.String(255), primary_key=True),
+            sa.Column("name", sa.String(255), nullable=False),
+            sa.Column("description", sa.String(2000), nullable=False),
+            sa.Column("status", sa.String(16), nullable=False),
+            sa.Column("generation", sa.Integer(), server_default="1", nullable=False),
+            sa.Column(
+                "created_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.func.now(),
+                nullable=False,
+            ),
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                server_default=sa.func.now(),
+                nullable=False,
+            ),
+            sa.Column("updated_by", sa.String(255), nullable=False),
+            sa.CheckConstraint(
+                "status IN ('enabled', 'disabled')", name=f"ck_{prefix}_status"
+            ),
+            sa.CheckConstraint("generation >= 1", name=f"ck_{prefix}_generation"),
+            schema=SCHEMA,
+        )
+    op.execute(
+        """
+        CREATE FUNCTION control_plane.reject_catalog_key_change() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          IF OLD.key IS DISTINCT FROM NEW.key THEN
+            RAISE EXCEPTION 'catalog key is immutable';
+          END IF;
+          RETURN NEW;
+        END
+        $$
+        """
+    )
+    for table_name in ("profile_catalog", "interaction_mode_catalog"):
+        op.execute(
+            f"CREATE TRIGGER {table_name}_key_immutable BEFORE UPDATE OF key "
+            f"ON control_plane.{table_name} FOR EACH ROW "
+            "EXECUTE FUNCTION control_plane.reject_catalog_key_change()"
+        )
     op.create_table(
         "idempotency_replays",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -455,6 +504,10 @@ def downgrade() -> None:
     op.drop_table("credential_versions", schema=SCHEMA)
     op.drop_table("credentials", schema=SCHEMA)
     op.drop_table("idempotency_replays", schema=SCHEMA)
+    for table_name in ("interaction_mode_catalog", "profile_catalog"):
+        op.execute(f"DROP TRIGGER {table_name}_key_immutable ON control_plane.{table_name}")
+        op.drop_table(table_name, schema=SCHEMA)
+    op.execute("DROP FUNCTION control_plane.reject_catalog_key_change()")
     op.drop_index("uq_live_component_address", table_name="live_components", schema=SCHEMA)
     op.drop_table("live_components", schema=SCHEMA)
     op.drop_constraint(
