@@ -38,7 +38,6 @@ class CapabilityRetentionService:
             )
             .values(
                 canonical_input={},
-                execution_plan={},
                 pii_purged_at=now,
             )
         )
