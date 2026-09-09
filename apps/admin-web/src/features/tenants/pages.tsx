@@ -30,7 +30,7 @@ export function TenantsPage() {
       ),
     onSuccess: async (tenant) => {
       await queryClient.invalidateQueries({ queryKey: ["admin", "tenants"] });
-      await navigate({ to: `/tenants/${tenant.id}/runtime` as never });
+      await navigate({ to: `/tenants/${tenant.id}/configuration` as never });
     },
   });
   if (tenants.isPending) return <PageLoading />;

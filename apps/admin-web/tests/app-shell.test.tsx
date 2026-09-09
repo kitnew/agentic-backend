@@ -53,13 +53,9 @@ describe("Admin app shell", () => {
       name: "Tenant navigation",
     });
     for (const label of [
-      "Runtime",
-      "Agent",
-      "Prompt",
-      "Knowledge Base",
-      "Capabilities",
+      "Overview",
+      "Configuration",
       "Integrations",
-      "Post-call",
       "Handoff",
       "Telephony",
       "Playground",
@@ -67,6 +63,18 @@ describe("Admin app shell", () => {
       expect(
         within(navigation).getByText(label, { exact: true }),
       ).toBeVisible();
+    }
+    for (const label of [
+      "Runtime",
+      "Agent",
+      "Prompt",
+      "Knowledge Base",
+      "Capabilities",
+      "Post-call",
+    ]) {
+      expect(
+        within(navigation).queryByText(label, { exact: true }),
+      ).not.toBeInTheDocument();
     }
     expect(
       within(navigation).queryByText("Coming later"),

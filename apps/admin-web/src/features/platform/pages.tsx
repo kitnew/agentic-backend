@@ -14,17 +14,20 @@ export function PlatformOverviewPage() {
         detail="Control Plane configuration and Backend operational status are managed separately."
       />
       <div className="grid gap-3 md:grid-cols-2">
-        <Link className="rounded border p-4" to={"/platform/runtime" as never}>
-          Runtime
+        <Link
+          className="rounded border p-4"
+          to={"/platform/system-configuration" as never}
+        >
+          System Configuration
           <span className="mt-1 block text-sm text-muted">
             Five independent CP components
           </span>
         </Link>
         <Link
           className="rounded border p-4"
-          to={"/platform/system-prompt" as never}
+          to={"/platform/configuration" as never}
         >
-          Prompts
+          Platform Configuration
           <span className="mt-1 block text-sm text-muted">
             System and profile-scoped prompts
           </span>
@@ -42,7 +45,7 @@ export function PlatformOverviewPage() {
           className="rounded border p-4"
           to={"/platform/telephony" as never}
         >
-          Telephony
+          Telephony Diagnostics
           <span className="mt-1 block text-sm text-muted">
             Backend operational topology
           </span>
@@ -54,6 +57,14 @@ export function PlatformOverviewPage() {
 
 export function PlatformRuntimePage() {
   return <SystemConfigurationEditor />;
+}
+
+export function PlatformSystemConfigurationPage() {
+  return <SystemConfigurationEditor />;
+}
+
+export function PlatformConfigurationPage() {
+  return <PlatformConfigurationEditor />;
 }
 
 export function PlatformSystemPromptPage() {

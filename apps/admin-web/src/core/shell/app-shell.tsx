@@ -11,10 +11,10 @@ const mainNavigation = [
 
 const platformNavigation = [
   { label: "Overview", to: "/platform" },
-  { label: "Runtime", to: "/platform/runtime" },
-  { label: "System Prompt", to: "/platform/system-prompt" },
-  { label: "Profiles", to: "/platform/profile-prompt" },
-  { label: "Telephony", to: "/platform/telephony" },
+  { label: "Providers", to: "/platform/providers" },
+  { label: "System Configuration", to: "/platform/system-configuration" },
+  { label: "Platform Configuration", to: "/platform/configuration" },
+  { label: "Telephony Diagnostics", to: "/platform/telephony" },
 ] as const;
 
 type TenantNavigationItem = {
@@ -25,15 +25,8 @@ type TenantNavigationItem = {
 
 const tenantNavigation: readonly TenantNavigationItem[] = [
   { label: "Overview", suffix: "" },
-  { label: "Runtime", suffix: "/runtime" },
-  { label: "Speech Overrides", suffix: "/runtime/speech" },
-  { label: "Agent", suffix: "/agent" },
-  { label: "Prompt", suffix: "/prompt" },
-  { label: "Prompt Profile Selection", suffix: "/prompt/profile-selection" },
-  { label: "Knowledge Base", suffix: "/knowledge-base" },
-  { label: "Capabilities", suffix: "/capabilities" },
+  { label: "Configuration", suffix: "/configuration" },
   { label: "Integrations", suffix: "/integrations" },
-  { label: "Post-call", suffix: "/post-call" },
   { label: "Handoff", suffix: "/handoff" },
   { label: "Telephony", suffix: "/telephony" },
   { label: "Playground", suffix: "/playground" },

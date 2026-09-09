@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { PageError, PageLoading } from "../../components/page-states";
 import { Button } from "../../components/ui/button";
@@ -24,13 +24,29 @@ import {
   type TenantConfigurationDesired,
 } from "../api/control-plane";
 import { normalizeApiError } from "../api/errors";
-import { CodeEditor } from "../ui/foundation";
+import { semanticSerialize } from "./authoring";
+import {
+  emptyPlatformFormState,
+  emptySystemFormState,
+  emptyTenantFormState,
+  PlatformConfigurationForm,
+  platformDesiredFromForm,
+  platformFormState,
+  SystemConfigurationForm,
+  systemDesiredFromForm,
+  systemFormState,
+  TenantConfigurationForm,
+  tenantDesiredFromForm,
+  tenantFormState,
+  type ValidationMessages,
+} from "./forms";
 
 export type Snapshot<T> = {
   value: T;
   etag: string | null;
   initialized: boolean;
   publishable: boolean;
+  hasDraft: boolean;
 };
 
 function selected<T>(state: { active?: T | null; draft?: T | null }): T {
@@ -89,60 +105,154 @@ export function tenantDesired(
   };
 }
 
-function notInitialized<T>(error: unknown): Snapshot<T> {
+function notInitialized<T>(error: unknown, value: T): Snapshot<T> {
   if (normalizeApiError(error).status === 404)
     return {
-      value: {} as T,
+      value,
       etag: null,
       initialized: false,
       publishable: false,
+      hasDraft: false,
     };
   throw error;
 }
 
-function planDetails(plan: unknown) {
+type PlanDetails = {
+  valid: boolean;
+  changes: Array<{ operation: string; path: string }>;
+  catalogChanges: Array<{ operation: string; path: string }>;
+  draftChanges: Array<{ operation: string; path: string }>;
+  immediateChanges: Array<{ operation: string; path: string }>;
+  warnings: string[];
+  errors: Array<{ path: string; code: string; message: string }>;
+};
+
+function changes(value: unknown): Array<{ operation: string; path: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is { operation: string; path: string } =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof item.operation === "string" &&
+      typeof item.path === "string",
+  );
+}
+
+function planDetails(plan: unknown): PlanDetails {
   const value =
     typeof plan === "object" && plan !== null
       ? (plan as Record<string, unknown>)
       : {};
+  const nestedChanges =
+    typeof value.changes === "object" && value.changes !== null
+      ? (value.changes as Record<string, unknown>)
+      : {};
+  const errors = Array.isArray(value.errors)
+    ? value.errors.filter(
+        (item): item is { path: string; code: string; message: string } =>
+          typeof item === "object" &&
+          item !== null &&
+          typeof item.path === "string" &&
+          typeof item.code === "string" &&
+          typeof item.message === "string",
+      )
+    : [];
   return {
-    valid: value.valid,
-    changes: value.changes ?? {
-      catalog_changes: value.catalog_changes ?? [],
-      draft_changes: value.draft_changes ?? [],
-    },
-    warnings: value.warnings ?? [],
-    errors: value.errors ?? [],
+    valid: value.valid === true,
+    changes: changes(value.changes),
+    catalogChanges: changes(value.catalog_changes),
+    draftChanges: changes(value.draft_changes ?? nestedChanges.draft),
+    immediateChanges: changes(nestedChanges.immediate),
+    warnings: Array.isArray(value.warnings)
+      ? value.warnings.filter(
+          (item): item is string => typeof item === "string",
+        )
+      : [],
+    errors,
   };
+}
+
+function ChangeList({
+  label,
+  items,
+}: {
+  label: string;
+  items: Array<{ operation: string; path: string }>;
+}) {
+  if (!items.length) return null;
+  return (
+    <div className="mt-3">
+      <h3 className="font-medium">{label}</h3>
+      <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+        {items.map((item) => (
+          <li key={`${label}:${item.operation}:${item.path}`}>
+            {item.path}: {item.operation}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function PlanResult({ plan }: { plan: unknown }) {
   const details = planDetails(plan);
   return (
     <section aria-label="Plan result" className="mt-4 rounded-md border p-4">
-      <p>valid: {String(details.valid)}</p>
-      <pre className="mt-2 overflow-auto whitespace-pre-wrap text-sm">
-        {JSON.stringify(
-          {
-            changes: details.changes,
-            warnings: details.warnings,
-            errors: details.errors,
-          },
-          null,
-          2,
-        )}
-      </pre>
+      <h2 className="font-semibold">
+        {details.valid ? "Plan valid" : "Plan needs attention"}
+      </h2>
+      <ChangeList label="Changes" items={details.changes} />
+      <ChangeList label="Catalog changes" items={details.catalogChanges} />
+      <ChangeList label="Immediate changes" items={details.immediateChanges} />
+      <ChangeList label="Draft changes" items={details.draftChanges} />
+      {details.warnings.length > 0 && (
+        <div className="mt-3 text-sm text-amber-700">
+          <h3 className="font-medium">Warnings</h3>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {details.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {details.errors.length > 0 && (
+        <div className="mt-3 text-sm text-red-700" role="alert">
+          <h3 className="font-medium">Errors</h3>
+          <ul className="mt-1 list-disc space-y-1 pl-5">
+            {details.errors.map((error) => (
+              <li key={`${error.path}:${error.code}:${error.message}`}>
+                {error.path}: {error.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }
 
-export function HighLevelEditor<T>({
+function fieldMessages(value: unknown): ValidationMessages {
+  const planErrors = planDetails(value).errors;
+  if (planErrors.length)
+    return Object.fromEntries(
+      planErrors.map((issue) => [issue.path, issue.message]),
+    );
+  const apiError = normalizeApiError(value);
+  return Object.fromEntries(
+    (apiError.issues ?? []).map((issue) => [issue.path, issue.message]),
+  );
+}
+
+export function HighLevelEditor<T, F>({
   title,
   queryKey,
   read,
   plan,
   apply,
   publish,
+  toForm,
+  fromForm,
+  renderForm,
 }: {
   title: string;
   queryKey: readonly unknown[];
@@ -150,36 +260,48 @@ export function HighLevelEditor<T>({
   plan: (value: T) => Promise<unknown>;
   apply: (value: T, snapshot: Snapshot<T>) => Promise<unknown>;
   publish?: (snapshot: Snapshot<T>) => Promise<unknown>;
+  toForm: (value: T) => F;
+  fromForm: (value: F) => T;
+  renderForm: (props: {
+    value: F;
+    onChange: (value: F) => void;
+    errors: ValidationMessages;
+    localError?: string;
+  }) => ReactNode;
 }) {
   const query = useQuery({ queryKey, queryFn: read });
-  const [text, setText] = useState("");
+  const [form, setForm] = useState<F>();
   useEffect(() => {
-    if (query.data) setText(JSON.stringify(query.data.value, null, 2));
-  }, [query.data]);
+    if (query.data) setForm(toForm(query.data.value));
+  }, [query.data, toForm]);
 
-  const parsed = (() => {
+  let desired: T | undefined;
+  let localError: string | undefined;
+  if (form !== undefined) {
     try {
-      return JSON.parse(text) as T;
-    } catch {
-      return undefined;
+      desired = fromForm(form);
+    } catch (error) {
+      localError =
+        error instanceof Error ? error.message : "Enter valid values";
     }
-  })();
+  }
   const snapshot = query.data;
   const planMutation = useMutation({
     mutationFn: () => {
-      if (parsed === undefined) throw new Error("Enter valid JSON");
-      return plan(parsed);
+      if (desired === undefined)
+        throw new Error(localError ?? "Complete the form");
+      return plan(desired);
     },
   });
   const applyMutation = useMutation({
     mutationFn: () => {
-      if (parsed === undefined || !snapshot)
-        throw new Error("Enter valid JSON");
+      if (desired === undefined || !snapshot)
+        throw new Error(localError ?? "Complete the form");
       if (snapshot.initialized && !snapshot.etag)
         throw new Error(
           "Configuration ETag is missing; reload before applying",
         );
-      return apply(parsed, snapshot);
+      return apply(desired, snapshot);
     },
     onSuccess: async () => {
       await query.refetch();
@@ -195,8 +317,10 @@ export function HighLevelEditor<T>({
       await query.refetch();
     },
   });
+  const formRef = useRef<HTMLFormElement>(null);
+  const validateForm = () => formRef.current?.reportValidity() ?? true;
 
-  if (query.isPending) return <PageLoading />;
+  if (query.isPending || form === undefined) return <PageLoading />;
   if (query.isError)
     return (
       <PageError
@@ -207,30 +331,49 @@ export function HighLevelEditor<T>({
     );
   if (!snapshot) return null;
 
-  const original = JSON.stringify(snapshot.value, null, 2);
-  const dirty = text !== original;
+  const dirty =
+    desired !== undefined &&
+    semanticSerialize(desired) !== semanticSerialize(snapshot.value);
   const busy =
     query.isFetching ||
     planMutation.isPending ||
     applyMutation.isPending ||
     publishMutation.isPending;
   const canApply =
-    parsed !== undefined && (!snapshot.initialized || snapshot.etag);
+    desired !== undefined && (!snapshot.initialized || Boolean(snapshot.etag));
   const reload = async () => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
     planMutation.reset();
     applyMutation.reset();
     publishMutation.reset();
     await query.refetch();
   };
-
+  const planErrors: ValidationMessages = {};
+  for (const error of [
+    planMutation.data,
+    planMutation.error,
+    applyMutation.error,
+    publishMutation.error,
+  ])
+    Object.assign(planErrors, fieldMessages(error));
+  const handleFormChange = (next: F) => {
+    setForm(next);
+    planMutation.reset();
+    applyMutation.reset();
+    publishMutation.reset();
+  };
   return (
-    <>
-      <div className="mb-7 border-b pb-4">
+    <form ref={formRef} onSubmit={(event) => event.preventDefault()}>
+      <div className="sticky top-0 z-10 mb-7 border-b bg-background pb-4 pt-1">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
             <p className="mt-1 text-sm text-muted" role="status">
-              {snapshot.initialized ? "Initialized" : "Not initialized"}
+              {!snapshot.initialized
+                ? "Not initialized"
+                : snapshot.hasDraft
+                  ? "Draft changes pending"
+                  : "Initialized"}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -242,12 +385,13 @@ export function HighLevelEditor<T>({
               Reload
             </Button>
             <Button
-              disabled={parsed === undefined || busy}
+              disabled={desired === undefined || busy}
               loading={planMutation.isPending}
               loadingLabel="Planning…"
-              onClick={() =>
-                void planMutation.mutateAsync().catch(() => undefined)
-              }
+              onClick={() => {
+                if (validateForm())
+                  void planMutation.mutateAsync().catch(() => undefined);
+              }}
               variant="outline"
             >
               Plan
@@ -256,18 +400,19 @@ export function HighLevelEditor<T>({
               disabled={!canApply || busy}
               loading={applyMutation.isPending}
               loadingLabel="Applying…"
-              onClick={() =>
-                void applyMutation.mutateAsync().catch(() => undefined)
-              }
+              onClick={() => {
+                if (validateForm())
+                  void applyMutation.mutateAsync().catch(() => undefined);
+              }}
             >
               Apply
             </Button>
             {publish && (
               <Button
                 disabled={
-                  dirty ||
                   !snapshot.initialized ||
                   !snapshot.publishable ||
+                  dirty ||
                   busy
                 }
                 loading={publishMutation.isPending}
@@ -283,12 +428,12 @@ export function HighLevelEditor<T>({
           </div>
         </div>
       </div>
-      <CodeEditor
-        label={`${title} Desired JSON`}
-        minHeight={520}
-        onChange={setText}
-        value={text}
-      />
+      {renderForm({
+        value: form,
+        onChange: handleFormChange,
+        errors: planErrors,
+        localError,
+      })}
       {planMutation.data !== undefined && (
         <PlanResult plan={planMutation.data} />
       )}
@@ -304,15 +449,21 @@ export function HighLevelEditor<T>({
           title={`${title} change failed`}
         />
       )}
-    </>
+    </form>
   );
 }
 
 export function SystemConfigurationEditor() {
   return (
-    <HighLevelEditor<SystemConfigurationDesired>
+    <HighLevelEditor<
+      SystemConfigurationDesired,
+      ReturnType<typeof systemFormState>
+    >
       title="System Configuration"
       queryKey={["control-plane", "system-configuration"]}
+      toForm={systemFormState}
+      fromForm={systemDesiredFromForm}
+      renderForm={(props) => <SystemConfigurationForm {...props} />}
       read={async () => {
         try {
           const response =
@@ -323,9 +474,13 @@ export function SystemConfigurationEditor() {
             etag: response.headers.get("etag"),
             initialized: true,
             publishable: false,
+            hasDraft: false,
           };
         } catch (error) {
-          return notInitialized<SystemConfigurationDesired>(error);
+          return notInitialized(
+            error,
+            systemDesiredFromForm(emptySystemFormState()),
+          );
         }
       }}
       plan={async (value) =>
@@ -349,9 +504,15 @@ export function SystemConfigurationEditor() {
 
 export function PlatformConfigurationEditor() {
   return (
-    <HighLevelEditor<PlatformConfigurationDesired>
+    <HighLevelEditor<
+      PlatformConfigurationDesired,
+      ReturnType<typeof platformFormState>
+    >
       title="Platform Configuration"
       queryKey={["control-plane", "platform-configuration"]}
+      toForm={platformFormState}
+      fromForm={platformDesiredFromForm}
+      renderForm={(props) => <PlatformConfigurationForm {...props} />}
       read={async () => {
         try {
           const response =
@@ -362,9 +523,13 @@ export function PlatformConfigurationEditor() {
             etag: response.headers.get("etag"),
             initialized: true,
             publishable: value.status.publishable,
+            hasDraft: value.status.has_drafts,
           };
         } catch (error) {
-          return notInitialized<PlatformConfigurationDesired>(error);
+          return notInitialized(
+            error,
+            platformDesiredFromForm(emptyPlatformFormState()),
+          );
         }
       }}
       plan={async (value) =>
@@ -395,9 +560,15 @@ export function PlatformConfigurationEditor() {
 
 export function TenantConfigurationEditor({ tenantId }: { tenantId: string }) {
   return (
-    <HighLevelEditor<TenantConfigurationDesired>
+    <HighLevelEditor<
+      TenantConfigurationDesired,
+      ReturnType<typeof tenantFormState>
+    >
       title="Tenant Configuration"
       queryKey={["control-plane", "tenant-configuration", tenantId]}
+      toForm={tenantFormState}
+      fromForm={tenantDesiredFromForm}
+      renderForm={(props) => <TenantConfigurationForm {...props} />}
       read={async () => {
         try {
           const response =
@@ -410,9 +581,13 @@ export function TenantConfigurationEditor({ tenantId }: { tenantId: string }) {
             etag: response.headers.get("etag"),
             initialized: true,
             publishable: value.status.publishable,
+            hasDraft: value.status.has_drafts,
           };
         } catch (error) {
-          return notInitialized<TenantConfigurationDesired>(error);
+          return notInitialized(
+            error,
+            tenantDesiredFromForm(emptyTenantFormState()),
+          );
         }
       }}
       plan={async (value) =>

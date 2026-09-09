@@ -90,7 +90,7 @@ export function PlatformTelephonyPage() {
               }
             : undefined
         }
-        title="Telephony"
+        title="Telephony Diagnostics"
       />
       <div className="max-w-2xl space-y-6">
         <StatusBlock

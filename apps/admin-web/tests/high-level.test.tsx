@@ -20,12 +20,69 @@ import {
 } from "../src/core/configuration/high-level";
 import { server } from "./setup";
 
+function fillRequiredSystemFields() {
+  for (let pass = 0; pass < 3; pass += 1) {
+    for (const control of Array.from(document.querySelectorAll("[required]"))) {
+      if (control instanceof HTMLSelectElement) {
+        const option = Array.from(control.options).find(
+          ({ value }) => value !== "",
+        );
+        if (option)
+          fireEvent.change(control, { target: { value: option.value } });
+      } else if (control instanceof HTMLInputElement) {
+        fireEvent.change(control, {
+          target: {
+            value: control.type === "number" ? control.min || "1" : "value",
+          },
+        });
+      }
+    }
+  }
+}
+
 const systemConfiguration = {
-  stt_defaults: {},
-  llm_defaults: {},
-  tts_defaults: {},
-  realtime_defaults: {},
-  policies: {},
+  stt_defaults: { deployment_ref: "stt-id" },
+  llm_defaults: {
+    deployment_ref: "llm-id",
+    max_completion_tokens: 100,
+    temperature: null,
+    reasoning_effort: null,
+  },
+  tts_defaults: { deployment_ref: "tts-id", default_voice_id: "voice" },
+  realtime_defaults: {
+    deployment_ref: "realtime-id",
+    input_transcription: { deployment_ref: "stt-id" },
+    default_voice: "marin",
+    turn_completion: {
+      strategy: "server_vad",
+      activation_threshold: 0.5,
+      silence_duration_ms: 200,
+    },
+    interruption: { enabled: true },
+  },
+  policies: {
+    cascade: {
+      speech_activity: {
+        min_speech_seconds: 0.1,
+        min_silence_seconds: 0.2,
+        activation_threshold: 0.5,
+      },
+      stt_commit: { strategy: "local_vad" },
+      endpointing: { min_delay_seconds: 0.1, max_delay_seconds: 1 },
+      interruption: {
+        enabled: true,
+        min_duration_seconds: 0.1,
+        min_words: 1,
+        false_interruption_timeout_seconds: 0.5,
+        resume_after_false_interruption: true,
+      },
+      response_scheduling: {
+        preemptive_generation: false,
+        preemptive_tts: false,
+      },
+      tokenizer: { min_sentence_chars: 20 },
+    },
+  },
 } as SystemConfiguration;
 
 const platformConfiguration = {
@@ -66,12 +123,30 @@ const tenantConfiguration = {
     },
     knowledge: { active: { content: "active knowledge" } },
     agent_personality: {
-      active: { display_name: "Active" },
-      draft: { display_name: "Draft" },
+      active: {
+        identity: "active_agent",
+        display_name: "Active",
+        greeting: "Hello",
+        conversation_scope: "property_only",
+      },
+      draft: {
+        identity: "draft_agent",
+        display_name: "Draft",
+        greeting: "Hi",
+        conversation_scope: "property_only",
+      },
     },
     business_info: {
-      active: { business: { name: "Active business" } },
-      draft: { business: { name: "Draft business" } },
+      active: {
+        business: { name: "Active business", type: "hotel" },
+        contact: { address: null, phones: [], emails: [], website: null },
+        localization: { default_locale: "en-US", timezone: "UTC" },
+      },
+      draft: {
+        business: { name: "Draft business", type: "hotel" },
+        contact: { address: null, phones: [], emails: [], website: null },
+        localization: { default_locale: "en-US", timezone: "UTC" },
+      },
     },
     actions_definition: {
       active: { actions: { old: {} } },
@@ -178,8 +253,17 @@ describe("high-level configuration transport and mappings", () => {
     expect(tenantDesired(tenantConfiguration)).toEqual({
       tenant_prompt: { content: "draft tenant" },
       knowledge: { content: "active knowledge" },
-      agent_personality: { display_name: "Draft" },
-      business_info: { business: { name: "Draft business" } },
+      agent_personality: {
+        identity: "draft_agent",
+        display_name: "Draft",
+        greeting: "Hi",
+        conversation_scope: "property_only",
+      },
+      business_info: {
+        business: { name: "Draft business", type: "hotel" },
+        contact: { address: null, phones: [], emails: [], website: null },
+        localization: { default_locale: "en-US", timezone: "UTC" },
+      },
       actions_definition: { actions: { new: {} } },
       architecture: { architecture_key: "cascade" },
       profile_reference: { profile_key: "hotel" },
@@ -278,12 +362,24 @@ it("plans before initialization and applies with If-None-Match, then refetches",
     </AppProviders>,
   );
   await screen.findByText("Not initialized");
+  await screen.findAllByRole("option", { name: "speech (stt)" });
+  fillRequiredSystemFields();
   await user.click(screen.getByRole("button", { name: "Plan" }));
-  await screen.findByText(/valid:/);
+  await screen.findByText("Plan valid");
   await user.click(screen.getByRole("button", { name: "Apply" }));
 
   await waitFor(() => expect(screen.getByText("Initialized")).toBeVisible());
-  expect(planBody).toEqual({});
+  expect(planBody).toEqual(
+    expect.objectContaining({
+      stt_defaults: { deployment_ref: "stt-uuid" },
+      llm_defaults: expect.objectContaining({ deployment_ref: "llm-uuid" }),
+      tts_defaults: expect.objectContaining({ deployment_ref: "tts-uuid" }),
+      realtime_defaults: expect.objectContaining({
+        deployment_ref: "realtime-uuid",
+        input_transcription: { deployment_ref: "stt-uuid" },
+      }),
+    }),
+  );
   expect(applyHeaders?.get("if-none-match")).toBe("*");
   expect(applyHeaders?.get("if-match")).toBeNull();
   expect(applyHeaders?.get("idempotency-key")).toBeTruthy();
@@ -317,9 +413,9 @@ it("applies an initialized platform with its ETag and does not send If-None-Matc
       <PlatformConfigurationEditor />
     </AppProviders>,
   );
-  const editor = await screen.findByRole("textbox");
+  const editor = await screen.findByLabelText("Content");
   await user.clear(editor);
-  fireEvent.change(editor, { target: { value: "{}" } });
+  await user.type(editor, "changed system prompt");
   await user.click(screen.getByRole("button", { name: "Apply" }));
 
   await waitFor(() => expect(getCount).toBe(2));
@@ -426,9 +522,9 @@ it("renders structured stale-state errors and preserves editor contents", async 
       <SystemConfigurationEditor />
     </AppProviders>,
   );
-  const editor = await screen.findByRole("textbox");
+  const editor = await screen.findByLabelText("Default voice");
   await user.clear(editor);
-  fireEvent.change(editor, { target: { value: '{"user_edit":true}' } });
+  await user.type(editor, "edited voice");
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Apply" })).toBeEnabled(),
   );
@@ -448,6 +544,6 @@ it("renders structured stale-state errors and preserves editor contents", async 
   expect(screen.getByText(/stale_etag/)).toBeVisible();
   expect(screen.getByText(/llm_defaults/)).toBeVisible();
   expect(screen.getByText(/request-1/)).toBeVisible();
-  expect(editor).toHaveValue('{"user_edit":true}');
+  expect(editor).toHaveValue("edited voice");
   expect(screen.getByRole("button", { name: "Reload" })).toBeEnabled();
 });

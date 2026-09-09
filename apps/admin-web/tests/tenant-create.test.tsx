@@ -45,6 +45,20 @@ describe("Admin Web tenant creation", () => {
           { status: 404 },
         ),
       ),
+      http.get("/management/v1/providers/deployments", () =>
+        HttpResponse.json([]),
+      ),
+      http.get("/management/v1/registries/architectures", () =>
+        HttpResponse.json([]),
+      ),
+      http.get("/management/v1/platform/configuration", () =>
+        HttpResponse.json({
+          system_prompt: { active: { content: "system" } },
+          profiles: [],
+          interaction_modes: [],
+          status: { has_drafts: false, publishable: false },
+        }),
+      ),
       http.put("/management/v1/tenants/:tenantId/configuration", () => {
         cpTenantMutation();
         return HttpResponse.json({});
@@ -74,7 +88,9 @@ describe("Admin Web tenant creation", () => {
       "business_type",
     ]);
     await waitFor(() =>
-      expect(window.location.pathname).toBe(`/tenants/${tenant.id}/runtime`),
+      expect(window.location.pathname).toBe(
+        `/tenants/${tenant.id}/configuration`,
+      ),
     );
     expect(await screen.findByText("Tenant Configuration")).toBeVisible();
     expect(cpTenantMutation).not.toHaveBeenCalled();

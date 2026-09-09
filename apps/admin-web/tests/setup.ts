@@ -15,6 +15,59 @@ beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 beforeEach(() => {
   server.use(
     http.get("/admin/v1/tenants", () => HttpResponse.json([])),
+    http.get("/management/v1/providers/deployments", () =>
+      HttpResponse.json([
+        {
+          id: "stt-uuid",
+          key: "speech",
+          deployment_kind: "stt",
+          enabled: true,
+          capabilities: {},
+        },
+        {
+          id: "llm-uuid",
+          key: "language",
+          deployment_kind: "llm",
+          enabled: true,
+          capabilities: {},
+        },
+        {
+          id: "tts-uuid",
+          key: "voice",
+          deployment_kind: "tts",
+          enabled: true,
+          capabilities: {},
+        },
+        {
+          id: "realtime-uuid",
+          key: "realtime",
+          deployment_kind: "realtime",
+          enabled: true,
+          capabilities: {},
+        },
+      ]),
+    ),
+    http.get("/management/v1/registries/architectures", () =>
+      HttpResponse.json([
+        { key: "cascade", name: "Cascade", description: "", metadata: {} },
+      ]),
+    ),
+    http.get("/management/v1/platform/configuration", () =>
+      HttpResponse.json({
+        system_prompt: { active: { content: "system" } },
+        profiles: [
+          {
+            key: "hotel",
+            name: "Hotel",
+            description: "",
+            status: "enabled",
+            prompt: { active: { content: "prompt" } },
+          },
+        ],
+        interaction_modes: [],
+        status: { has_drafts: false, publishable: false },
+      }),
+    ),
     http.get("/admin/v1/platform/components/state", () =>
       HttpResponse.json({
         runtime_draft: null,

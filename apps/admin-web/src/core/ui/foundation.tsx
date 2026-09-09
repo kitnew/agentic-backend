@@ -489,6 +489,8 @@ export function Selector({
   disabled = false,
   emptyLabel = "No options available",
   helperText,
+  error,
+  required = false,
   createAction,
 }: {
   label: string;
@@ -499,13 +501,16 @@ export function Selector({
   disabled?: boolean;
   emptyLabel?: string;
   helperText?: string;
+  error?: string;
+  required?: boolean;
   createAction?: ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <Field helperText={helperText} label={label}>
+      <Field error={error} helperText={helperText} label={label}>
         <Select
           disabled={disabled || loading || options.length === 0}
+          required={required}
           value={value}
           onChange={(event) => onChange(event.target.value)}
         >
@@ -514,11 +519,14 @@ export function Selector({
           ) : options.length === 0 ? (
             <option value="">{emptyLabel}</option>
           ) : (
-            options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))
+            <>
+              {value === "" && <option value="">Select an option</option>}
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </>
           )}
         </Select>
       </Field>

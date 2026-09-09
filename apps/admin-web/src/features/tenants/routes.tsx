@@ -1,3 +1,5 @@
+import { TenantConfigurationEditor } from "../../core/configuration/high-level";
+import { useTenant } from "../../core/tenant/use-tenant";
 import { IntegrationsPage } from "../integrations/page";
 import {
   TenantAuthoringEditorPage,
@@ -7,12 +9,22 @@ import {
 import { HandoffPage } from "./handoff-page";
 import { TenantsPage } from "./pages";
 
+function TenantConfigurationPage() {
+  const { tenantId } = useTenant();
+  return tenantId ? <TenantConfigurationEditor tenantId={tenantId} /> : null;
+}
+
 export const routes = [
   { id: "tenants", path: "/tenants", component: TenantsPage },
   {
     id: "tenant-overview",
     path: "/tenants/$tenantId",
     component: TenantComponentOverviewPage,
+  },
+  {
+    id: "tenant-configuration",
+    path: "/tenants/$tenantId/configuration",
+    component: TenantConfigurationPage,
   },
   {
     id: "tenant-runtime",
