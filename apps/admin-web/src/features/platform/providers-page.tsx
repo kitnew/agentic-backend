@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import {
@@ -7,124 +7,233 @@ import {
   PageLoading,
 } from "../../components/page-states";
 import { managementMutationOptions, responseData } from "../../core/api/client";
+import type {
+  CredentialResponse,
+  ModelDeploymentCreate,
+  ModelDeploymentResponse,
+  ProviderConnectionCreateConnectionConfig,
+  ProviderConnectionResponse,
+  RegistryEntryResponse,
+} from "../../core/api/control-plane";
 import {
   createConnectionManagementV1ProvidersConnectionsPost,
   createCredentialManagementV1CredentialsPost,
   createDeploymentManagementV1ProvidersDeploymentsPost,
+  deploymentKindsManagementV1RegistriesDeploymentKindsGet,
   disableConnectionManagementV1ProvidersConnectionsIdDisablePost,
   disableDeploymentManagementV1ProvidersDeploymentsIdDisablePost,
   enableConnectionManagementV1ProvidersConnectionsIdEnablePost,
   enableDeploymentManagementV1ProvidersDeploymentsIdEnablePost,
   getConnectionManagementV1ProvidersConnectionsIdGet,
-  getCredentialManagementV1CredentialsIdGet,
   getDeploymentManagementV1ProvidersDeploymentsIdGet,
   listConnectionsManagementV1ProvidersConnectionsGet,
   listCredentialsManagementV1CredentialsGet,
   listDeploymentsManagementV1ProvidersDeploymentsGet,
-  revokeCredentialManagementV1CredentialsIdRevokePost,
-  rotateCredentialManagementV1CredentialsIdRotatePost,
+  providerKindsManagementV1RegistriesProviderKindsGet,
 } from "../../core/api/control-plane";
 
+type ProviderData = {
+  credentials: CredentialResponse[];
+  connections: ProviderConnectionResponse[];
+  deployments: ModelDeploymentResponse[];
+  providerKinds: RegistryEntryResponse[];
+  deploymentKinds: RegistryEntryResponse[];
+};
+
+type ToggleInput = {
+  id: string;
+  resource: "connection" | "deployment";
+  operation: "enable" | "disable";
+};
+
+function parseJson(value: string, label: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`${label} must be valid JSON.`);
+  }
+}
+
 export function PlatformProvidersPage() {
+  const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [secret, setSecret] = useState("");
-  const [connectionJson, setConnectionJson] = useState('{"endpoint":""}');
-  const [deploymentJson, setDeploymentJson] = useState('{"model":""}');
   const [connectionKey, setConnectionKey] = useState("");
-  const [deploymentKey, setDeploymentKey] = useState("");
+  const [providerKind, setProviderKind] = useState("");
   const [credentialRef, setCredentialRef] = useState("");
+  const [connectionJson, setConnectionJson] = useState("{}");
+  const [deploymentKey, setDeploymentKey] = useState("");
   const [connectionRef, setConnectionRef] = useState("");
-  const [deploymentKind, setDeploymentKind] = useState<
-    "llm" | "realtime" | "stt" | "tts"
-  >("llm");
+  const [deploymentKind, setDeploymentKind] = useState("");
+  const [deploymentJson, setDeploymentJson] = useState("{}");
+  const [capabilitiesJson, setCapabilitiesJson] = useState("{}");
+
   const query = useQuery({
     queryKey: ["control-plane", "providers"],
-    queryFn: async () =>
-      Promise.all([
-        responseData<unknown[]>(
-          await listCredentialsManagementV1CredentialsGet(),
+    queryFn: async (): Promise<ProviderData> => {
+      const [
+        credentials,
+        connections,
+        deployments,
+        providerKinds,
+        deploymentKinds,
+      ] = await Promise.all([
+        responseData<CredentialResponse[]>(
+          await listCredentialsManagementV1CredentialsGet({
+            scope_type: "platform",
+          }),
         ),
-        responseData<unknown[]>(
+        responseData<ProviderConnectionResponse[]>(
           await listConnectionsManagementV1ProvidersConnectionsGet(),
         ),
-        responseData<unknown[]>(
+        responseData<ModelDeploymentResponse[]>(
           await listDeploymentsManagementV1ProvidersDeploymentsGet(),
         ),
-      ]),
-  });
-  const create = useMutation({
-    mutationFn: () =>
-      createCredentialManagementV1CredentialsPost(
-        { name, secret, scope: { type: "platform" } },
-        managementMutationOptions(),
-      ),
-    onSuccess: () => {
-      setSecret("");
-      query.refetch();
+        responseData<RegistryEntryResponse[]>(
+          await providerKindsManagementV1RegistriesProviderKindsGet(),
+        ),
+        responseData<RegistryEntryResponse[]>(
+          await deploymentKindsManagementV1RegistriesDeploymentKindsGet(),
+        ),
+      ]);
+      return {
+        credentials,
+        connections,
+        deployments,
+        providerKinds,
+        deploymentKinds,
+      };
     },
   });
+
+  const createCredential = useMutation({
+    mutationFn: async () =>
+      responseData(
+        await createCredentialManagementV1CredentialsPost(
+          { name, secret, scope: { type: "platform" } },
+          managementMutationOptions(),
+        ),
+      ),
+    onSuccess: async () => {
+      setSecret("");
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "providers"],
+      });
+    },
+  });
+
   const createConnection = useMutation({
-    mutationFn: () =>
-      createConnectionManagementV1ProvidersConnectionsPost(
-        {
-          key: connectionKey,
-          provider_kind: "openai",
-          credential_ref: credentialRef,
-          connection_config: JSON.parse(connectionJson),
-        },
-        managementMutationOptions(),
+    mutationFn: async () =>
+      responseData(
+        await createConnectionManagementV1ProvidersConnectionsPost(
+          {
+            key: connectionKey,
+            provider_kind: providerKind,
+            credential_ref: credentialRef,
+            connection_config: parseJson(
+              connectionJson,
+              "Connection config",
+            ) as ProviderConnectionCreateConnectionConfig,
+          },
+          managementMutationOptions(),
+        ),
       ),
-    onSuccess: () => query.refetch(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "providers"],
+      });
+    },
   });
+
   const createDeployment = useMutation({
-    mutationFn: () =>
-      createDeploymentManagementV1ProvidersDeploymentsPost(
-        {
-          key: deploymentKey,
-          connection_ref: connectionRef,
-          deployment_kind: deploymentKind,
-          deployment_config: JSON.parse(deploymentJson),
-          capabilities:
-            deploymentKind === "llm"
-              ? {
-                  kind: "llm",
-                  supports_reasoning_effort: false,
-                  supports_temperature: true,
-                }
-              : deploymentKind === "realtime"
-                ? {
-                    kind: "realtime",
-                    supports_semantic_vad: true,
-                    supports_server_vad: true,
-                  }
-                : deploymentKind === "stt"
-                  ? {
-                      kind: "stt",
-                      supports_cascade: true,
-                      supports_realtime_input_transcription: false,
-                    }
-                  : { kind: "tts" },
-        },
-        managementMutationOptions(),
+    mutationFn: async () =>
+      responseData(
+        await createDeploymentManagementV1ProvidersDeploymentsPost(
+          {
+            key: deploymentKey,
+            connection_ref: connectionRef,
+            deployment_kind:
+              deploymentKind as ModelDeploymentCreate["deployment_kind"],
+            deployment_config: parseJson(
+              deploymentJson,
+              "Deployment config",
+            ) as ModelDeploymentCreate["deployment_config"],
+            capabilities: parseJson(
+              capabilitiesJson,
+              "Capabilities",
+            ) as ModelDeploymentCreate["capabilities"],
+          },
+          managementMutationOptions(),
+        ),
       ),
-    onSuccess: () => query.refetch(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "providers"],
+      });
+    },
   });
+
+  const toggle = useMutation({
+    mutationFn: async ({ id, resource, operation }: ToggleInput) => {
+      const current =
+        resource === "connection"
+          ? await getConnectionManagementV1ProvidersConnectionsIdGet(id)
+          : await getDeploymentManagementV1ProvidersDeploymentsIdGet(id);
+      responseData(current);
+      const mutation =
+        resource === "connection"
+          ? operation === "enable"
+            ? enableConnectionManagementV1ProvidersConnectionsIdEnablePost
+            : disableConnectionManagementV1ProvidersConnectionsIdDisablePost
+          : operation === "enable"
+            ? enableDeploymentManagementV1ProvidersDeploymentsIdEnablePost
+            : disableDeploymentManagementV1ProvidersDeploymentsIdDisablePost;
+      return responseData(
+        await mutation(
+          id,
+          managementMutationOptions(current.headers.get("etag")),
+        ),
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "providers"],
+      });
+    },
+  });
+
   if (query.isPending) return <PageLoading />;
-  if (query.isError) return <PageError title="Providers could not be loaded" />;
-  const [credentials, connections, deployments] = query.data;
+  if (query.isError)
+    return (
+      <PageError
+        title="Providers could not be loaded"
+        error={query.error}
+        onRetry={() => query.refetch()}
+      />
+    );
+
+  const {
+    credentials,
+    connections,
+    deployments,
+    providerKinds,
+    deploymentKinds,
+  } = query.data;
   return (
     <div className="space-y-6">
       <PageHeader
         title="Providers"
         detail="Credential secrets are write-only; connections and deployments are managed by Control Plane."
       />
+
       <form
         className="space-y-3 rounded border p-4"
         onSubmit={(event) => {
           event.preventDefault();
-          create.mutate();
+          createCredential.mutate();
         }}
       >
+        <h2 className="text-lg font-semibold">Credentials</h2>
         <label className="block text-sm">
           Credential name
           <input
@@ -144,12 +253,20 @@ export function PlatformProvidersPage() {
         </label>
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white"
-          disabled={!name || !secret || create.isPending}
+          disabled={!name || !secret || createCredential.isPending}
           type="submit"
         >
           Create credential
         </button>
+        {createCredential.isError && (
+          <PageError
+            compact
+            error={createCredential.error}
+            title="Credential could not be created"
+          />
+        )}
       </form>
+
       <form
         className="grid gap-3 rounded border p-4 md:grid-cols-2"
         onSubmit={(event) => {
@@ -158,7 +275,7 @@ export function PlatformProvidersPage() {
         }}
       >
         <h2 className="md:col-span-2 text-lg font-semibold">
-          Create provider connection
+          Provider Connections
         </h2>
         <input
           aria-label="Connection key"
@@ -167,13 +284,32 @@ export function PlatformProvidersPage() {
           value={connectionKey}
           onChange={(event) => setConnectionKey(event.target.value)}
         />
-        <input
-          aria-label="Credential reference"
+        <select
+          aria-label="Provider kind"
           className="rounded border p-2"
-          placeholder="Credential reference"
+          value={providerKind}
+          onChange={(event) => setProviderKind(event.target.value)}
+        >
+          <option value="">Select provider kind</option>
+          {providerKinds.map((kind) => (
+            <option key={kind.key} value={kind.key}>
+              {kind.name} ({kind.key})
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Credential"
+          className="rounded border p-2"
           value={credentialRef}
           onChange={(event) => setCredentialRef(event.target.value)}
-        />
+        >
+          <option value="">Select platform credential</option>
+          {credentials.map((credential) => (
+            <option key={credential.id} value={credential.id}>
+              {credential.name} ({credential.id.slice(0, 8)})
+            </option>
+          ))}
+        </select>
         <textarea
           aria-label="Connection config"
           className="min-h-20 rounded border p-2 font-mono md:col-span-2"
@@ -183,13 +319,24 @@ export function PlatformProvidersPage() {
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
-            !connectionKey || !credentialRef || createConnection.isPending
+            !connectionKey ||
+            !providerKind ||
+            !credentialRef ||
+            createConnection.isPending
           }
           type="submit"
         >
           Create connection
         </button>
+        {createConnection.isError && (
+          <PageError
+            compact
+            error={createConnection.error}
+            title="Provider connection could not be created"
+          />
+        )}
       </form>
+
       <form
         className="grid gap-3 rounded border p-4 md:grid-cols-2"
         onSubmit={(event) => {
@@ -198,7 +345,7 @@ export function PlatformProvidersPage() {
         }}
       >
         <h2 className="md:col-span-2 text-lg font-semibold">
-          Create model deployment
+          Model Deployments
         </h2>
         <input
           aria-label="Deployment key"
@@ -207,25 +354,31 @@ export function PlatformProvidersPage() {
           value={deploymentKey}
           onChange={(event) => setDeploymentKey(event.target.value)}
         />
-        <input
-          aria-label="Connection reference"
+        <select
+          aria-label="Connection"
           className="rounded border p-2"
-          placeholder="Connection reference"
           value={connectionRef}
           onChange={(event) => setConnectionRef(event.target.value)}
-        />
+        >
+          <option value="">Select provider connection</option>
+          {connections.map((connection) => (
+            <option key={connection.id} value={connection.id}>
+              {connection.key} ({connection.id.slice(0, 8)})
+            </option>
+          ))}
+        </select>
         <select
           aria-label="Deployment kind"
           className="rounded border p-2"
           value={deploymentKind}
-          onChange={(event) =>
-            setDeploymentKind(event.target.value as typeof deploymentKind)
-          }
+          onChange={(event) => setDeploymentKind(event.target.value)}
         >
-          <option value="llm">LLM</option>
-          <option value="realtime">Realtime</option>
-          <option value="stt">STT</option>
-          <option value="tts">TTS</option>
+          <option value="">Select deployment kind</option>
+          {deploymentKinds.map((kind) => (
+            <option key={kind.key} value={kind.key}>
+              {kind.name} ({kind.key})
+            </option>
+          ))}
         </select>
         <textarea
           aria-label="Deployment config"
@@ -233,178 +386,106 @@ export function PlatformProvidersPage() {
           value={deploymentJson}
           onChange={(event) => setDeploymentJson(event.target.value)}
         />
+        <textarea
+          aria-label="Capabilities"
+          className="min-h-20 rounded border p-2 font-mono md:col-span-2"
+          value={capabilitiesJson}
+          onChange={(event) => setCapabilitiesJson(event.target.value)}
+        />
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
-            !deploymentKey || !connectionRef || createDeployment.isPending
+            !deploymentKey ||
+            !connectionRef ||
+            !deploymentKind ||
+            createDeployment.isPending
           }
           type="submit"
         >
           Create deployment
         </button>
+        {createDeployment.isError && (
+          <PageError
+            compact
+            error={createDeployment.error}
+            title="Model deployment could not be created"
+          />
+        )}
       </form>
-      <ProviderList title="Credentials" items={credentials} />
-      <ProviderList
+
+      <ResourceList
         title="Provider Connections"
         items={connections}
-        onToggle={async (resource, operation) => {
-          const id = String(resource.id);
-          const current =
-            await getConnectionManagementV1ProvidersConnectionsIdGet(id);
-          const mutate =
-            operation === "enable"
-              ? enableConnectionManagementV1ProvidersConnectionsIdEnablePost
-              : disableConnectionManagementV1ProvidersConnectionsIdDisablePost;
-          await mutate(
-            id,
-            managementMutationOptions(current.headers.get("etag")),
-          );
-          await query.refetch();
-        }}
+        onToggle={(resource, operation) =>
+          toggle.mutate({ id: resource.id, resource: "connection", operation })
+        }
       />
-      <ProviderList
+      <ResourceList
         title="Model Deployments"
         items={deployments}
-        onToggle={async (resource, operation) => {
-          const id = String(resource.id);
-          const current =
-            await getDeploymentManagementV1ProvidersDeploymentsIdGet(id);
-          const mutate =
-            operation === "enable"
-              ? enableDeploymentManagementV1ProvidersDeploymentsIdEnablePost
-              : disableDeploymentManagementV1ProvidersDeploymentsIdDisablePost;
-          await mutate(
-            id,
-            managementMutationOptions(current.headers.get("etag")),
-          );
-          await query.refetch();
-        }}
+        onToggle={(resource, operation) =>
+          toggle.mutate({ id: resource.id, resource: "deployment", operation })
+        }
       />
-      <CredentialList items={credentials} onRefresh={() => query.refetch()} />
-      {create.isError && (
-        <PageError compact title="Credential could not be created" />
+      {toggle.isError && (
+        <PageError
+          compact
+          error={toggle.error}
+          onRetry={() => query.refetch()}
+          title="Provider resource action failed"
+        />
       )}
+
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">Credential inventory</h2>
+        <ul className="divide-y border-y">
+          {credentials.map((credential) => (
+            <li className="py-3" key={credential.id}>
+              {credential.name}{" "}
+              <span className="text-sm text-muted">Secret never returned</span>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }
 
-function ProviderList({
+function ResourceList<T extends { id: string; key: string; enabled: boolean }>({
   title,
   items,
   onToggle,
 }: {
   title: string;
-  items: unknown[];
-  onToggle?: (
-    resource: Record<string, unknown>,
-    operation: "enable" | "disable",
-  ) => void;
+  items: T[];
+  onToggle: (resource: T, operation: "enable" | "disable") => void;
 }) {
   return (
     <section>
       <h2 className="mb-2 text-lg font-semibold">{title}</h2>
       <ul className="divide-y border-y">
-        {items.map((item) => {
-          const resource = item as Record<string, unknown>;
-          const enabled = resource.enabled !== false;
-          return (
-            <li
-              className="flex items-center justify-between gap-3 py-3"
-              key={String(
-                resource.resource_id ?? resource.id ?? JSON.stringify(item),
-              )}
+        {items.map((resource) => (
+          <li
+            className="flex items-center justify-between gap-3 py-3"
+            key={resource.id}
+          >
+            <span>
+              {resource.key}{" "}
+              <span className="text-sm text-muted">
+                {resource.enabled ? "Enabled" : "Disabled"}
+              </span>
+            </span>
+            <button
+              className="rounded border px-2 py-1 text-sm"
+              onClick={() =>
+                onToggle(resource, resource.enabled ? "disable" : "enable")
+              }
+              type="button"
             >
-              <span>
-                {String(
-                  resource.key ??
-                    resource.name ??
-                    resource.resource_id ??
-                    "resource",
-                )}{" "}
-                <span className="text-sm text-muted">
-                  {enabled ? "Enabled" : "Disabled"}
-                </span>
-              </span>
-              {onToggle && (
-                <button
-                  className="rounded border px-2 py-1 text-sm"
-                  onClick={() =>
-                    onToggle(resource, enabled ? "disable" : "enable")
-                  }
-                  type="button"
-                >
-                  {enabled ? "Disable" : "Enable"}
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </section>
-  );
-}
-
-function CredentialList({
-  items,
-  onRefresh,
-}: {
-  items: unknown[];
-  onRefresh: () => void;
-}) {
-  return (
-    <section>
-      <h2 className="mb-2 text-lg font-semibold">Credential actions</h2>
-      <ul className="divide-y border-y">
-        {items.map((item) => {
-          const resource = item as Record<string, unknown>;
-          const id = String(resource.id);
-          return (
-            <li
-              className="flex items-center justify-between gap-3 py-3"
-              key={id}
-            >
-              <span>
-                {String(resource.name ?? id)}{" "}
-                <span className="text-sm text-muted">
-                  Secret never returned
-                </span>
-              </span>
-              <span className="flex gap-2">
-                <button
-                  className="rounded border px-2 py-1 text-sm"
-                  onClick={async () => {
-                    const current =
-                      await getCredentialManagementV1CredentialsIdGet(id);
-                    await rotateCredentialManagementV1CredentialsIdRotatePost(
-                      id,
-                      { secret: window.prompt("New secret") ?? "" },
-                      managementMutationOptions(current.headers.get("etag")),
-                    );
-                    onRefresh();
-                  }}
-                  type="button"
-                >
-                  Rotate
-                </button>
-                <button
-                  className="rounded border px-2 py-1 text-sm"
-                  onClick={async () => {
-                    const current =
-                      await getCredentialManagementV1CredentialsIdGet(id);
-                    await revokeCredentialManagementV1CredentialsIdRevokePost(
-                      id,
-                      managementMutationOptions(current.headers.get("etag")),
-                    );
-                    onRefresh();
-                  }}
-                  type="button"
-                >
-                  Revoke
-                </button>
-              </span>
-            </li>
-          );
-        })}
+              {resource.enabled ? "Disable" : "Enable"}
+            </button>
+          </li>
+        ))}
       </ul>
     </section>
   );
