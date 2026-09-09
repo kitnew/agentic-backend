@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
 
+import httpx
 from agentic_observability.domain import CoreMetrics, domain_span
 from contracts import (
     ConversationPersistenceStatus,
@@ -86,11 +87,16 @@ class CallSessionService:
         idempotency_key: str,
         context: dict[str, object] | None = None,
     ):
-        execution = await self._control_plane.create_execution(
-            tenant_id,
-            idempotency_key=idempotency_key,
-            context=context,
-        )
+        try:
+            execution = await self._control_plane.create_execution(
+                tenant_id,
+                idempotency_key=idempotency_key,
+                context=context,
+            )
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 422:
+                raise CallSessionConfigUnavailableError from error
+            raise
         if execution.tenant_id != str(tenant_id):
             raise CallSessionConfigUnavailableError
         return execution
