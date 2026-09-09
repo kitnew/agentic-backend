@@ -313,6 +313,39 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
     assert captured["azure_deployment"] == "gpt-realtime-2.1-mini"
 
 
+def test_realtime_factory_normalizes_regional_locale_for_openai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        realtime,
+        "RealtimeModel",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    monkeypatch.setattr(agents, "AgentSession", lambda **kwargs: kwargs)
+    create_realtime_session(
+        settings(),
+        {
+            "model": {
+                "deployment_config": {"deployment_name": "realtime-deployment"},
+                "connection_config": {"endpoint": "https://realtime.example"},
+            },
+            "voice": "marin",
+            "input_transcription": {
+                "deployment_config": {"model": "transcribe-model"},
+                "language": "sk-SK",
+            },
+        },
+        {"model": "secret"},
+    )
+
+    assert captured["input_audio_transcription"] == {
+        "model": "transcribe-model",
+        "language": "sk",
+    }
+
+
 @pytest.mark.asyncio
 async def test_elevenlabs_realtime_connection_serializes_keyterms() -> None:
     class Session:
@@ -514,7 +547,10 @@ async def test_service_jwt_has_one_requested_scope() -> None:
 
 
 def test_prompt_assembly_uses_only_runtime_material() -> None:
-    instructions = assemble_instructions(runtime_context())
+    context = runtime_context()
+    context.prompts["interaction"] = "Interaction prompt"
+    instructions = assemble_instructions(context)
+    assert "Interaction prompt" in instructions
     assert "Timezone: Europe/Bratislava" in instructions
     assert "Current local date: " in instructions
     assert "Current local time: " in instructions
@@ -657,12 +693,8 @@ async def test_capability_timeout_returns_only_safe_semantics() -> None:
         async def invoke_capability(self, call_id, request):
             raise TimeoutError
 
-    class Session:
-        async def say(self, text, **kwargs):
-            return None
-
     context = SimpleNamespace(
-        session=Session(), function_call=SimpleNamespace(call_id="tool-call")
+        function_call=SimpleNamespace(call_id="tool-call")
     )
     definition = runtime_action(
         "reservation.submit_request",
@@ -691,10 +723,6 @@ async def test_availability_capability_records_success_without_arguments() -> No
                 semantic_result={"status": "available"},
             )
 
-    class Session:
-        async def say(self, text, **kwargs):
-            return None
-
     definition = runtime_action(
         "reservation.check_availability",
         announcement="I will check availability.",
@@ -707,7 +735,7 @@ async def test_availability_capability_records_success_without_arguments() -> No
     )
     result = await tool._func(  # type: ignore[attr-defined]
         SimpleNamespace(
-            session=Session(), function_call=SimpleNamespace(call_id="tool-call")
+            function_call=SimpleNamespace(call_id="tool-call")
         ),
         {},
     )
@@ -734,10 +762,6 @@ async def test_capability_with_empty_success_result_returns_submitted() -> None:
                 semantic_result=None,
             )
 
-    class Session:
-        async def say(self, text, **kwargs):
-            return None
-
     definition = runtime_action(
         "reservation.create_request",
         announcement="I will submit your reservation request.",
@@ -751,7 +775,7 @@ async def test_capability_with_empty_success_result_returns_submitted() -> None:
 
     result = await tool._func(  # type: ignore[attr-defined]
         SimpleNamespace(
-            session=Session(), function_call=SimpleNamespace(call_id="tool-call")
+            function_call=SimpleNamespace(call_id="tool-call")
         ),
         {},
     )

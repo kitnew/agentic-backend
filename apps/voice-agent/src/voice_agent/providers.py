@@ -219,7 +219,9 @@ def create_realtime_session(
         api_key=secrets["model"],
         input_audio_transcription={
             "model": _required_string(transcription_config, "model", "deployment_name"),
-            "language": _required_string(runtime["input_transcription"], "language"),
+            "language": _required_string(runtime["input_transcription"], "language")
+            .partition("-")[0]
+            .lower(),
         },
         conn_options=agents.APIConnectOptions(
             timeout=settings.provider_timeout_seconds,

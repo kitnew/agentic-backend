@@ -153,6 +153,7 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
             str(context.prompts["system"]),
             str(context.prompts["profile"]),
             str(context.prompts["tenant"]),
+            context.prompts.get("interaction"),
             f"Locale: {context.tenant['locale']}",
             f"Timezone: {timezone}",
             f"Current local date: {local_now.date().isoformat()}",
@@ -299,23 +300,12 @@ def capability_tool(
         tool_name = f"{tool_name[:55]}_{hashlib.sha256(key.encode()).hexdigest()[:8]}"
     policy = cast(dict[str, object], definition.get("business_policy", {}))
     requires_confirmation = bool(policy.get("requires_final_confirmation", False))
-    announcement = definition["announcement"]
-    if isinstance(announcement, dict):
-        announcement = announcement.get(str(action.get("locale", ""))) or next(
-            iter(announcement.values())
-        )
     pending_confirmation: dict[str, object] = {}
 
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
     ) -> Any:
-        speech = context.session.say(
-            str(announcement),
-            allow_interruptions=False,
-            add_to_chat_ctx=False,
-        )
-        await speech
         started = time.perf_counter()
         executed = False
         status = "failed"
