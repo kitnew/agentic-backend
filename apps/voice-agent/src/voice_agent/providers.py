@@ -107,19 +107,28 @@ def create_agent_session(
     api_version = _runtime_value(runtime, "llm", "api_version")
     if not deployment or not endpoint or not api_version:
         raise ValueError("execution LLM configuration is unavailable")
-    llm_provider = openai.LLM.with_azure(
-        model=llm["deployment_config"].get(
+    llm_options = {
+        "model": llm["deployment_config"].get(
             "model", llm["deployment_config"].get("deployment_name")
         ),
-        azure_deployment=deployment,
-        azure_endpoint=azure_endpoint(endpoint),
-        api_version=api_version,
-        api_key=secrets["llm"],
-        prompt_cache_key=prompt_cache_key,
-        timeout=httpx.Timeout(settings.provider_timeout_seconds),
-        max_completion_tokens=llm["max_completion_tokens"],
-        **llm_behavior_options(runtime),  # type: ignore[arg-type]
-    )
+        "api_key": secrets["llm"],
+        "prompt_cache_key": prompt_cache_key,
+        "timeout": httpx.Timeout(settings.provider_timeout_seconds),
+        "max_completion_tokens": llm["max_completion_tokens"],
+        **llm_behavior_options(runtime),
+    }
+    if endpoint.rstrip("/").endswith("/openai/v1"):
+        llm_provider = openai.LLM(
+            base_url=endpoint.rstrip("/"),
+            **llm_options,  # type: ignore[arg-type]
+        )
+    else:
+        llm_provider = openai.LLM.with_azure(
+            azure_deployment=deployment,
+            azure_endpoint=azure_endpoint(endpoint),
+            api_version=api_version,
+            **llm_options,  # type: ignore[arg-type]
+        )
     tts = elevenlabs.TTS(
         api_key=secrets["tts"],
         model=tts_config["deployment_config"].get(
@@ -190,13 +199,23 @@ def create_realtime_session(
     deployment = model["deployment_config"]
     connection = model["connection_config"]
     transcription_config = transcription["deployment_config"]
+    endpoint = _required_string(connection, "endpoint").rstrip("/")
+    uses_v1_endpoint = endpoint.endswith("/openai/v1")
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         # The realtime deployment contract intentionally has no logical model field.
         model=deployment.get("model", "gpt-realtime"),
         voice=_required_string(runtime, "voice"),
         azure_deployment=_required_string(deployment, "deployment_name"),
-        base_url=f"{azure_endpoint(_required_string(connection, 'endpoint'))}/openai",
-        api_version=deployment.get("api_version") or connection.get("api_version"),
+        base_url=(
+            endpoint
+            if uses_v1_endpoint
+            else f"{azure_endpoint(endpoint)}/openai"
+        ),
+        api_version=(
+            None
+            if uses_v1_endpoint
+            else deployment.get("api_version") or connection.get("api_version")
+        ),
         api_key=secrets["model"],
         input_audio_transcription={
             "model": _required_string(transcription_config, "model", "deployment_name"),

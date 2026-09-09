@@ -278,6 +278,41 @@ def test_realtime_factory_uses_snapshot_runtime_values(
     assert session["vad"] is None
 
 
+def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def model(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(realtime, "RealtimeModel", model)
+    monkeypatch.setattr(agents, "AgentSession", lambda **kwargs: kwargs)
+    create_realtime_session(
+        settings(),
+        {
+            "model": {
+                "deployment_config": {"deployment_name": "gpt-realtime-2.1-mini"},
+                "connection_config": {
+                    "endpoint": "https://realtime.example/openai/v1",
+                    "api_version": "2026-07-07",
+                },
+            },
+            "voice": "marin",
+            "input_transcription": {
+                "deployment_config": {"model": "gpt-live-transcribe"},
+                "language": "sk",
+            },
+        },
+        {"model": "secret"},
+    )
+
+    assert captured["base_url"] == "https://realtime.example/openai/v1"
+    assert captured["api_version"] is None
+    assert captured["azure_deployment"] == "gpt-realtime-2.1-mini"
+
+
 @pytest.mark.asyncio
 async def test_elevenlabs_realtime_connection_serializes_keyterms() -> None:
     class Session:
@@ -771,6 +806,44 @@ def test_azure_endpoint_accepts_resource_url_and_openai_v1_url() -> None:
     assert azure_endpoint("https://resource.openai.azure.com/openai/v1/") == (
         "https://resource.openai.azure.com"
     )
+
+
+@pytest.mark.asyncio
+async def test_provider_factory_uses_openai_client_for_foundry_v1_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    original_init = openai.LLM.__init__
+
+    def capture_init(self: object, **kwargs: object) -> None:
+        captured.update(kwargs)
+        original_init(self, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(openai.LLM, "__init__", capture_init)
+    runtime = runtime_settings()
+    llm = runtime["llm"]
+    assert isinstance(llm, dict)
+    connection = llm["connection_config"]
+    assert isinstance(connection, dict)
+    connection["endpoint"] = (
+        "https://ct-val.services.ai.azure.com/api/projects/CloudSystems-ai/openai/v1"
+    )
+    session = create_agent_session(
+        settings(),
+        runtime,
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+    )
+    try:
+        assert captured["base_url"] == (
+            "https://ct-val.services.ai.azure.com/api/projects/CloudSystems-ai/openai/v1"
+        )
+        assert captured["model"] == "model-a"
+        assert captured["api_key"] == "azure-key"
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
 
 
 @pytest.mark.asyncio
