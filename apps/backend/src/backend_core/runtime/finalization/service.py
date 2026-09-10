@@ -733,7 +733,7 @@ class FinalizationService:
             )
         )
         return [
-            {"role": message.role.value, "content": message.content}
+            {"role": message.role.value, "message": message.content}
             for message in messages
             if not message.interrupted
         ]
