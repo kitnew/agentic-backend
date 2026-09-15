@@ -449,7 +449,7 @@ class ExecutionSnapshot(Base):
             "schema_version = 3", name="ck_execution_snapshot_schema_version"
         ),
         CheckConstraint(
-            "architecture IN ('cascade', 'realtime')",
+            "architecture IN ('cascade', 'realtime', 'half-cascade')",
             name="ck_execution_snapshot_architecture",
         ),
         Index("ix_execution_snapshot_tenant_created", "tenant_id", "created_at"),
