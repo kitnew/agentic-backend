@@ -1,12 +1,12 @@
 """Allow half-cascade execution snapshots.
 
-Revision ID: 0003_half_cascade_snapshot_architecture
+Revision ID: 0003_half_cascade_architecture
 Revises: 0002_snapshot_schema_v3
 """
 
 from alembic import op
 
-revision = "0003_half_cascade_snapshot_architecture"
+revision = "0003_half_cascade_architecture"
 down_revision = "0002_snapshot_schema_v3"
 branch_labels = None
 depends_on = None
