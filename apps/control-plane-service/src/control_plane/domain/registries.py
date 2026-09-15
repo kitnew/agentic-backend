@@ -78,8 +78,8 @@ class ArchitectureRegistry:
         RegistryEntry(
             HALF_CASCADE,
             "Half cascade",
-            "Reserved half-cascade runtime",
-            {"runtime_supported": False},
+            "Realtime speech understanding and text generation with TTS output",
+            {"runtime_supported": True},
         ),
     )
 

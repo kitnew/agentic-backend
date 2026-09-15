@@ -355,8 +355,8 @@ From the runtime point of view, this aggregate produces:
 #### `Architecture`
 
 A live selection of runtime architecture mode.
-It must resolve through `ArchitectureRegistry`, e.g. `cascade`, `realtime`,
-and later `half-cascade`.
+It must resolve through `ArchitectureRegistry`: `cascade`, `realtime`, or
+`half-cascade`.
 
 #### `ProfileReference`
 
@@ -693,9 +693,9 @@ flowchart LR
 
 Allowed architecture modes:
 
-* `cascade`
-* `realtime`
-* `half-cascade` (planned / reserved)
+* `cascade`: STT → text LLM → TTS;
+* `realtime`: Realtime audio input → native Realtime audio output;
+* `half-cascade`: Realtime audio input → Realtime text output → TTS.
 
 ##### `ComponentDefinitionRegistry`
 

@@ -3,6 +3,10 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from control_plane.application.execution_materialization import (
+    ExecutionMaterializationService,
+    RuntimeSecretSlot,
+)
 from control_plane.application.execution_resolver import ExecutionResolver
 from control_plane.application.runtime_resolver import (
     RuntimeResolutionState,
@@ -43,6 +47,7 @@ from control_plane.domain.runtime_resolution import (
     ComponentProvenance,
     ResolutionFailureReason,
     ResolvedCascadeRuntime,
+    ResolvedHalfCascadeRuntime,
     ResolvedRealtimeRuntime,
     RuntimeResolutionError,
     SpeechHintStatus,
@@ -425,6 +430,7 @@ async def test_tenant_components_are_required(kind: str) -> None:
     [
         (["cascade"], "cascade"),
         (["realtime"], "realtime"),
+        (["half-cascade"], "half-cascade"),
         (["realtime", "cascade"], "realtime"),
     ],
 )
@@ -530,9 +536,7 @@ def test_execution_snapshot_target_hashes_context_changes() -> None:
         **target,
         "voice": {"agent": replace(execution.agent, greeting="Nový deň 🌿")},
     }
-    assert content_hash(payload) != content_hash(
-        snapshot_payload(changed)
-    )
+    assert content_hash(payload) != content_hash(snapshot_payload(changed))
 
 
 def test_execution_snapshot_contains_no_credential_secret_version_internals() -> None:
@@ -603,6 +607,74 @@ async def test_tenant_voices_override_platform_defaults() -> None:
     assert realtime.selected.voice == "tenant-realtime"
     assert isinstance(cascade, ResolvedCascadeRuntime)
     assert cascade.tts.voice == "tenant-cascade"
+
+
+@pytest.mark.asyncio
+async def test_half_cascade_resolves_realtime_and_tts_without_stt() -> None:
+    value = state(["half-cascade"])
+    deployments = dict(value.deployments)
+    deployments.pop(IDS["realtime_stt"])
+
+    result = await resolver(replace(value, deployments=deployments)).resolve_runtime(
+        TENANT
+    )
+    selected = result.selected
+
+    assert isinstance(selected, ResolvedHalfCascadeRuntime)
+    assert selected.model.resource.deployment.ref.value == IDS["realtime"]
+    assert selected.tts.resource.deployment.ref.value == IDS["tts"]
+    assert selected.tts.voice == "platform-cascade"
+    assert not hasattr(selected, "stt")
+    assert not hasattr(selected, "input_transcription")
+
+    runtime = ExecutionMaterializationService._voice_runtime(selected)
+    assert runtime["stt"] is None
+    assert runtime["llm"] is None
+    assert runtime["realtime"] is None
+    assert runtime["half_cascade"]["model"]["deployment_kind"] == "realtime"  # type: ignore[index]
+    assert runtime["half_cascade"]["tts"]["deployment_kind"] == "tts"  # type: ignore[index]
+    assert ExecutionMaterializationService._runtime_bindings(selected) == {
+        RuntimeSecretSlot.MODEL.value: str(IDS["realtime_credential"]),
+        RuntimeSecretSlot.TTS.value: str(IDS["eleven_credential"]),
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("deployment_name", "mutation", "reason"),
+    [
+        ("realtime", "missing", ResolutionFailureReason.MISSING_RESOURCE),
+        ("tts", "missing", ResolutionFailureReason.MISSING_RESOURCE),
+        ("realtime", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
+        ("tts", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
+        ("tts", "wrong_kind", ResolutionFailureReason.WRONG_RESOURCE_KIND),
+        ("tts", "wrong_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
+    ],
+)
+async def test_half_cascade_rejects_invalid_required_deployments(
+    deployment_name: str, mutation: str, reason: ResolutionFailureReason
+) -> None:
+    value = state(["half-cascade"])
+    deployments = dict(value.deployments)
+    deployment_id = IDS[deployment_name]
+    if mutation == "missing":
+        deployments.pop(deployment_id)
+    elif mutation == "disabled":
+        deployments[deployment_id] = replace(deployments[deployment_id], enabled=False)
+    elif mutation == "wrong_kind":
+        deployments[deployment_id] = replace(
+            deployments[deployment_id], deployment_kind=DeploymentKind.STT
+        )
+    else:
+        deployments[deployment_id] = replace(
+            deployments[deployment_id], capabilities=STTCapabilities(True, True)
+        )
+
+    with pytest.raises(RuntimeResolutionError) as captured:
+        await resolver(replace(value, deployments=deployments)).resolve_runtime(TENANT)
+
+    assert captured.value.attempts[0].failure is not None
+    assert captured.value.attempts[0].failure.reason is reason
 
 
 @pytest.mark.asyncio

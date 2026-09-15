@@ -9,6 +9,7 @@ from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.plugins import elevenlabs, openai
 from livekit.plugins.elevenlabs.stt import VADOptions
 from livekit.plugins.openai import realtime
+from openai.types import realtime as openai_realtime
 
 from voice_agent.observability import VoiceMetrics
 from voice_agent.settings import VoiceAgentSettings
@@ -129,16 +130,11 @@ def create_agent_session(
             api_version=api_version,
             **llm_options,  # type: ignore[arg-type]
         )
-    tts = elevenlabs.TTS(
-        api_key=secrets["tts"],
-        model=tts_config["deployment_config"].get(
-            "model_id", tts_config["deployment_config"].get("model")
-        ),
-        voice_id=tts_config["voice"],
-        language=tts_language,
-        word_tokenizer=tokenize.blingfire.SentenceTokenizer(
-            min_sentence_len=tts_config["tokenizer"]["min_sentence_chars"]
-        ),
+    tts = _create_tts(
+        tts_config,
+        tts_language,
+        secrets["tts"],
+        min_sentence_chars=tts_config["tokenizer"]["min_sentence_chars"],
     )
     if metrics is not None:
         for component, name in ((stt, "stt"), (llm_provider, "llm"), (tts, "tts")):
@@ -194,45 +190,136 @@ def create_realtime_session(
     runtime: dict[str, Any],
     secrets: dict[str, str],
 ) -> agents.AgentSession:
-    model = runtime["model"]
     transcription = runtime["input_transcription"]
-    deployment = model["deployment_config"]
-    connection = model["connection_config"]
     transcription_config = transcription["deployment_config"]
-    endpoint = _required_string(connection, "endpoint").rstrip("/")
-    uses_v1_endpoint = endpoint.endswith("/openai/v1")
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
-        # The realtime deployment contract intentionally has no logical model field.
-        model=deployment.get("model", "gpt-realtime"),
-        voice=_required_string(runtime, "voice"),
-        azure_deployment=_required_string(deployment, "deployment_name"),
-        base_url=(
-            endpoint
-            if uses_v1_endpoint
-            else f"{azure_endpoint(endpoint)}/openai"
-        ),
-        api_version=(
-            None
-            if uses_v1_endpoint
-            else deployment.get("api_version") or connection.get("api_version")
-        ),
-        api_key=secrets["model"],
+        **_realtime_options(settings, runtime, secrets["model"]),
         input_audio_transcription={
             "model": _required_string(transcription_config, "model", "deployment_name"),
             "language": _required_string(runtime["input_transcription"], "language")
             .partition("-")[0]
             .lower(),
         },
-        conn_options=agents.APIConnectOptions(
-            timeout=settings.provider_timeout_seconds,
-            max_retry=settings.provider_retry_limit,
-        ),
     )
     return agents.AgentSession(
         llm=realtime_model,
         vad=None,
-        turn_detection=NOT_GIVEN,
+        turn_handling={
+            "turn_detection": "realtime_llm",
+            "interruption": {"enabled": runtime["interruption"]["enabled"]},
+        },
         tools=[],
+    )
+
+
+def create_half_cascade_session(
+    settings: VoiceAgentSettings,
+    runtime: dict[str, Any],
+    secrets: dict[str, str],
+) -> agents.AgentSession:
+    tts_config = runtime["tts"]
+    if tts_config["provider_kind"] != "elevenlabs":
+        raise ValueError(f"unsupported TTS provider: {tts_config['provider_kind']}")
+    _, tts_language = provider_languages(str(runtime["locale"]))
+    # LiveKit streams text-only Realtime output through session TTS and cancels
+    # both the generation and synthesis when the caller interrupts.
+    realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
+        **_realtime_options(settings, runtime, secrets["model"]),
+        modalities=["text"],
+        input_audio_transcription=None,
+    )
+    tts = _create_tts(tts_config, tts_language, secrets["tts"])
+    connect_options = agents.APIConnectOptions(
+        timeout=settings.provider_timeout_seconds,
+        max_retry=settings.provider_retry_limit,
+    )
+    return agents.AgentSession(
+        llm=realtime_model,
+        tts=tts,
+        vad=None,
+        turn_handling={
+            "turn_detection": "realtime_llm",
+            "interruption": {"enabled": runtime["interruption"]["enabled"]},
+        },
+        tools=[],
+        conn_options=SessionConnectOptions(
+            llm_conn_options=connect_options,
+            tts_conn_options=connect_options,
+        ),
+    )
+
+
+def _realtime_options(
+    settings: VoiceAgentSettings, runtime: dict[str, Any], secret: str
+) -> dict[str, Any]:
+    model = runtime["model"]
+    deployment = model["deployment_config"]
+    connection = model["connection_config"]
+    endpoint = _required_string(connection, "endpoint").rstrip("/")
+    uses_v1_endpoint = endpoint.endswith("/openai/v1")
+    options = {
+        "model": _required_string(deployment, "model", "deployment_name"),
+        "azure_deployment": _required_string(deployment, "deployment_name"),
+        "base_url": endpoint
+        if uses_v1_endpoint
+        else f"{azure_endpoint(endpoint)}/openai",
+        "api_version": (
+            None
+            if uses_v1_endpoint
+            else deployment.get("api_version") or connection.get("api_version")
+        ),
+        "api_key": secret,
+        "turn_detection": _realtime_turn_detection(runtime),
+        "conn_options": agents.APIConnectOptions(
+            timeout=settings.provider_timeout_seconds,
+            max_retry=settings.provider_retry_limit,
+        ),
+    }
+    if "voice" in runtime:
+        options["voice"] = _required_string(runtime, "voice")
+    return options
+
+
+def _realtime_turn_detection(runtime: dict[str, Any]) -> object:
+    value = runtime["turn_completion"]
+    common = {
+        "create_response": True,
+        "interrupt_response": runtime["interruption"]["enabled"],
+    }
+    if value["strategy"] == "server_vad":
+        return openai_realtime.realtime_audio_input_turn_detection.ServerVad(
+            type="server_vad",
+            threshold=value.get("activation_threshold"),
+            silence_duration_ms=value.get("silence_duration_ms"),
+            **common,
+        )
+    return openai_realtime.realtime_audio_input_turn_detection.SemanticVad(
+        type="semantic_vad",
+        eagerness=value.get("eagerness"),
+        **common,
+    )
+
+
+def _create_tts(
+    config: dict[str, Any],
+    language: str,
+    secret: str,
+    *,
+    min_sentence_chars: int | None = None,
+) -> elevenlabs.TTS:
+    options: dict[str, Any] = {}
+    if min_sentence_chars is not None:
+        options["word_tokenizer"] = tokenize.blingfire.SentenceTokenizer(
+            min_sentence_len=min_sentence_chars
+        )
+    return elevenlabs.TTS(
+        api_key=secret,
+        model=config["deployment_config"].get(
+            "model_id", config["deployment_config"].get("model")
+        ),
+        voice_id=config["voice"],
+        language=language,
+        **options,
     )
 
 

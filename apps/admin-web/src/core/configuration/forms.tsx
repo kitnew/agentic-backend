@@ -555,13 +555,13 @@ export function tenantDesiredFromForm(
     architecture: { architecture_key: form.architecture_key.trim() },
     profile_reference: { profile_key: form.profile_key.trim() },
     runtime_overrides: {
-      ...(form.stt_keyterms_override
+      ...(form.architecture_key === "cascade" && form.stt_keyterms_override
         ? { stt: { keyterms: parseLines(form.stt_keyterms) } }
         : {}),
-      ...(form.tts_voice_override
+      ...(form.architecture_key !== "realtime" && form.tts_voice_override
         ? { tts: { voice_id: form.tts_voice_id.trim() } }
         : {}),
-      ...(form.realtime_voice_override
+      ...(form.architecture_key === "realtime" && form.realtime_voice_override
         ? { realtime: { voice: form.realtime_voice.trim() } }
         : {}),
     },
@@ -1946,82 +1946,97 @@ export function TenantConfigurationForm({
             emptyLabel="No profiles available"
           />
         </FormGrid>
+        {value.architecture_key === "half-cascade" && (
+          <div className="mt-4 rounded-md border bg-panel p-3 text-sm">
+            <p className="font-medium">Realtime → text → TTS</p>
+            <p>
+              Speech input / conversation: System default realtime deployment
+            </p>
+            <p>Speech output: System default TTS deployment</p>
+          </div>
+        )}
       </FormSection>
       <FormSection
         title="Runtime overrides"
         description="Unchecked controls inherit the corresponding system value."
       >
         <div className="space-y-5">
-          <div>
-            <CheckField
-              label="Override system keyterms"
-              checked={value.stt_keyterms_override}
-              onChange={(stt_keyterms_override) =>
-                onChange({ ...value, stt_keyterms_override })
-              }
-            />
-            {value.stt_keyterms_override && (
-              <Field
-                error={errorAt(errors, "runtime_overrides.stt.keyterms")}
-                label="STT keyterms"
-                helperText="One value per line; an empty value means an explicit empty set."
-                fullWidth
-              >
-                <textarea
-                  value={value.stt_keyterms}
-                  onChange={(event) =>
-                    onChange({ ...value, stt_keyterms: event.target.value })
-                  }
-                />
-              </Field>
-            )}
-          </div>
-          <div>
-            <CheckField
-              label="Override system TTS voice"
-              checked={value.tts_voice_override}
-              onChange={(tts_voice_override) =>
-                onChange({ ...value, tts_voice_override })
-              }
-            />
-            {value.tts_voice_override && (
-              <Field
-                error={errorAt(errors, "runtime_overrides.tts.voice_id")}
-                label="TTS voice ID"
-              >
-                <input
-                  required
-                  value={value.tts_voice_id}
-                  onChange={(event) =>
-                    onChange({ ...value, tts_voice_id: event.target.value })
-                  }
-                />
-              </Field>
-            )}
-          </div>
-          <div>
-            <CheckField
-              label="Override system realtime voice"
-              checked={value.realtime_voice_override}
-              onChange={(realtime_voice_override) =>
-                onChange({ ...value, realtime_voice_override })
-              }
-            />
-            {value.realtime_voice_override && (
-              <Field
-                error={errorAt(errors, "runtime_overrides.realtime.voice")}
-                label="Realtime voice"
-              >
-                <input
-                  required
-                  value={value.realtime_voice}
-                  onChange={(event) =>
-                    onChange({ ...value, realtime_voice: event.target.value })
-                  }
-                />
-              </Field>
-            )}
-          </div>
+          {value.architecture_key === "cascade" && (
+            <div>
+              <CheckField
+                label="Override system keyterms"
+                checked={value.stt_keyterms_override}
+                onChange={(stt_keyterms_override) =>
+                  onChange({ ...value, stt_keyterms_override })
+                }
+              />
+              {value.stt_keyterms_override && (
+                <Field
+                  error={errorAt(errors, "runtime_overrides.stt.keyterms")}
+                  label="STT keyterms"
+                  helperText="One value per line; an empty value means an explicit empty set."
+                  fullWidth
+                >
+                  <textarea
+                    value={value.stt_keyterms}
+                    onChange={(event) =>
+                      onChange({ ...value, stt_keyterms: event.target.value })
+                    }
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+          {value.architecture_key !== "realtime" && (
+            <div>
+              <CheckField
+                label="Override system TTS voice"
+                checked={value.tts_voice_override}
+                onChange={(tts_voice_override) =>
+                  onChange({ ...value, tts_voice_override })
+                }
+              />
+              {value.tts_voice_override && (
+                <Field
+                  error={errorAt(errors, "runtime_overrides.tts.voice_id")}
+                  label="TTS voice ID"
+                >
+                  <input
+                    required
+                    value={value.tts_voice_id}
+                    onChange={(event) =>
+                      onChange({ ...value, tts_voice_id: event.target.value })
+                    }
+                  />
+                </Field>
+              )}
+            </div>
+          )}
+          {value.architecture_key === "realtime" && (
+            <div>
+              <CheckField
+                label="Override system realtime voice"
+                checked={value.realtime_voice_override}
+                onChange={(realtime_voice_override) =>
+                  onChange({ ...value, realtime_voice_override })
+                }
+              />
+              {value.realtime_voice_override && (
+                <Field
+                  error={errorAt(errors, "runtime_overrides.realtime.voice")}
+                  label="Realtime voice"
+                >
+                  <input
+                    required
+                    value={value.realtime_voice}
+                    onChange={(event) =>
+                      onChange({ ...value, realtime_voice: event.target.value })
+                    }
+                  />
+                </Field>
+              )}
+            </div>
+          )}
         </div>
       </FormSection>
       <FormSection

@@ -36,6 +36,7 @@ from voice_agent.main import (
 from voice_agent.providers import (
     azure_endpoint,
     create_agent_session,
+    create_half_cascade_session,
     create_realtime_session,
     llm_behavior_options,
     provider_languages,
@@ -63,7 +64,7 @@ def runtime_context() -> VoiceExecutionContext:
         execution_id=uuid4(),
         tenant={"locale": "sk-SK", "timezone": "Europe/Bratislava"},
         agent={"name": "Amelia", "personality": "helpful", "greeting": "Dobry den"},
-        architecture="classic",
+        architecture="cascade",
         prompts={
             "system": "System prompt",
             "profile": "Profile prompt",
@@ -259,6 +260,8 @@ def test_realtime_factory_uses_snapshot_runtime_values(
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
             "voice": "custom-voice",
+            "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
+            "interruption": {"enabled": True},
             "input_transcription": {
                 "deployment_config": {"model": "transcribe-model"},
                 "language": "sk",
@@ -274,7 +277,8 @@ def test_realtime_factory_uses_snapshot_runtime_values(
         "model": "transcribe-model",
         "language": "sk",
     }
-    assert "turn_detection" not in captured
+    assert captured["turn_detection"].type == "semantic_vad"  # type: ignore[union-attr]
+    assert captured["turn_detection"].interrupt_response is True  # type: ignore[union-attr]
     assert session["vad"] is None
 
 
@@ -300,6 +304,8 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
                 },
             },
             "voice": "marin",
+            "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
+            "interruption": {"enabled": True},
             "input_transcription": {
                 "deployment_config": {"model": "gpt-live-transcribe"},
                 "language": "sk",
@@ -332,6 +338,8 @@ def test_realtime_factory_normalizes_regional_locale_for_openai(
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
             "voice": "marin",
+            "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
+            "interruption": {"enabled": True},
             "input_transcription": {
                 "deployment_config": {"model": "transcribe-model"},
                 "language": "sk-SK",
@@ -344,6 +352,106 @@ def test_realtime_factory_normalizes_regional_locale_for_openai(
         "model": "transcribe-model",
         "language": "sk",
     }
+
+
+def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_model: dict[str, object] = {}
+    captured_tts: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        realtime,
+        "RealtimeModel",
+        lambda **kwargs: captured_model.update(kwargs) or object(),
+    )
+    monkeypatch.setattr(
+        elevenlabs,
+        "TTS",
+        lambda **kwargs: captured_tts.update(kwargs) or object(),
+    )
+    monkeypatch.setattr(agents, "AgentSession", lambda **kwargs: kwargs)
+
+    session = create_half_cascade_session(
+        settings(),
+        {
+            "locale": "sk-SK",
+            "model": {
+                "deployment_config": {
+                    "deployment_name": "realtime-deployment",
+                    "model": "realtime-model",
+                },
+                "connection_config": {"endpoint": "https://realtime.example"},
+            },
+            "tts": {
+                "provider_kind": "elevenlabs",
+                "deployment_config": {"model_id": "eleven_flash_v2_5"},
+                "connection_config": {},
+                "voice": "tts-voice",
+            },
+            "turn_completion": {
+                "strategy": "server_vad",
+                "activation_threshold": 0.4,
+                "silence_duration_ms": 250,
+            },
+            "interruption": {"enabled": True},
+        },
+        {"model": "realtime-secret", "tts": "tts-secret"},
+    )
+
+    assert captured_model["modalities"] == ["text"]
+    assert captured_model["input_audio_transcription"] is None
+    assert "voice" not in captured_model
+    assert captured_model["api_key"] == "realtime-secret"
+    assert captured_model["turn_detection"].type == "server_vad"  # type: ignore[union-attr]
+    assert captured_model["turn_detection"].interrupt_response is True  # type: ignore[union-attr]
+    assert captured_tts["api_key"] == "tts-secret"
+    assert captured_tts["model"] == "eleven_flash_v2_5"
+    assert captured_tts["voice_id"] == "tts-voice"
+    assert "stt" not in session
+    assert session["vad"] is None
+    assert session["llm"] is not None
+    assert session["tts"] is not None
+    assert session["turn_handling"] == {
+        "turn_detection": "realtime_llm",
+        "interruption": {"enabled": True},
+    }
+
+
+@pytest.mark.asyncio
+async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_output_and_tts() -> (
+    None
+):
+    session = create_half_cascade_session(
+        settings(),
+        {
+            "locale": "sk-SK",
+            "model": {
+                "deployment_config": {
+                    "deployment_name": "realtime-deployment",
+                    "model": "realtime-model",
+                },
+                "connection_config": {"endpoint": "https://realtime.example"},
+            },
+            "tts": {
+                "provider_kind": "elevenlabs",
+                "deployment_config": {"model_id": "eleven_flash_v2_5"},
+                "connection_config": {},
+                "voice": "tts-voice",
+            },
+            "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
+            "interruption": {"enabled": True},
+        },
+        {"model": "realtime-secret", "tts": "tts-secret"},
+    )
+    try:
+        assert session.stt is None
+        assert isinstance(session.llm, realtime.RealtimeModel)
+        assert not session.llm.capabilities.audio_output
+        assert isinstance(session.tts, elevenlabs.TTS)
+    finally:
+        await session.llm.aclose()
+        await session.tts.aclose()
 
 
 @pytest.mark.asyncio
@@ -693,9 +801,7 @@ async def test_capability_timeout_returns_only_safe_semantics() -> None:
         async def invoke_capability(self, call_id, request):
             raise TimeoutError
 
-    context = SimpleNamespace(
-        function_call=SimpleNamespace(call_id="tool-call")
-    )
+    context = SimpleNamespace(function_call=SimpleNamespace(call_id="tool-call"))
     definition = runtime_action(
         "reservation.submit_request",
         announcement="I will submit your reservation request now.",
@@ -734,9 +840,7 @@ async def test_availability_capability_records_success_without_arguments() -> No
         lambda **values: recorded.append(values),
     )
     result = await tool._func(  # type: ignore[attr-defined]
-        SimpleNamespace(
-            function_call=SimpleNamespace(call_id="tool-call")
-        ),
+        SimpleNamespace(function_call=SimpleNamespace(call_id="tool-call")),
         {},
     )
     assert result == {"status": "available"}
@@ -774,9 +878,7 @@ async def test_capability_with_empty_success_result_returns_submitted() -> None:
     )
 
     result = await tool._func(  # type: ignore[attr-defined]
-        SimpleNamespace(
-            function_call=SimpleNamespace(call_id="tool-call")
-        ),
+        SimpleNamespace(function_call=SimpleNamespace(call_id="tool-call")),
         {},
     )
 

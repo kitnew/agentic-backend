@@ -322,6 +322,8 @@ def test_code_owned_registries_resolve_frozen_keys_and_are_read_only() -> None:
         with pytest.raises(TypeError):
             kind_registry.entries[0].metadata["operator_edit"] = True  # type: ignore[index]
 
+    assert ArchitectureRegistry().resolve("half-cascade").metadata["runtime_supported"]
+
     assert ProviderKindRegistry().resolve_for_deployment("azure_openai", "llm")
     with pytest.raises(IncompatibleRegistryReference):
         ProviderKindRegistry().resolve_for_deployment("azure_openai", "tts")

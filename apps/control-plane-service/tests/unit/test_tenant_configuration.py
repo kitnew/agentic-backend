@@ -225,6 +225,29 @@ async def test_plan_is_non_mutating_and_apply_obeys_mixed_lifecycles() -> None:
 
 
 @pytest.mark.asyncio
+async def test_half_cascade_survives_apply_read_and_publish() -> None:
+    service, _, _ = setup()
+    value = desired(architecture="half-cascade").model_copy(
+        update={"runtime_overrides": {"tts": {"voice_id": "half-cascade-voice"}}}
+    )
+
+    applied = await service.apply("tenant-a", value, "*", "alice", "apply-half")
+    read = await service.get("tenant-a")
+    published = await service.publish(
+        "tenant-a",
+        service.concurrency_token(applied.configuration),
+        "alice",
+        "publish-half",
+    )
+
+    for configuration in (applied.configuration, read, published.configuration):
+        assert configuration.live.architecture.architecture_key == "half-cascade"
+        assert configuration.live.runtime_overrides == {
+            "tts": {"voice_id": "half-cascade-voice"}
+        }
+
+
+@pytest.mark.asyncio
 async def test_invalid_initial_reference_leaves_tenant_state_empty() -> None:
     service, repository, _ = setup()
 

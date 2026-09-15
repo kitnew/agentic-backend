@@ -39,6 +39,7 @@ from control_plane.domain.runtime_execution_snapshot import (
 )
 from control_plane.domain.runtime_resolution import (
     ResolvedCascadeRuntime,
+    ResolvedHalfCascadeRuntime,
     ResolvedProviderResource,
     ResolvedRuntime,
 )
@@ -392,6 +393,23 @@ class ExecutionMaterializationService:
                 },
                 "realtime": None,
             }
+        if isinstance(runtime, ResolvedHalfCascadeRuntime):
+            return {
+                "stt": None,
+                "llm": None,
+                "tts": None,
+                "realtime": None,
+                "half_cascade": {
+                    "model": cls._provider_semantics(runtime.model.resource),
+                    "tts": {
+                        **cls._without_deployment_ref(runtime.tts.defaults),
+                        "voice": runtime.tts.voice,
+                        **cls._provider_semantics(runtime.tts.resource),
+                    },
+                    "turn_completion": cls._plain(runtime.turn_completion),
+                    "interruption": runtime.interruption.model_dump(mode="json"),
+                },
+            }
         return {
             "stt": None,
             "llm": None,
@@ -436,18 +454,22 @@ class ExecutionMaterializationService:
 
     @staticmethod
     def _runtime_bindings(runtime: ResolvedRuntime) -> dict[str, str]:
-        resources = (
-            {
+        if isinstance(runtime, ResolvedCascadeRuntime):
+            resources = {
                 RuntimeSecretSlot.LLM: runtime.llm.resource,
                 RuntimeSecretSlot.STT: runtime.stt.resource,
                 RuntimeSecretSlot.TTS: runtime.tts.resource,
             }
-            if isinstance(runtime, ResolvedCascadeRuntime)
-            else {
+        elif isinstance(runtime, ResolvedHalfCascadeRuntime):
+            resources = {
+                RuntimeSecretSlot.MODEL: runtime.model.resource,
+                RuntimeSecretSlot.TTS: runtime.tts.resource,
+            }
+        else:
+            resources = {
                 RuntimeSecretSlot.MODEL: runtime.model.resource,
                 RuntimeSecretSlot.INPUT_TRANSCRIPTION: runtime.input_transcription.resource,
             }
-        )
         return {
             slot.value: str(resource.credential.credential_ref)
             for slot, resource in resources.items()

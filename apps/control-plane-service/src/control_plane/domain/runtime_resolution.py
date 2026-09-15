@@ -14,7 +14,7 @@ from control_plane.domain.frozen_components import (
 )
 from control_plane.domain.managed_resources import ModelDeployment, ProviderConnection
 
-ArchitectureKind = Literal["cascade", "realtime"]
+ArchitectureKind = Literal["cascade", "realtime", "half-cascade"]
 
 
 class ResolutionFailureReason(StrEnum):
@@ -148,7 +148,18 @@ class ResolvedRealtimeRuntime:
     interruption: RealtimeInterruption
 
 
-ResolvedRuntime = ResolvedCascadeRuntime | ResolvedRealtimeRuntime
+@dataclass(frozen=True, slots=True)
+class ResolvedHalfCascadeRuntime:
+    architecture: Literal["half-cascade"]
+    model: ResolvedRealtimeModel
+    tts: ResolvedCascadeTTS
+    turn_completion: RealtimeTurnCompletion
+    interruption: RealtimeInterruption
+
+
+ResolvedRuntime = (
+    ResolvedCascadeRuntime | ResolvedRealtimeRuntime | ResolvedHalfCascadeRuntime
+)
 
 
 @dataclass(frozen=True, slots=True)

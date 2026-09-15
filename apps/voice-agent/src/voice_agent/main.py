@@ -32,7 +32,11 @@ from voice_agent.observability import (
     setup_voice_telemetry,
     shutdown_voice_telemetry,
 )
-from voice_agent.providers import create_agent_session, create_realtime_session
+from voice_agent.providers import (
+    create_agent_session,
+    create_half_cascade_session,
+    create_realtime_session,
+)
 from voice_agent.settings import VoiceAgentSettings
 
 logger = logging.getLogger(__name__)
@@ -56,6 +60,24 @@ def log_runtime_binding(
         logger.info(
             "Realtime runtime binding resolved",
             extra={"execution_id": str(context.execution_id)},
+        )
+        return
+    if context.architecture == "half-cascade":
+        runtime = cast(dict[str, Any], context.runtime["half_cascade"])
+        model = cast(dict[str, Any], runtime["model"])
+        tts = cast(dict[str, Any], runtime["tts"])
+        logger.info(
+            "Half-cascade runtime binding resolved",
+            extra={
+                "execution_id": str(context.execution_id),
+                "architecture": "half-cascade",
+                "realtime_provider": model["provider_kind"],
+                "realtime_deployment": model["deployment_config"].get(
+                    "deployment_name"
+                ),
+                "tts_provider": tts["provider_kind"],
+                "tts_deployment": tts["deployment_config"].get("model_id"),
+            },
         )
         return
     runtime = context.runtime
@@ -153,7 +175,7 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
             str(context.prompts["system"]),
             str(context.prompts["profile"]),
             str(context.prompts["tenant"]),
-            context.prompts.get("interaction"),
+            str(context.prompts.get("interaction") or ""),
             f"Locale: {context.tenant['locale']}",
             f"Timezone: {timezone}",
             f"Current local date: {local_now.date().isoformat()}",
@@ -483,27 +505,41 @@ async def run_job(
         )
         telemetry = current_voice_telemetry()
         secrets = {}
-        slots = (
-            ("model", "input_transcription")
-            if context.architecture == "realtime"
-            else ("stt", "llm", "tts")
-        )
+        slots: tuple[str, ...]
+        match context.architecture:
+            case "cascade":
+                slots = ("stt", "llm", "tts")
+            case "realtime":
+                slots = ("model", "input_transcription")
+            case "half-cascade":
+                slots = ("model", "tts")
+            case _:
+                raise ValueError(
+                    f"unsupported voice architecture: {context.architecture}"
+                )
         secrets = {
             slot: await backend.runtime_secret(context.execution_id, slot)
             for slot in slots
         }
-        if context.architecture == "realtime":
-            runtime = cast(dict[str, Any], context.runtime["realtime"])
-            session = create_realtime_session(settings, runtime, secrets)
-        else:
-            runtime = {**context.runtime, "locale": context.tenant["locale"]}
-            session = create_agent_session(
-                settings,
-                runtime,
-                prompt_cache_key,
-                telemetry.metrics if telemetry is not None else None,
-                secrets,
-            )
+        match context.architecture:
+            case "cascade":
+                runtime = {**context.runtime, "locale": context.tenant["locale"]}
+                session = create_agent_session(
+                    settings,
+                    runtime,
+                    prompt_cache_key,
+                    telemetry.metrics if telemetry is not None else None,
+                    secrets,
+                )
+            case "realtime":
+                runtime = cast(dict[str, Any], context.runtime["realtime"])
+                session = create_realtime_session(settings, runtime, secrets)
+            case "half-cascade":
+                runtime = {
+                    **cast(dict[str, Any], context.runtime["half_cascade"]),
+                    "locale": context.tenant["locale"],
+                }
+                session = create_half_cascade_session(settings, runtime, secrets)
         persistence = ConversationPersistence(backend, call_id)
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()

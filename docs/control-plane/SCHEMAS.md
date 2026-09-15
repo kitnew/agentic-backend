@@ -1963,6 +1963,17 @@ RealtimeDefaults.input_transcription.deployment_ref
 → ModelDeployment(kind = stt, realtime-transcription capable)
 ```
 
+Runtime architecture resolution composes those references as follows:
+
+```text
+cascade      → STTDefaults + LLMDefaults + TTSDefaults
+realtime     → RealtimeDefaults + RealtimeDefaults.input_transcription
+half-cascade → RealtimeDefaults.deployment_ref + TTSDefaults
+```
+
+`half-cascade` does not resolve or materialize the realtime input-transcription
+deployment.
+
 ## Credential ownership
 
 ```text

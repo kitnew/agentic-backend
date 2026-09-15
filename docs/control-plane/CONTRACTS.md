@@ -1406,7 +1406,12 @@ VoiceExecutionContext
 │   ├── stt
 │   ├── llm
 │   ├── tts
-│   └── realtime
+│   ├── realtime
+│   └── half_cascade
+│       ├── model
+│       ├── tts
+│       ├── turn_completion
+│       └── interruption
 ├── actions[]
 └── handoff[]
 ```

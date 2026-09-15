@@ -36,6 +36,7 @@ from control_plane.domain.managed_resources import (
     ProviderConnection,
     RealtimeCapabilities,
     STTCapabilities,
+    TTSCapabilities,
 )
 from control_plane.domain.registries import (
     ArchitectureRegistry,
@@ -54,6 +55,7 @@ from control_plane.domain.runtime_resolution import (
     ResolvedCascadeRuntime,
     ResolvedCascadeSTT,
     ResolvedCascadeTTS,
+    ResolvedHalfCascadeRuntime,
     ResolvedKeyterms,
     ResolvedProviderResource,
     ResolvedRealtimeModel,
@@ -226,6 +228,8 @@ class RuntimeResolver:
             return self._cascade(state, overrides, business)
         if architecture == self._architectures.REALTIME:
             return self._realtime(state, overrides, business)
+        if architecture == self._architectures.HALF_CASCADE:
+            return self._half_cascade(state, overrides)
         self._reject(
             ResolutionFailureReason.CURRENT_STATE_INVALID, architecture=architecture
         )
@@ -287,34 +291,12 @@ class RuntimeResolver:
         overrides: RuntimeOverrides,
         business: BusinessInfo,
     ) -> ResolvedRealtimeRuntime:
-        policy = self._system(state, "RealtimeDefaults", RealtimeDefaults)
-        model = self._resource(
-            state, policy.value.deployment_ref, DeploymentKind.REALTIME
-        )
+        policy, model = self._realtime_model(state)
         transcription = self._resource(
             state,
             policy.value.input_transcription.deployment_ref,
             DeploymentKind.STT,
         )
-        capabilities = model.deployment.capabilities
-        if not isinstance(capabilities, RealtimeCapabilities):
-            self._reject(
-                ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
-                deployment_ref=model.deployment.ref.value,
-                capability="realtime",
-            )
-        if isinstance(policy.value.turn_completion, RealtimeServerVAD):
-            supported = capabilities.supports_server_vad
-            capability = "server_vad"
-        else:
-            supported = capabilities.supports_semantic_vad
-            capability = "semantic_vad"
-        if not supported:
-            self._reject(
-                ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
-                deployment_ref=model.deployment.ref.value,
-                capability=capability,
-            )
         transcription_capabilities = transcription.deployment.capabilities
         if (
             not isinstance(transcription_capabilities, STTCapabilities)
@@ -352,6 +334,55 @@ class RuntimeResolver:
             policy.value.turn_completion,
             policy.value.interruption,
         )
+
+    def _half_cascade(
+        self,
+        state: RuntimeResolutionState,
+        overrides: RuntimeOverrides,
+    ) -> ResolvedHalfCascadeRuntime:
+        policy, model = self._realtime_model(state)
+        tts = self._system(state, "TTSDefaults", TTSDefaults)
+        tts_resource = self._resource(
+            state, tts.value.deployment_ref, DeploymentKind.TTS, tts
+        )
+        voice = overrides.get("tts", {}).get("voice_id", tts.value.default_voice_id)
+        return ResolvedHalfCascadeRuntime(
+            "half-cascade",
+            ResolvedRealtimeModel(self._provenance(policy), model),
+            ResolvedCascadeTTS(
+                self._provenance(tts), tts.value, tts_resource, str(voice)
+            ),
+            policy.value.turn_completion,
+            policy.value.interruption,
+        )
+
+    def _realtime_model(
+        self, state: RuntimeResolutionState
+    ) -> tuple[_ActiveRuntimeComponent[RealtimeDefaults], ResolvedProviderResource]:
+        policy = self._system(state, "RealtimeDefaults", RealtimeDefaults)
+        model = self._resource(
+            state, policy.value.deployment_ref, DeploymentKind.REALTIME
+        )
+        capabilities = model.deployment.capabilities
+        if not isinstance(capabilities, RealtimeCapabilities):
+            self._reject(
+                ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
+                deployment_ref=model.deployment.ref.value,
+                capability="realtime",
+            )
+        if isinstance(policy.value.turn_completion, RealtimeServerVAD):
+            supported = capabilities.supports_server_vad
+            capability = "server_vad"
+        else:
+            supported = capabilities.supports_semantic_vad
+            capability = "semantic_vad"
+        if not supported:
+            self._reject(
+                ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
+                deployment_ref=model.deployment.ref.value,
+                capability=capability,
+            )
+        return policy, model
 
     def _resource(
         self,
@@ -429,23 +460,30 @@ class RuntimeResolver:
         if component is not None:
             capabilities = deployment.capabilities
             invalid = (
-                isinstance(component.value, STTDefaults)
-                and (
-                    not isinstance(capabilities, STTCapabilities)
-                    or not capabilities.supports_cascade
+                (
+                    isinstance(component.value, STTDefaults)
+                    and (
+                        not isinstance(capabilities, STTCapabilities)
+                        or not capabilities.supports_cascade
+                    )
                 )
-            ) or (
-                isinstance(component.value, LLMDefaults)
-                and (
-                    not isinstance(capabilities, LLMCapabilities)
-                    or (
-                        component.value.temperature is not None
-                        and not capabilities.supports_temperature
+                or (
+                    isinstance(component.value, LLMDefaults)
+                    and (
+                        not isinstance(capabilities, LLMCapabilities)
+                        or (
+                            component.value.temperature is not None
+                            and not capabilities.supports_temperature
+                        )
+                        or (
+                            component.value.reasoning_effort is not None
+                            and not capabilities.supports_reasoning_effort
+                        )
                     )
-                    or (
-                        component.value.reasoning_effort is not None
-                        and not capabilities.supports_reasoning_effort
-                    )
+                )
+                or (
+                    isinstance(component.value, TTSDefaults)
+                    and not isinstance(capabilities, TTSCapabilities)
                 )
             )
             if invalid:

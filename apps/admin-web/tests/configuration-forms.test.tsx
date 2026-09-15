@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { HttpResponse, http } from "msw";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 
@@ -14,9 +15,11 @@ import {
   SystemConfigurationForm,
   systemDesiredFromForm,
   systemFormState,
+  TenantConfigurationForm,
   tenantDesiredFromForm,
   tenantFormState,
 } from "../src/core/configuration/forms";
+import { server } from "./setup";
 
 const completeSystemDesired = {
   stt_defaults: { deployment_ref: "stt-id" },
@@ -99,6 +102,11 @@ function ExistingPlatformFormHarness() {
     return form;
   });
   return <PlatformConfigurationForm value={value} onChange={setValue} />;
+}
+
+function TenantFormHarness() {
+  const [value, setValue] = useState(emptyTenantFormState());
+  return <TenantConfigurationForm value={value} onChange={setValue} />;
 }
 
 describe("configuration form mappings", () => {
@@ -271,12 +279,68 @@ describe("configuration form mappings", () => {
 
   it("preserves tenant override omission versus an explicit empty keyterm set", () => {
     const form = emptyTenantFormState();
+    form.architecture_key = "cascade";
     expect(tenantDesiredFromForm(form).runtime_overrides).toEqual({});
 
     form.stt_keyterms_override = true;
     expect(tenantDesiredFromForm(form).runtime_overrides).toEqual({
       stt: { keyterms: [] },
     });
+  });
+
+  it("omits hidden architecture-specific overrides for half-cascade", () => {
+    const form = emptyTenantFormState();
+    form.architecture_key = "half-cascade";
+    form.stt_keyterms_override = true;
+    form.realtime_voice_override = true;
+    form.tts_voice_override = true;
+    form.tts_voice_id = "configured-tts-voice";
+
+    expect(tenantDesiredFromForm(form).runtime_overrides).toEqual({
+      tts: { voice_id: "configured-tts-voice" },
+    });
+  });
+
+  it("shows the half-cascade pipeline without STT or native realtime voice controls", async () => {
+    server.use(
+      http.get("/management/v1/registries/architectures", () =>
+        HttpResponse.json([
+          { key: "cascade", name: "Cascade", description: "", metadata: {} },
+          {
+            key: "half-cascade",
+            name: "Half cascade",
+            description: "",
+            metadata: { runtime_supported: true },
+          },
+        ]),
+      ),
+    );
+    const user = userEvent.setup();
+    render(
+      <AppProviders>
+        <TenantFormHarness />
+      </AppProviders>,
+    );
+
+    await screen.findByRole("option", { name: "Half cascade (half-cascade)" });
+    await user.selectOptions(
+      screen.getByLabelText("Architecture"),
+      "half-cascade",
+    );
+
+    expect(screen.getByText("Realtime → text → TTS")).toBeVisible();
+    expect(
+      screen.getByText(/System default realtime deployment/),
+    ).toBeVisible();
+    expect(screen.getByText(/System default TTS deployment/)).toBeVisible();
+    await user.click(screen.getByText("Override system TTS voice"));
+    expect(screen.getByLabelText("TTS voice ID")).toBeRequired();
+    expect(
+      screen.queryByText("Override system keyterms"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Override system realtime voice"),
+    ).not.toBeInTheDocument();
   });
 
   it("maps tenant business lines, actions, and draft values", () => {
