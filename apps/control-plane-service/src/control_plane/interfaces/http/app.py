@@ -1,5 +1,6 @@
 from collections.abc import Mapping
 from datetime import datetime
+import logging
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
@@ -155,6 +156,8 @@ from control_plane.interfaces.http.service_auth import (
     require_management_token,
     require_service_scope,
 )
+
+logger = logging.getLogger(__name__)
 from control_plane.runtime.lifecycle import ServiceLifecycle
 
 MANAGEMENT_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -586,6 +589,10 @@ def create_http_app(
             return await call_next(request)
         except Exception:
             if structured:
+                logger.exception(
+                    "Unhandled structured HTTP request failure",
+                    extra={"method": request.method, "path": request.url.path},
+                )
                 return _management_error(
                     request,
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
