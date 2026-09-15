@@ -701,11 +701,11 @@ def create_http_app(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "runtime_resolution_failed",
                 "execution configuration could not be resolved",
-                details={
+                details=jsonable_encoder({
                     "reason": exc.reason,
                     "details": exc.details,
                     "attempts": exc.attempts,
-                },
+                }),
             )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
