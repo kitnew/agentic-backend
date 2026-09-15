@@ -96,12 +96,11 @@ class CallSessionService:
         except httpx.HTTPStatusError as error:
             if error.response.status_code == 422:
                 logger.warning(
-                    "Control Plane rejected execution configuration",
-                    extra={
-                        "tenant_id": str(tenant_id),
-                        "status_code": error.response.status_code,
-                        "response": error.response.text,
-                    },
+                    "Control Plane rejected execution configuration "
+                    "tenant_id=%s status_code=%s response=%s",
+                    tenant_id,
+                    error.response.status_code,
+                    error.response.text,
                 )
                 raise CallSessionConfigUnavailableError from error
             raise

@@ -318,7 +318,7 @@ async def test_deployment_unions_references_and_reference_preservation() -> None
         (
             (DeploymentKind.LLM, LLMCapabilities(True, True), {"deployment_name": "chat", "model": "gpt", "api_version": "v1"}),
             (DeploymentKind.REALTIME, RealtimeCapabilities(True, True), {"deployment_name": "realtime"}),
-            (DeploymentKind.STT, STTCapabilities(True, True), {"deployment_name": "stt"}),
+                (DeploymentKind.STT, STTCapabilities(True, True), {"deployment_name": "stt", "model": "stt"}),
         )
     ):
         deployment = await service.create_deployment(

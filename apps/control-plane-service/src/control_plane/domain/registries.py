@@ -40,6 +40,10 @@ class _AzureOpenAIDeploymentConfig(_ProviderConfig):
     deployment_name: str = Field(min_length=1)
 
 
+class _AzureOpenAISTTDeploymentConfig(_AzureOpenAIDeploymentConfig):
+    model: str = Field(min_length=1)
+
+
 class _ModelDeploymentConfig(_ProviderConfig):
     model_id: str = Field(min_length=1)
 
@@ -126,7 +130,7 @@ class ProviderKindRegistry:
             {
                 ("azure_openai", DeploymentKind.LLM): _AzureOpenAILLMDeploymentConfig,
                 ("azure_openai", DeploymentKind.REALTIME): _AzureOpenAIDeploymentConfig,
-                ("azure_openai", DeploymentKind.STT): _AzureOpenAIDeploymentConfig,
+                ("azure_openai", DeploymentKind.STT): _AzureOpenAISTTDeploymentConfig,
                 ("elevenlabs", DeploymentKind.STT): _ModelDeploymentConfig,
                 ("elevenlabs", DeploymentKind.TTS): _ModelDeploymentConfig,
                 ("deepgram", DeploymentKind.STT): _ModelDeploymentConfig,

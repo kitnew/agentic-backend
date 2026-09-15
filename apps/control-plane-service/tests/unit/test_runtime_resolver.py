@@ -156,6 +156,8 @@ def deployment(
     config = (
         {"deployment_name": name, "model": name, "api_version": "2026-01-01"}
         if kind is DeploymentKind.LLM
+        else {"deployment_name": name, "model": name}
+        if provider == "azure_openai" and kind is DeploymentKind.STT
         else {"deployment_name": name}
         if provider == "azure_openai"
         else {"model_id": name}
