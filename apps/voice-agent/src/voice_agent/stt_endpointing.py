@@ -6,6 +6,8 @@ import time
 from collections.abc import AsyncIterable
 from typing import TYPE_CHECKING, Any
 
+MIN_ELEVENLABS_COMMIT_AUDIO_SECONDS = 0.3
+
 from livekit import agents, rtc
 from livekit.agents import stt, utils
 from livekit.agents.types import (
@@ -211,13 +213,27 @@ class _LocalVadCommitStream(stt.RecognizeStream):
 
     async def _run(self) -> None:
         self._controller.replace_stream(self)
+        buffered_audio_seconds = 0.0
+        sample_rate = 48000
 
         async def forward_input() -> None:
+            nonlocal buffered_audio_seconds, sample_rate
             async for item in self._input_ch:
                 if isinstance(item, rtc.AudioFrame):
                     self._wrapped.push_frame(item)
+                    buffered_audio_seconds += item.duration
+                    sample_rate = item.sample_rate
                 else:
+                    if buffered_audio_seconds < MIN_ELEVENLABS_COMMIT_AUDIO_SECONDS:
+                        self._wrapped.push_frame(
+                            utils.audio.silence_frame(
+                                MIN_ELEVENLABS_COMMIT_AUDIO_SECONDS
+                                - buffered_audio_seconds,
+                                sample_rate,
+                            )
+                        )
                     self._wrapped.flush()
+                    buffered_audio_seconds = 0.0
             with contextlib.suppress(RuntimeError):
                 self._wrapped.end_input()
 

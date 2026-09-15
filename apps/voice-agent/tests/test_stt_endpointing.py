@@ -5,7 +5,7 @@ import inspect
 from collections.abc import AsyncIterable
 
 import pytest
-from livekit import agents
+from livekit import agents, rtc
 from livekit.agents import stt, utils
 from livekit.agents.types import (
     DEFAULT_API_CONNECT_OPTIONS,
@@ -44,10 +44,14 @@ class FakeProviderStream(stt.RecognizeStream):
         self.transcripts = transcripts
         self.fail = fail
         self.flushes = 0
+        self.audio_duration = 0.0
         super().__init__(stt=owner, conn_options=DEFAULT_API_CONNECT_OPTIONS)
 
     async def _run(self) -> None:
         async for item in self._input_ch:
+            if isinstance(item, rtc.AudioFrame):
+                self.audio_duration += item.duration
+                continue
             if isinstance(item, self._FlushSentinel):
                 self.flushes += 1
                 if self.fail:
@@ -147,6 +151,7 @@ async def test_one_vad_end_commits_once_and_emits_final_then_eos() -> None:
         ]
         assert events[0].alternatives[0].text == "first"
         assert provider.streams[0].flushes == 1
+        assert provider.streams[0].audio_duration >= 0.3
         assert metrics.requests == 1
     finally:
         await stream.aclose()

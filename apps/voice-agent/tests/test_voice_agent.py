@@ -307,7 +307,10 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
             "input_transcription": {
-                "deployment_config": {"model": "gpt-live-transcribe"},
+                "deployment_config": {
+                    "deployment_name": "gpt-live-transcribe",
+                    "model": "gpt-live-transcribe",
+                },
                 "language": "sk",
             },
         },
@@ -317,6 +320,29 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
     assert captured["base_url"] == "https://realtime.example/openai/v1"
     assert captured["api_version"] is None
     assert captured["azure_deployment"] == "gpt-realtime-2.1-mini"
+
+
+def test_realtime_factory_requires_input_transcription_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(realtime, "RealtimeModel", lambda **kwargs: object())
+    with pytest.raises(ValueError, match="missing realtime execution field: model"):
+        create_realtime_session(
+            settings(),
+            {
+                "model": {
+                    "deployment_config": {"deployment_name": "realtime-deployment"},
+                    "connection_config": {"endpoint": "https://realtime.example"},
+                },
+                "turn_completion": {"strategy": "server_vad", "silence_duration_ms": 500},
+                "interruption": {"enabled": True},
+                "input_transcription": {
+                    "deployment_config": {"deployment_name": "gpt-live-transcribe"},
+                    "language": "sk",
+                },
+            },
+            {"model": "secret"},
+        )
 
 
 def test_realtime_factory_normalizes_regional_locale_for_openai(

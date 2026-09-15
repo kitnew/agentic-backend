@@ -195,7 +195,9 @@ def create_realtime_session(
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
         input_audio_transcription={
-            "model": _required_string(transcription_config, "model", "deployment_name"),
+            # Azure's conversation API expects an API model identifier here,
+            # not the name of the deployed realtime-transcription resource.
+            "model": _required_string(transcription_config, "model"),
             "language": _required_string(runtime["input_transcription"], "language")
             .partition("-")[0]
             .lower(),
