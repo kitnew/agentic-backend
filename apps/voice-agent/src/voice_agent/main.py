@@ -573,6 +573,8 @@ async def run_job(
                 ),
             )
         session.on("user_input_transcribed", log_user_transcript)
+        if context.architecture == "half-cascade":
+            session.on("user_input_transcribed", persistence.on_user_input_transcribed)
         await session.start(
             room=ctx.room,
             # Keep native spans local to the explicit OTLP pipeline. LiveKit Cloud
@@ -651,6 +653,8 @@ async def run_job(
             off = getattr(session, "off", None)
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
+                if context.architecture == "half-cascade":
+                    off("user_input_transcribed", persistence.on_user_input_transcribed)
         try:
             if handed_off and persistence is not None and call_id is not None:
                 conversation_complete = False

@@ -30,9 +30,9 @@ class PersistableMessage:
 def message_from_event(call_id: UUID, event: object) -> PersistableMessage | None:
     item = getattr(event, "item", None)
     if not isinstance(item, llm.ChatMessage):
-        raise TypeError("unsupported committed conversation item")
+        return None
     if item.role not in ("user", "assistant"):
-        raise TypeError("unsupported committed message role")
+        return None
     content = item.raw_text_content
     if not content:
         return None
@@ -43,6 +43,32 @@ def message_from_event(call_id: UUID, event: object) -> PersistableMessage | Non
             content=content,
             interrupted=item.interrupted,
             source_created_at=datetime.fromtimestamp(item.created_at, UTC),
+        )
+    )
+
+
+def message_from_user_input_event(
+    call_id: UUID, event: object
+) -> PersistableMessage | None:
+    if not getattr(event, "is_final", False):
+        return None
+    content = getattr(event, "transcript", None)
+    if not isinstance(content, str) or not content.strip():
+        return None
+    item_id = getattr(event, "item_id", None)
+    identity = item_id or f"{getattr(event, 'created_at', '')}:{content}"
+    created_at = getattr(event, "created_at", None)
+    return PersistableMessage(
+        payload=AppendConversationMessage(
+            message_id=uuid5(MESSAGE_NAMESPACE, f"{call_id}:user:{identity}"),
+            role=ConversationMessageRole.USER,
+            content=content,
+            interrupted=False,
+            source_created_at=(
+                datetime.fromtimestamp(created_at, UTC)
+                if isinstance(created_at, (int, float))
+                else None
+            ),
         )
     )
 
@@ -66,12 +92,20 @@ class ConversationPersistence:
         if not self._accepting:
             self._incomplete = True
             return
-        try:
-            message = message_from_event(self._call_id, event)
-        except TypeError, ValueError:
-            self._incomplete = True
-            logger.warning("unsupported committed conversation item")
+        message = message_from_event(self._call_id, event)
+        if message is None:
             return
+        try:
+            self._queue.put_nowait(message)
+        except asyncio.QueueFull:
+            self._incomplete = True
+            logger.error("conversation persistence queue overflow")
+
+    def on_user_input_transcribed(self, event: object) -> None:
+        if not self._accepting:
+            self._incomplete = True
+            return
+        message = message_from_user_input_event(self._call_id, event)
         if message is None:
             return
         try:
