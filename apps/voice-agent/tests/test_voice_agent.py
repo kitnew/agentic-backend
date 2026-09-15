@@ -409,6 +409,10 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
                 },
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
+            "input_transcription": {
+                "deployment_config": {"model": "transcribe-model"},
+                "language": "sk",
+            },
             "tts": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "eleven_flash_v2_5"},
@@ -422,11 +426,18 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
             },
             "interruption": {"enabled": True},
         },
-        {"model": "realtime-secret", "tts": "tts-secret"},
+        {
+            "model": "realtime-secret",
+            "input_transcription": "realtime-secret",
+            "tts": "tts-secret",
+        },
     )
 
     assert captured_model["modalities"] == ["text"]
-    assert captured_model["input_audio_transcription"] is None
+    assert captured_model["input_audio_transcription"] == {
+        "model": "transcribe-model",
+        "language": "sk",
+    }
     assert "voice" not in captured_model
     assert captured_model["api_key"] == "realtime-secret"
     assert captured_model["turn_detection"].type == "server_vad"  # type: ignore[union-attr]
@@ -459,6 +470,10 @@ async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_outp
                 },
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
+            "input_transcription": {
+                "deployment_config": {"model": "transcribe-model"},
+                "language": "sk",
+            },
             "tts": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "eleven_flash_v2_5"},
@@ -468,7 +483,11 @@ async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_outp
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
         },
-        {"model": "realtime-secret", "tts": "tts-secret"},
+        {
+            "model": "realtime-secret",
+            "input_transcription": "realtime-secret",
+            "tts": "tts-secret",
+        },
     )
     try:
         assert session.stt is None

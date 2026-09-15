@@ -229,7 +229,7 @@ class RuntimeResolver:
         if architecture == self._architectures.REALTIME:
             return self._realtime(state, overrides, business)
         if architecture == self._architectures.HALF_CASCADE:
-            return self._half_cascade(state, overrides)
+            return self._half_cascade(state, overrides, business)
         self._reject(
             ResolutionFailureReason.CURRENT_STATE_INVALID, architecture=architecture
         )
@@ -292,6 +292,26 @@ class RuntimeResolver:
         business: BusinessInfo,
     ) -> ResolvedRealtimeRuntime:
         policy, model = self._realtime_model(state)
+        transcription = self._realtime_transcription(
+            state, policy, model, overrides, business
+        )
+        return ResolvedRealtimeRuntime(
+            "realtime",
+            ResolvedRealtimeModel(self._provenance(policy), model),
+            transcription,
+            str(overrides.get("realtime", {}).get("voice", policy.value.default_voice)),
+            policy.value.turn_completion,
+            policy.value.interruption,
+        )
+
+    def _realtime_transcription(
+        self,
+        state: RuntimeResolutionState,
+        policy: _ActiveRuntimeComponent[RealtimeDefaults],
+        model: ResolvedProviderResource,
+        overrides: RuntimeOverrides,
+        business: BusinessInfo,
+    ) -> ResolvedRealtimeTranscription:
         transcription = self._resource(
             state,
             policy.value.input_transcription.deployment_ref,
@@ -317,30 +337,27 @@ class RuntimeResolver:
                 transcription_connection_ref=transcription.connection.ref.value,
                 invariant="azure_same_connection",
             )
-        return ResolvedRealtimeRuntime(
-            "realtime",
-            ResolvedRealtimeModel(self._provenance(policy), model),
-            ResolvedRealtimeTranscription(
-                transcription,
-                business.localization.default_locale,
-                ResolvedSpeechHints(
-                    ResolvedKeyterms(
-                        SpeechHintStatus.UNSUPPORTED,
-                        tuple(overrides.get("stt", {}).get("keyterms", [])),
-                    )
+        return ResolvedRealtimeTranscription(
+            transcription,
+            business.localization.default_locale,
+            ResolvedSpeechHints(
+                ResolvedKeyterms(
+                    SpeechHintStatus.UNSUPPORTED,
+                    tuple(overrides.get("stt", {}).get("keyterms", [])),
                 ),
             ),
-            str(overrides.get("realtime", {}).get("voice", policy.value.default_voice)),
-            policy.value.turn_completion,
-            policy.value.interruption,
         )
 
     def _half_cascade(
         self,
         state: RuntimeResolutionState,
         overrides: RuntimeOverrides,
+        business: BusinessInfo,
     ) -> ResolvedHalfCascadeRuntime:
         policy, model = self._realtime_model(state)
+        transcription = self._realtime_transcription(
+            state, policy, model, overrides, business
+        )
         tts = self._system(state, "TTSDefaults", TTSDefaults)
         tts_resource = self._resource(
             state, tts.value.deployment_ref, DeploymentKind.TTS, tts
@@ -349,6 +366,7 @@ class RuntimeResolver:
         return ResolvedHalfCascadeRuntime(
             "half-cascade",
             ResolvedRealtimeModel(self._provenance(policy), model),
+            transcription,
             ResolvedCascadeTTS(
                 self._provenance(tts), tts.value, tts_resource, str(voice)
             ),

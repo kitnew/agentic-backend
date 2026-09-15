@@ -222,13 +222,20 @@ def create_half_cascade_session(
     tts_config = runtime["tts"]
     if tts_config["provider_kind"] != "elevenlabs":
         raise ValueError(f"unsupported TTS provider: {tts_config['provider_kind']}")
+    transcription = runtime["input_transcription"]
+    transcription_config = transcription["deployment_config"]
     _, tts_language = provider_languages(str(runtime["locale"]))
     # LiveKit streams text-only Realtime output through session TTS and cancels
     # both the generation and synthesis when the caller interrupts.
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
         modalities=["text"],
-        input_audio_transcription=None,
+        input_audio_transcription={
+            "model": _required_string(transcription_config, "model"),
+            "language": _required_string(transcription, "language")
+            .partition("-")[0]
+            .lower(),
+        },
     )
     tts = _create_tts(tts_config, tts_language, secrets["tts"])
     connect_options = agents.APIConnectOptions(

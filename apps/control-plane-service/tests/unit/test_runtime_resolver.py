@@ -612,10 +612,9 @@ async def test_tenant_voices_override_platform_defaults() -> None:
 
 
 @pytest.mark.asyncio
-async def test_half_cascade_resolves_realtime_and_tts_without_stt() -> None:
+async def test_half_cascade_resolves_realtime_tts_and_input_transcription() -> None:
     value = state(["half-cascade"])
     deployments = dict(value.deployments)
-    deployments.pop(IDS["realtime_stt"])
 
     result = await resolver(replace(value, deployments=deployments)).resolve_runtime(
         TENANT
@@ -624,19 +623,20 @@ async def test_half_cascade_resolves_realtime_and_tts_without_stt() -> None:
 
     assert isinstance(selected, ResolvedHalfCascadeRuntime)
     assert selected.model.resource.deployment.ref.value == IDS["realtime"]
+    assert selected.input_transcription.resource.deployment.ref.value == IDS["realtime_stt"]
     assert selected.tts.resource.deployment.ref.value == IDS["tts"]
     assert selected.tts.voice == "platform-cascade"
-    assert not hasattr(selected, "stt")
-    assert not hasattr(selected, "input_transcription")
 
     runtime = ExecutionMaterializationService._voice_runtime(selected)
     assert runtime["stt"] is None
     assert runtime["llm"] is None
     assert runtime["realtime"] is None
     assert runtime["half_cascade"]["model"]["deployment_kind"] == "realtime"  # type: ignore[index]
+    assert runtime["half_cascade"]["input_transcription"]["deployment_kind"] == "stt"  # type: ignore[index]
     assert runtime["half_cascade"]["tts"]["deployment_kind"] == "tts"  # type: ignore[index]
     assert ExecutionMaterializationService._runtime_bindings(selected) == {
         RuntimeSecretSlot.MODEL.value: str(IDS["realtime_credential"]),
+        RuntimeSecretSlot.INPUT_TRANSCRIPTION.value: str(IDS["realtime_credential"]),
         RuntimeSecretSlot.TTS.value: str(IDS["eleven_credential"]),
     }
 
@@ -646,8 +646,10 @@ async def test_half_cascade_resolves_realtime_and_tts_without_stt() -> None:
     ("deployment_name", "mutation", "reason"),
     [
         ("realtime", "missing", ResolutionFailureReason.MISSING_RESOURCE),
+        ("realtime_stt", "missing", ResolutionFailureReason.MISSING_RESOURCE),
         ("tts", "missing", ResolutionFailureReason.MISSING_RESOURCE),
         ("realtime", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
+        ("realtime_stt", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
         ("tts", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
         ("tts", "wrong_kind", ResolutionFailureReason.WRONG_RESOURCE_KIND),
         ("tts", "wrong_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),

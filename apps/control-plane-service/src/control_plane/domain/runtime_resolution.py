@@ -152,6 +152,7 @@ class ResolvedRealtimeRuntime:
 class ResolvedHalfCascadeRuntime:
     architecture: Literal["half-cascade"]
     model: ResolvedRealtimeModel
+    input_transcription: ResolvedRealtimeTranscription
     tts: ResolvedCascadeTTS
     turn_completion: RealtimeTurnCompletion
     interruption: RealtimeInterruption

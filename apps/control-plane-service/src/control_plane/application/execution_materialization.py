@@ -401,6 +401,15 @@ class ExecutionMaterializationService:
                 "realtime": None,
                 "half_cascade": {
                     "model": cls._provider_semantics(runtime.model.resource),
+                    "input_transcription": {
+                        "language": runtime.input_transcription.language,
+                        "speech_hints": cls._plain(
+                            runtime.input_transcription.speech_hints
+                        ),
+                        **cls._provider_semantics(
+                            runtime.input_transcription.resource
+                        ),
+                    },
                     "tts": {
                         **cls._without_deployment_ref(runtime.tts.defaults),
                         "voice": runtime.tts.voice,
@@ -463,6 +472,7 @@ class ExecutionMaterializationService:
         elif isinstance(runtime, ResolvedHalfCascadeRuntime):
             resources = {
                 RuntimeSecretSlot.MODEL: runtime.model.resource,
+                RuntimeSecretSlot.INPUT_TRANSCRIPTION: runtime.input_transcription.resource,
                 RuntimeSecretSlot.TTS: runtime.tts.resource,
             }
         else:
