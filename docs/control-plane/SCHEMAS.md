@@ -1968,11 +1968,11 @@ Runtime architecture resolution composes those references as follows:
 ```text
 cascade      → STTDefaults + LLMDefaults + TTSDefaults
 realtime     → RealtimeDefaults + RealtimeDefaults.input_transcription
-half-cascade → RealtimeDefaults.deployment_ref + TTSDefaults
+half-cascade → RealtimeDefaults + RealtimeDefaults.input_transcription + TTSDefaults
 ```
 
-`half-cascade` does not resolve or materialize the realtime input-transcription
-deployment.
+`half-cascade` uses the same realtime input-transcription deployment as
+`realtime`, while routing the realtime text output through the configured TTS.
 
 ## Credential ownership
 
