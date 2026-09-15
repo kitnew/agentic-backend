@@ -1,6 +1,6 @@
+import logging
 from collections.abc import Mapping
 from datetime import datetime
-import logging
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
