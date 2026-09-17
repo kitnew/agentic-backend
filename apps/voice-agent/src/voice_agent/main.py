@@ -108,14 +108,23 @@ def parse_metadata(raw_metadata: str) -> LiveKitJobMetadata:
 async def send_greeting(
     session: agents.AgentSession,
     greeting: str,
+    *,
+    tts_available: bool | None = None,
 ) -> None:
-    if session.tts is not None:
+    if tts_available if tts_available is not None else session.tts is not None:
         await session.say(greeting, add_to_chat_ctx=True)
         return
     await session.generate_reply(
         instructions=f"say {greeting}",
         input_modality="audio",
     )
+
+
+def context_has_tts(context: VoiceExecutionContext) -> bool:
+    if context.runtime.get("tts") is not None:
+        return True
+    half_cascade = context.runtime.get("half_cascade")
+    return isinstance(half_cascade, dict) and half_cascade.get("tts") is not None
 
 
 async def resolve_call_session_id(
@@ -180,24 +189,58 @@ async def resolve_call_session_id(
 
 
 def assemble_instructions(context: VoiceExecutionContext) -> str:
-    timezone = str(context.tenant["timezone"])
+    timezone = context.business.timezone
     local_now = datetime.now(ZoneInfo(timezone))
-    return "\n\n".join(
-        part
-        for part in (
-            str(context.prompts["system"]),
-            str(context.prompts["profile"]),
-            str(context.prompts["tenant"]),
-            str(context.prompts.get("interaction") or ""),
-            f"Locale: {context.tenant['locale']}",
-            f"Timezone: {timezone}",
-            f"Current local date: {local_now.date().isoformat()}",
-            f"Current local time: {local_now.strftime('%H:%M:%S')}",
-            "Use a capability tool when its inputs are known. Do not promise success before its result. Capability results are authoritative for the requested operation.",
-            "Use the calculator whenever exact arithmetic is required. It performs one operation per call; decompose multi-step calculations into sequential calls and pass each result forward. It does not interpret business meaning. percentage(A, B) means B percent of A.",
-            str(context.prompts["knowledge"]),
+    agent = [
+        "[Agent]",
+        f"Display name: {context.agent.display_name}",
+        f"Role: {context.agent.role}",
+    ]
+    if context.agent.grammatical_gender is not None:
+        agent.append(f"Grammatical gender: {context.agent.grammatical_gender}")
+    agent.append(f"Conversation scope: {context.agent.conversation_scope}")
+
+    business = [
+        "[Business]",
+        f"Name: {context.business.name}",
+        f"Type: {context.business.type}",
+    ]
+    if context.business.address is not None:
+        business.append(f"Address: {context.business.address}")
+    business.append("Phones:")
+    business.extend(f"- {value}" for value in context.business.phones)
+    business.append("Emails:")
+    business.extend(f"- {value}" for value in context.business.emails)
+    if context.business.website is not None:
+        business.append(f"Website: {context.business.website}")
+    if context.business.links:
+        business.append("Links:")
+        business.extend(
+            f"- {link.label}: {link.value}" for link in context.business.links
         )
-        if part
+    business.extend(
+        (
+            "[Localization]",
+            f"Default locale: {context.business.default_locale}",
+            f"Timezone: {timezone}",
+        )
+    )
+
+    return "\n\n".join(
+        (
+            f"[System]\n{context.prompts.system}",
+            f"[Profile]\n{context.prompts.profile}",
+            f"[Interaction]\n{context.prompts.interaction}",
+            f"[Tenant]\n{context.prompts.tenant}",
+            "\n".join(agent),
+            "\n".join(business),
+            f"[Knowledge]\n{context.prompts.knowledge}",
+            (
+                "[Dynamic context]\n"
+                f"Current local date: {local_now.date().isoformat()}\n"
+                f"Current local time: {local_now.strftime('%H:%M')}"
+            ),
+        )
     )
 
 
@@ -513,7 +556,7 @@ async def run_job(
         prompt_cache_key = (
             "voice-agent-prompt:"
             + hashlib.sha256(
-                f"{context.prompts['system']}\0{context.prompts['profile']}".encode()
+                f"{context.prompts.system}\0{context.prompts.profile}".encode()
             ).hexdigest()
         )
         telemetry = current_voice_telemetry()
@@ -536,7 +579,10 @@ async def run_job(
         }
         match context.architecture:
             case "cascade":
-                runtime = {**context.runtime, "locale": context.tenant["locale"]}
+                runtime = {
+                    **context.runtime,
+                    "locale": context.business.default_locale,
+                }
                 session = create_agent_session(
                     settings,
                     runtime,
@@ -550,7 +596,7 @@ async def run_job(
             case "half-cascade":
                 runtime = {
                     **cast(dict[str, Any], context.runtime["half_cascade"]),
-                    "locale": context.tenant["locale"],
+                    "locale": context.business.default_locale,
                 }
                 session = create_half_cascade_session(settings, runtime, secrets)
         persistence = ConversationPersistence(backend, call_id)
@@ -636,7 +682,8 @@ async def run_job(
             try:
                 await send_greeting(
                     session,
-                    str(context.agent["greeting"]),
+                    context.agent.greeting,
+                    tts_available=context_has_tts(context),
                 )
             except Exception:
                 if not closed.done():

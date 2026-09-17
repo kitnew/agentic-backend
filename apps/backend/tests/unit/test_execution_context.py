@@ -12,10 +12,29 @@ async def test_voice_context_is_passed_through_without_snapshot_reconstruction()
 ):
     expected = VoiceExecutionContext(
         execution_id=UUID(int=1),
-        tenant={"locale": "sk-SK", "timezone": "Europe/Bratislava"},
-        agent={"name": "Agent", "personality": "default", "greeting": "Hello"},
+        agent={
+            "display_name": "Agent",
+            "role": "Concierge",
+            "greeting": "Hello",
+            "conversation_scope": "property_only",
+        },
+        business={
+            "name": "Hotel",
+            "type": "hotel",
+            "phones": [],
+            "emails": [],
+            "links": [],
+            "default_locale": "sk-SK",
+            "timezone": "Europe/Bratislava",
+        },
         architecture="cascade",
-        prompts={"system": "system", "profile": "", "tenant": "", "knowledge": ""},
+        prompts={
+            "system": "system",
+            "profile": "",
+            "interaction": "",
+            "tenant": "",
+            "knowledge": "",
+        },
         runtime={"stt": {}, "llm": {}, "tts": {}, "realtime": None},
         actions=[],
         handoff=[],

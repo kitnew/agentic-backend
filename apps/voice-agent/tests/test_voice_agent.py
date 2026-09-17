@@ -1,11 +1,13 @@
 import asyncio
 import inspect
+from datetime import datetime as RealDatetime
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import jwt
 import pytest
+import voice_agent.main as voice_main
 from contracts import (
     CapabilityInvocationStatus,
     HumanHandoffResponse,
@@ -63,12 +65,29 @@ def settings(**overrides: object) -> VoiceAgentSettings:
 def runtime_context() -> VoiceExecutionContext:
     return VoiceExecutionContext(
         execution_id=uuid4(),
-        tenant={"locale": "sk-SK", "timezone": "Europe/Bratislava"},
-        agent={"name": "Amelia", "personality": "helpful", "greeting": "Dobry den"},
+        agent={
+            "display_name": "Amelia",
+            "role": "Hotel concierge",
+            "grammatical_gender": "feminine",
+            "greeting": "Dobry den",
+            "conversation_scope": "property_only",
+        },
+        business={
+            "name": "Grand Hotel",
+            "type": "hotel",
+            "address": "Main Street 1",
+            "phones": ["+421900123456"],
+            "emails": ["hello@example.com"],
+            "website": "https://example.com",
+            "links": [{"label": "Instagram", "value": "@grandhotel"}],
+            "default_locale": "sk-SK",
+            "timezone": "Europe/Bratislava",
+        },
         architecture="cascade",
         prompts={
             "system": "System prompt",
             "profile": "Profile prompt",
+            "interaction": "Interaction prompt",
             "tenant": "Tenant prompt",
             "knowledge": "Knowledge",
         },
@@ -335,7 +354,10 @@ def test_realtime_factory_requires_input_transcription_model(
                     "deployment_config": {"deployment_name": "realtime-deployment"},
                     "connection_config": {"endpoint": "https://realtime.example"},
                 },
-                "turn_completion": {"strategy": "server_vad", "silence_duration_ms": 500},
+                "turn_completion": {
+                    "strategy": "server_vad",
+                    "silence_duration_ms": 500,
+                },
                 "interruption": {"enabled": True},
                 "input_transcription": {
                     "deployment_config": {"deployment_name": "gpt-live-transcribe"},
@@ -700,14 +722,61 @@ async def test_service_jwt_has_one_requested_scope() -> None:
         await client.aclose()
 
 
-def test_prompt_assembly_uses_only_runtime_material() -> None:
+def test_prompt_assembly_uses_only_runtime_material(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FixedDatetime:
+        @classmethod
+        def now(cls, timezone):
+            return RealDatetime(2026, 9, 17, 14, 5, tzinfo=timezone)
+
+    monkeypatch.setattr(voice_main, "datetime", FixedDatetime)
     context = runtime_context()
-    context.prompts["interaction"] = "Interaction prompt"
     instructions = assemble_instructions(context)
-    assert "Interaction prompt" in instructions
-    assert "Timezone: Europe/Bratislava" in instructions
-    assert "Current local date: " in instructions
-    assert "Current local time: " in instructions
+    assert (
+        instructions
+        == """[System]
+System prompt
+
+[Profile]
+Profile prompt
+
+[Interaction]
+Interaction prompt
+
+[Tenant]
+Tenant prompt
+
+[Agent]
+Display name: Amelia
+Role: Hotel concierge
+Grammatical gender: feminine
+Conversation scope: property_only
+
+[Business]
+Name: Grand Hotel
+Type: hotel
+Address: Main Street 1
+Phones:
+- +421900123456
+Emails:
+- hello@example.com
+Website: https://example.com
+Links:
+- Instagram: @grandhotel
+[Localization]
+Default locale: sk-SK
+Timezone: Europe/Bratislava
+
+[Knowledge]
+Knowledge
+
+[Dynamic context]
+Current local date: 2026-09-17
+Current local time: 14:05"""
+    )
+    assert context.agent.greeting not in instructions
+    assert "Use the calculator" not in instructions
 
 
 @pytest.mark.parametrize(
@@ -1251,22 +1320,25 @@ async def test_greeting_uses_configured_tts_and_chat_history() -> None:
 
 
 @pytest.mark.asyncio
-async def test_realtime_greeting_preserves_text_and_chat_history() -> None:
-    calls: list[dict[str, object]] = []
+async def test_realtime_greeting_falls_back_to_generation() -> None:
+    calls: list[tuple[str, object]] = []
 
     class FakeSession:
         tts = None
 
         async def generate_reply(self, **kwargs: object) -> None:
-            calls.append(kwargs)
+            calls.append(("generate_reply", kwargs))
 
-        async def say(self, **kwargs: object) -> None:
-            raise AssertionError("realtime greeting must use generate_reply")
+        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
+            raise AssertionError("realtime greeting should use generation fallback")
 
     await send_greeting(FakeSession(), "Добрый день")  # type: ignore[arg-type]
 
     assert calls == [
-        {"instructions": "say Добрый день", "input_modality": "audio"}
+        (
+            "generate_reply",
+            {"instructions": "say Добрый день", "input_modality": "audio"},
+        )
     ]
 
 

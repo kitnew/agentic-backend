@@ -295,7 +295,7 @@ class CapabilityInvocationService:
                 "caller_phone": call.caller_phone_e164 or "",
                 "call_id": str(call.id),
                 "tool_call_id": request.tool_call_id,
-                "timezone": str(voice.tenant.get("timezone", "UTC")),
+                "timezone": voice.business.timezone,
             },
             confirmed=skip_confirmation,
             created_at=now,

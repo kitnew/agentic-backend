@@ -713,8 +713,8 @@ class FinalizationService:
                 "ended_at": call.ended_at.isoformat() if call.ended_at else None,
             },
             "agent": {
-                "id": voice.agent.get("personality"),
-                "name": voice.agent.get("name"),
+                "display_name": voice.agent.display_name,
+                "role": voice.agent.role,
             },
             "inputs": inputs,
         }
