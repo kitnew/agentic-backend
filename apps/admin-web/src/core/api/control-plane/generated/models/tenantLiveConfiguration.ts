@@ -6,12 +6,14 @@
  */
 import type { ActionsAvailability } from './actionsAvailability';
 import type { Architecture } from './architecture';
+import type { InteractionModeReference } from './interactionModeReference';
 import type { ProfileReference } from './profileReference';
 import type { RuntimeOverrides } from './runtimeOverrides';
 
 export interface TenantLiveConfiguration {
   actions_availability: ActionsAvailability;
   architecture: Architecture;
+  interaction_mode_reference: InteractionModeReference;
   profile_reference: ProfileReference;
   runtime_overrides: RuntimeOverrides;
 }

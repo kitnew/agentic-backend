@@ -244,13 +244,13 @@ def test_tenant_plan_and_apply_use_tenant_high_level_paths(
     desired = {
         "tenant_prompt": {"content": "hello"},
         "knowledge": {"content": "knowledge"},
-        "agent_personality": {
-            "identity": "concierge",
+        "agent_identity": {
             "display_name": "Concierge",
+            "role": "Hotel concierge",
             "greeting": "Hello",
             "conversation_scope": "property_only",
         },
-        "business_info": {
+        "business_identity": {
             "business": {"name": "Hotel", "type": "hotel"},
             "contact": {"phones": [], "emails": []},
             "localization": {"default_locale": "en", "timezone": "UTC"},
@@ -258,6 +258,7 @@ def test_tenant_plan_and_apply_use_tenant_high_level_paths(
         "actions_definition": {"actions": {}},
         "architecture": {"architecture_key": "cascade"},
         "profile_reference": {"profile_key": "concierge"},
+        "interaction_mode_reference": {"mode_key": "voice"},
         "runtime_overrides": {},
         "actions_availability": {"actions": {}},
     }

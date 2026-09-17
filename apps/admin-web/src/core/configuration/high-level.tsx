@@ -95,11 +95,12 @@ export function tenantDesired(
   return {
     tenant_prompt: selected(value.versioned.tenant_prompt),
     knowledge: selected(value.versioned.knowledge),
-    agent_personality: selected(value.versioned.agent_personality),
-    business_info: selected(value.versioned.business_info),
+    agent_identity: selected(value.versioned.agent_identity),
+    business_identity: selected(value.versioned.business_identity),
     actions_definition: selected(value.versioned.actions_definition),
     architecture: value.live.architecture,
     profile_reference: value.live.profile_reference,
+    interaction_mode_reference: value.live.interaction_mode_reference,
     runtime_overrides: value.live.runtime_overrides,
     actions_availability: value.live.actions_availability,
   };

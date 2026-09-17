@@ -15,11 +15,17 @@ def resource(kind: WorkspaceResourceKind) -> ResourceId:
     return ResourceId("tenant", "hotel", kind)
 
 
-def test_profile_selection_and_agent_profile_are_separate_files():
+def test_agent_identity_and_profile_selection_are_separate_files():
     root = Path("definitions")
     agent = resource(WorkspaceResourceKind.AGENT)
     selection = resource(WorkspaceResourceKind.PROMPT_PROFILE_SELECTION)
-    assert dump(root, agent, {"agent_profile": "concierge"})[root / "tenants/hotel/agent.yaml"]
+    identity = {
+        "display_name": "Amelia",
+        "role": "Hotel concierge",
+        "greeting": "Welcome",
+        "conversation_scope": "property_only",
+    }
+    assert dump(root, agent, identity)[root / "tenants/hotel/agent.yaml"]
     assert dump(root, selection, {"profile_key": "default"})[root / "tenants/hotel/prompt/profile_selection.yaml"]
 
 

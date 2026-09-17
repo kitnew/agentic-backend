@@ -9,6 +9,7 @@ from typing_extensions import Self
 if TYPE_CHECKING:
     from ..models.actions_availability import ActionsAvailability
     from ..models.architecture import Architecture
+    from ..models.interaction_mode_reference import InteractionModeReference
     from ..models.profile_reference import ProfileReference
     from ..models.runtime_overrides import RuntimeOverrides
 
@@ -22,12 +23,14 @@ class TenantLiveConfiguration:
     Attributes:
         actions_availability (ActionsAvailability):
         architecture (Architecture):
+        interaction_mode_reference (InteractionModeReference):
         profile_reference (ProfileReference):
         runtime_overrides (RuntimeOverrides):
     """
 
     actions_availability: ActionsAvailability
     architecture: Architecture
+    interaction_mode_reference: InteractionModeReference
     profile_reference: ProfileReference
     runtime_overrides: RuntimeOverrides
 
@@ -35,6 +38,8 @@ class TenantLiveConfiguration:
         actions_availability = self.actions_availability.to_dict()
 
         architecture = self.architecture.to_dict()
+
+        interaction_mode_reference = self.interaction_mode_reference.to_dict()
 
         profile_reference = self.profile_reference.to_dict()
 
@@ -46,6 +51,7 @@ class TenantLiveConfiguration:
             {
                 "actions_availability": actions_availability,
                 "architecture": architecture,
+                "interaction_mode_reference": interaction_mode_reference,
                 "profile_reference": profile_reference,
                 "runtime_overrides": runtime_overrides,
             }
@@ -57,6 +63,7 @@ class TenantLiveConfiguration:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.actions_availability import ActionsAvailability
         from ..models.architecture import Architecture
+        from ..models.interaction_mode_reference import InteractionModeReference
         from ..models.profile_reference import ProfileReference
         from ..models.runtime_overrides import RuntimeOverrides
 
@@ -67,6 +74,10 @@ class TenantLiveConfiguration:
 
         architecture = Architecture.from_dict(d.pop("architecture"))
 
+        interaction_mode_reference = InteractionModeReference.from_dict(
+            d.pop("interaction_mode_reference")
+        )
+
         profile_reference = ProfileReference.from_dict(d.pop("profile_reference"))
 
         runtime_overrides = RuntimeOverrides.from_dict(d.pop("runtime_overrides"))
@@ -74,6 +85,7 @@ class TenantLiveConfiguration:
         tenant_live_configuration = cls(
             actions_availability=actions_availability,
             architecture=architecture,
+            interaction_mode_reference=interaction_mode_reference,
             profile_reference=profile_reference,
             runtime_overrides=runtime_overrides,
         )

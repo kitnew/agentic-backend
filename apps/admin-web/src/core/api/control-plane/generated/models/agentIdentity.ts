@@ -4,14 +4,16 @@
  * Agentic Backend Control Plane
  * OpenAPI spec version: 0.1.0
  */
+import type { AgentIdentityGrammaticalGender } from './agentIdentityGrammaticalGender';
 
-export interface AgentPersonality {
+export interface AgentIdentity {
   conversation_scope: 'property_only';
   /**
      * @minLength 1
      * @maxLength 100
      */
   display_name: string;
+  grammatical_gender?: AgentIdentityGrammaticalGender;
   /**
      * @minLength 1
      * @maxLength 1000
@@ -20,7 +22,6 @@ export interface AgentPersonality {
   /**
      * @minLength 1
      * @maxLength 100
-     * @pattern ^[a-z][a-z0-9_]*$
      */
-  identity: string;
+  role: string;
 }

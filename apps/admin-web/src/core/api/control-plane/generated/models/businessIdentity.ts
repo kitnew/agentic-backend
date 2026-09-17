@@ -5,11 +5,14 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Business } from './business';
+import type { BusinessLink } from './businessLink';
 import type { Contact } from './contact';
 import type { Localization } from './localization';
 
-export interface BusinessInfo {
+export interface BusinessIdentity {
   business: Business;
   contact: Contact;
+  /** @maxItems 50 */
+  links?: BusinessLink[];
   localization: Localization;
 }

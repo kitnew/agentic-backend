@@ -50,6 +50,12 @@ beforeEach(() => {
     http.get("/management/v1/registries/architectures", () =>
       HttpResponse.json([
         { key: "cascade", name: "Cascade", description: "", metadata: {} },
+        {
+          key: "half-cascade",
+          name: "Half cascade",
+          description: "",
+          metadata: { runtime_supported: true },
+        },
       ]),
     ),
     http.get("/management/v1/platform/configuration", () =>

@@ -8,8 +8,8 @@ from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..models.prompt_state_actions_definition import PromptStateActionsDefinition
-    from ..models.prompt_state_agent_personality import PromptStateAgentPersonality
-    from ..models.prompt_state_business_info import PromptStateBusinessInfo
+    from ..models.prompt_state_agent_identity import PromptStateAgentIdentity
+    from ..models.prompt_state_business_identity import PromptStateBusinessIdentity
     from ..models.prompt_state_knowledge import PromptStateKnowledge
     from ..models.prompt_state_tenant_prompt import PromptStateTenantPrompt
 
@@ -22,24 +22,24 @@ class TenantVersionedConfiguration:
     """
     Attributes:
         actions_definition (PromptStateActionsDefinition):
-        agent_personality (PromptStateAgentPersonality):
-        business_info (PromptStateBusinessInfo):
+        agent_identity (PromptStateAgentIdentity):
+        business_identity (PromptStateBusinessIdentity):
         knowledge (PromptStateKnowledge):
         tenant_prompt (PromptStateTenantPrompt):
     """
 
     actions_definition: PromptStateActionsDefinition
-    agent_personality: PromptStateAgentPersonality
-    business_info: PromptStateBusinessInfo
+    agent_identity: PromptStateAgentIdentity
+    business_identity: PromptStateBusinessIdentity
     knowledge: PromptStateKnowledge
     tenant_prompt: PromptStateTenantPrompt
 
     def to_dict(self) -> dict[str, Any]:
         actions_definition = self.actions_definition.to_dict()
 
-        agent_personality = self.agent_personality.to_dict()
+        agent_identity = self.agent_identity.to_dict()
 
-        business_info = self.business_info.to_dict()
+        business_identity = self.business_identity.to_dict()
 
         knowledge = self.knowledge.to_dict()
 
@@ -50,8 +50,8 @@ class TenantVersionedConfiguration:
         field_dict.update(
             {
                 "actions_definition": actions_definition,
-                "agent_personality": agent_personality,
-                "business_info": business_info,
+                "agent_identity": agent_identity,
+                "business_identity": business_identity,
                 "knowledge": knowledge,
                 "tenant_prompt": tenant_prompt,
             }
@@ -64,8 +64,8 @@ class TenantVersionedConfiguration:
         from ..models.prompt_state_actions_definition import (
             PromptStateActionsDefinition,
         )
-        from ..models.prompt_state_agent_personality import PromptStateAgentPersonality
-        from ..models.prompt_state_business_info import PromptStateBusinessInfo
+        from ..models.prompt_state_agent_identity import PromptStateAgentIdentity
+        from ..models.prompt_state_business_identity import PromptStateBusinessIdentity
         from ..models.prompt_state_knowledge import PromptStateKnowledge
         from ..models.prompt_state_tenant_prompt import PromptStateTenantPrompt
 
@@ -74,11 +74,11 @@ class TenantVersionedConfiguration:
             d.pop("actions_definition")
         )
 
-        agent_personality = PromptStateAgentPersonality.from_dict(
-            d.pop("agent_personality")
-        )
+        agent_identity = PromptStateAgentIdentity.from_dict(d.pop("agent_identity"))
 
-        business_info = PromptStateBusinessInfo.from_dict(d.pop("business_info"))
+        business_identity = PromptStateBusinessIdentity.from_dict(
+            d.pop("business_identity")
+        )
 
         knowledge = PromptStateKnowledge.from_dict(d.pop("knowledge"))
 
@@ -86,8 +86,8 @@ class TenantVersionedConfiguration:
 
         tenant_versioned_configuration = cls(
             actions_definition=actions_definition,
-            agent_personality=agent_personality,
-            business_info=business_info,
+            agent_identity=agent_identity,
+            business_identity=business_identity,
             knowledge=knowledge,
             tenant_prompt=tenant_prompt,
         )

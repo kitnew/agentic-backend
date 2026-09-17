@@ -5,15 +5,15 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PromptStateActionsDefinition } from './promptStateActionsDefinition';
-import type { PromptStateAgentPersonality } from './promptStateAgentPersonality';
-import type { PromptStateBusinessInfo } from './promptStateBusinessInfo';
+import type { PromptStateAgentIdentity } from './promptStateAgentIdentity';
+import type { PromptStateBusinessIdentity } from './promptStateBusinessIdentity';
 import type { PromptStateKnowledge } from './promptStateKnowledge';
 import type { PromptStateTenantPrompt } from './promptStateTenantPrompt';
 
 export interface TenantVersionedConfiguration {
   actions_definition: PromptStateActionsDefinition;
-  agent_personality: PromptStateAgentPersonality;
-  business_info: PromptStateBusinessInfo;
+  agent_identity: PromptStateAgentIdentity;
+  business_identity: PromptStateBusinessIdentity;
   knowledge: PromptStateKnowledge;
   tenant_prompt: PromptStateTenantPrompt;
 }

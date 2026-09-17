@@ -122,28 +122,30 @@ const tenantConfiguration = {
       draft: { content: "draft tenant" },
     },
     knowledge: { active: { content: "active knowledge" } },
-    agent_personality: {
+    agent_identity: {
       active: {
-        identity: "active_agent",
         display_name: "Active",
+        role: "Active role",
         greeting: "Hello",
         conversation_scope: "property_only",
       },
       draft: {
-        identity: "draft_agent",
         display_name: "Draft",
+        role: "Draft role",
         greeting: "Hi",
         conversation_scope: "property_only",
       },
     },
-    business_info: {
+    business_identity: {
       active: {
         business: { name: "Active business", type: "hotel" },
+        links: [],
         contact: { address: null, phones: [], emails: [], website: null },
         localization: { default_locale: "en-US", timezone: "UTC" },
       },
       draft: {
         business: { name: "Draft business", type: "hotel" },
+        links: [],
         contact: { address: null, phones: [], emails: [], website: null },
         localization: { default_locale: "en-US", timezone: "UTC" },
       },
@@ -156,6 +158,7 @@ const tenantConfiguration = {
   live: {
     architecture: { architecture_key: "cascade" },
     profile_reference: { profile_key: "hotel" },
+    interaction_mode_reference: { mode_key: "friendly" },
     runtime_overrides: { tts: { voice_id: "voice-1" } },
     actions_availability: { actions: { new: true } },
   },
@@ -253,20 +256,22 @@ describe("high-level configuration transport and mappings", () => {
     expect(tenantDesired(tenantConfiguration)).toEqual({
       tenant_prompt: { content: "draft tenant" },
       knowledge: { content: "active knowledge" },
-      agent_personality: {
-        identity: "draft_agent",
+      agent_identity: {
         display_name: "Draft",
+        role: "Draft role",
         greeting: "Hi",
         conversation_scope: "property_only",
       },
-      business_info: {
+      business_identity: {
         business: { name: "Draft business", type: "hotel" },
+        links: [],
         contact: { address: null, phones: [], emails: [], website: null },
         localization: { default_locale: "en-US", timezone: "UTC" },
       },
       actions_definition: { actions: { new: {} } },
       architecture: { architecture_key: "cascade" },
       profile_reference: { profile_key: "hotel" },
+      interaction_mode_reference: { mode_key: "friendly" },
       runtime_overrides: { tts: { voice_id: "voice-1" } },
       actions_availability: { actions: { new: true } },
     });

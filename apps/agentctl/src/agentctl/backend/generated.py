@@ -22,20 +22,20 @@ _SYSTEM_FIELDS = {
 }
 
 _TENANT_FIELDS = {
-    WorkspaceResourceKind.AGENT: ("versioned", "agent_personality"),
+    WorkspaceResourceKind.AGENT: ("versioned", "agent_identity"),
     WorkspaceResourceKind.RUNTIME_ARCHITECTURE: ("live", "architecture"),
     WorkspaceResourceKind.RUNTIME_SPEECH: ("live", "runtime_overrides"),
     WorkspaceResourceKind.PROMPT_PROFILE_SELECTION: ("live", "profile_reference"),
     WorkspaceResourceKind.PROMPT_TENANT: ("versioned", "tenant_prompt"),
     WorkspaceResourceKind.KNOWLEDGE: ("versioned", "knowledge"),
     WorkspaceResourceKind.CAPABILITIES: ("versioned", "actions_definition"),
-    WorkspaceResourceKind.POST_CALL: ("versioned", "business_info"),
-    ResourceKind.AGENT: ("versioned", "agent_personality"),
+    WorkspaceResourceKind.POST_CALL: ("versioned", "business_identity"),
+    ResourceKind.AGENT: ("versioned", "agent_identity"),
     ResourceKind.RUNTIME: ("live", "architecture"),
     ResourceKind.PROMPT: ("versioned", "tenant_prompt"),
     ResourceKind.KNOWLEDGE: ("versioned", "knowledge"),
     ResourceKind.CAPABILITIES: ("versioned", "actions_definition"),
-    ResourceKind.POST_CALL: ("versioned", "business_info"),
+    ResourceKind.POST_CALL: ("versioned", "business_identity"),
 }
 
 

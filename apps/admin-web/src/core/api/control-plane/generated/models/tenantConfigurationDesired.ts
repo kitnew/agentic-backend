@@ -6,9 +6,10 @@
  */
 import type { ActionsAvailability } from './actionsAvailability';
 import type { ActionsDefinitionInput } from './actionsDefinitionInput';
-import type { AgentPersonality } from './agentPersonality';
+import type { AgentIdentity } from './agentIdentity';
 import type { Architecture } from './architecture';
-import type { BusinessInfo } from './businessInfo';
+import type { BusinessIdentity } from './businessIdentity';
+import type { InteractionModeReference } from './interactionModeReference';
 import type { Knowledge } from './knowledge';
 import type { ProfileReference } from './profileReference';
 import type { RuntimeOverrides } from './runtimeOverrides';
@@ -17,9 +18,10 @@ import type { TenantPrompt } from './tenantPrompt';
 export interface TenantConfigurationDesired {
   actions_availability: ActionsAvailability;
   actions_definition: ActionsDefinitionInput;
-  agent_personality: AgentPersonality;
+  agent_identity: AgentIdentity;
   architecture: Architecture;
-  business_info: BusinessInfo;
+  business_identity: BusinessIdentity;
+  interaction_mode_reference: InteractionModeReference;
   knowledge: Knowledge;
   profile_reference: ProfileReference;
   runtime_overrides: RuntimeOverrides;

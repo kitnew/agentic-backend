@@ -6,10 +6,12 @@ from .actions_definition_input import ActionsDefinitionInput
 from .actions_definition_input_actions import ActionsDefinitionInputActions
 from .actions_definition_output import ActionsDefinitionOutput
 from .actions_definition_output_actions import ActionsDefinitionOutputActions
-from .agent_personality import AgentPersonality
+from .agent_identity import AgentIdentity
+from .agent_identity_grammatical_gender import AgentIdentityGrammaticalGender
 from .architecture import Architecture
 from .business import Business
-from .business_info import BusinessInfo
+from .business_identity import BusinessIdentity
+from .business_link import BusinessLink
 from .cascade_endpointing import CascadeEndpointing
 from .cascade_interruption import CascadeInterruption
 from .cascade_policies import CascadePolicies
@@ -73,6 +75,7 @@ from .integration_connection_update_config import IntegrationConnectionUpdateCon
 from .integration_validation_response import IntegrationValidationResponse
 from .interaction_mode_configuration import InteractionModeConfiguration
 from .interaction_mode_create import InteractionModeCreate
+from .interaction_mode_reference import InteractionModeReference
 from .interaction_mode_update import InteractionModeUpdate
 from .interaction_prompt import InteractionPrompt
 from .knowledge import Knowledge
@@ -132,8 +135,8 @@ from .profile_prompt import ProfilePrompt
 from .profile_reference import ProfileReference
 from .profile_update import ProfileUpdate
 from .prompt_state_actions_definition import PromptStateActionsDefinition
-from .prompt_state_agent_personality import PromptStateAgentPersonality
-from .prompt_state_business_info import PromptStateBusinessInfo
+from .prompt_state_agent_identity import PromptStateAgentIdentity
+from .prompt_state_business_identity import PromptStateBusinessIdentity
 from .prompt_state_interaction_prompt import PromptStateInteractionPrompt
 from .prompt_state_knowledge import PromptStateKnowledge
 from .prompt_state_profile_prompt import PromptStateProfilePrompt
@@ -248,10 +251,12 @@ __all__ = (
     "ActionsDefinitionInputActions",
     "ActionsDefinitionOutput",
     "ActionsDefinitionOutputActions",
-    "AgentPersonality",
+    "AgentIdentity",
+    "AgentIdentityGrammaticalGender",
     "Architecture",
     "Business",
-    "BusinessInfo",
+    "BusinessIdentity",
+    "BusinessLink",
     "CascadeEndpointing",
     "CascadeInterruption",
     "CascadePolicies",
@@ -307,6 +312,7 @@ __all__ = (
     "IntegrationValidationResponse",
     "InteractionModeConfiguration",
     "InteractionModeCreate",
+    "InteractionModeReference",
     "InteractionModeUpdate",
     "InteractionPrompt",
     "Knowledge",
@@ -350,8 +356,8 @@ __all__ = (
     "ProfileReference",
     "ProfileUpdate",
     "PromptStateActionsDefinition",
-    "PromptStateAgentPersonality",
-    "PromptStateBusinessInfo",
+    "PromptStateAgentIdentity",
+    "PromptStateBusinessIdentity",
     "PromptStateInteractionPrompt",
     "PromptStateKnowledge",
     "PromptStateProfilePrompt",

@@ -346,13 +346,14 @@ describe("configuration form mappings", () => {
   it("maps tenant business lines, actions, and draft values", () => {
     const desired = tenantDesiredFromForm({
       ...emptyTenantFormState(),
-      identity: "assistant",
       display_name: "Assistant",
+      role: "Hotel concierge",
       greeting: "Hello",
       business_name: "Hotel",
       business_type: "hotel",
       phones: "+421 1\n\n+421 2",
       emails: "a@example.com\n b@example.com ",
+      links: '[{"label":"Instagram","value":"@hotel"}]',
       default_locale: "sk-SK",
       timezone: "Europe/Bratislava",
       tenant_prompt: "Tenant prompt",
@@ -361,9 +362,10 @@ describe("configuration form mappings", () => {
       actions_availability: '{"actions":{}}',
       architecture_key: "cascade",
       profile_key: "hotel",
+      interaction_mode_key: "voice",
     });
 
-    expect(desired.business_info).toEqual({
+    expect(desired.business_identity).toEqual({
       business: { name: "Hotel", type: "hotel" },
       contact: {
         address: null,
@@ -371,6 +373,7 @@ describe("configuration form mappings", () => {
         phones: ["+421 1", "+421 2"],
         website: null,
       },
+      links: [{ label: "Instagram", value: "@hotel" }],
       localization: { default_locale: "sk-SK", timezone: "Europe/Bratislava" },
     });
     expect(desired.actions_definition).toEqual({ actions: {} });

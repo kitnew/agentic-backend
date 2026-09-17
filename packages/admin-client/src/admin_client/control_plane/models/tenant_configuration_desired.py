@@ -9,9 +9,10 @@ from typing_extensions import Self
 if TYPE_CHECKING:
     from ..models.actions_availability import ActionsAvailability
     from ..models.actions_definition_input import ActionsDefinitionInput
-    from ..models.agent_personality import AgentPersonality
+    from ..models.agent_identity import AgentIdentity
     from ..models.architecture import Architecture
-    from ..models.business_info import BusinessInfo
+    from ..models.business_identity import BusinessIdentity
+    from ..models.interaction_mode_reference import InteractionModeReference
     from ..models.knowledge import Knowledge
     from ..models.profile_reference import ProfileReference
     from ..models.runtime_overrides import RuntimeOverrides
@@ -27,9 +28,10 @@ class TenantConfigurationDesired:
     Attributes:
         actions_availability (ActionsAvailability):
         actions_definition (ActionsDefinitionInput):
-        agent_personality (AgentPersonality):
+        agent_identity (AgentIdentity):
         architecture (Architecture):
-        business_info (BusinessInfo):
+        business_identity (BusinessIdentity):
+        interaction_mode_reference (InteractionModeReference):
         knowledge (Knowledge):
         profile_reference (ProfileReference):
         runtime_overrides (RuntimeOverrides):
@@ -38,9 +40,10 @@ class TenantConfigurationDesired:
 
     actions_availability: ActionsAvailability
     actions_definition: ActionsDefinitionInput
-    agent_personality: AgentPersonality
+    agent_identity: AgentIdentity
     architecture: Architecture
-    business_info: BusinessInfo
+    business_identity: BusinessIdentity
+    interaction_mode_reference: InteractionModeReference
     knowledge: Knowledge
     profile_reference: ProfileReference
     runtime_overrides: RuntimeOverrides
@@ -51,11 +54,13 @@ class TenantConfigurationDesired:
 
         actions_definition = self.actions_definition.to_dict()
 
-        agent_personality = self.agent_personality.to_dict()
+        agent_identity = self.agent_identity.to_dict()
 
         architecture = self.architecture.to_dict()
 
-        business_info = self.business_info.to_dict()
+        business_identity = self.business_identity.to_dict()
+
+        interaction_mode_reference = self.interaction_mode_reference.to_dict()
 
         knowledge = self.knowledge.to_dict()
 
@@ -71,9 +76,10 @@ class TenantConfigurationDesired:
             {
                 "actions_availability": actions_availability,
                 "actions_definition": actions_definition,
-                "agent_personality": agent_personality,
+                "agent_identity": agent_identity,
                 "architecture": architecture,
-                "business_info": business_info,
+                "business_identity": business_identity,
+                "interaction_mode_reference": interaction_mode_reference,
                 "knowledge": knowledge,
                 "profile_reference": profile_reference,
                 "runtime_overrides": runtime_overrides,
@@ -87,9 +93,10 @@ class TenantConfigurationDesired:
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
         from ..models.actions_availability import ActionsAvailability
         from ..models.actions_definition_input import ActionsDefinitionInput
-        from ..models.agent_personality import AgentPersonality
+        from ..models.agent_identity import AgentIdentity
         from ..models.architecture import Architecture
-        from ..models.business_info import BusinessInfo
+        from ..models.business_identity import BusinessIdentity
+        from ..models.interaction_mode_reference import InteractionModeReference
         from ..models.knowledge import Knowledge
         from ..models.profile_reference import ProfileReference
         from ..models.runtime_overrides import RuntimeOverrides
@@ -104,11 +111,15 @@ class TenantConfigurationDesired:
             d.pop("actions_definition")
         )
 
-        agent_personality = AgentPersonality.from_dict(d.pop("agent_personality"))
+        agent_identity = AgentIdentity.from_dict(d.pop("agent_identity"))
 
         architecture = Architecture.from_dict(d.pop("architecture"))
 
-        business_info = BusinessInfo.from_dict(d.pop("business_info"))
+        business_identity = BusinessIdentity.from_dict(d.pop("business_identity"))
+
+        interaction_mode_reference = InteractionModeReference.from_dict(
+            d.pop("interaction_mode_reference")
+        )
 
         knowledge = Knowledge.from_dict(d.pop("knowledge"))
 
@@ -121,9 +132,10 @@ class TenantConfigurationDesired:
         tenant_configuration_desired = cls(
             actions_availability=actions_availability,
             actions_definition=actions_definition,
-            agent_personality=agent_personality,
+            agent_identity=agent_identity,
             architecture=architecture,
-            business_info=business_info,
+            business_identity=business_identity,
+            interaction_mode_reference=interaction_mode_reference,
             knowledge=knowledge,
             profile_reference=profile_reference,
             runtime_overrides=runtime_overrides,

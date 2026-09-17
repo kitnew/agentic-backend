@@ -3,6 +3,7 @@ import { PageError } from "../../components/page-states";
 import { Button } from "../../components/ui/button";
 import { responseData } from "../api/client";
 import {
+  AgentIdentityGrammaticalGender,
   architecturesManagementV1RegistriesArchitecturesGet,
   type CatalogStatus,
   getConfigurationManagementV1PlatformConfigurationGet,
@@ -103,8 +104,9 @@ type PlatformFormState = {
 };
 
 export type TenantFormState = {
-  identity: string;
   display_name: string;
+  role: string;
+  grammatical_gender: "" | "feminine" | "masculine" | "neutral";
   greeting: string;
   conversation_scope: "property_only";
   business_name: string;
@@ -113,12 +115,14 @@ export type TenantFormState = {
   website: string;
   phones: string;
   emails: string;
+  links: string;
   default_locale: string;
   timezone: string;
   tenant_prompt: string;
   knowledge: string;
   architecture_key: string;
   profile_key: string;
+  interaction_mode_key: string;
   stt_keyterms_override: boolean;
   stt_keyterms: string;
   tts_voice_override: boolean;
@@ -460,8 +464,9 @@ export function platformDesiredFromForm(form: PlatformFormState) {
 
 export function emptyTenantFormState(): TenantFormState {
   return {
-    identity: "",
     display_name: "",
+    role: "",
+    grammatical_gender: "",
     greeting: "",
     conversation_scope: "property_only",
     business_name: "",
@@ -470,12 +475,14 @@ export function emptyTenantFormState(): TenantFormState {
     website: "",
     phones: "",
     emails: "",
+    links: "[]",
     default_locale: "",
     timezone: "",
     tenant_prompt: "",
     knowledge: "",
     architecture_key: "",
     profile_key: "",
+    interaction_mode_key: "",
     stt_keyterms_override: false,
     stt_keyterms: "",
     tts_voice_override: false,
@@ -494,22 +501,25 @@ export function tenantFormState(
   const tts = value.runtime_overrides.tts;
   const realtime = value.runtime_overrides.realtime;
   return {
-    identity: value.agent_personality.identity,
-    display_name: value.agent_personality.display_name,
-    greeting: value.agent_personality.greeting,
-    conversation_scope: value.agent_personality.conversation_scope,
-    business_name: value.business_info.business.name,
-    business_type: value.business_info.business.type,
-    address: value.business_info.contact.address ?? "",
-    website: value.business_info.contact.website ?? "",
-    phones: value.business_info.contact.phones.join("\n"),
-    emails: value.business_info.contact.emails.join("\n"),
-    default_locale: value.business_info.localization.default_locale,
-    timezone: value.business_info.localization.timezone,
+    display_name: value.agent_identity.display_name,
+    role: value.agent_identity.role,
+    grammatical_gender: value.agent_identity.grammatical_gender ?? "",
+    greeting: value.agent_identity.greeting,
+    conversation_scope: value.agent_identity.conversation_scope,
+    business_name: value.business_identity.business.name,
+    business_type: value.business_identity.business.type,
+    address: value.business_identity.contact.address ?? "",
+    website: value.business_identity.contact.website ?? "",
+    phones: value.business_identity.contact.phones.join("\n"),
+    emails: value.business_identity.contact.emails.join("\n"),
+    links: JSON.stringify(value.business_identity.links ?? [], null, 2),
+    default_locale: value.business_identity.localization.default_locale,
+    timezone: value.business_identity.localization.timezone,
     tenant_prompt: value.tenant_prompt.content,
     knowledge: value.knowledge.content,
     architecture_key: value.architecture.architecture_key,
     profile_key: value.profile_reference.profile_key,
+    interaction_mode_key: value.interaction_mode_reference.mode_key,
     stt_keyterms_override: stt !== undefined,
     stt_keyterms: stt?.keyterms?.join("\n") ?? "",
     tts_voice_override: tts !== undefined,
@@ -527,17 +537,23 @@ export function tenantDesiredFromForm(
   return {
     tenant_prompt: { content: form.tenant_prompt.trim() },
     knowledge: { content: form.knowledge },
-    agent_personality: {
-      identity: form.identity.trim(),
+    agent_identity: {
       display_name: form.display_name.trim(),
+      role: form.role.trim(),
+      ...(form.grammatical_gender
+        ? { grammatical_gender: form.grammatical_gender }
+        : {}),
       greeting: form.greeting.trim(),
       conversation_scope: form.conversation_scope,
     },
-    business_info: {
+    business_identity: {
       business: {
         name: form.business_name.trim(),
         type: form.business_type.trim(),
       },
+      links: JSON.parse(
+        form.links,
+      ) as TenantConfigurationDesired["business_identity"]["links"],
       contact: {
         address: form.address.trim() || null,
         phones: parseLines(form.phones),
@@ -554,6 +570,9 @@ export function tenantDesiredFromForm(
     ) as TenantConfigurationDesired["actions_definition"],
     architecture: { architecture_key: form.architecture_key.trim() },
     profile_reference: { profile_key: form.profile_key.trim() },
+    interaction_mode_reference: {
+      mode_key: form.interaction_mode_key.trim(),
+    },
     runtime_overrides: {
       ...(form.architecture_key === "cascade" && form.stt_keyterms_override
         ? { stt: { keyterms: parseLines(form.stt_keyterms) } }
@@ -1655,19 +1674,18 @@ function registryOptions(
   return options;
 }
 
-function profileOptions(
-  value: PlatformConfiguration | undefined,
+function catalogOptions(
+  entries: PlatformConfiguration["profiles"],
   selectedValue: string,
 ) {
-  const profiles = value?.profiles ?? [];
-  const options = [...profiles]
+  const options = [...entries]
     .sort(
       (left, right) =>
         Number(right.status === "enabled") - Number(left.status === "enabled"),
     )
-    .map((profile) => ({
-      value: profile.key,
-      label: `${profile.name} (${profile.key})${profile.status === "disabled" ? " — disabled" : ""}`,
+    .map((entry) => ({
+      value: entry.key,
+      label: `${entry.name} (${entry.key})${entry.status === "disabled" ? " — disabled" : ""}`,
     }));
   if (
     selectedValue &&
@@ -1690,6 +1708,7 @@ export function TenantConfigurationForm({
 }) {
   const architectures = useQuery({
     queryKey: ["control-plane", "architectures"],
+    staleTime: 0,
     queryFn: async () =>
       responseData<RegistryEntryResponse[]>(
         await architecturesManagementV1RegistriesArchitecturesGet(),
@@ -1730,19 +1749,7 @@ export function TenantConfigurationForm({
       <FormSection title="Agent">
         <FormGrid>
           <Field
-            error={errorAt(errors, "agent_personality.identity")}
-            label="Identity"
-          >
-            <input
-              required
-              value={value.identity}
-              onChange={(event) =>
-                onChange({ ...value, identity: event.target.value })
-              }
-            />
-          </Field>
-          <Field
-            error={errorAt(errors, "agent_personality.display_name")}
+            error={errorAt(errors, "agent_identity.display_name")}
             label="Display name"
           >
             <input
@@ -1752,6 +1759,34 @@ export function TenantConfigurationForm({
                 onChange({ ...value, display_name: event.target.value })
               }
             />
+          </Field>
+          <Field error={errorAt(errors, "agent_identity.role")} label="Role">
+            <input
+              required
+              value={value.role}
+              onChange={(event) =>
+                onChange({ ...value, role: event.target.value })
+              }
+            />
+          </Field>
+          <Field label="Grammatical gender">
+            <select
+              value={value.grammatical_gender}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  grammatical_gender: event.target
+                    .value as TenantFormState["grammatical_gender"],
+                })
+              }
+            >
+              <option value="">Not specified</option>
+              {Object.values(AgentIdentityGrammaticalGender).map((gender) => (
+                <option key={gender} value={gender}>
+                  {gender}
+                </option>
+              ))}
+            </select>
           </Field>
           <Field label="Conversation scope">
             <select
@@ -1767,7 +1802,7 @@ export function TenantConfigurationForm({
             </select>
           </Field>
           <Field
-            error={errorAt(errors, "agent_personality.greeting")}
+            error={errorAt(errors, "agent_identity.greeting")}
             label="Greeting"
             fullWidth
           >
@@ -1784,7 +1819,7 @@ export function TenantConfigurationForm({
       <FormSection title="Business">
         <FormGrid>
           <Field
-            error={errorAt(errors, "business_info.business.name")}
+            error={errorAt(errors, "business_identity.business.name")}
             label="Business name"
           >
             <input
@@ -1796,7 +1831,7 @@ export function TenantConfigurationForm({
             />
           </Field>
           <Field
-            error={errorAt(errors, "business_info.business.type")}
+            error={errorAt(errors, "business_identity.business.type")}
             label="Business type"
           >
             <input
@@ -1808,7 +1843,7 @@ export function TenantConfigurationForm({
             />
           </Field>
           <Field
-            error={errorAt(errors, "business_info.contact.address")}
+            error={errorAt(errors, "business_identity.contact.address")}
             label="Address"
           >
             <input
@@ -1819,7 +1854,7 @@ export function TenantConfigurationForm({
             />
           </Field>
           <Field
-            error={errorAt(errors, "business_info.contact.website")}
+            error={errorAt(errors, "business_identity.contact.website")}
             label="Website"
           >
             <input
@@ -1830,7 +1865,7 @@ export function TenantConfigurationForm({
             />
           </Field>
           <Field
-            error={errorAt(errors, "business_info.contact.phones")}
+            error={errorAt(errors, "business_identity.contact.phones")}
             label="Phone numbers"
             helperText="One value per line."
             fullWidth
@@ -1843,7 +1878,7 @@ export function TenantConfigurationForm({
             />
           </Field>
           <Field
-            error={errorAt(errors, "business_info.contact.emails")}
+            error={errorAt(errors, "business_identity.contact.emails")}
             label="Emails"
             helperText="One value per line."
             fullWidth
@@ -1856,7 +1891,22 @@ export function TenantConfigurationForm({
             />
           </Field>
           <Field
-            error={errorAt(errors, "business_info.localization.default_locale")}
+            error={errorAt(errors, "business_identity.links")}
+            label="External links (JSON)"
+            fullWidth
+          >
+            <textarea
+              value={value.links}
+              onChange={(event) =>
+                onChange({ ...value, links: event.target.value })
+              }
+            />
+          </Field>
+          <Field
+            error={errorAt(
+              errors,
+              "business_identity.localization.default_locale",
+            )}
             label="Default locale"
           >
             <input
@@ -1869,7 +1919,7 @@ export function TenantConfigurationForm({
             />
           </Field>
           <Field
-            error={errorAt(errors, "business_info.localization.timezone")}
+            error={errorAt(errors, "business_identity.localization.timezone")}
             label="Timezone"
           >
             <input
@@ -1939,11 +1989,29 @@ export function TenantConfigurationForm({
             label="Profile"
             helperText="Enabled profiles appear first; a disabled current profile is preserved."
             loading={platform.isPending}
-            options={profileOptions(platform.data, value.profile_key)}
+            options={catalogOptions(
+              platform.data?.profiles ?? [],
+              value.profile_key,
+            )}
             error={errorAt(errors, "profile_reference.profile_key")}
             value={value.profile_key}
             onChange={(profile_key) => onChange({ ...value, profile_key })}
             emptyLabel="No profiles available"
+          />
+          <Selector
+            required
+            label="Interaction mode"
+            loading={platform.isPending}
+            options={catalogOptions(
+              platform.data?.interaction_modes ?? [],
+              value.interaction_mode_key,
+            )}
+            error={errorAt(errors, "interaction_mode_reference.mode_key")}
+            value={value.interaction_mode_key}
+            onChange={(interaction_mode_key) =>
+              onChange({ ...value, interaction_mode_key })
+            }
+            emptyLabel="No interaction modes available"
           />
         </FormGrid>
         {value.architecture_key === "half-cascade" && (

@@ -92,7 +92,7 @@
         "title": "ActionsDefinition",
         "type": "object"
       },
-      "AgentPersonality": {
+      "AgentIdentity": {
         "additionalProperties": false,
         "properties": {
           "conversation_scope": {
@@ -106,27 +106,35 @@
             "title": "Display Name",
             "type": "string"
           },
+          "grammatical_gender": {
+            "enum": [
+              "feminine",
+              "masculine",
+              "neutral"
+            ],
+            "title": "Grammatical Gender",
+            "type": "string"
+          },
           "greeting": {
             "maxLength": 1000,
             "minLength": 1,
             "title": "Greeting",
             "type": "string"
           },
-          "identity": {
+          "role": {
             "maxLength": 100,
             "minLength": 1,
-            "pattern": "^[a-z][a-z0-9_]*$",
-            "title": "Identity",
+            "title": "Role",
             "type": "string"
           }
         },
         "required": [
-          "identity",
           "display_name",
+          "role",
           "greeting",
           "conversation_scope"
         ],
-        "title": "AgentPersonality",
+        "title": "AgentIdentity",
         "type": "object"
       },
       "Architecture": {
@@ -168,7 +176,7 @@
         "title": "Business",
         "type": "object"
       },
-      "BusinessInfo": {
+      "BusinessIdentity": {
         "additionalProperties": false,
         "properties": {
           "business": {
@@ -176,6 +184,14 @@
           },
           "contact": {
             "$ref": "#/components/schemas/Contact"
+          },
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/BusinessLink"
+            },
+            "maxItems": 50,
+            "title": "Links",
+            "type": "array"
           },
           "localization": {
             "$ref": "#/components/schemas/Localization"
@@ -186,7 +202,30 @@
           "contact",
           "localization"
         ],
-        "title": "BusinessInfo",
+        "title": "BusinessIdentity",
+        "type": "object"
+      },
+      "BusinessLink": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "value": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "BusinessLink",
         "type": "object"
       },
       "CascadeEndpointing": {
@@ -1513,6 +1552,22 @@
         "title": "InteractionModeCreate",
         "type": "object"
       },
+      "InteractionModeReference": {
+        "additionalProperties": false,
+        "properties": {
+          "mode_key": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Mode Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode_key"
+        ],
+        "title": "InteractionModeReference",
+        "type": "object"
+      },
       "InteractionModeUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -2498,13 +2553,13 @@
         "title": "PromptState[ActionsDefinition]",
         "type": "object"
       },
-      "PromptState_AgentPersonality_": {
+      "PromptState_AgentIdentity_": {
         "additionalProperties": false,
         "properties": {
           "active": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AgentPersonality"
+                "$ref": "#/components/schemas/AgentIdentity"
               },
               {
                 "type": "null"
@@ -2514,7 +2569,7 @@
           "draft": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/AgentPersonality"
+                "$ref": "#/components/schemas/AgentIdentity"
               },
               {
                 "type": "null"
@@ -2522,16 +2577,16 @@
             ]
           }
         },
-        "title": "PromptState[AgentPersonality]",
+        "title": "PromptState[AgentIdentity]",
         "type": "object"
       },
-      "PromptState_BusinessInfo_": {
+      "PromptState_BusinessIdentity_": {
         "additionalProperties": false,
         "properties": {
           "active": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/BusinessInfo"
+                "$ref": "#/components/schemas/BusinessIdentity"
               },
               {
                 "type": "null"
@@ -2541,7 +2596,7 @@
           "draft": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/BusinessInfo"
+                "$ref": "#/components/schemas/BusinessIdentity"
               },
               {
                 "type": "null"
@@ -2549,7 +2604,7 @@
             ]
           }
         },
-        "title": "PromptState[BusinessInfo]",
+        "title": "PromptState[BusinessIdentity]",
         "type": "object"
       },
       "PromptState_InteractionPrompt_": {
@@ -3734,14 +3789,17 @@
           "actions_definition": {
             "$ref": "#/components/schemas/ActionsDefinition-Input"
           },
-          "agent_personality": {
-            "$ref": "#/components/schemas/AgentPersonality"
+          "agent_identity": {
+            "$ref": "#/components/schemas/AgentIdentity"
           },
           "architecture": {
             "$ref": "#/components/schemas/Architecture"
           },
-          "business_info": {
-            "$ref": "#/components/schemas/BusinessInfo"
+          "business_identity": {
+            "$ref": "#/components/schemas/BusinessIdentity"
+          },
+          "interaction_mode_reference": {
+            "$ref": "#/components/schemas/InteractionModeReference"
           },
           "knowledge": {
             "$ref": "#/components/schemas/Knowledge"
@@ -3759,11 +3817,12 @@
         "required": [
           "tenant_prompt",
           "knowledge",
-          "agent_personality",
-          "business_info",
+          "agent_identity",
+          "business_identity",
           "actions_definition",
           "architecture",
           "profile_reference",
+          "interaction_mode_reference",
           "runtime_overrides",
           "actions_availability"
         ],
@@ -3862,6 +3921,9 @@
           "architecture": {
             "$ref": "#/components/schemas/Architecture"
           },
+          "interaction_mode_reference": {
+            "$ref": "#/components/schemas/InteractionModeReference"
+          },
           "profile_reference": {
             "$ref": "#/components/schemas/ProfileReference"
           },
@@ -3872,6 +3934,7 @@
         "required": [
           "architecture",
           "profile_reference",
+          "interaction_mode_reference",
           "runtime_overrides",
           "actions_availability"
         ],
@@ -3899,11 +3962,11 @@
           "actions_definition": {
             "$ref": "#/components/schemas/PromptState_ActionsDefinition_"
           },
-          "agent_personality": {
-            "$ref": "#/components/schemas/PromptState_AgentPersonality_"
+          "agent_identity": {
+            "$ref": "#/components/schemas/PromptState_AgentIdentity_"
           },
-          "business_info": {
-            "$ref": "#/components/schemas/PromptState_BusinessInfo_"
+          "business_identity": {
+            "$ref": "#/components/schemas/PromptState_BusinessIdentity_"
           },
           "knowledge": {
             "$ref": "#/components/schemas/PromptState_Knowledge_"
@@ -3915,8 +3978,8 @@
         "required": [
           "tenant_prompt",
           "knowledge",
-          "agent_personality",
-          "business_info",
+          "agent_identity",
+          "business_identity",
           "actions_definition"
         ],
         "title": "TenantVersionedConfiguration",

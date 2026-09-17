@@ -11,23 +11,28 @@ from typing import (
 from attrs import define as _attrs_define
 from typing_extensions import Self
 
-T = TypeVar("T", bound="AgentPersonality")
+from ..models.agent_identity_grammatical_gender import AgentIdentityGrammaticalGender
+from ..types import UNSET, Unset
+
+T = TypeVar("T", bound="AgentIdentity")
 
 
 @_attrs_define
-class AgentPersonality:
+class AgentIdentity:
     """
     Attributes:
         conversation_scope (Literal['property_only']):
         display_name (str):
         greeting (str):
-        identity (str):
+        role (str):
+        grammatical_gender (AgentIdentityGrammaticalGender | Unset):
     """
 
     conversation_scope: Literal["property_only"]
     display_name: str
     greeting: str
-    identity: str
+    role: str
+    grammatical_gender: AgentIdentityGrammaticalGender | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         conversation_scope = self.conversation_scope
@@ -36,7 +41,11 @@ class AgentPersonality:
 
         greeting = self.greeting
 
-        identity = self.identity
+        role = self.role
+
+        grammatical_gender: str | Unset = UNSET
+        if not isinstance(self.grammatical_gender, Unset):
+            grammatical_gender = self.grammatical_gender.value
 
         field_dict: dict[str, Any] = {}
 
@@ -45,9 +54,11 @@ class AgentPersonality:
                 "conversation_scope": conversation_scope,
                 "display_name": display_name,
                 "greeting": greeting,
-                "identity": identity,
+                "role": role,
             }
         )
+        if grammatical_gender is not UNSET:
+            field_dict["grammatical_gender"] = grammatical_gender
 
         return field_dict
 
@@ -64,13 +75,21 @@ class AgentPersonality:
 
         greeting = d.pop("greeting")
 
-        identity = d.pop("identity")
+        role = d.pop("role")
 
-        agent_personality = cls(
+        _grammatical_gender = d.pop("grammatical_gender", UNSET)
+        grammatical_gender: AgentIdentityGrammaticalGender | Unset
+        if isinstance(_grammatical_gender, Unset):
+            grammatical_gender = UNSET
+        else:
+            grammatical_gender = AgentIdentityGrammaticalGender(_grammatical_gender)
+
+        agent_identity = cls(
             conversation_scope=conversation_scope,
             display_name=display_name,
             greeting=greeting,
-            identity=identity,
+            role=role,
+            grammatical_gender=grammatical_gender,
         )
 
-        return agent_personality
+        return agent_identity
