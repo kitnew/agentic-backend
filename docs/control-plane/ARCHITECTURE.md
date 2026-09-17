@@ -315,23 +315,50 @@ Current tenant responsibilities:
 
 * `TenantPrompt`
 * `KnowledgePrompt / RAG`
-* `AgentPersonality`
-* `BusinessInfo`
+* `AgentIdentity`
+* `BusinessIdentity`
 * `ActionsDefinition`
 
 #### Live components
 
 * `Architecture`
 * `ProfileReference`
+* `InteractionModeReference`
 * `RuntimeOverrides`
 * `ActionsAvailability`
 
 ### Notes on tenant concepts
 
-#### `AgentPersonality`
+#### `AgentIdentity`
 
-Represents the agent’s identity, such as name, greeting, and conversation scope.
-This is what the runtime consumes as the assistant’s semantic identity.
+Represents the structured customer-facing identity of the voice agent:
+
+- display name;
+- role;
+- optional grammatical gender;
+- exact greeting;
+- conversation scope.
+
+Agent identity contains deterministic semantic data, not conversational
+behavior instructions.
+
+The greeting is exact customer-facing content and is not generated or
+rewritten by the model.
+
+#### `BusinessIdentity`
+
+Represents structured tenant business identity and public business information:
+
+- business name and type;
+- address;
+- public phone numbers;
+- public email addresses;
+- primary website;
+- optional generic external links;
+- default locale and timezone.
+
+BusinessIdentity does not contain operational resource identity such as
+handoff destinations, provider resources, or integration resources.
 
 #### `Knowledge`
 
@@ -361,6 +388,16 @@ It must resolve through `ArchitectureRegistry`: `cascade`, `realtime`, or
 #### `ProfileReference`
 
 A live reference from tenant configuration into the platform `ProfileCatalog`.
+
+#### `InteractionModeReference`
+
+A live reference from tenant configuration into the platform
+`InteractionModeCatalog`.
+
+It resolves to the selected `InteractionPrompt`.
+
+Interaction mode is selected explicitly and is not inferred from the selected
+runtime `Architecture`.
 
 ---
 
@@ -474,8 +511,8 @@ A versioned component has:
 
 * `TenantPrompt`
 * `KnowledgePrompt / RAG`
-* `AgentPersonality`
-* `BusinessInfo`
+* `AgentIdentity`
+* `BusinessIdentity`
 * `ActionsDefinition`
 
 ---
@@ -532,6 +569,7 @@ A live component has:
 ##### Tenant scope
 
 * `ProfileReference`
+* `InteractionModeReference`
 * `Architecture`
 * `RuntimeOverrides`
 * `ActionsAvailability`
@@ -825,7 +863,7 @@ This keeps the number of architectural primitives small and explicit.
 | PlatformScope        | `SystemPrompt`                                                                                   |
 | ProfileScope         | `ProfilePrompt`                                                                                  |
 | InteractionModeScope | `InteractionPrompt`                                                                              |
-| TenantScope          | `TenantPrompt`, `KnowledgePrompt / RAG`, `AgentPersonality`, `BusinessInfo`, `ActionsDefinition` |
+| TenantScope          | `TenantPrompt`, `KnowledgePrompt / RAG`, `AgentIdentity`, `BusinessIdentity`, `ActionsDefinition` |
 
 ### Live components
 
@@ -866,6 +904,9 @@ resource domains.
 flowchart LR
     PR[ProfileReference]
     PC[ProfileCatalog / ProfilePrompt]
+    
+    IMR[InteractionModeReference]
+    IMC[InteractionModeCatalog / InteractionPrompt]
 
     CRED[Credential]
     PCON[ProviderConnection]
@@ -873,6 +914,7 @@ flowchart LR
     ICON[IntegrationConnection]
 
     PR --> PC
+    IMR --> IMC
     PCON -->|credential_ref| CRED
     MDEP -->|connection_ref| PCON
     ICON -. optional credential_ref .-> CRED
@@ -883,6 +925,7 @@ flowchart LR
 #### Tenant → Platform
 
 * `ProfileReference` points from tenant live configuration to a platform profile.
+* `InteractionModeReference` points from tenant live configuration to a platform interaction mode.
 
 #### Provider graph
 
@@ -1027,14 +1070,15 @@ Manages tenant-specific semantic configuration.
 
 * `TenantPrompt`
 * `Knowledge`
-* `AgentPersonality`
-* `BusinessInfo`
+* `AgentIdentity`
+* `BusinessIdentity`
 * `ActionsDefinition`
 
 ##### Live
 
 * `Architecture`
 * `ProfileReference`
+* `InteractionModeReference`
 * `RuntimeOverrides`
 * `ActionsAvailability`
 
@@ -1043,6 +1087,7 @@ Manages tenant-specific semantic configuration.
 * `VersionedComponentRepository`
 * `LiveComponentRepository`
 * `ProfileCatalog`
+* `InteractionModeCatalog`
 * `ArchitectureRegistry`
 * `ComponentDefinitionRegistry`
 
@@ -1071,6 +1116,7 @@ The service is responsible for semantic validation such as:
 * selected architecture exists,
 * action availability is compatible with actions definition,
 * runtime overrides are resolvable.
+* referenced interaction mode exists and is usable;
 
 ---
 
@@ -1339,13 +1385,58 @@ and orchestrate execution.
 
 Receives a voice-oriented runtime view containing:
 
-* locale / timezone,
-* agent identity,
-* prompts,
-* architecture,
-* runtime defaults / overrides,
-* runtime-available actions,
-* semantic handoff information.
+- structured agent identity;
+- structured business identity and localization;
+- system prompt;
+- resolved profile prompt;
+- resolved interaction prompt;
+- tenant prompt;
+- inline tenant knowledge;
+- architecture;
+- runtime defaults / overrides;
+- runtime-available actions;
+- semantic handoff information.
+
+##### Voice model context composition
+
+The Control Plane does not persist or materialize a precomposed LLM instruction
+string.
+
+The Voice Agent composes model instructions at runtime from
+`VoiceExecutionContext`.
+
+The composition is an implementation-owned deterministic operation, not a
+VersionedComponent, LiveComponent, ManagedResource, Catalog, Registry, DTO
+lifecycle object, or persistence artifact.
+
+Until Knowledge receives different semantics, inline model instructions are
+assembled in this fixed order:
+
+1. SystemPrompt
+2. ProfilePrompt
+3. InteractionPrompt
+4. TenantPrompt
+5. structured AgentIdentity projection
+6. structured BusinessIdentity projection
+7. inline Knowledge
+8. dynamic local execution context
+
+Dynamic local execution context contains only values that are genuinely
+execution-dependent, such as the current local date and time.
+
+The greeting is excluded from the instruction composition and is emitted as
+exact customer-facing content.
+
+Runtime actions and built-in tools remain separate model tool/function
+definitions. Their descriptions and schemas are not concatenated into the
+instruction text.
+
+The composition keeps shared, stable prompt layers before tenant-specific and
+dynamic context so runtimes/providers may benefit from prefix reuse or prompt
+caching where supported.
+
+Dynamic execution values are appended after stable tenant content and must not
+be injected between stable prompt sections.
 
 #### Worker
 

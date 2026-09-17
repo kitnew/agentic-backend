@@ -240,10 +240,16 @@
 
 8. `ProfileReference` must resolve to an existing usable platform profile.
 
-9. `ActionsAvailability` may only refer to actions that exist in the corresponding
+9. `InteractionModeReference` must resolve to an existing usable platform
+   interaction mode and its associated usable `InteractionPrompt`.
+
+10. Interaction mode selection must not be inferred implicitly from
+    `Architecture`.
+
+11. `ActionsAvailability` may only refer to actions that exist in the corresponding
    `ActionsDefinition`.
 
-10. Execution materialization must validate references used by the execution before
+12. Execution materialization must validate references used by the execution before
     returning a successful execution.
 
 ---
@@ -349,13 +355,14 @@
 2. Versioned tenant components:
    - `TenantPrompt`
    - `Knowledge`
-   - `AgentPersonality`
-   - `BusinessInfo`
+   - `AgentIdentity`
+   - `BusinessIdentity`
    - `ActionsDefinition`
 
 3. Live tenant components:
    - `Architecture`
    - `ProfileReference`
+   - `InteractionModeReference`
    - `RuntimeOverrides`
    - `ActionsAvailability`
 
@@ -543,6 +550,8 @@
     - repository details
     - raw provider/credential graph structure.
 
+15. Execution materialization resolves the effective ProfilePrompt and InteractionPrompt referenced by the tenant before a successful execution is created.
+
 ---
 
 ## 16. Consumer boundary invariants
@@ -564,6 +573,18 @@
 7. Consumers must not own duplicated copies of Control Plane lifecycle logic.
 
 8. Consumer contracts are semantic and consumer-specific.
+
+9. Control Plane consumer contracts do not persist or expose a precomposed
+   model-instruction string.
+
+10. Voice-model instruction composition is a Voice Agent runtime concern and is
+    not a Control Plane domain primitive or persistence artifact.
+
+11. Runtime action/tool definitions remain semantically separate from prompt
+    content and must not be materialized into tenant/system prompt text.
+
+12. `AgentIdentity.greeting` is exact customer-facing content and must not be
+    treated as a generative prompt.
 
 ---
 

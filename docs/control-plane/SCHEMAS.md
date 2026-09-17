@@ -615,46 +615,51 @@ Future RAG/artifact semantics require a new schema version.
 
 ---
 
-## AgentPersonality
+## AgentIdentity
 
 ```yaml
-AgentPersonality:
+AgentIdentity:
   type: object
   additionalProperties: false
   required:
-    - identity
     - display_name
+    - role
     - greeting
     - conversation_scope
   properties:
-    identity:
-      type: string
-      minLength: 1
-      maxLength: 100
-      pattern: "^[a-z][a-z0-9_]*$"
-      description: Stable semantic agent identity, distinct from ProfileReference.
-
     display_name:
       type: string
       minLength: 1
       maxLength: 100
 
+    role:
+      type: string
+      minLength: 1
+      maxLength: 100
+
+    grammatical_gender:
+      type: string
+      enum: [feminine, masculine, neutral]
+
     greeting:
       type: string
       minLength: 1
       maxLength: 1000
+      description: Exact greeting text spoken at the start of the interaction.
 
     conversation_scope:
       type: string
       enum: [property_only]
 ```
+`greeting` is exact customer-facing content, not a prompt or generative instruction.
+The runtime must not ask the model to rewrite, expand, or generate it.
 
 ---
 
-## BusinessInfo
+## BusinessIdentity
 
 ```yaml
-BusinessInfo:
+BusinessIdentity:
   type: object
   additionalProperties: false
   required:
@@ -706,6 +711,26 @@ BusinessInfo:
         website:
           type: [string, "null"]
           maxLength: 2048
+          
+    links:
+      type: array
+      maxItems: 50
+      items:
+        type: object
+        additionalProperties: false
+        required:
+          - label
+          - value
+        properties:
+          label:
+            type: string
+            minLength: 1
+            maxLength: 100
+
+          value:
+            type: string
+            minLength: 1
+            maxLength: 2048
 
     localization:
       type: object
@@ -808,6 +833,26 @@ Validation:
 - profile is enabled/usable;
 - associated profile prompt satisfies platform invariants.
 
+---
+
+## InteractionModeReference
+
+```yaml
+InteractionModeReference:
+  type: object
+  additionalProperties: false
+  required: [mode_key]
+  properties:
+    mode_key:
+      type: string
+      minLength: 1
+      maxLength: 255
+```
+
+validation:
+- interaction mode exists;
+- interaction mode is enabled/usable;
+- associated InteractionPrompt satisfies platform invariants.
 ---
 
 ## RuntimeOverrides
@@ -1944,6 +1989,13 @@ ProfileReference.profile_key
 → ProfilePrompt(ProfileScope(profile_key))
 ```
 
+## Interaction modes
+
+```text
+InteractionModeReference.mode_key
+→ InteractionModeCatalog.InteractionMode.key
+→ InteractionPrompt(InteractionModeScope(mode_key))
+
 ## Runtime deployments
 
 ```text
@@ -2011,21 +2063,13 @@ ActionsDefinition.execution.integration_key
 
 Resource IDs are resolved internally.
 
-## Agent identity
-
-`AgentPersonality.identity` is distinct from:
-
-- `ProfileReference.profile_key`;
-- `display_name`;
-- `tenant_id`.
-
 ## Localization
 
 Runtime locale/timezone come from:
 
 ```text
-BusinessInfo.localization.default_locale
-BusinessInfo.localization.timezone
+BusinessIdentity.localization.default_locale
+BusinessIdentity.localization.timezone
 ```
 
 ## Secrets
@@ -2056,13 +2100,13 @@ realtime transcription deployment         → RealtimeDefaults.input_transcripti
 realtime voice                            → RealtimeDefaults.default_voice
 realtime VAD/interruption                 → RealtimeDefaults
 
-tenant business/contact/localization      → BusinessInfo
-tenant agent display/greeting/scope       → AgentPersonality
-tenant agent_profile                      → AgentPersonality.identity
+tenant business/contact/localization      → BusinessIdentity
+tenant agent display/greeting/scope       → AgentIdentity
+tenant agent_profile                      → removed
 tenant profile selection                  → ProfileReference
 
-tenant language                           → BusinessInfo.localization.default_locale
-tenant timezone                           → BusinessInfo.localization.timezone
+tenant language                           → BusinessIdentity.localization.default_locale
+tenant timezone                           → BusinessIdentity.localization
 tenant STT keyterms                       → RuntimeOverrides.stt.keyterms
 tenant cascade voice                      → RuntimeOverrides.tts.voice_id
 tenant realtime voice                     → RuntimeOverrides.realtime.voice
@@ -2127,8 +2171,8 @@ Policies
 ```text
 TenantPrompt
 Knowledge
-AgentPersonality
-BusinessInfo
+AgentIdentity
+BusinessIdentity
 ActionsDefinition
 ```
 
@@ -2137,6 +2181,7 @@ ActionsDefinition
 ```text
 Architecture
 ProfileReference
+InteractionModeReference
 RuntimeOverrides
 ActionsAvailability
 ```

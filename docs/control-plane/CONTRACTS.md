@@ -922,10 +922,10 @@ TenantConfiguration
 │   ├── knowledge
 │   │   ├── active
 │   │   └── draft
-│   ├── agent_personality
+│   ├── agent_identity
 │   │   ├── active
 │   │   └── draft
-│   ├── business_info
+│   ├── business_identity
 │   │   ├── active
 │   │   └── draft
 │   └── actions_definition
@@ -935,6 +935,7 @@ TenantConfiguration
 ├── live
 │   ├── architecture
 │   ├── profile_reference
+│   ├── interaction_mode_reference
 │   ├── runtime_overrides
 │   └── actions_availability
 │
@@ -951,11 +952,12 @@ Complete desired configuration document:
 TenantConfigurationDesired
 ├── tenant_prompt
 ├── knowledge
-├── agent_personality
-├── business_info
+├── agent_identity
+├── business_identity
 ├── actions_definition
 ├── architecture
 ├── profile_reference
+├── interaction_mode_reference
 ├── runtime_overrides
 └── actions_availability
 ```
@@ -1389,33 +1391,59 @@ BackendExecutionContext
 ```text
 VoiceExecutionContext
 ├── execution_id
-├── tenant
-│   ├── locale
-│   └── timezone
+│
 ├── agent
+│   ├── display_name
+│   ├── role
+│   ├── grammatical_gender?
+│   ├── greeting
+│   └── conversation_scope
+│
+├── business
 │   ├── name
-│   ├── personality
-│   └── greeting
+│   ├── type
+│   ├── address?
+│   ├── phones[]
+│   ├── emails[]
+│   ├── website?
+│   ├── links[]
+│   │   ├── label
+│   │   └── value
+│   ├── default_locale
+│   └── timezone
+│
 ├── architecture
+│
 ├── prompts
 │   ├── system
 │   ├── profile
+│   ├── interaction
 │   ├── tenant
 │   └── knowledge
+│
 ├── runtime
 │   ├── stt
 │   ├── llm
 │   ├── tts
 │   ├── realtime
 │   └── half_cascade
-│       ├── model
-│       ├── input_transcription
-│       ├── tts
-│       ├── turn_completion
-│       └── interruption
+│
 ├── actions[]
 └── handoff[]
 ```
+
+`agent.greeting` is exact customer-facing content. It is not an LLM prompt.
+
+`prompts.interaction` is resolved from the execution's
+`InteractionModeReference`.
+
+`prompts.knowledge` remains the currently published inline Knowledge content.
+
+`actions[]` and built-in runtime tools are separate from `prompts`.
+Their function descriptions and schemas are not precomposed into prompt text.
+
+`VoiceExecutionContext` does not contain a preassembled model instruction string.
+Model-context composition belongs to the Voice Agent runtime.
 
 ### `WorkerExecutionContext`
 
