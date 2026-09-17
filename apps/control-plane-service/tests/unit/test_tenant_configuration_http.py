@@ -19,6 +19,7 @@ from control_plane.application.tenant_configuration import (
 from control_plane.domain.frozen_components import (
     ActionsAvailability,
     Architecture,
+    InteractionModeReference,
     ProfileReference,
     default_component_definition_registry,
 )
@@ -40,13 +41,14 @@ class Tenant:
             versioned=TenantVersionedConfiguration(
                 tenant_prompt=PromptState(),
                 knowledge=PromptState(),
-                agent_personality=PromptState(),
-                business_info=PromptState(),
+                agent_identity=PromptState(),
+                business_identity=PromptState(),
                 actions_definition=PromptState(),
             ),
             live=TenantLiveConfiguration(
                 architecture=Architecture(architecture_key="cascade"),
                 profile_reference=ProfileReference(profile_key="sales"),
+                interaction_mode_reference=InteractionModeReference(mode_key="voice"),
                 runtime_overrides={},
                 actions_availability=ActionsAvailability(actions={}),
             ),

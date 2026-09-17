@@ -14,6 +14,7 @@ from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinitionRegistry,
     ComponentKind,
+    InteractionModeScope,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -22,8 +23,10 @@ from control_plane.domain.components.errors import ComponentError
 from control_plane.domain.frozen_components import (
     ActionsAvailability,
     ActionsDefinition,
-    AgentPersonality,
-    BusinessInfo,
+    AgentIdentity,
+    BusinessIdentity,
+    InteractionModeReference,
+    InteractionPrompt,
     Knowledge,
     PostCallActionDefinition,
     ProfilePrompt,
@@ -47,6 +50,7 @@ class ExecutionResolution:
     tenant_id: str
     runtime: RuntimeResolution
     agent: ResolvedTenantAgent
+    business: BusinessIdentity
     prompts: dict[str, object]
     knowledge: dict[str, object]
     handoff: tuple[Mapping[str, object], ...]
@@ -57,11 +61,6 @@ class ExecutionResolution:
     @property
     def architecture(self) -> str:
         return self.runtime.selected.architecture
-
-
-def compose_instructions(*parts: str) -> str:
-    """Legacy prompt ordering, without clock/runtime-only additions."""
-    return "\n\n".join(part for part in parts if part)
 
 
 class ExecutionResolver:
@@ -77,13 +76,13 @@ class ExecutionResolver:
         runtime = self._runtime.resolve_state(tenant_id, state)
         agent = self._required(
             state,
-            ComponentAddress(ComponentKind("AgentPersonality"), TenantScope(tenant_id)),
-            AgentPersonality,
+            ComponentAddress(ComponentKind("AgentIdentity"), TenantScope(tenant_id)),
+            AgentIdentity,
         )
         business = self._required(
             state,
-            ComponentAddress(ComponentKind("BusinessInfo"), TenantScope(tenant_id)),
-            BusinessInfo,
+            ComponentAddress(ComponentKind("BusinessIdentity"), TenantScope(tenant_id)),
+            BusinessIdentity,
         )
         system = self._required(
             state,
@@ -104,6 +103,23 @@ class ExecutionResolver:
             ),
             ProfilePrompt,
             ResolutionFailureReason.MISSING_PROFILE,
+        )
+        interaction_selection = self._required_live(
+            state,
+            ComponentAddress(
+                ComponentKind("InteractionModeReference"), TenantScope(tenant_id)
+            ),
+            InteractionModeReference,
+            ResolutionFailureReason.MISSING_INTERACTION_MODE_SELECTION,
+        )
+        interaction = self._required(
+            state,
+            ComponentAddress(
+                ComponentKind("InteractionPrompt"),
+                InteractionModeScope(interaction_selection.value.mode_key),
+            ),
+            InteractionPrompt,
+            ResolutionFailureReason.MISSING_INTERACTION_MODE,
         )
         tenant = self._required(
             state,
@@ -139,16 +155,14 @@ class ExecutionResolver:
                 "content": profile.value.content,
                 "provenance": self._provenance(profile),
             },
+            "interaction": {
+                "content": interaction.value.content,
+                "provenance": self._provenance(interaction),
+            },
             "tenant": {
                 "content": tenant.value.content,
                 "provenance": self._provenance(tenant),
             },
-            "instructions": compose_instructions(
-                system.value.content,
-                profile.value.content,
-                tenant.value.content,
-                knowledge.value.content,
-            ),
         }
         unknown = set(availability.value.actions) - set(definitions.value.actions)
         if unknown:
@@ -178,12 +192,12 @@ class ExecutionResolver:
             ResolvedTenantAgent(
                 self._provenance(agent),
                 agent.value.display_name,
-                agent.value.identity,
+                agent.value.role,
+                agent.value.grammatical_gender,
                 agent.value.greeting,
                 agent.value.conversation_scope,
-                business.value.localization.default_locale,
-                business.value.localization.timezone,
             ),
+            business.value,
             prompts,
             {
                 "content": knowledge.value.content,
@@ -193,7 +207,8 @@ class ExecutionResolver:
             {
                 "agent": self._provenance(agent),
                 "profile_selection": self._provenance(selection),
-                "business_info": self._provenance(business),
+                "interaction_mode_selection": self._provenance(interaction_selection),
+                "business_identity": self._provenance(business),
                 "actions_definition": self._provenance(definitions),
                 "actions_availability": self._provenance(availability),
             },

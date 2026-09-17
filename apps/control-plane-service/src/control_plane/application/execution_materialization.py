@@ -158,21 +158,8 @@ class ExecutionMaterializationService:
     async def voice_context(self, execution_id: UUID) -> VoiceExecutionContext:
         snapshot = await self._load_snapshot(execution_id)
         value = self._mapping(self._target(snapshot)["voice"])
-        return VoiceExecutionContext(
-            execution_id=execution_id,
-            tenant=dict(self._mapping(value["tenant"])),
-            agent=dict(self._mapping(value["agent"])),
-            architecture=str(value["architecture"]),
-            prompts=dict(self._mapping(value["prompts"])),
-            runtime=dict(self._mapping(value["runtime"])),
-            actions=[
-                dict(self._mapping(item))
-                for item in cast(list[object], value["actions"])
-            ],
-            handoff=[
-                dict(self._mapping(item))
-                for item in cast(list[object], value["handoff"])
-            ],
+        return VoiceExecutionContext.model_validate(
+            {"execution_id": execution_id, **value}
         )
 
     async def worker_context(
@@ -327,19 +314,34 @@ class ExecutionMaterializationService:
                 "metadata": dict(context),
             },
             "voice": {
-                "tenant": {
-                    "locale": resolution.agent.locale,
-                    "timezone": resolution.agent.timezone,
-                },
                 "agent": {
-                    "name": resolution.agent.display_name,
-                    "personality": resolution.agent.agent_profile,
+                    "display_name": resolution.agent.display_name,
+                    "role": resolution.agent.role,
+                    "grammatical_gender": resolution.agent.grammatical_gender,
                     "greeting": resolution.agent.greeting,
+                    "conversation_scope": resolution.agent.conversation_scope,
+                },
+                "business": {
+                    "name": resolution.business.business.name,
+                    "type": resolution.business.business.type,
+                    "address": resolution.business.contact.address,
+                    "phones": resolution.business.contact.phones,
+                    "emails": resolution.business.contact.emails,
+                    "website": resolution.business.contact.website,
+                    "links": [
+                        link.model_dump(mode="json")
+                        for link in resolution.business.links
+                    ],
+                    "default_locale": resolution.business.localization.default_locale,
+                    "timezone": resolution.business.localization.timezone,
                 },
                 "architecture": resolution.architecture,
                 "prompts": {
                     "system": self._prompt_content(resolution.prompts["system"]),
                     "profile": self._prompt_content(resolution.prompts["profile"]),
+                    "interaction": self._prompt_content(
+                        resolution.prompts["interaction"]
+                    ),
                     "tenant": self._prompt_content(resolution.prompts["tenant"]),
                     "knowledge": self._prompt_content(resolution.knowledge),
                 },
@@ -406,9 +408,7 @@ class ExecutionMaterializationService:
                         "speech_hints": cls._plain(
                             runtime.input_transcription.speech_hints
                         ),
-                        **cls._provider_semantics(
-                            runtime.input_transcription.resource
-                        ),
+                        **cls._provider_semantics(runtime.input_transcription.resource),
                     },
                     "tts": {
                         **cls._without_deployment_ref(runtime.tts.defaults),

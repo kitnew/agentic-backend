@@ -32,6 +32,8 @@ class ResolutionFailureReason(StrEnum):
     CURRENT_STATE_INVALID = "CURRENT_STATE_INVALID"
     MISSING_PROFILE_SELECTION = "MISSING_PROFILE_SELECTION"
     MISSING_PROFILE = "MISSING_PROFILE"
+    MISSING_INTERACTION_MODE_SELECTION = "MISSING_INTERACTION_MODE_SELECTION"
+    MISSING_INTERACTION_MODE = "MISSING_INTERACTION_MODE"
     CROSS_TENANT_RESOURCE = "CROSS_TENANT_RESOURCE"
 
 
@@ -49,11 +51,10 @@ class ComponentProvenance:
 class ResolvedTenantAgent:
     component: ComponentProvenance
     display_name: str
-    agent_profile: str
+    role: str
+    grammatical_gender: str | None
     greeting: str
     conversation_scope: str
-    locale: str
-    timezone: str
 
 
 @dataclass(frozen=True, slots=True)

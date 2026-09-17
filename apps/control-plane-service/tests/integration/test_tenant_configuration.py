@@ -9,6 +9,7 @@ from control_plane.domain.catalogs import CatalogStatus
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
+    InteractionModeScope,
     ProfileScope,
 )
 from control_plane.domain.frozen_components import default_component_definition_registry
@@ -43,13 +44,13 @@ def desired(*, prompt="tenant"):
         {
             "tenant_prompt": {"content": prompt},
             "knowledge": {"content": "knowledge"},
-            "agent_personality": {
-                "identity": "concierge",
+            "agent_identity": {
                 "display_name": "Concierge",
+                "role": "Hotel concierge",
                 "greeting": "Welcome",
                 "conversation_scope": "property_only",
             },
-            "business_info": {
+            "business_identity": {
                 "business": {"name": "Hotel", "type": "hotel"},
                 "contact": {"phones": [], "emails": []},
                 "localization": {
@@ -60,6 +61,7 @@ def desired(*, prompt="tenant"):
             "actions_definition": {"actions": {}},
             "architecture": {"architecture_key": "cascade"},
             "profile_reference": {"profile_key": "sales"},
+            "interaction_mode_reference": {"mode_key": "voice"},
             "runtime_overrides": {"stt": {"keyterms": []}},
             "actions_availability": {"actions": {}},
         }
@@ -82,9 +84,20 @@ async def seed_profile(database):
         await repository.put_profile(
             "sales", "Sales", "Sales profile", CatalogStatus.ENABLED, "alice"
         )
+        await repository.put_interaction_mode(
+            "voice", "Voice", "Spoken voice", CatalogStatus.ENABLED, "alice"
+        )
         definition = registry.resolve(address)
         draft = await repository.save_draft(
             address, {"content": "profile"}, 1, None, None, "alice"
+        )
+        await repository.publish_draft(address, draft.version, "alice", definition)
+        address = ComponentAddress(
+            ComponentKind("InteractionPrompt"), InteractionModeScope("voice")
+        )
+        definition = registry.resolve(address)
+        draft = await repository.save_draft(
+            address, {"content": "interaction"}, 1, None, None, "alice"
         )
         await repository.publish_draft(address, draft.version, "alice", definition)
 
@@ -290,7 +303,7 @@ async def test_postgresql_multi_component_publish_is_atomic(
                 "alice",
                 "failed",
             )
-        assert await tenant_counts(database) == (5, 5, 0, 4, 1)
+        assert await tenant_counts(database) == (5, 5, 0, 5, 1)
 
         monkeypatch.setattr(SqlAlchemyComponentRepository, "publish_draft", original)
 
@@ -305,6 +318,6 @@ async def test_postgresql_multi_component_publish_is_atomic(
                 "alice",
                 "replay-failed",
             )
-        assert await tenant_counts(database) == (5, 5, 0, 4, 1)
+        assert await tenant_counts(database) == (5, 5, 0, 5, 1)
     finally:
         await database.close()

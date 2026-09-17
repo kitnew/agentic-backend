@@ -701,11 +701,13 @@ def create_http_app(
                 status.HTTP_422_UNPROCESSABLE_CONTENT,
                 "runtime_resolution_failed",
                 "execution configuration could not be resolved",
-                details=jsonable_encoder({
-                    "reason": exc.reason,
-                    "details": exc.details,
-                    "attempts": exc.attempts,
-                }),
+                details=jsonable_encoder(
+                    {
+                        "reason": exc.reason,
+                        "details": exc.details,
+                        "attempts": exc.attempts,
+                    }
+                ),
             )
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1083,6 +1085,7 @@ def _registry_router() -> APIRouter:
         return jsonable_encoder(
             entries(request.app.state.architecture_registry.entries)
         )
+
 
     @router.get(
         "/registries/components", response_model=list[ComponentDefinitionResponse]

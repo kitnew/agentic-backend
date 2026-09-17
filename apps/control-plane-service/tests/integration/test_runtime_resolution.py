@@ -23,6 +23,7 @@ from control_plane.bootstrap import create_app
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
+    InteractionModeScope,
     PlatformScope,
     ProfileScope,
     TenantScope,
@@ -47,6 +48,7 @@ from control_plane.infrastructure.persistence.models import (
     HandoffDestination,
     IdempotencyReplay,
     IntegrationConnection,
+    InteractionModeCatalogEntry,
     PhoneNumberAssignment,
     ProfileCatalogEntry,
 )
@@ -118,6 +120,16 @@ async def configure_tenant(
                 updated_by="test",
             )
         )
+        session.add(
+            InteractionModeCatalogEntry(
+                key="voice",
+                name="Voice",
+                description="Spoken voice",
+                status="enabled",
+                generation=1,
+                updated_by="test",
+            )
+        )
     versioned = (
         (
             ComponentAddress(ComponentKind("SystemPrompt"), PlatformScope()),
@@ -128,6 +140,12 @@ async def configure_tenant(
             {"content": "profile"},
         ),
         (
+            ComponentAddress(
+                ComponentKind("InteractionPrompt"), InteractionModeScope("voice")
+            ),
+            {"content": "interaction"},
+        ),
+        (
             ComponentAddress(ComponentKind("TenantPrompt"), TenantScope(tenant_id)),
             {"content": "tenant"},
         ),
@@ -136,16 +154,16 @@ async def configure_tenant(
             {"content": "knowledge"},
         ),
         (
-            ComponentAddress(ComponentKind("AgentPersonality"), TenantScope(tenant_id)),
+            ComponentAddress(ComponentKind("AgentIdentity"), TenantScope(tenant_id)),
             {
-                "identity": "default",
                 "display_name": "Amélia",
+                "role": "Hotel concierge",
                 "greeting": "Dobrý deň",
                 "conversation_scope": "property_only",
             },
         ),
         (
-            ComponentAddress(ComponentKind("BusinessInfo"), TenantScope(tenant_id)),
+            ComponentAddress(ComponentKind("BusinessIdentity"), TenantScope(tenant_id)),
             {
                 "business": {"name": "Hotel", "type": "hotel"},
                 "contact": {"phones": [], "emails": []},
@@ -171,6 +189,7 @@ async def configure_tenant(
             ("Architecture", {"architecture_key": "cascade"}),
             ("RuntimeOverrides", {"stt": {"keyterms": ["Penzión Grand"]}}),
             ("ProfileReference", {"profile_key": "default"}),
+            ("InteractionModeReference", {"mode_key": "voice"}),
             (
                 "ActionsAvailability",
                 {"actions": {key: True for key in actions}},
@@ -284,6 +303,7 @@ async def test_runtime_resolution_is_repeatable_read_and_read_only(
             "Architecture",
             "RuntimeOverrides",
             "ProfileReference",
+            "InteractionModeReference",
             "ActionsAvailability",
         }
         assert all(
@@ -471,14 +491,22 @@ async def test_slice_12_execution_is_frozen_idempotent_and_snapshot_projected(
         assert isinstance(runtime_worker, WorkerExecutionContext)
         assert set(type(voice).model_fields) == {
             "execution_id",
-            "tenant",
             "agent",
+            "business",
             "architecture",
             "prompts",
             "runtime",
             "actions",
             "handoff",
         }
+        assert voice.agent.display_name == "Amélia"
+        assert voice.agent.role == "Hotel concierge"
+        assert voice.business.name == "Hotel"
+        assert voice.business.default_locale == "sk-SK"
+        assert voice.business.timezone == "Europe/Bratislava"
+        assert voice.prompts.interaction == "interaction"
+        assert "personality" not in voice.agent.model_dump()
+        assert "instructions" not in voice.model_dump()
         assert set(type(runtime_worker).model_fields) == {
             "execution_id",
             "tenant_id",

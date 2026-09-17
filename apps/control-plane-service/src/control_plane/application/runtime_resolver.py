@@ -15,7 +15,7 @@ from control_plane.domain.components import (
 from control_plane.domain.components.errors import ComponentError
 from control_plane.domain.frozen_components import (
     Architecture,
-    BusinessInfo,
+    BusinessIdentity,
     LLMDefaults,
     Policies,
     ProviderVADCommit,
@@ -149,7 +149,9 @@ class RuntimeResolver:
         overrides = self._required_tenant_live(
             state, tenant_id, "RuntimeOverrides", RuntimeOverrides
         )
-        business = self._required_tenant(state, tenant_id, "BusinessInfo", BusinessInfo)
+        business = self._required_tenant(
+            state, tenant_id, "BusinessIdentity", BusinessIdentity
+        )
         attempts: list[CandidateAttempt] = []
         key = architecture.value.architecture_key
         try:
@@ -187,7 +189,9 @@ class RuntimeResolver:
         overrides = self._required_tenant_live(
             state, tenant_id, "RuntimeOverrides", RuntimeOverrides
         )
-        business = self._required_tenant(state, tenant_id, "BusinessInfo", BusinessInfo)
+        business = self._required_tenant(
+            state, tenant_id, "BusinessIdentity", BusinessIdentity
+        )
         try:
             return self._resolve_candidate(
                 state, architecture, overrides.value, business.value
@@ -210,7 +214,7 @@ class RuntimeResolver:
         state: RuntimeResolutionState,
         architecture: str,
         overrides: RuntimeOverrides,
-        business: BusinessInfo,
+        business: BusinessIdentity,
     ) -> ResolvedRuntime:
         try:
             entry = self._architectures.resolve(architecture)
@@ -238,7 +242,7 @@ class RuntimeResolver:
         self,
         state: RuntimeResolutionState,
         overrides: RuntimeOverrides,
-        business: BusinessInfo,
+        business: BusinessIdentity,
     ) -> ResolvedCascadeRuntime:
         llm = self._system(state, "LLMDefaults", LLMDefaults)
         stt = self._system(state, "STTDefaults", STTDefaults)
@@ -289,7 +293,7 @@ class RuntimeResolver:
         self,
         state: RuntimeResolutionState,
         overrides: RuntimeOverrides,
-        business: BusinessInfo,
+        business: BusinessIdentity,
     ) -> ResolvedRealtimeRuntime:
         policy, model = self._realtime_model(state)
         transcription = self._realtime_transcription(
@@ -310,7 +314,7 @@ class RuntimeResolver:
         policy: _ActiveRuntimeComponent[RealtimeDefaults],
         model: ResolvedProviderResource,
         overrides: RuntimeOverrides,
-        business: BusinessInfo,
+        business: BusinessIdentity,
     ) -> ResolvedRealtimeTranscription:
         transcription = self._resource(
             state,
@@ -352,7 +356,7 @@ class RuntimeResolver:
         self,
         state: RuntimeResolutionState,
         overrides: RuntimeOverrides,
-        business: BusinessInfo,
+        business: BusinessIdentity,
     ) -> ResolvedHalfCascadeRuntime:
         policy, model = self._realtime_model(state)
         transcription = self._realtime_transcription(

@@ -5,6 +5,7 @@ from uuid import UUID
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from jsonschema.exceptions import SchemaError  # type: ignore[import-untyped]
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.json_schema import SkipJsonSchema
 from typing_extensions import TypedDict
 
 from control_plane.domain.components import (
@@ -163,11 +164,21 @@ class Policies(FrozenValue):
     cascade: CascadePolicies
 
 
-class AgentPersonality(FrozenValue):
-    identity: str = Field(min_length=1, max_length=100, pattern=r"^[a-z][a-z0-9_]*$")
+class AgentIdentity(FrozenValue):
     display_name: str = Field(min_length=1, max_length=100)
+    role: str = Field(min_length=1, max_length=100)
+    grammatical_gender: (
+        Literal["feminine", "masculine", "neutral"] | SkipJsonSchema[None]
+    ) = Field(default=None, exclude_if=lambda value: value is None)
     greeting: str = Field(min_length=1, max_length=1000)
     conversation_scope: Literal["property_only"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def grammatical_gender_is_not_null(cls, value: object) -> object:
+        if isinstance(value, dict) and value.get("grammatical_gender", ...) is None:
+            raise ValueError("grammatical_gender must be omitted rather than null")
+        return value
 
 
 class Business(FrozenValue):
@@ -190,9 +201,15 @@ class Localization(FrozenValue):
     timezone: str
 
 
-class BusinessInfo(FrozenValue):
+class BusinessLink(FrozenValue):
+    label: str = Field(min_length=1, max_length=100)
+    value: str = Field(min_length=1, max_length=2048)
+
+
+class BusinessIdentity(FrozenValue):
     business: Business
     contact: Contact
+    links: list[BusinessLink] = Field(default_factory=list, max_length=50)
     localization: Localization
 
 
@@ -428,6 +445,10 @@ class ProfileReference(FrozenValue):
     profile_key: str = Field(min_length=1, max_length=255)
 
 
+class InteractionModeReference(FrozenValue):
+    mode_key: str = Field(min_length=1, max_length=255)
+
+
 class STTOverrides(TypedDict):
     keyterms: NotRequired[
         Annotated[
@@ -472,11 +493,12 @@ _DEFINITIONS = (
     (Policies, ScopeType.SYSTEM, "live"),
     (TenantPrompt, ScopeType.TENANT, "versioned"),
     (Knowledge, ScopeType.TENANT, "versioned"),
-    (AgentPersonality, ScopeType.TENANT, "versioned"),
-    (BusinessInfo, ScopeType.TENANT, "versioned"),
+    (AgentIdentity, ScopeType.TENANT, "versioned"),
+    (BusinessIdentity, ScopeType.TENANT, "versioned"),
     (ActionsDefinition, ScopeType.TENANT, "versioned"),
     (Architecture, ScopeType.TENANT, "live"),
     (ProfileReference, ScopeType.TENANT, "live"),
+    (InteractionModeReference, ScopeType.TENANT, "live"),
     (RuntimeOverrides, ScopeType.TENANT, "live"),
     (ActionsAvailability, ScopeType.TENANT, "live"),
 )

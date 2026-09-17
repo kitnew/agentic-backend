@@ -25,6 +25,7 @@ from control_plane.domain.components import (
     ComponentAddress,
     ComponentDefinitionRegistry,
     ComponentKind,
+    InteractionModeScope,
     ProfileScope,
     TenantScope,
 )
@@ -32,9 +33,10 @@ from control_plane.domain.components.errors import ComponentError
 from control_plane.domain.frozen_components import (
     ActionsAvailability,
     ActionsDefinition,
-    AgentPersonality,
+    AgentIdentity,
     Architecture,
-    BusinessInfo,
+    BusinessIdentity,
+    InteractionModeReference,
     Knowledge,
     ProfileReference,
     RuntimeOverrides,
@@ -46,13 +48,18 @@ from control_plane.domain.registries import ArchitectureRegistry, UnknownRegistr
 _VERSIONED = (
     ("tenant_prompt", "TenantPrompt", TenantPrompt),
     ("knowledge", "Knowledge", Knowledge),
-    ("agent_personality", "AgentPersonality", AgentPersonality),
-    ("business_info", "BusinessInfo", BusinessInfo),
+    ("agent_identity", "AgentIdentity", AgentIdentity),
+    ("business_identity", "BusinessIdentity", BusinessIdentity),
     ("actions_definition", "ActionsDefinition", ActionsDefinition),
 )
 _LIVE = (
     ("architecture", "Architecture", Architecture),
     ("profile_reference", "ProfileReference", ProfileReference),
+    (
+        "interaction_mode_reference",
+        "InteractionModeReference",
+        InteractionModeReference,
+    ),
     ("runtime_overrides", "RuntimeOverrides", RuntimeOverrides),
     ("actions_availability", "ActionsAvailability", ActionsAvailability),
 )
@@ -63,11 +70,12 @@ class TenantConfigurationDesired(BaseModel):
 
     tenant_prompt: TenantPrompt
     knowledge: Knowledge
-    agent_personality: AgentPersonality
-    business_info: BusinessInfo
+    agent_identity: AgentIdentity
+    business_identity: BusinessIdentity
     actions_definition: ActionsDefinition
     architecture: Architecture
     profile_reference: ProfileReference
+    interaction_mode_reference: InteractionModeReference
     runtime_overrides: RuntimeOverrides
     actions_availability: ActionsAvailability
 
@@ -77,8 +85,8 @@ class TenantVersionedConfiguration(BaseModel):
 
     tenant_prompt: PromptState[TenantPrompt]
     knowledge: PromptState[Knowledge]
-    agent_personality: PromptState[AgentPersonality]
-    business_info: PromptState[BusinessInfo]
+    agent_identity: PromptState[AgentIdentity]
+    business_identity: PromptState[BusinessIdentity]
     actions_definition: PromptState[ActionsDefinition]
 
 
@@ -87,6 +95,7 @@ class TenantLiveConfiguration(BaseModel):
 
     architecture: Architecture
     profile_reference: ProfileReference
+    interaction_mode_reference: InteractionModeReference
     runtime_overrides: RuntimeOverrides
     actions_availability: ActionsAvailability
 
@@ -200,6 +209,23 @@ class TenantConfigurationService:
             if prompt is None:
                 raise TenantConfigurationError(
                     "referenced profile has no active prompt"
+                )
+        elif isinstance(value, InteractionModeReference):
+            mode = await repository.get_interaction_mode(value.mode_key, lock=True)
+            if mode is None or mode.status is not CatalogStatus.ENABLED:
+                raise TenantConfigurationError(
+                    "referenced interaction mode does not exist or is disabled"
+                )
+            _, _, prompt = await repository.get_component(
+                ComponentAddress(
+                    ComponentKind("InteractionPrompt"),
+                    InteractionModeScope(mode.key),
+                ),
+                lock=True,
+            )
+            if prompt is None:
+                raise TenantConfigurationError(
+                    "referenced interaction mode has no active prompt"
                 )
         elif isinstance(value, ActionsAvailability):
             _, _, active = await repository.get_component(
@@ -442,6 +468,10 @@ class TenantConfigurationService:
                 profile_reference=cast(
                     ProfileReference, current.live["profile_reference"]
                 ),
+                interaction_mode_reference=cast(
+                    InteractionModeReference,
+                    current.live["interaction_mode_reference"],
+                ),
                 runtime_overrides=cast(
                     RuntimeOverrides, current.live["runtime_overrides"]
                 ),
@@ -495,6 +525,34 @@ class TenantConfigurationService:
                         "profile_prompt_not_published",
                         "profile_reference",
                         "referenced profile has no active prompt",
+                    )
+                )
+
+        mode = await repository.get_interaction_mode(
+            desired.interaction_mode_reference.mode_key, lock=lock
+        )
+        if mode is None or mode.status is not CatalogStatus.ENABLED:
+            errors.append(
+                ValidationIssue(
+                    "unknown_or_disabled_interaction_mode",
+                    "interaction_mode_reference",
+                    "referenced interaction mode does not exist or is disabled",
+                )
+            )
+        else:
+            _, _, prompt = await repository.get_component(
+                ComponentAddress(
+                    ComponentKind("InteractionPrompt"),
+                    InteractionModeScope(mode.key),
+                ),
+                lock=lock,
+            )
+            if prompt is None:
+                errors.append(
+                    ValidationIssue(
+                        "interaction_prompt_not_published",
+                        "interaction_mode_reference",
+                        "referenced interaction mode has no active prompt",
                     )
                 )
 

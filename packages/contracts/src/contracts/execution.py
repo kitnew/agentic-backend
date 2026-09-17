@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,12 +32,53 @@ class BackendExecutionContext(_ExecutionContract):
     metadata: dict[str, object]
 
 
+class VoiceAgentIdentity(_ExecutionContract):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(min_length=1, max_length=100)
+    role: str = Field(min_length=1, max_length=100)
+    grammatical_gender: Literal["feminine", "masculine", "neutral"] | None = None
+    greeting: str = Field(min_length=1, max_length=1000)
+    conversation_scope: Literal["property_only"]
+
+
+class VoiceBusinessLink(_ExecutionContract):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str = Field(min_length=1, max_length=100)
+    value: str = Field(min_length=1, max_length=2048)
+
+
+class VoiceBusinessIdentity(_ExecutionContract):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=255)
+    type: str = Field(min_length=1, max_length=64)
+    address: str | None = Field(default=None, max_length=1000)
+    phones: list[str]
+    emails: list[str]
+    website: str | None = Field(default=None, max_length=2048)
+    links: list[VoiceBusinessLink]
+    default_locale: str
+    timezone: str
+
+
+class VoicePrompts(_ExecutionContract):
+    model_config = ConfigDict(extra="forbid")
+
+    system: str
+    profile: str
+    interaction: str
+    tenant: str
+    knowledge: str
+
+
 class VoiceExecutionContext(_ExecutionContract):
     execution_id: UUID
-    tenant: dict[str, object]
-    agent: dict[str, object]
+    agent: VoiceAgentIdentity
+    business: VoiceBusinessIdentity
     architecture: str = Field(min_length=1)
-    prompts: dict[str, object]
+    prompts: VoicePrompts
     runtime: dict[str, object]
     actions: list[dict[str, object]]
     handoff: list[dict[str, object]]

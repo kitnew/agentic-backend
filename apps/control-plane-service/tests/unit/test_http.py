@@ -167,13 +167,13 @@ async def test_management_actor_is_server_derived() -> None:
             json={
                 "tenant_prompt": {"content": "hello"},
                 "knowledge": {"content": ""},
-                "agent_personality": {
-                    "identity": "concierge",
+                "agent_identity": {
                     "display_name": "Concierge",
+                    "role": "Hotel concierge",
                     "greeting": "Hello",
                     "conversation_scope": "property_only",
                 },
-                "business_info": {
+                "business_identity": {
                     "business": {"name": "Hotel", "type": "hotel"},
                     "contact": {"phones": [], "emails": []},
                     "localization": {
@@ -184,6 +184,7 @@ async def test_management_actor_is_server_derived() -> None:
                 "actions_definition": {"actions": {}},
                 "architecture": {"architecture_key": "cascade"},
                 "profile_reference": {"profile_key": "sales"},
+                "interaction_mode_reference": {"mode_key": "voice"},
                 "runtime_overrides": {},
                 "actions_availability": {"actions": {}},
             },

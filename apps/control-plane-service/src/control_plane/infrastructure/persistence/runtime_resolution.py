@@ -12,6 +12,7 @@ from control_plane.application.runtime_resolver import (
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
+    InteractionModeScope,
     PlatformScope,
     ProfileScope,
     SystemScope,
@@ -38,8 +39,10 @@ from .models import Credential as CredentialRow
 from .models import CredentialVersion as CredentialVersionRow
 from .models import HandoffDestination as HandoffRow
 from .models import IntegrationConnection as IntegrationRow
+from .models import InteractionModeCatalogEntry as InteractionModeRow
 from .models import LiveComponent as LiveComponentRow
 from .models import ModelDeployment as DeploymentRow
+from .models import ProfileCatalogEntry as ProfileRow
 from .models import ProviderConnection as ConnectionRow
 
 _PLATFORM_KINDS = ("SystemPrompt",)
@@ -53,13 +56,14 @@ _SYSTEM_KINDS = (
 _TENANT_KINDS = (
     "TenantPrompt",
     "Knowledge",
-    "AgentPersonality",
-    "BusinessInfo",
+    "AgentIdentity",
+    "BusinessIdentity",
     "ActionsDefinition",
 )
 _TENANT_LIVE_KINDS = (
     "Architecture",
     "ProfileReference",
+    "InteractionModeReference",
     "RuntimeOverrides",
     "ActionsAvailability",
 )
@@ -166,6 +170,20 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                         (
                             (ComponentRow.scope_type == "profile")
                             & (ComponentRow.kind == "ProfilePrompt")
+                            & ComponentRow.scope_key.in_(
+                                select(ProfileRow.key).where(
+                                    ProfileRow.status == "enabled"
+                                )
+                            )
+                        ),
+                        (
+                            (ComponentRow.scope_type == "interaction_mode")
+                            & (ComponentRow.kind == "InteractionPrompt")
+                            & ComponentRow.scope_key.in_(
+                                select(InteractionModeRow.key).where(
+                                    InteractionModeRow.status == "enabled"
+                                )
+                            )
                         ),
                     )
                 )
@@ -180,6 +198,8 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                     TenantScope(tenant_id)
                     if component.scope_type == "tenant"
                     else ProfileScope(component.scope_key or "")
+                    if component.scope_type == "profile"
+                    else InteractionModeScope(component.scope_key or "")
                 )
             )
             address = ComponentAddress(ComponentKind(component.kind), scope)

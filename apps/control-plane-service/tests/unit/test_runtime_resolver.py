@@ -16,6 +16,7 @@ from control_plane.application.runtime_resolver import (
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
+    InteractionModeScope,
     PlatformScope,
     ProfileScope,
     SystemScope,
@@ -182,7 +183,7 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
     architectures = architectures or ["realtime"]
     components = [
         component(
-            "BusinessInfo",
+            "BusinessIdentity",
             {
                 "business": {"name": "Grand", "type": "hotel"},
                 "contact": {"phones": [], "emails": []},
@@ -339,10 +340,11 @@ def execution_resolver(
             {"content": "knowledge"},
         ),
         (
-            ComponentAddress(ComponentKind("AgentPersonality"), TenantScope(TENANT)),
+            ComponentAddress(ComponentKind("AgentIdentity"), TenantScope(TENANT)),
             {
-                "identity": "default",
                 "display_name": "Amélia",
+                "role": "Hotel concierge",
+                "grammatical_gender": "feminine",
                 "greeting": "Dobrý deň 🌿",
                 "conversation_scope": "property_only",
             },
@@ -355,9 +357,16 @@ def execution_resolver(
         components[address] = StoredActiveRuntimeComponent(
             address, UUID(int=900 + len(components)), 2, 1, raw
         )
+    address = ComponentAddress(
+        ComponentKind("InteractionPrompt"), InteractionModeScope("voice")
+    )
+    components[address] = StoredActiveRuntimeComponent(
+        address, UUID(int=999), 2, 1, {"content": "interaction"}
+    )
     live_components = dict(value.live_components)
     for kind, raw in (
         ("ProfileReference", {"profile_key": "default"}),
+        ("InteractionModeReference", {"mode_key": "voice"}),
         ("ActionsAvailability", {"actions": {}}),
     ):
         address, stored = live_component(kind, raw, tenant=True)
@@ -414,7 +423,7 @@ async def test_complete_system_live_state_is_required_without_legacy_fallback() 
     [
         "Architecture",
         "RuntimeOverrides",
-        "BusinessInfo",
+        "BusinessIdentity",
     ],
 )
 async def test_tenant_components_are_required(kind: str) -> None:
@@ -498,29 +507,42 @@ def test_execution_resolution_contains_tenant_agent_context_and_provenance() -> 
     execution = resolver.resolve_state(TENANT, enriched)
 
     assert execution.agent.display_name == "Amélia"
-    assert execution.agent.agent_profile == "default"
+    assert execution.agent.role == "Hotel concierge"
+    assert execution.agent.grammatical_gender == "feminine"
     assert execution.agent.greeting == "Dobrý deň 🌿"
     assert execution.agent.conversation_scope == "property_only"
-    assert execution.agent.locale == "sk-SK"
-    assert execution.agent.timezone == "Europe/Bratislava"
+    assert execution.business.localization.default_locale == "sk-SK"
+    assert execution.business.localization.timezone == "Europe/Bratislava"
+    assert execution.prompts["interaction"]["content"] == "interaction"
     agent_provenance = execution.provenance["agent"]
     selection_provenance = execution.provenance["profile_selection"]
     assert isinstance(agent_provenance, ComponentProvenance)
     assert isinstance(selection_provenance, ComponentProvenance)
-    assert agent_provenance.component_kind == "AgentPersonality"
+    assert agent_provenance.component_kind == "AgentIdentity"
     assert selection_provenance.component_kind == "ProfileReference"
 
 
 def test_execution_resolution_requires_agent_component() -> None:
     value = state(["cascade"])
     resolver, enriched = execution_resolver(value)
-    without_agent = without_component(enriched, "AgentPersonality")
+    without_agent = without_component(enriched, "AgentIdentity")
 
     with pytest.raises(RuntimeResolutionError) as captured:
         resolver.resolve_state(TENANT, without_agent)
 
     assert captured.value.reason is ResolutionFailureReason.MISSING_TENANT_COMPONENT
-    assert captured.value.details["component_kind"] == "AgentPersonality"
+    assert captured.value.details["component_kind"] == "AgentIdentity"
+
+
+def test_execution_resolution_requires_selected_interaction_prompt() -> None:
+    resolver, enriched = execution_resolver(state(["cascade"]))
+    without_prompt = without_component(enriched, "InteractionPrompt")
+
+    with pytest.raises(RuntimeResolutionError) as captured:
+        resolver.resolve_state(TENANT, without_prompt)
+
+    assert captured.value.reason is ResolutionFailureReason.MISSING_INTERACTION_MODE
+    assert captured.value.details["component_kind"] == "InteractionPrompt"
 
 
 def test_execution_snapshot_target_hashes_context_changes() -> None:
@@ -623,7 +645,10 @@ async def test_half_cascade_resolves_realtime_tts_and_input_transcription() -> N
 
     assert isinstance(selected, ResolvedHalfCascadeRuntime)
     assert selected.model.resource.deployment.ref.value == IDS["realtime"]
-    assert selected.input_transcription.resource.deployment.ref.value == IDS["realtime_stt"]
+    assert (
+        selected.input_transcription.resource.deployment.ref.value
+        == IDS["realtime_stt"]
+    )
     assert selected.tts.resource.deployment.ref.value == IDS["tts"]
     assert selected.tts.voice == "platform-cascade"
 

@@ -134,7 +134,6 @@ async def test_credential_revoke_rejects_enabled_provider_dependents_atomically(
     finally:
         await database.close()
 
-
 @pytest.mark.asyncio
 async def test_provider_disable_rejects_enabled_deployment_dependents_atomically(
     migrated_database_url: str,
@@ -267,7 +266,7 @@ async def test_provider_persistence_ownership_identity_and_capabilities(
         values = (
             (DeploymentKind.LLM, LLMCapabilities(True, True), {"deployment_name": "chat", "model": "gpt", "api_version": "v1"}),
             (DeploymentKind.REALTIME, RealtimeCapabilities(True, True), {"deployment_name": "realtime"}),
-            (DeploymentKind.STT, STTCapabilities(True, True), {"deployment_name": "stt"}),
+            (DeploymentKind.STT, STTCapabilities(True, True), {"deployment_name": "stt", "model": "whisper-1"}),
         )
         deployments = []
         for index, (kind, capabilities, config) in enumerate(values):

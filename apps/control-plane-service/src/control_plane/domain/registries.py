@@ -94,6 +94,22 @@ class ArchitectureRegistry:
         raise UnknownRegistryKey(f"unknown architecture: {key}")
 
 
+class GrammaticalGenderRegistry:
+    __slots__ = ()
+
+    entries = (
+        RegistryEntry("feminine", "Feminine", "Feminine grammatical gender"),
+        RegistryEntry("masculine", "Masculine", "Masculine grammatical gender"),
+        RegistryEntry("neutral", "Neutral", "Neutral grammatical gender"),
+    )
+
+    def resolve(self, key: str) -> RegistryEntry:
+        for entry in self.entries:
+            if entry.key == key:
+                return entry
+        raise UnknownRegistryKey(f"unknown grammatical gender: {key}")
+
+
 class ProviderKindRegistry:
     __slots__ = ()
 

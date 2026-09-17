@@ -29,11 +29,12 @@ FROZEN_SCOPES = {
     "Policies": {"system"},
     "TenantPrompt": {"tenant"},
     "Knowledge": {"tenant"},
-    "AgentPersonality": {"tenant"},
-    "BusinessInfo": {"tenant"},
+    "AgentIdentity": {"tenant"},
+    "BusinessIdentity": {"tenant"},
     "ActionsDefinition": {"tenant"},
     "Architecture": {"tenant"},
     "ProfileReference": {"tenant"},
+    "InteractionModeReference": {"tenant"},
     "RuntimeOverrides": {"tenant"},
     "ActionsAvailability": {"tenant"},
 }
@@ -187,16 +188,17 @@ def test_frozen_component_scopes_reject_every_other_scope(
         ("TenantPrompt", {"content": "tenant"}),
         ("Knowledge", {"content": ""}),
         (
-            "AgentPersonality",
+            "AgentIdentity",
             {
-                "identity": "front_desk",
                 "display_name": "Amelia",
+                "role": "Front desk concierge",
+                "grammatical_gender": "feminine",
                 "greeting": "Hello",
                 "conversation_scope": "property_only",
             },
         ),
         (
-            "BusinessInfo",
+            "BusinessIdentity",
             {
                 "business": {"name": "Hotel", "type": "hotel"},
                 "contact": {
@@ -209,6 +211,10 @@ def test_frozen_component_scopes_reject_every_other_scope(
                     "default_locale": "en-US",
                     "timezone": "Europe/Bucharest",
                 },
+                "links": [
+                    {"label": "Instagram", "value": "@hotel"},
+                    {"label": "Website", "value": "https://hotel.example"},
+                ],
             },
         ),
         (
@@ -237,6 +243,7 @@ def test_frozen_component_scopes_reject_every_other_scope(
         ),
         ("Architecture", {"architecture_key": "cascade"}),
         ("ProfileReference", {"profile_key": "hotel"}),
+        ("InteractionModeReference", {"mode_key": "voice"}),
         ("RuntimeOverrides", {"stt": {"keyterms": []}}),
         ("ActionsAvailability", {"actions": {"lookup": True}}),
     ],
@@ -269,20 +276,40 @@ def test_each_frozen_component_accepts_its_minimal_structural_value(
             },
         ),
         (
-            "AgentPersonality",
+            "AgentIdentity",
             {
-                "identity": "FrontDesk",
                 "display_name": "Amelia",
+                "role": "Concierge",
+                "grammatical_gender": "invalid",
                 "greeting": "Hello",
                 "conversation_scope": "property_only",
             },
         ),
         (
-            "BusinessInfo",
+            "AgentIdentity",
+            {
+                "display_name": "Amelia",
+                "role": "Concierge",
+                "grammatical_gender": None,
+                "greeting": "Hello",
+                "conversation_scope": "property_only",
+            },
+        ),
+        (
+            "BusinessIdentity",
             {
                 "business": {"name": "Hotel", "type": "hotel"},
                 "contact": {"phones": [], "emails": ["not-an-email"]},
                 "localization": {"default_locale": "en_us", "timezone": "UTC"},
+            },
+        ),
+        (
+            "BusinessIdentity",
+            {
+                "business": {"name": "Hotel", "type": "hotel"},
+                "contact": {"phones": [], "emails": []},
+                "links": [{"label": "Listing"}],
+                "localization": {"default_locale": "en-US", "timezone": "UTC"},
             },
         ),
         ("RuntimeOverrides", {"llm": {"temperature": 1}}),
@@ -297,10 +324,30 @@ def test_frozen_structural_boundaries_reject_invalid_values(
         registry().resolve(address(kind)).deserialize(value)
 
 
+def test_agent_identity_has_no_legacy_key_and_optional_gender() -> None:
+    value = {
+        "display_name": "Amelia",
+        "role": "Concierge",
+        "greeting": "Hello",
+        "conversation_scope": "property_only",
+    }
+    identity = registry().resolve(address("AgentIdentity")).deserialize(value)
+    assert identity.grammatical_gender is None
+    with pytest.raises(InvalidComponentValue):
+        registry().resolve(address("AgentIdentity")).deserialize(
+            {**value, "identity": "legacy"}
+        )
+    with pytest.raises(InvalidComponentValue):
+        registry().resolve(address("AgentIdentity")).deserialize(
+            {key: item for key, item in value.items() if key != "greeting"}
+        )
+
+
 def test_code_owned_registries_resolve_frozen_keys_and_are_read_only() -> None:
     from control_plane.domain.registries import (
         ArchitectureRegistry,
         DeploymentKindRegistry,
+        GrammaticalGenderRegistry,
         IncompatibleRegistryReference,
         IntegrationKindRegistry,
         ProviderKindRegistry,
@@ -309,6 +356,7 @@ def test_code_owned_registries_resolve_frozen_keys_and_are_read_only() -> None:
 
     registries_and_keys = (
         (ArchitectureRegistry(), ("cascade", "realtime", "half-cascade")),
+        (GrammaticalGenderRegistry(), ("feminine", "masculine", "neutral")),
         (ProviderKindRegistry(), ("azure_openai", "elevenlabs", "deepgram")),
         (DeploymentKindRegistry(), ("llm", "realtime", "stt", "tts")),
         (IntegrationKindRegistry(), ("http",)),

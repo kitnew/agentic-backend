@@ -10,10 +10,11 @@ from control_plane.application.tenant_configuration import (
     TenantConfigurationPreconditionFailed,
     TenantConfigurationService,
 )
-from control_plane.domain.catalogs import CatalogStatus, Profile
+from control_plane.domain.catalogs import CatalogStatus, InteractionMode, Profile
 from control_plane.domain.components import (
     ComponentAddress,
     ComponentKind,
+    InteractionModeScope,
     ProfileScope,
 )
 from control_plane.domain.frozen_components import default_component_definition_registry
@@ -44,19 +45,20 @@ def desired(
     availability: dict[str, bool] | None = None,
     architecture: str = "cascade",
     profile: str = "sales",
+    interaction_mode: str = "voice",
     keyterms: list[str] | None = None,
 ) -> TenantConfigurationDesired:
     return TenantConfigurationDesired.model_validate(
         {
             "tenant_prompt": {"content": prompt},
             "knowledge": {"content": "knowledge"},
-            "agent_personality": {
-                "identity": "concierge",
+            "agent_identity": {
                 "display_name": "Concierge",
+                "role": "Hotel concierge",
                 "greeting": "Welcome",
                 "conversation_scope": "property_only",
             },
-            "business_info": {
+            "business_identity": {
                 "business": {"name": "Hotel", "type": "hotel"},
                 "contact": {"phones": [], "emails": []},
                 "localization": {
@@ -67,6 +69,7 @@ def desired(
             "actions_definition": {"actions": {key: action() for key in actions}},
             "architecture": {"architecture_key": architecture},
             "profile_reference": {"profile_key": profile},
+            "interaction_mode_reference": {"mode_key": interaction_mode},
             "runtime_overrides": {
                 "stt": {"keyterms": [] if keyterms is None else keyterms}
             },
@@ -99,11 +102,18 @@ class Repository:
         self.profile = Profile(
             "sales", "Sales", "Sales", CatalogStatus.ENABLED, 1, NOW, NOW
         )
+        self.interaction_mode = InteractionMode(
+            "voice", "Voice", "Spoken voice", CatalogStatus.ENABLED, 1, NOW, NOW
+        )
         self.integrations = {"hotel"}
         address = ComponentAddress(
             ComponentKind("ProfilePrompt"), ProfileScope("sales")
         )
         self.components[address] = (None, self._revision({"content": "profile"}))
+        address = ComponentAddress(
+            ComponentKind("InteractionPrompt"), InteractionModeScope("voice")
+        )
+        self.components[address] = (None, self._revision({"content": "interaction"}))
 
     @staticmethod
     def _revision(value, active=None):
@@ -167,6 +177,9 @@ class Repository:
     async def get_profile(self, key, *, lock=False):
         return self.profile if key == self.profile.key else None
 
+    async def get_interaction_mode(self, key, *, lock=False):
+        return self.interaction_mode if key == self.interaction_mode.key else None
+
     async def get_integration_by_key(self, _tenant_id, key, *, lock=False):
         if key not in self.integrations:
             raise ManagedResourceNotFound(key)
@@ -209,7 +222,7 @@ async def test_plan_is_non_mutating_and_apply_obeys_mixed_lifecycles() -> None:
     service, repository, _ = setup()
     before = (dict(repository.components), dict(repository.live))
     plan = await service.plan("tenant-a", desired())
-    assert plan.valid and len(plan.changes.immediate) == 4
+    assert plan.valid and len(plan.changes.immediate) == 5
     assert len(plan.changes.draft) == 5
     assert (repository.components, repository.live) == before
 
@@ -374,7 +387,7 @@ async def test_publish_is_atomic_and_only_publishes_versioned_components() -> No
         if address.scope.key == "tenant-a"
     ]
     assert all(active is None and draft is not None for draft, active in tenant_rows)
-    assert len(repository.live) == 4
+    assert len(repository.live) == 5
 
 
 @pytest.mark.asyncio
@@ -443,6 +456,10 @@ async def test_profile_architecture_and_integration_references_are_validated() -
     service, _, _ = setup()
     for value, code in (
         (desired(profile="missing"), "unknown_or_disabled_profile"),
+        (
+            desired(interaction_mode="missing"),
+            "unknown_or_disabled_interaction_mode",
+        ),
         (desired(architecture="missing"), "unknown_architecture"),
         (desired(actions=("new",)), None),
     ):
@@ -471,6 +488,15 @@ async def test_profile_architecture_and_integration_references_are_validated() -
             code = "unknown_integration"
         plan = await service.plan("tenant-a", value)
         assert code in {error.code for error in plan.errors}
+
+    service, repository, _ = setup()
+    repository.interaction_mode = InteractionMode(
+        "voice", "Voice", "Spoken voice", CatalogStatus.DISABLED, 2, NOW, NOW
+    )
+    plan = await service.plan("tenant-a", desired())
+    assert "unknown_or_disabled_interaction_mode" in {
+        error.code for error in plan.errors
+    }
 
 
 def test_exact_tenant_schema_rejects_legacy_and_preserves_absent_vs_empty() -> None:

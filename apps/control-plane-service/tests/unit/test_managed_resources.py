@@ -72,8 +72,8 @@ def test_provider_registry_validates_current_provider_shapes() -> None:
         "azure_openai", DeploymentKind.REALTIME, {"deployment_name": "realtime-prod"}
     ) == {"deployment_name": "realtime-prod"}
     assert registry.validate_deployment(
-        "azure_openai", DeploymentKind.STT, {"deployment_name": "whisper-prod"}
-    ) == {"deployment_name": "whisper-prod"}
+        "azure_openai", DeploymentKind.STT, {"deployment_name": "whisper-prod", "model": "whisper-1"}
+    ) == {"deployment_name": "whisper-prod", "model": "whisper-1"}
     assert registry.validate_connection("elevenlabs", {}) == {}
     assert registry.validate_deployment(
         "elevenlabs", DeploymentKind.STT, {"model_id": "scribe_v2_realtime"}

@@ -42,6 +42,9 @@ class SqlAlchemyTenantConfigurationRepository(SqlAlchemyComponentRepository):
     async def get_profile(self, *args, **kwargs):
         return await self._platform.get_profile(*args, **kwargs)
 
+    async def get_interaction_mode(self, *args, **kwargs):
+        return await self._platform.get_interaction_mode(*args, **kwargs)
+
     async def get_integration_by_key(self, *args, **kwargs):
         return await self._integrations.get_by_key(*args, **kwargs)
 

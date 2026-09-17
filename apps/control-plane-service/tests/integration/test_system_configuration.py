@@ -96,7 +96,7 @@ async def setup(database):
         "stt": (
             DeploymentKind.STT,
             STTCapabilities(True, True),
-            {"deployment_name": "stt"},
+            {"deployment_name": "stt", "model": "whisper-1"},
         ),
         "llm": (
             DeploymentKind.LLM,
