@@ -32,6 +32,7 @@ from voice_agent.main import (
     parse_metadata,
     resolve_call_session_id,
     run_job,
+    send_greeting,
 )
 from voice_agent.providers import (
     azure_endpoint,
@@ -1231,6 +1232,45 @@ def test_close_reason_mapping(
 
 
 @pytest.mark.asyncio
+async def test_greeting_uses_configured_tts_and_chat_history() -> None:
+    calls: list[tuple[str, object]] = []
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.tts = object()
+
+        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
+            calls.append(("say", (text, add_to_chat_ctx)))
+
+        async def generate_reply(self, **kwargs: object) -> None:
+            calls.append(("generate_reply", kwargs))
+
+    await send_greeting(FakeSession(), "Добрый день")  # type: ignore[arg-type]
+
+    assert calls == [("say", ("Добрый день", True))]
+
+
+@pytest.mark.asyncio
+async def test_realtime_greeting_preserves_text_and_chat_history() -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeSession:
+        tts = None
+
+        async def generate_reply(self, **kwargs: object) -> None:
+            calls.append(kwargs)
+
+        async def say(self, **kwargs: object) -> None:
+            raise AssertionError("realtime greeting must use generate_reply")
+
+    await send_greeting(FakeSession(), "Добрый день")  # type: ignore[arg-type]
+
+    assert calls == [
+        {"instructions": "say Добрый день", "input_modality": "audio"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -> None:
     context = runtime_context()
     call_id = uuid4()
@@ -1264,6 +1304,8 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
             return None
 
     class FakeSession:
+        tts = None
+
         def on(self, event, callback):
             return callback
 
@@ -1343,6 +1385,7 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         def __init__(self) -> None:
             self.callbacks: dict[str, object] = {}
             self.record: object | None = None
+            self.tts = object()
 
         def on(self, event, callback):
             self.callbacks[event] = callback
@@ -1355,6 +1398,10 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
             order.append("session-start")
 
         async def generate_reply(self, *, instructions, input_modality) -> None:
+            callback = self.callbacks["close"]
+            callback(SimpleNamespace(reason=agents.CloseReason.TASK_COMPLETED))
+
+        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
             callback = self.callbacks["close"]
             callback(SimpleNamespace(reason=agents.CloseReason.TASK_COMPLETED))
 
@@ -1460,6 +1507,8 @@ async def test_successful_handoff_relinquishes_without_completing_call(
             return None
 
     class Session:
+        tts = None
+
         def __init__(self) -> None:
             self.callbacks: dict[str, object] = {}
 
@@ -1550,6 +1599,8 @@ async def test_session_close_terminalizes_while_session_is_alive(
             return None
 
     class FakeSession:
+        tts = None
+
         def __init__(self) -> None:
             self.callbacks: dict[str, object] = {}
             self.greeted = asyncio.Event()
@@ -1564,6 +1615,9 @@ async def test_session_close_terminalizes_while_session_is_alive(
             return None
 
         async def generate_reply(self, *, instructions, input_modality) -> None:
+            self.greeted.set()
+
+        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
             self.greeted.set()
 
         async def aclose(self) -> None:

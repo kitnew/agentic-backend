@@ -105,6 +105,19 @@ def parse_metadata(raw_metadata: str) -> LiveKitJobMetadata:
     return LiveKitJobMetadata.model_validate_json(raw_metadata)
 
 
+async def send_greeting(
+    session: agents.AgentSession,
+    greeting: str,
+) -> None:
+    if session.tts is not None:
+        await session.say(greeting, add_to_chat_ctx=True)
+        return
+    await session.generate_reply(
+        instructions=f"say {greeting}",
+        input_modality="audio",
+    )
+
+
 async def resolve_call_session_id(
     ctx: agents.JobContext,
     backend: BackendClient,
@@ -621,9 +634,9 @@ async def run_job(
         await backend.activate(call_id)
         if not closed.done():
             try:
-                await session.generate_reply(
-                    instructions=str(context.agent["greeting"]),
-                    input_modality="audio",
+                await send_greeting(
+                    session,
+                    str(context.agent["greeting"]),
                 )
             except Exception:
                 if not closed.done():
