@@ -192,7 +192,7 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
     timezone = context.business.timezone
     local_now = datetime.now(ZoneInfo(timezone))
     agent = [
-        "[Agent]",
+        "[Agent context]",
         f"Display name: {context.agent.display_name}",
         f"Role: {context.agent.role}",
     ]
@@ -201,7 +201,7 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
     agent.append(f"Conversation scope: {context.agent.conversation_scope}")
 
     business = [
-        "[Business]",
+        "[Business context]",
         f"Name: {context.business.name}",
         f"Type: {context.business.type}",
     ]
@@ -228,13 +228,13 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
 
     return "\n\n".join(
         (
-            f"[System]\n{context.prompts.system}",
-            f"[Profile]\n{context.prompts.profile}",
-            f"[Interaction]\n{context.prompts.interaction}",
-            f"[Tenant]\n{context.prompts.tenant}",
+            f"[System instructions]\n{context.prompts.system}",
+            f"[Profile instructions]\n{context.prompts.profile}",
+            f"[Interaction instructions]\n{context.prompts.interaction}",
+            f"[Tenant instructions]\n{context.prompts.tenant}",
             "\n".join(agent),
             "\n".join(business),
-            f"[Knowledge]\n{context.prompts.knowledge}",
+            f"[Tenant knowledge]\n{context.prompts.knowledge}",
             (
                 "[Dynamic context]\n"
                 f"Current local date: {local_now.date().isoformat()}\n"
