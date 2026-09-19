@@ -102,6 +102,14 @@ class ControlPlaneClient:
         )
         return InboundRoute.model_validate(response.json())
 
+    async def inbound_numbers(self) -> list[str]:
+        response = await self._request(
+            "GET",
+            "/internal/v1/telephony/inbound-numbers",
+            "telephony:resolve",
+        )
+        return [str(value) for value in response.json()]
+
     async def integration_execution_material(
         self, execution_id: UUID, integration_key: str
     ) -> IntegrationExecutionMaterial:

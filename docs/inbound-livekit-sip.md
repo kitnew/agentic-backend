@@ -70,7 +70,7 @@ SIP_PROVIDER_PASSWORD=...
 Normal provisioning is automatic after tenant Publish. Backend creates or
 updates one shared inbound trunk, outbound trunk, and shared dispatch rule,
 stores their external IDs in PostgreSQL, and synchronizes the exact set of
-phone numbers from active published tenants. The inbound trunk uses an
+phone numbers from enabled canonical Control Plane assignments. The inbound trunk uses an
 explicit numbers list (not a wildcard); add/change/remove/disable operations
 reconcile that list, and Backend still routes DID fail-closed from canonical
 published state. Reconciliation is idempotent and retry-safe.

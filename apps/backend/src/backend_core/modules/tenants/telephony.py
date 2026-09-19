@@ -15,6 +15,7 @@ from backend_core.modules.tenants.schemas import (
     TelephonyProvisioningStatusResponse,
     TenantTelephonyStatus,
 )
+from backend_core.platform.control_plane import ControlPlaneClient
 from backend_core.platform.database import Database
 from backend_core.platform.livekit import LiveKitAdapter
 
@@ -59,12 +60,14 @@ class PlatformTelephonyService:
         telephony: TelephonyRepository,
         livekit: LiveKitAdapter,
         settings: Settings,
+        control_plane: ControlPlaneClient,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
         self._telephony = telephony
         self._livekit = livekit
         self._settings = settings
+        self._control_plane = control_plane
         self._tracer = tracer
         self._metrics = metrics
 
@@ -101,9 +104,10 @@ class PlatformTelephonyService:
                 started,
             )
         try:
+            numbers = await self._control_plane.inbound_numbers()
             with domain_span(self._tracer, "telephony.reconcile"):
                 inbound, outbound, dispatch = await self._livekit.reconcile_shared_sip(
-                    numbers=[],
+                    numbers=numbers,
                     provider_address=self._settings.sip_provider_address,
                     provider_username=(
                         self._settings.sip_provider_username.get_secret_value()
@@ -164,10 +168,12 @@ class PlatformTelephonyReconciler:
         database: Database,
         livekit: LiveKitAdapter,
         settings: Settings,
+        control_plane: ControlPlaneClient,
         tracer: Tracer | None = None,
         metrics: CoreMetrics | None = None,
     ) -> None:
         self._database, self._livekit, self._settings = database, livekit, settings
+        self._control_plane = control_plane
         self._tracer, self._metrics = tracer, metrics
 
     async def run(self, interval_seconds: float) -> None:
@@ -180,6 +186,7 @@ class PlatformTelephonyReconciler:
                         repository,
                         self._livekit,
                         self._settings,
+                        self._control_plane,
                         self._tracer,
                         self._metrics,
                     ).reconcile()

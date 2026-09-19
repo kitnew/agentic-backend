@@ -70,6 +70,11 @@ class LiveKit:
         return "ST_inbound", "ST_outbound", "SDR_shared"
 
 
+class ControlPlane:
+    async def inbound_numbers(self):
+        return ["+421551234567"]
+
+
 @pytest.mark.asyncio
 async def test_reconciliation_persists_failure_then_retries_with_stored_ids() -> None:
     repository = Repository()
@@ -80,7 +85,9 @@ async def test_reconciliation_persists_failure_then_retries_with_stored_ids() ->
         sip_provider_password=None,
         livekit_agent_name="voice-agent",
     )
-    service = PlatformTelephonyService(repository, livekit, settings)  # type: ignore[arg-type]
+    service = PlatformTelephonyService(
+        repository, livekit, settings, ControlPlane()
+    )  # type: ignore[arg-type]
 
     failed = await service.reconcile()
     assert failed.overall == "error"
@@ -104,7 +111,7 @@ async def test_reconciliation_persists_failure_then_retries_with_stored_ids() ->
     assert livekit.calls[-1]["dispatch_rule_id"] == "SDR_shared"
 
     await service.reconcile()
-    assert livekit.calls[-1]["numbers"] == []
+    assert livekit.calls[-1]["numbers"] == ["+421551234567"]
 
 
 @pytest.mark.asyncio
@@ -147,7 +154,9 @@ async def test_pending_publish_is_reconciled_automatically_after_commit(
     )
     monkeypatch.setattr(telephony_module, "PlatformTelephonyService", Service)
     task = asyncio.create_task(
-        PlatformTelephonyReconciler(Database(), object(), object(), object()).run(0)  # type: ignore[arg-type]
+        PlatformTelephonyReconciler(
+            Database(), object(), object(), object(), object()
+        ).run(0)  # type: ignore[arg-type]
     )
     with pytest.raises(asyncio.CancelledError):
         await task
