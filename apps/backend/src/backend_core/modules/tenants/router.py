@@ -85,13 +85,13 @@ async def get_tenant(
 
 @router.get("/{tenant_id}/telephony/status", response_model=TenantTelephonyStatus)
 async def tenant_telephony_status(
-    tenant_id: UUID, session: DatabaseSession
+    tenant_id: UUID, session: DatabaseSession, request: Request
 ) -> TenantTelephonyStatus:
     if await TenantRepository(session).get(tenant_id) is None:
         raise HTTPException(status_code=404, detail="tenant not found")
-    return await TenantTelephonyStatusService(TelephonyRepository(session)).show(
-        tenant_id
-    )
+    return await TenantTelephonyStatusService(
+        TelephonyRepository(session), request.app.state.control_plane
+    ).show(tenant_id)
 
 
 @router.get("", response_model=list[TenantResponse])

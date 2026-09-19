@@ -102,11 +102,12 @@ class ControlPlaneClient:
         )
         return InboundRoute.model_validate(response.json())
 
-    async def inbound_numbers(self) -> list[str]:
+    async def inbound_numbers(self, tenant_id: str | None = None) -> list[str]:
         response = await self._request(
             "GET",
             "/internal/v1/telephony/inbound-numbers",
             "telephony:resolve",
+            params={"tenant_id": tenant_id} if tenant_id else None,
         )
         return [str(value) for value in response.json()]
 

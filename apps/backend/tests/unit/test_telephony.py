@@ -9,6 +9,7 @@ from backend_core.modules.tenants.models import TelephonyProvisioningStatus
 from backend_core.modules.tenants.telephony import (
     PlatformTelephonyReconciler,
     PlatformTelephonyService,
+    TenantTelephonyStatusService,
 )
 
 
@@ -44,7 +45,7 @@ class Repository:
     async def provisioning(self):
         return [self.provisioning_state]
 
-    async def provisioning_for(self, tenant_id, assignment_id):
+    async def provisioning_for(self, tenant_id, assignment_id=None):
         return (
             self.provisioning_state
             if assignment_id == self.assignment.assignment_id
@@ -71,7 +72,7 @@ class LiveKit:
 
 
 class ControlPlane:
-    async def inbound_numbers(self):
+    async def inbound_numbers(self, tenant_id=None):
         return ["+421551234567"]
 
 
@@ -112,6 +113,25 @@ async def test_reconciliation_persists_failure_then_retries_with_stored_ids() ->
 
     await service.reconcile()
     assert livekit.calls[-1]["numbers"] == ["+421551234567"]
+
+
+@pytest.mark.asyncio
+async def test_tenant_status_reflects_enabled_did_and_ready_platform() -> None:
+    repository = Repository()
+    repository.state.inbound_trunk_id = "ST_inbound"
+    repository.state.outbound_trunk_id = "ST_outbound"
+    repository.state.dispatch_rule_id = "SDR_shared"
+    repository.state.provisioning_status = TelephonyProvisioningStatus.READY
+    status = await TenantTelephonyStatusService(
+        repository, ControlPlane()
+    ).show(repository.assignment.tenant_id)
+
+    assert status.published is not None
+    assert status.published.phone_number == "+421551234567"
+    assert status.publication == "published"
+    assert status.claim.state == "ready"
+    assert status.claim.phone_number == "+421551234567"
+    assert status.provisioning.state == "ready"
 
 
 @pytest.mark.asyncio

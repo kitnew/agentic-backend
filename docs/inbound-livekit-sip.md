@@ -78,6 +78,10 @@ published state. Reconciliation is idempotent and retry-safe.
 Open **Platform → Telephony** and use **Repair** only when an explicit retry or
 diagnostic action is needed.
 
+Tenant **Telephony** in Admin Web reads the same enabled Control Plane
+assignment. When the shared platform trunks are ready, the tenant status shows
+the DID as published and claimed; no agentctl command is required.
+
 `infrastructure/livekit/sip/*.json` and `lk sip ...` are legacy/emergency
 diagnostics, not the normal provisioning workflow. `LIVEKIT_SIP_OUTBOUND_TRUNK_ID`
 and `agentctl tenant inbound-route` are removed.

@@ -12,6 +12,7 @@ from backend_core.modules.tenants.repository import TelephonyRepository
 from backend_core.modules.tenants.schemas import (
     PlatformTelephonyResponse,
     TelephonyClaimStatus,
+    TelephonyDidState,
     TelephonyProvisioningStatusResponse,
     TenantTelephonyStatus,
 )
@@ -26,30 +27,65 @@ logger = logging.getLogger(__name__)
 
 
 class TenantTelephonyStatusService:
-    def __init__(self, telephony: TelephonyRepository) -> None:
+    def __init__(
+        self, telephony: TelephonyRepository, control_plane: ControlPlaneClient
+    ) -> None:
         self._telephony = telephony
+        self._control_plane = control_plane
 
     async def show(self, tenant_id) -> TenantTelephonyStatus:
         provisioning = await self._telephony.provisioning_for(tenant_id)
+        platform = await self._telephony.platform()
+        numbers = await self._control_plane.inbound_numbers(str(tenant_id))
+        phone_number = numbers[0] if numbers else None
+        platform_ready = (
+            platform.provisioning_status is TelephonyProvisioningStatus.READY
+            and platform.inbound_trunk_id is not None
+            and platform.outbound_trunk_id is not None
+            and platform.dispatch_rule_id is not None
+        )
         provisioning_state = (
-            "absent"
-            if provisioning is None
-            else "pending"
-            if provisioning is None
-            else provisioning.status
+            provisioning.status
+            if provisioning is not None
+            else "ready"
+            if phone_number is not None and platform_ready
+            else platform.provisioning_status.value
+            if phone_number is not None
+            else "absent"
+        )
+        last_error = (
+            provisioning.last_error
+            if provisioning is not None and provisioning.last_error
+            else platform.last_error
+        )
+        last_reconciled_at = (
+            provisioning.last_reconciled_at
+            if provisioning is not None and provisioning.last_reconciled_at
+            else platform.last_reconciled_at
         )
         return TenantTelephonyStatus(
             tenant_id=tenant_id,
             draft=None,
-            published=None,
-            publication="empty",
-            claim=TelephonyClaimStatus(state="absent", phone_number=None),
+            published=(
+                TelephonyDidState(phone_number=phone_number)
+                if phone_number is not None
+                else None
+            ),
+            publication="published" if phone_number is not None else "empty",
+            claim=TelephonyClaimStatus(
+                state=(
+                    "ready"
+                    if platform_ready
+                    else "pending"
+                    if phone_number is not None
+                    else "absent"
+                ),
+                phone_number=phone_number,
+            ),
             provisioning=TelephonyProvisioningStatusResponse(
                 state=provisioning_state,
-                last_error=None if provisioning is None else provisioning.last_error,
-                last_reconciled_at=(
-                    None if provisioning is None else provisioning.last_reconciled_at
-                ),
+                last_error=last_error,
+                last_reconciled_at=last_reconciled_at,
             ),
         )
 
