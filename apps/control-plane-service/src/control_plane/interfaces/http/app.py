@@ -1016,9 +1016,10 @@ def _internal_router() -> APIRouter:
     @router.get("/telephony/inbound-numbers", response_model=list[str])
     async def inbound_numbers(
         request: Request,
+        tenant_id: str | None = Query(default=None, min_length=1, max_length=64),
         _principal: ServicePrincipal = _telephony_resolve_auth,
     ) -> list[str]:
-        return await request.app.state.telephony.list_enabled_numbers()
+        return await request.app.state.telephony.list_enabled_numbers(tenant_id)
 
     return router
 

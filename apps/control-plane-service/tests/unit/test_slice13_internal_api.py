@@ -92,7 +92,7 @@ class Telephony:
             "route_version": "opaque",
         }
 
-    async def list_enabled_numbers(self):
+    async def list_enabled_numbers(self, tenant_id=None):
         return ["+421900123456"]
 
 

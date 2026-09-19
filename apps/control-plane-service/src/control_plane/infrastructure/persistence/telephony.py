@@ -66,11 +66,16 @@ class SqlAlchemyPhoneNumberAssignmentRepository:
         ).all()
         return [self._value(row) for row in rows]
 
-    async def list_enabled(self) -> Sequence[PhoneNumberAssignment]:
+    async def list_enabled(
+        self, tenant_id: str | None = None
+    ) -> Sequence[PhoneNumberAssignment]:
+        filters = [AssignmentRow.enabled.is_(True)]
+        if tenant_id is not None:
+            filters.append(AssignmentRow.tenant_id == tenant_id)
         rows = (
             await self._session.scalars(
                 select(AssignmentRow)
-                .where(AssignmentRow.enabled.is_(True))
+                .where(*filters)
                 .order_by(AssignmentRow.phone_number, AssignmentRow.id)
             )
         ).all()

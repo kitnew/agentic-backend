@@ -741,13 +741,15 @@ The Backend also reads the canonical enabled DID set while reconciling the
 shared LiveKit SIP inbound trunk:
 
 ```text
-GET /internal/v1/telephony/inbound-numbers
+GET /internal/v1/telephony/inbound-numbers?tenant_id=...
 ```
 
 Returns a JSON array of canonical E.164 phone numbers. The endpoint is
 read-only, uses the `telephony:resolve` service scope, and returns only
-enabled `PhoneNumberAssignment` resources. It does not publish, mutate, or
-provision phone numbers.
+enabled `PhoneNumberAssignment` resources. Omitting `tenant_id` returns the
+full enabled set for shared LiveKit trunk reconciliation; providing it filters
+the result for one tenant's operational status. It does not publish, mutate,
+or provision phone numbers.
 
 ---
 
