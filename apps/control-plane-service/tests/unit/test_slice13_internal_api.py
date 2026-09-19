@@ -92,6 +92,9 @@ class Telephony:
             "route_version": "opaque",
         }
 
+    async def list_enabled_numbers(self):
+        return ["+421900123456"]
+
 
 def token(service: str, scopes: list[str], secret: str | None = None) -> str:
     now = datetime.now(UTC)
@@ -137,6 +140,7 @@ TARGET = {
         "/internal/v1/executions/{execution_id}/handoff/{destination_key}/material",
     ),
     ("GET", "/internal/v1/telephony/inbound-route"),
+    ("GET", "/internal/v1/telephony/inbound-numbers"),
 }
 
 
@@ -260,6 +264,7 @@ async def test_internal_errors_use_shared_envelope() -> None:
             "/internal/v1/executions/00000000-0000-0000-0000-000000000001/handoff/reception/material",
         ),
         ("get", "/internal/v1/telephony/inbound-route?phone_number=%2B421900123456"),
+        ("get", "/internal/v1/telephony/inbound-numbers"),
     ],
 )
 async def test_voice_is_rejected_from_every_non_secret_internal_route(
@@ -355,6 +360,10 @@ async def test_internal_domain_errors_and_all_material_cache_headers() -> None:
             "/internal/v1/telephony/inbound-route?phone_number=%2B421900123456",
             headers=backend,
         )
+        inbound_numbers = await client.get(
+            "/internal/v1/telephony/inbound-numbers",
+            headers=backend,
+        )
     assert [
         unknown_execution.status_code,
         unknown_action.status_code,
@@ -387,3 +396,5 @@ async def test_internal_domain_errors_and_all_material_cache_headers() -> None:
         "phone_number": "+421900123456",
         "route_version": "opaque",
     }
+    assert inbound_numbers.status_code == 200
+    assert inbound_numbers.json() == ["+421900123456"]

@@ -1216,7 +1216,8 @@ Manages telephony resources.
 
 * create / list / get,
 * enable / disable,
-* resolve inbound phone number to tenant route.
+* resolve inbound phone number to tenant route,
+* list enabled inbound numbers for Backend SIP reconciliation.
 
 ##### Handoff destinations
 

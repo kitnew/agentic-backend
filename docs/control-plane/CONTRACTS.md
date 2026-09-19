@@ -737,6 +737,18 @@ Returns:
 
 - `InboundRoute`
 
+The Backend also reads the canonical enabled DID set while reconciling the
+shared LiveKit SIP inbound trunk:
+
+```text
+GET /internal/v1/telephony/inbound-numbers
+```
+
+Returns a JSON array of canonical E.164 phone numbers. The endpoint is
+read-only, uses the `telephony:resolve` service scope, and returns only
+enabled `PhoneNumberAssignment` resources. It does not publish, mutate, or
+provision phone numbers.
+
 ---
 
 ## 8. DTO primitives

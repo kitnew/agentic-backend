@@ -1013,6 +1013,13 @@ def _internal_router() -> APIRouter:
             await request.app.state.telephony.resolve_inbound(phone_number)
         )
 
+    @router.get("/telephony/inbound-numbers", response_model=list[str])
+    async def inbound_numbers(
+        request: Request,
+        _principal: ServicePrincipal = _telephony_resolve_auth,
+    ) -> list[str]:
+        return await request.app.state.telephony.list_enabled_numbers()
+
     return router
 
 

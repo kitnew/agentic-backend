@@ -704,6 +704,7 @@
 
 4. Backend has only the internal scopes required for:
    - telephony resolution,
+   - enabled inbound-number synchronization,
    - execution creation,
    - execution projection reads,
    - integration/handoff materialization.

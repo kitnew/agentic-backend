@@ -70,6 +70,10 @@ class TelephonyService:
         async with self._command_scope() as (assignments, _, _replays):
             return list(await assignments.list(tenant_id))
 
+    async def list_enabled_numbers(self) -> list[str]:
+        async with self._command_scope() as (assignments, _, _replays):
+            return [value.phone_number for value in await assignments.list_enabled()]
+
     async def enable_assignment(
         self,
         tenant_id: str,

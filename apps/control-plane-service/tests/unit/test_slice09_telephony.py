@@ -82,6 +82,7 @@ def test_openapi_exposes_only_target_telephony_management_contract() -> None:
     assert f"{destination}/{{id}}/enable" in paths
     assert f"{destination}/{{id}}/disable" in paths
     assert "/internal/v1/telephony/inbound-route" in paths
+    assert "/internal/v1/telephony/inbound-numbers" in paths
     assert not any(
         "/internal/v1/telephony/phone-number-assignments" in path for path in paths
     )
