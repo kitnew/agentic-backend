@@ -1,11 +1,11 @@
-import { DeferredFeaturePage } from "../deferred/deferred-feature-page";
 import { PlatformTelephonyPage } from "./telephony-page";
+import { TenantTelephonyPage } from "./tenant-page";
 
 export const routes = [
   {
     id: "tenant-telephony",
     path: "/tenants/$tenantId/telephony",
-    component: () => <DeferredFeaturePage title="Telephony" />,
+    component: TenantTelephonyPage,
   },
   {
     id: "platform-telephony",

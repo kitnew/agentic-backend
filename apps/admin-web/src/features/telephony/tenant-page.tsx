@@ -9,8 +9,10 @@ import {
 import { managementMutationOptions, responseData } from "../../core/api/client";
 import {
   createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPost,
+  enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePost,
   listPhoneNumberAssignmentsManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsGet,
 } from "../../core/api/control-plane";
+import type { PhoneNumberAssignmentResponse } from "../../core/api/control-plane/generated/models";
 import { tenantTelephonyStatusAdminV1TenantsTenantIdTelephonyStatusGet } from "../../core/api/generated/admin-tenants/admin-tenants";
 import { useTenant } from "../../core/tenant/use-tenant";
 
@@ -38,12 +40,24 @@ export function TenantTelephonyPage() {
       ),
   });
   const assign = useMutation({
-    mutationFn: () =>
-      createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPost(
+    mutationFn: async () => {
+      const createdResponse =
+        await createPhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsPost(
+          tenantId as string,
+          { phone_number: phone },
+          managementMutationOptions(),
+        );
+      const created =
+        responseData<PhoneNumberAssignmentResponse>(createdResponse);
+      if (created.enabled) return createdResponse;
+      const etag = createdResponse.headers.get("etag");
+      if (!etag) throw new Error("DID assignment response has no ETag");
+      return enablePhoneNumberAssignmentManagementV1TenantsTenantIdTelephonyPhoneNumberAssignmentsIdEnablePost(
         tenantId as string,
-        { phone_number: phone },
-        managementMutationOptions(),
-      ),
+        created.id,
+        managementMutationOptions(etag),
+      );
+    },
     onSuccess: () => {
       setPhone("");
       assignments.refetch();
