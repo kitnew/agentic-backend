@@ -41,6 +41,33 @@ from voice_agent.settings import VoiceAgentSettings
 
 logger = logging.getLogger(__name__)
 
+HANDOFF_TIMEOUT_SECONDS = 30.0
+
+
+async def _await_handoff_participant(
+    session: agents.AgentSession,
+    participant_identity: str,
+    on_connected: Callable[[], None],
+) -> None:
+    room = session.room_io.room
+    if participant_identity in room.remote_participants:
+        on_connected()
+        return
+    connected = asyncio.Event()
+
+    def participant_connected(participant: rtc.RemoteParticipant) -> None:
+        if participant.identity == participant_identity:
+            connected.set()
+
+    room.on("participant_connected", participant_connected)
+    try:
+        await asyncio.wait_for(connected.wait(), HANDOFF_TIMEOUT_SECONDS)
+    except TimeoutError:
+        return
+    finally:
+        room.off("participant_connected", participant_connected)
+    on_connected()
+
 
 def log_user_transcript(event: object) -> None:
     logger.info(
@@ -329,8 +356,21 @@ def handoff_tool(
         except httpx.HTTPError:
             return {"status": "failed", "error_code": "transfer_failed"}
         if on_handoff is not None:
-            on_handoff()
-        context.session.shutdown(drain=True)
+            if result.status == "transferred":
+                on_handoff()
+                context.session.shutdown(drain=True)
+            else:
+                def relinquish() -> None:
+                    on_handoff()
+                    context.session.shutdown(drain=True)
+
+                asyncio.create_task(
+                    _await_handoff_participant(
+                        context.session,
+                        f"handoff-{call_id}",
+                        relinquish,
+                    )
+                )
         return result.model_dump(mode="json")
 
     return cast(

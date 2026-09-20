@@ -65,7 +65,7 @@ class HumanHandoffRequest(_VoiceModel):
 
 
 class HumanHandoffResponse(_VoiceModel):
-    status: Literal["transferred"] = "transferred"
+    status: Literal["dialing", "transferred"] = "transferred"
     destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
 
 

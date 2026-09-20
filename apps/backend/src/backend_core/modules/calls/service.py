@@ -445,7 +445,9 @@ class CallSessionService:
                 call.handoff_tool_call_id == data.tool_call_id
                 and call.handoff_destination == data.destination
             ):
-                return HumanHandoffResponse(destination=data.destination)
+                return HumanHandoffResponse(
+                    status="dialing", destination=data.destination
+                )
             raise HumanHandoffError("call_not_transferable")
         if (
             call.status is not CallSessionStatus.CONNECTED
@@ -502,7 +504,7 @@ class CallSessionService:
                 "reason_supplied": data.reason is not None,
             },
         )
-        return HumanHandoffResponse(destination=data.destination)
+        return HumanHandoffResponse(status="dialing", destination=data.destination)
 
     async def _pinned_handoff(
         self, call: CallSession, requested_destination: str

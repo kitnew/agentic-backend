@@ -175,7 +175,8 @@ class LiveKitAdapter:
                 sip_call_to=phone_number,
                 sip_number=caller_number,
                 sip_trunk_id=outbound_trunk_id,
-                wait_until_answered=True,
+                wait_until_answered=False,
+                ringing_timeout=timedelta(seconds=30),
                 hide_phone_number=True,
             )
         )

@@ -25,6 +25,7 @@ from voice_agent.calculator import calculate, calculator_tool
 from voice_agent.event_delivery import MESSAGE_NAMESPACE, message_from_event
 from voice_agent.main import (
     SessionTerminalizer,
+    _await_handoff_participant,
     assemble_instructions,
     build_agent_tools,
     capability_tool,
@@ -903,6 +904,37 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
     assert handed_off == [True]
     assert session.shutdowns == [True]
     assert backend.requests[0].destination == "reception"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_handoff_waits_for_participant_before_relinquishing() -> None:
+    class Room:
+        def __init__(self) -> None:
+            self.remote_participants: dict[str, object] = {}
+            self.callbacks: dict[str, object] = {}
+
+        def on(self, event, callback):
+            self.callbacks[event] = callback
+
+        def off(self, event, callback):
+            self.callbacks.pop(event, None)
+
+        def emit(self, event, participant) -> None:
+            self.callbacks[event](participant)
+
+    room = Room()
+    connected: list[bool] = []
+    session = SimpleNamespace(room_io=SimpleNamespace(room=room))
+    task = asyncio.create_task(
+        _await_handoff_participant(
+            session, "handoff-call-1", lambda: connected.append(True)
+        )
+    )
+    await asyncio.sleep(0)
+    assert connected == []
+    room.emit("participant_connected", SimpleNamespace(identity="handoff-call-1"))
+    await task
+    assert connected == [True]
 
 
 def test_handoff_tool_is_absent_when_unconfigured() -> None:
