@@ -371,7 +371,13 @@ def handoff_tool(
                         relinquish,
                     )
                 )
-        return result.model_dump(mode="json")
+        output = result.model_dump(mode="json")
+        if result.status == "dialing":
+            output["message"] = (
+                "The handoff was successfully initiated. "
+                "Waiting for confirmation."
+            )
+        return output
 
     return cast(
         llm.RawFunctionTool,

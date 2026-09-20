@@ -937,6 +937,36 @@ async def test_handoff_waits_for_participant_before_relinquishing() -> None:
     assert connected == [True]
 
 
+@pytest.mark.asyncio
+async def test_handoff_dialing_result_tells_model_to_wait() -> None:
+    class Backend:
+        async def transfer_to_human(self, call_id, request):
+            return HumanHandoffResponse(
+                status="dialing", destination=request.destination
+            )
+
+    runtime = runtime_context().model_copy(
+        update={
+            "handoff": [
+                {"destination_key": "reception", "description": "Reception"}
+            ]
+        }
+    )
+    tool = handoff_tool(runtime, Backend(), uuid4())
+    result = await tool._func(  # type: ignore[attr-defined]
+        SimpleNamespace(
+            session=SimpleNamespace(),
+            function_call=SimpleNamespace(call_id="tool-handoff-2"),
+        ),
+        {"destination": "reception"},
+    )
+    assert result == {
+        "status": "dialing",
+        "destination": "reception",
+        "message": "The handoff was successfully initiated. Waiting for confirmation.",
+    }
+
+
 def test_handoff_tool_is_absent_when_unconfigured() -> None:
     tools = build_agent_tools(runtime_context(), None, uuid4())  # type: ignore[arg-type]
     assert [tools[0]._info.name, tools[1].id] == ["calculator", "end_call"]  # type: ignore[attr-defined]
