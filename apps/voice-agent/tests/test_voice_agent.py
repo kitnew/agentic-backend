@@ -948,8 +948,8 @@ async def test_handoff_waits_for_participant_before_relinquishing() -> None:
         def off(self, event, callback):
             self.callbacks.pop(event, None)
 
-        def emit(self, event, participant) -> None:
-            self.callbacks[event](participant)
+        def emit(self, event, *args) -> None:
+            self.callbacks[event](*args)
 
     room = Room()
     connected: list[bool] = []
@@ -961,7 +961,17 @@ async def test_handoff_waits_for_participant_before_relinquishing() -> None:
     )
     await asyncio.sleep(0)
     assert connected == []
-    room.emit("participant_connected", SimpleNamespace(identity="handoff-call-1"))
+    participant = SimpleNamespace(
+        identity="handoff-call-1", attributes={"sip.callStatus": "dialing"}
+    )
+    room.emit("participant_connected", participant)
+    await asyncio.sleep(0)
+    assert connected == []
+    room.emit(
+        "participant_attributes_changed",
+        {"sip.callStatus": "active"},
+        participant,
+    )
     await task
     assert connected == [True]
 

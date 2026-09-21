@@ -50,22 +50,36 @@ async def _await_handoff_participant(
     on_connected: Callable[[], None],
 ) -> None:
     room = session.room_io.room
-    if participant_identity in room.remote_participants:
-        on_connected()
-        return
     connected = asyncio.Event()
 
     def participant_connected(participant: rtc.RemoteParticipant) -> None:
-        if participant.identity == participant_identity:
+        if (
+            participant.identity == participant_identity
+            and participant.attributes.get("sip.callStatus") == "active"
+        ):
+            connected.set()
+
+    def participant_attributes_changed(
+        changed_attributes: dict[str, str], participant: rtc.Participant
+    ) -> None:
+        if (
+            participant.identity == participant_identity
+            and changed_attributes.get("sip.callStatus") == "active"
+        ):
             connected.set()
 
     room.on("participant_connected", participant_connected)
+    room.on("participant_attributes_changed", participant_attributes_changed)
     try:
+        participant = room.remote_participants.get(participant_identity)
+        if participant is not None:
+            participant_connected(participant)
         await asyncio.wait_for(connected.wait(), HANDOFF_TIMEOUT_SECONDS)
     except TimeoutError:
         return
     finally:
         room.off("participant_connected", participant_connected)
+        room.off("participant_attributes_changed", participant_attributes_changed)
     on_connected()
 
 
