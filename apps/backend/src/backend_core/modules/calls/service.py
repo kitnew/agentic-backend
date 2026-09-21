@@ -448,7 +448,16 @@ class CallSessionService:
                 return HumanHandoffResponse(
                     status="dialing", destination=data.destination
                 )
-            raise HumanHandoffError("call_not_transferable")
+            if call.handoff_participant_identity is None:
+                raise HumanHandoffError("call_not_transferable")
+            try:
+                participant_exists = await livekit.participant_exists(
+                    call.room_name, call.handoff_participant_identity
+                )
+            except Exception as error:
+                raise HumanHandoffError("transfer_failed") from error
+            if participant_exists:
+                raise HumanHandoffError("call_not_transferable")
         if (
             call.status is not CallSessionStatus.CONNECTED
             or call.channel is not CallChannel.SIP

@@ -967,6 +967,17 @@ async def test_handoff_waits_for_participant_before_relinquishing() -> None:
     room.emit("participant_connected", participant)
     await asyncio.sleep(0)
     assert connected == []
+    room.emit("participant_disconnected", participant)
+    await task
+    assert connected == []
+
+    task = asyncio.create_task(
+        _await_handoff_participant(
+            session, "handoff-call-1", lambda: connected.append(True)
+        )
+    )
+    await asyncio.sleep(0)
+    room.emit("participant_connected", participant)
     room.emit(
         "participant_attributes_changed",
         {"sip.callStatus": "active"},

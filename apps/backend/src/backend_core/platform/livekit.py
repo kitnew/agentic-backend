@@ -182,6 +182,12 @@ class LiveKitAdapter:
         )
         return participant.participant_identity, participant.sip_call_id
 
+    async def participant_exists(self, room_name: str, identity: str) -> bool:
+        participants = await self.client.room.list_participants(
+            api.ListParticipantsRequest(room=room_name)
+        )
+        return any(item.identity == identity for item in participants.participants)
+
     async def reconcile_shared_sip(
         self,
         *,

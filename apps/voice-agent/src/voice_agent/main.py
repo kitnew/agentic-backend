@@ -50,37 +50,49 @@ async def _await_handoff_participant(
     on_connected: Callable[[], None],
 ) -> None:
     room = session.room_io.room
-    connected = asyncio.Event()
+    finished = asyncio.Event()
+    answered = False
 
     def participant_connected(participant: rtc.RemoteParticipant) -> None:
+        nonlocal answered
         if (
             participant.identity == participant_identity
             and participant.attributes.get("sip.callStatus") == "active"
         ):
-            connected.set()
+            answered = True
+            finished.set()
 
     def participant_attributes_changed(
         changed_attributes: dict[str, str], participant: rtc.Participant
     ) -> None:
+        nonlocal answered
         if (
             participant.identity == participant_identity
             and changed_attributes.get("sip.callStatus") == "active"
         ):
-            connected.set()
+            answered = True
+            finished.set()
+
+    def participant_disconnected(participant: rtc.RemoteParticipant) -> None:
+        if participant.identity == participant_identity:
+            finished.set()
 
     room.on("participant_connected", participant_connected)
     room.on("participant_attributes_changed", participant_attributes_changed)
+    room.on("participant_disconnected", participant_disconnected)
     try:
         participant = room.remote_participants.get(participant_identity)
         if participant is not None:
             participant_connected(participant)
-        await asyncio.wait_for(connected.wait(), HANDOFF_TIMEOUT_SECONDS)
+        await asyncio.wait_for(finished.wait(), HANDOFF_TIMEOUT_SECONDS)
     except TimeoutError:
         return
     finally:
         room.off("participant_connected", participant_connected)
         room.off("participant_attributes_changed", participant_attributes_changed)
-    on_connected()
+        room.off("participant_disconnected", participant_disconnected)
+    if answered:
+        on_connected()
 
 
 def log_user_transcript(event: object) -> None:
@@ -342,11 +354,13 @@ def handoff_tool(
         for item in runtime.handoff
     }
     description = "; ".join(f"{key}: {value}" for key, value in destinations.items())
+    handoff_waiter: asyncio.Task[None] | None = None
 
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
     ) -> Any:
+        nonlocal handoff_waiter
         request = HumanHandoffRequest.model_validate(
             {"tool_call_id": context.function_call.call_id, **raw_arguments}
         )
@@ -378,7 +392,9 @@ def handoff_tool(
                     on_handoff()
                     context.session.shutdown(drain=True)
 
-                asyncio.create_task(
+                if handoff_waiter is not None:
+                    handoff_waiter.cancel()
+                handoff_waiter = asyncio.create_task(
                     _await_handoff_participant(
                         context.session,
                         f"handoff-{call_id}",

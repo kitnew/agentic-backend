@@ -45,6 +45,27 @@ async def test_outbound_sip_participant_joins_existing_room_without_waiting_for_
 
 
 @pytest.mark.asyncio
+async def test_participant_exists_checks_the_current_room() -> None:
+    class Room:
+        async def list_participants(self, request):
+            assert request.room == "sip-call-1"
+            return SimpleNamespace(
+                participants=[SimpleNamespace(identity="handoff-call-1")]
+            )
+
+    adapter = LiveKitAdapter(
+        url="ws://livekit:7880",
+        api_key="key",
+        api_secret="secret",
+        participant_token_ttl_seconds=600,
+    )
+    adapter._client = SimpleNamespace(room=Room())  # type: ignore[assignment]
+
+    assert await adapter.participant_exists("sip-call-1", "handoff-call-1")
+    assert not await adapter.participant_exists("sip-call-1", "missing")
+
+
+@pytest.mark.asyncio
 async def test_recording_uses_audio_only_room_composite_mp3_without_s3_credentials() -> None:
     requests: list[object] = []
 
