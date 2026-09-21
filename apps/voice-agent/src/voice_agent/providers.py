@@ -316,16 +316,19 @@ def _create_tts(
     *,
     min_sentence_chars: int | None = None,
 ) -> elevenlabs.TTS:
+    model = config["deployment_config"].get(
+        "model_id", config["deployment_config"].get("model")
+    )
     options: dict[str, Any] = {}
+    if model.startswith("eleven_v3"):
+        options["auto_mode"] = False
     if min_sentence_chars is not None:
         options["word_tokenizer"] = tokenize.blingfire.SentenceTokenizer(
             min_sentence_len=min_sentence_chars
         )
     return elevenlabs.TTS(
         api_key=secret,
-        model=config["deployment_config"].get(
-            "model_id", config["deployment_config"].get("model")
-        ),
+        model=model,
         voice_id=config["voice"],
         language=language,
         **options,

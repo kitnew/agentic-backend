@@ -38,6 +38,7 @@ from voice_agent.main import (
     send_greeting,
 )
 from voice_agent.providers import (
+    _create_tts,
     azure_endpoint,
     create_agent_session,
     create_half_cascade_session,
@@ -477,6 +478,34 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
         "turn_detection": "realtime_llm",
         "interruption": {"enabled": True},
     }
+
+
+@pytest.mark.parametrize("model", ["eleven_v3", "eleven_v3_conversational"])
+def test_eleven_v3_tts_disables_auto_mode(model: str) -> None:
+    tts = _create_tts(
+        {
+            "deployment_config": {"model_id": model},
+            "voice": "voice-id",
+        },
+        "sk",
+        "eleven-key",
+    )
+
+    assert tts._opts.auto_mode is False
+
+
+@pytest.mark.parametrize("model", ["eleven_flash_v2_5", "eleven_turbo_v2_5"])
+def test_non_v3_tts_keeps_auto_mode_default(model: str) -> None:
+    tts = _create_tts(
+        {
+            "deployment_config": {"model_id": model},
+            "voice": "voice-id",
+        },
+        "sk",
+        "eleven-key",
+    )
+
+    assert tts._opts.auto_mode is True
 
 
 @pytest.mark.asyncio
