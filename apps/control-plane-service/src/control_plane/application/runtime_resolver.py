@@ -296,9 +296,7 @@ class RuntimeResolver:
         business: BusinessIdentity,
     ) -> ResolvedRealtimeRuntime:
         policy, model = self._realtime_model(state)
-        transcription = self._realtime_transcription(
-            state, policy, model, overrides, business
-        )
+        transcription = self._realtime_transcription(state, policy, overrides, business)
         return ResolvedRealtimeRuntime(
             "realtime",
             ResolvedRealtimeModel(self._provenance(policy), model),
@@ -312,7 +310,6 @@ class RuntimeResolver:
         self,
         state: RuntimeResolutionState,
         policy: _ActiveRuntimeComponent[RealtimeDefaults],
-        model: ResolvedProviderResource,
         overrides: RuntimeOverrides,
         business: BusinessIdentity,
     ) -> ResolvedRealtimeTranscription:
@@ -330,16 +327,6 @@ class RuntimeResolver:
                 ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
                 deployment_ref=transcription.deployment.ref.value,
                 capability="realtime_input_transcription",
-            )
-        if (
-            model.connection.provider_kind == "azure_openai"
-            and model.connection.ref != transcription.connection.ref
-        ):
-            self._reject(
-                ResolutionFailureReason.INCOMPATIBLE_CONNECTION,
-                realtime_connection_ref=model.connection.ref.value,
-                transcription_connection_ref=transcription.connection.ref.value,
-                invariant="azure_same_connection",
             )
         return ResolvedRealtimeTranscription(
             transcription,
@@ -359,9 +346,7 @@ class RuntimeResolver:
         business: BusinessIdentity,
     ) -> ResolvedHalfCascadeRuntime:
         policy, model = self._realtime_model(state)
-        transcription = self._realtime_transcription(
-            state, policy, model, overrides, business
-        )
+        transcription = self._realtime_transcription(state, policy, overrides, business)
         tts = self._system(state, "TTSDefaults", TTSDefaults)
         tts_resource = self._resource(
             state, tts.value.deployment_ref, DeploymentKind.TTS, tts

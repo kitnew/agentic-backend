@@ -291,7 +291,7 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
             deployment(
                 "realtime_stt",
                 DeploymentKind.STT,
-                "realtime",
+                "eleven",
                 stt=STTCapabilities(False, True),
             ),
             deployment(
@@ -661,7 +661,7 @@ async def test_half_cascade_resolves_realtime_tts_and_input_transcription() -> N
     assert runtime["half_cascade"]["tts"]["deployment_kind"] == "tts"  # type: ignore[index]
     assert ExecutionMaterializationService._runtime_bindings(selected) == {
         RuntimeSecretSlot.MODEL.value: str(IDS["realtime_credential"]),
-        RuntimeSecretSlot.INPUT_TRANSCRIPTION.value: str(IDS["realtime_credential"]),
+        RuntimeSecretSlot.INPUT_TRANSCRIPTION.value: str(IDS["eleven_credential"]),
         RuntimeSecretSlot.TTS.value: str(IDS["eleven_credential"]),
     }
 
@@ -809,7 +809,7 @@ async def test_provider_vad_is_revalidated() -> None:
 
 
 @pytest.mark.asyncio
-async def test_realtime_hints_remain_visible_but_do_not_force_fallback() -> None:
+async def test_realtime_materializes_independent_stt_provider_and_credential() -> None:
     result = await resolver(state()).resolve_runtime(TENANT)
     selected = result.selected
 
@@ -822,13 +822,18 @@ async def test_realtime_hints_remain_visible_but_do_not_force_fallback() -> None
     assert selected.input_transcription.speech_hints.keyterms.values == (
         "Penzión Grand",
     )
+    runtime = ExecutionMaterializationService._voice_runtime(selected)
+    assert runtime["realtime"]["input_transcription"]["provider_kind"] == "elevenlabs"  # type: ignore[index]
+    assert ExecutionMaterializationService._runtime_bindings(selected) == {
+        RuntimeSecretSlot.MODEL.value: str(IDS["realtime_credential"]),
+        RuntimeSecretSlot.INPUT_TRANSCRIPTION.value: str(IDS["eleven_credential"]),
+    }
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "mutation, reason",
     [
-        ("same_connection", ResolutionFailureReason.INCOMPATIBLE_CONNECTION),
         ("vad_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
         ("transcription_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
         ("connection_disabled", ResolutionFailureReason.RESOURCE_DISABLED),
@@ -839,12 +844,7 @@ async def test_realtime_revalidates_live_compatibility(mutation: str, reason) ->
     value = state(["realtime"])
     deployments = dict(value.deployments)
     credentials = dict(value.credentials)
-    if mutation == "same_connection":
-        deployments[IDS["realtime_stt"]] = replace(
-            deployments[IDS["realtime_stt"]],
-            connection_ref=ProviderConnectionRef(IDS["cascade_connection"]),
-        )
-    elif mutation == "vad_capability":
+    if mutation == "vad_capability":
         deployments[IDS["realtime"]] = replace(
             deployments[IDS["realtime"]],
             capabilities=RealtimeCapabilities(False, True),

@@ -286,23 +286,24 @@ def test_realtime_factory_uses_snapshot_runtime_values(
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
             "input_transcription": {
-                "deployment_config": {"model": "transcribe-model"},
+                "provider_kind": "elevenlabs",
+                "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
             },
         },
-        {"model": "secret"},
+        {"model": "secret", "input_transcription": "eleven-secret"},
     )
     assert captured["azure_deployment"] == "realtime-deployment"
     assert captured["base_url"] == "https://realtime.example/openai"
     assert captured["api_version"] == "2026-02-01"
     assert captured["voice"] == "custom-voice"
-    assert captured["input_audio_transcription"] == {
-        "model": "transcribe-model",
-        "language": "sk",
-    }
+    assert captured["input_audio_transcription"] is None
     assert captured["turn_detection"].type == "semantic_vad"  # type: ignore[union-attr]
     assert captured["turn_detection"].interrupt_response is True  # type: ignore[union-attr]
     assert session["vad"] is None
+    assert isinstance(session["stt"], elevenlabs.STT)
+    assert session["stt"].model == "transcribe-model"
+    assert session["stt"].provider == "ElevenLabs"
 
 
 def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
@@ -330,14 +331,12 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
             "input_transcription": {
-                "deployment_config": {
-                    "deployment_name": "gpt-live-transcribe",
-                    "model": "gpt-live-transcribe",
-                },
+                "provider_kind": "elevenlabs",
+                "deployment_config": {"model_id": "scribe_v2_realtime"},
                 "language": "sk",
             },
         },
-        {"model": "secret"},
+        {"model": "secret", "input_transcription": "eleven-secret"},
     )
 
     assert captured["base_url"] == "https://realtime.example/openai/v1"
@@ -345,11 +344,11 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
     assert captured["azure_deployment"] == "gpt-realtime-2.1-mini"
 
 
-def test_realtime_factory_requires_input_transcription_model(
+def test_realtime_factory_rejects_unsupported_standalone_stt_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(realtime, "RealtimeModel", lambda **kwargs: object())
-    with pytest.raises(ValueError, match="missing realtime execution field: model"):
+    with pytest.raises(ValueError, match="unsupported STT provider: deepgram"):
         create_realtime_session(
             settings(),
             {
@@ -363,15 +362,65 @@ def test_realtime_factory_requires_input_transcription_model(
                 },
                 "interruption": {"enabled": True},
                 "input_transcription": {
-                    "deployment_config": {"deployment_name": "gpt-live-transcribe"},
+                    "provider_kind": "deepgram",
+                    "deployment_config": {"model_id": "nova-3"},
                     "language": "sk",
                 },
             },
-            {"model": "secret"},
+            {"model": "secret", "input_transcription": "eleven-secret"},
         )
 
 
-def test_realtime_factory_normalizes_regional_locale_for_openai(
+def test_realtime_factory_uses_configured_azure_stt_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    standalone_stt = object()
+    monkeypatch.setattr(realtime, "RealtimeModel", lambda **kwargs: object())
+    monkeypatch.setattr(
+        openai.STT,
+        "with_azure",
+        lambda **kwargs: captured.update(kwargs) or standalone_stt,
+    )
+    monkeypatch.setattr(agents, "AgentSession", lambda **kwargs: kwargs)
+
+    session = create_realtime_session(
+        settings(),
+        {
+            "model": {
+                "deployment_config": {"deployment_name": "realtime-deployment"},
+                "connection_config": {"endpoint": "https://realtime.example"},
+            },
+            "turn_completion": {"strategy": "server_vad"},
+            "interruption": {"enabled": True},
+            "input_transcription": {
+                "provider_kind": "azure_openai",
+                "connection_config": {
+                    "endpoint": "https://transcription.example",
+                    "api_version": "2026-03-01",
+                },
+                "deployment_config": {
+                    "deployment_name": "transcription-deployment",
+                    "model": "gpt-live-transcribe",
+                },
+                "language": "sk-SK",
+            },
+        },
+        {"model": "realtime-secret", "input_transcription": "stt-secret"},
+    )
+
+    assert session["stt"] is standalone_stt
+    assert captured == {
+        "api_key": "stt-secret",
+        "azure_endpoint": "https://transcription.example",
+        "azure_deployment": "transcription-deployment",
+        "api_version": "2026-03-01",
+        "model": "gpt-live-transcribe",
+        "language": "sk",
+    }
+
+
+def test_realtime_factory_normalizes_regional_locale_for_standalone_stt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, object] = {}
@@ -382,7 +431,7 @@ def test_realtime_factory_normalizes_regional_locale_for_openai(
         lambda **kwargs: captured.update(kwargs) or object(),
     )
     monkeypatch.setattr(agents, "AgentSession", lambda **kwargs: kwargs)
-    create_realtime_session(
+    session = create_realtime_session(
         settings(),
         {
             "model": {
@@ -393,17 +442,17 @@ def test_realtime_factory_normalizes_regional_locale_for_openai(
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
             "input_transcription": {
-                "deployment_config": {"model": "transcribe-model"},
+                "provider_kind": "elevenlabs",
+                "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk-SK",
             },
         },
-        {"model": "secret"},
+        {"model": "secret", "input_transcription": "eleven-secret"},
     )
 
-    assert captured["input_audio_transcription"] == {
-        "model": "transcribe-model",
-        "language": "sk",
-    }
+    assert captured["input_audio_transcription"] is None
+    assert isinstance(session["stt"], elevenlabs.STT)
+    assert session["stt"].model == "transcribe-model"
 
 
 def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
@@ -436,7 +485,8 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
             "input_transcription": {
-                "deployment_config": {"model": "transcribe-model"},
+                "provider_kind": "elevenlabs",
+                "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
             },
             "tts": {
@@ -460,10 +510,7 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
     )
 
     assert captured_model["modalities"] == ["text"]
-    assert captured_model["input_audio_transcription"] == {
-        "model": "transcribe-model",
-        "language": "sk",
-    }
+    assert captured_model["input_audio_transcription"] is None
     assert "voice" not in captured_model
     assert captured_model["api_key"] == "realtime-secret"
     assert captured_model["turn_detection"].type == "server_vad"  # type: ignore[union-attr]
@@ -471,7 +518,8 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
     assert captured_tts["api_key"] == "tts-secret"
     assert captured_tts["model"] == "eleven_flash_v2_5"
     assert captured_tts["voice_id"] == "tts-voice"
-    assert "stt" not in session
+    assert isinstance(session["stt"], elevenlabs.STT)
+    assert session["stt"].model == "transcribe-model"
     assert session["vad"] is None
     assert session["llm"] is not None
     assert session["tts"] is not None
@@ -525,7 +573,8 @@ async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_outp
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
             "input_transcription": {
-                "deployment_config": {"model": "transcribe-model"},
+                "provider_kind": "elevenlabs",
+                "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
             },
             "tts": {
@@ -544,7 +593,8 @@ async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_outp
         },
     )
     try:
-        assert session.stt is None
+        assert isinstance(session.stt, elevenlabs.STT)
+        assert session.stt.model == "transcribe-model"
         assert isinstance(session.llm, realtime.RealtimeModel)
         assert not session.llm.capabilities.audio_output
         assert isinstance(session.tts, elevenlabs.TTS)
@@ -1697,7 +1747,14 @@ async def test_successful_handoff_relinquishes_without_completing_call(
     monkeypatch.setattr("voice_agent.main.ConversationPersistence", Persistence)
     monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: Session())
 
-    def tools(runtime, client, call_id, controller, capability_recorder=None):
+    def tools(
+        runtime,
+        client,
+        call_id,
+        controller,
+        capability_recorder=None,
+        recent_transcript=None,
+    ):
         controller._attempt = HandoffAttempt(
             uuid4(), "handoff-participant", HandoffState.COMPLETED
         )

@@ -9,6 +9,7 @@ from contracts import (
     ConversationMessageRole,
 )
 from livekit.agents import llm
+from livekit.agents.voice.events import UserInputTranscribedEvent
 
 from voice_agent.backend import BackendClient
 
@@ -47,6 +48,25 @@ def message_from_event(call_id: UUID, event: object) -> PersistableMessage | Non
     )
 
 
+def message_from_transcript(
+    call_id: UUID, event: UserInputTranscribedEvent
+) -> PersistableMessage | None:
+    transcript = event.transcript
+    if not event.is_final or not transcript:
+        return None
+    created_at = event.created_at
+    item_id = event.item_id or f"stt:{created_at}"
+    return PersistableMessage(
+        payload=AppendConversationMessage(
+            message_id=uuid5(MESSAGE_NAMESPACE, f"{call_id}:{item_id}"),
+            role=ConversationMessageRole.USER,
+            content=transcript,
+            interrupted=False,
+            source_created_at=datetime.fromtimestamp(created_at, UTC),
+        )
+    )
+
+
 class ConversationPersistence:
     def __init__(self, backend: BackendClient, call_id: UUID) -> None:
         self._backend = backend
@@ -63,10 +83,15 @@ class ConversationPersistence:
         return self._incomplete
 
     def on_conversation_item_added(self, event: object) -> None:
+        self._enqueue(message_from_event(self._call_id, event))
+
+    def on_user_input_transcribed(self, event: UserInputTranscribedEvent) -> None:
+        self._enqueue(message_from_transcript(self._call_id, event))
+
+    def _enqueue(self, message: PersistableMessage | None) -> None:
         if not self._accepting:
             self._incomplete = True
             return
-        message = message_from_event(self._call_id, event)
         if message is None:
             return
         try:

@@ -65,7 +65,7 @@ def create_agent_session(
         raise ValueError(f"unsupported STT provider: {stt_config['provider_kind']}")
     if tts_config["provider_kind"] != "elevenlabs":
         raise ValueError(f"unsupported TTS provider: {tts_config['provider_kind']}")
-    stt_language, tts_language = provider_languages(str(runtime["locale"]))
+    _, tts_language = provider_languages(str(runtime["locale"]))
     connect_options = agents.APIConnectOptions(
         timeout=settings.provider_timeout_seconds,
         max_retry=settings.provider_retry_limit,
@@ -83,12 +83,10 @@ def create_agent_session(
             "min_speech_duration_ms": server.get("min_speech_ms", 100),
             "min_silence_duration_ms": server.get("min_silence_ms", 250),
         }
-    provider_stt = elevenlabs.STT(
-        api_key=secrets["stt"],
-        model=stt_config["deployment_config"].get(
-            "model_id", stt_config["deployment_config"].get("model")
-        ),
-        language_code=stt_language,
+    provider_stt = _create_stt(
+        stt_config,
+        str(runtime["locale"]),
+        secrets["stt"],
         keyterms=keyterms,
         server_vad=server_vad,
     )
@@ -191,19 +189,21 @@ def create_realtime_session(
     secrets: dict[str, str],
 ) -> agents.AgentSession:
     transcription = runtime["input_transcription"]
-    transcription_config = transcription["deployment_config"]
+    standalone_stt = _create_stt(
+        transcription,
+        str(transcription["language"]),
+        secrets["input_transcription"],
+    )
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
-        input_audio_transcription={
-            # Azure's conversation API expects an API model identifier here,
-            # not the name of the deployed realtime-transcription resource.
-            "model": _required_string(transcription_config, "model"),
-            "language": _required_string(runtime["input_transcription"], "language")
-            .partition("-")[0]
-            .lower(),
-        },
+        input_audio_transcription=None,
+    )
+    connect_options = agents.APIConnectOptions(
+        timeout=settings.provider_timeout_seconds,
+        max_retry=settings.provider_retry_limit,
     )
     return agents.AgentSession(
+        stt=standalone_stt,
         llm=realtime_model,
         vad=None,
         turn_handling={
@@ -211,6 +211,7 @@ def create_realtime_session(
             "interruption": {"enabled": runtime["interruption"]["enabled"]},
         },
         tools=[],
+        conn_options=SessionConnectOptions(stt_conn_options=connect_options),
     )
 
 
@@ -223,19 +224,18 @@ def create_half_cascade_session(
     if tts_config["provider_kind"] != "elevenlabs":
         raise ValueError(f"unsupported TTS provider: {tts_config['provider_kind']}")
     transcription = runtime["input_transcription"]
-    transcription_config = transcription["deployment_config"]
     _, tts_language = provider_languages(str(runtime["locale"]))
+    standalone_stt = _create_stt(
+        transcription,
+        str(transcription["language"]),
+        secrets["input_transcription"],
+    )
     # LiveKit streams text-only Realtime output through session TTS and cancels
     # both the generation and synthesis when the caller interrupts.
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
         modalities=["text"],
-        input_audio_transcription={
-            "model": _required_string(transcription_config, "model"),
-            "language": _required_string(transcription, "language")
-            .partition("-")[0]
-            .lower(),
-        },
+        input_audio_transcription=None,
     )
     tts = _create_tts(tts_config, tts_language, secrets["tts"])
     connect_options = agents.APIConnectOptions(
@@ -243,6 +243,7 @@ def create_half_cascade_session(
         max_retry=settings.provider_retry_limit,
     )
     return agents.AgentSession(
+        stt=standalone_stt,
         llm=realtime_model,
         tts=tts,
         vad=None,
@@ -252,10 +253,51 @@ def create_half_cascade_session(
         },
         tools=[],
         conn_options=SessionConnectOptions(
+            stt_conn_options=connect_options,
             llm_conn_options=connect_options,
             tts_conn_options=connect_options,
         ),
     )
+
+
+def _create_stt(
+    config: dict[str, Any],
+    locale: str,
+    secret: str,
+    *,
+    keyterms: NotGivenOr[list[str]] = NOT_GIVEN,
+    server_vad: NotGivenOr[VADOptions] = NOT_GIVEN,
+) -> livekit_stt.STT:
+    deployment = config["deployment_config"]
+    elevenlabs_language, openai_language = provider_languages(locale)
+    if config["provider_kind"] == "elevenlabs":
+        return elevenlabs.STT(
+            api_key=secret,
+            model=deployment.get("model_id", deployment.get("model")),
+            language_code=elevenlabs_language,
+            keyterms=keyterms,
+            server_vad=server_vad,
+        )
+    if config["provider_kind"] == "azure_openai":
+        connection = config["connection_config"]
+        endpoint = _required_string(connection, "endpoint").rstrip("/")
+        model = _required_string(deployment, "model", "deployment_name")
+        if endpoint.endswith("/openai/v1"):
+            return openai.STT(
+                api_key=secret,
+                base_url=endpoint,
+                model=model,
+                language=openai_language,
+            )
+        return openai.STT.with_azure(
+            api_key=secret,
+            azure_endpoint=azure_endpoint(endpoint),
+            azure_deployment=_required_string(deployment, "deployment_name"),
+            api_version=deployment.get("api_version") or connection.get("api_version"),
+            model=model,
+            language=openai_language,
+        )
+    raise ValueError(f"unsupported STT provider: {config['provider_kind']}")
 
 
 def _realtime_options(

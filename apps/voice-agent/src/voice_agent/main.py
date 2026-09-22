@@ -38,6 +38,7 @@ from voice_agent.providers import (
     create_half_cascade_session,
     create_realtime_session,
 )
+from voice_agent.recent_transcript import RecentTranscriptBuffer, recent_transcript_tool
 from voice_agent.settings import VoiceAgentSettings
 
 logger = logging.getLogger(__name__)
@@ -227,22 +228,28 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
         )
     )
 
-    return "\n\n".join(
+    sections = [
+        f"[System instructions]\n{context.prompts.system}",
+        f"[Profile instructions]\n{context.prompts.profile}",
+        f"[Interaction instructions]\n{context.prompts.interaction}",
+        f"[Tenant instructions]\n{context.prompts.tenant}",
+        "\n".join(agent),
+        "\n".join(business),
+        f"[Tenant knowledge]\n{context.prompts.knowledge}",
         (
-            f"[System instructions]\n{context.prompts.system}",
-            f"[Profile instructions]\n{context.prompts.profile}",
-            f"[Interaction instructions]\n{context.prompts.interaction}",
-            f"[Tenant instructions]\n{context.prompts.tenant}",
-            "\n".join(agent),
-            "\n".join(business),
-            f"[Tenant knowledge]\n{context.prompts.knowledge}",
-            (
-                "[Dynamic context]\n"
-                f"Current local date: {local_now.date().isoformat()}\n"
-                f"Current local time: {local_now.strftime('%H:%M')}"
-            ),
+            "[Dynamic context]\n"
+            f"Current local date: {local_now.date().isoformat()}\n"
+            f"Current local time: {local_now.strftime('%H:%M')}"
+        ),
+    ]
+    if context.architecture in ("realtime", "half-cascade"):
+        sections.append(
+            "[Recent transcript]\nUse get_recent_transcript when the exact lexical form "
+            "of recent caller speech matters, especially for names, email addresses, "
+            "identifiers, spelling, or other possibly misheard values. Request multiple "
+            "segments when a value was spoken across short turns."
         )
-    )
+    return "\n\n".join(sections)
 
 
 def build_agent_tools(
@@ -251,6 +258,7 @@ def build_agent_tools(
     call_id: UUID,
     handoff_controller: HandoffController | None = None,
     capability_recorder: Callable[..., None] | None = None,
+    recent_transcript: RecentTranscriptBuffer | None = None,
 ) -> list[llm.Tool | llm.Toolset]:
     recorder = capability_recorder or record_capability_execution
     end_call_started: dict[int, float] = {}
@@ -278,6 +286,12 @@ def build_agent_tools(
             ignore_on_enter=True,
             on_tool_called=on_end_call_called,
             on_tool_completed=on_end_call_completed,
+        ),
+        *(
+            [recent_transcript_tool(recent_transcript)]
+            if recent_transcript is not None
+            and context.architecture in ("realtime", "half-cascade")
+            else []
         ),
         *(
             [handoff_tool(context, backend, call_id, handoff_controller)]
@@ -546,6 +560,7 @@ async def run_job(
     terminalizer: SessionTerminalizer | None = None
     failure_reason: str | None = None
     handoff: HandoffController | None = None
+    recent_transcript: RecentTranscriptBuffer | None = None
     cancelled = False
     try:
         call_id = await resolve_call_session_id(
@@ -606,6 +621,8 @@ async def run_job(
                 }
                 session = create_half_cascade_session(settings, runtime, secrets)
         persistence = ConversationPersistence(backend, call_id)
+        if context.architecture in ("realtime", "half-cascade"):
+            recent_transcript = RecentTranscriptBuffer()
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()
 
@@ -641,6 +658,13 @@ async def run_job(
 
         session.on("close", on_close)
         session.on("conversation_item_added", persistence.on_conversation_item_added)
+        if context.architecture in ("realtime", "half-cascade"):
+            session.on("user_input_transcribed", persistence.on_user_input_transcribed)
+            assert recent_transcript is not None
+            session.on(
+                "user_input_transcribed",
+                recent_transcript.on_user_input_transcribed,
+            )
         if telemetry is not None:
             telemetry.metrics.attach_speculative_generation(session)
             session.on(
@@ -671,6 +695,7 @@ async def run_job(
                     telemetry.metrics.record_capability_execution
                     if telemetry is not None
                     else None,
+                    recent_transcript,
                 ),
             ),
         )
@@ -731,6 +756,19 @@ async def run_job(
             off = getattr(session, "off", None)
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
+                if context is not None and context.architecture in (
+                    "realtime",
+                    "half-cascade",
+                ):
+                    off(
+                        "user_input_transcribed",
+                        persistence.on_user_input_transcribed,
+                    )
+                    if recent_transcript is not None:
+                        off(
+                            "user_input_transcribed",
+                            recent_transcript.on_user_input_transcribed,
+                        )
         try:
             if handoff is not None:
                 await handoff.close()
