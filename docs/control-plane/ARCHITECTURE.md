@@ -732,8 +732,9 @@ flowchart LR
 Allowed architecture modes:
 
 * `cascade`: STT → text LLM → TTS;
-* `realtime`: Realtime audio input → native Realtime audio output;
-* `half-cascade`: Realtime audio input with native input transcription → Realtime
+* `realtime`: standalone STT transcription alongside Realtime audio input → native
+  Realtime audio output;
+* `half-cascade`: Realtime audio input with standalone STT transcription → Realtime
   text output → TTS.
 
 ##### `ComponentDefinitionRegistry`

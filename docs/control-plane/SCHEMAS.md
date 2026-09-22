@@ -2023,8 +2023,9 @@ realtime     → RealtimeDefaults + RealtimeDefaults.input_transcription
 half-cascade → RealtimeDefaults + RealtimeDefaults.input_transcription + TTSDefaults
 ```
 
-`half-cascade` uses the same realtime input-transcription deployment as
-`realtime`, while routing the realtime text output through the configured TTS.
+`half-cascade` and `realtime` use the configured STT deployment as a standalone
+transcription provider, while `half-cascade` routes Realtime text output through
+the configured TTS.
 
 ## Credential ownership
 
