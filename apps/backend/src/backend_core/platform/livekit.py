@@ -1,10 +1,23 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import timedelta
 
 import aiohttp
+from google.protobuf.duration_pb2 import Duration
 from livekit import api
+from livekit.api.twirp_client import TwirpError
 from livekit.protocol import agent_dispatch
 from livekit.protocol import room as room_proto
+
+REMOVE_PARTICIPANT_RETRY_DELAYS = (0.0, 0.2, 0.5)
+RETRYABLE_TWIRP_CODES = {
+    "aborted",
+    "deadline_exceeded",
+    "internal",
+    "resource_exhausted",
+    "unavailable",
+    "unknown",
+}
 
 
 @dataclass(frozen=True)
@@ -176,7 +189,7 @@ class LiveKitAdapter:
                 sip_number=caller_number,
                 sip_trunk_id=outbound_trunk_id,
                 wait_until_answered=False,
-                ringing_timeout=timedelta(seconds=30),
+                ringing_timeout=Duration(seconds=30),
                 hide_phone_number=True,
             )
         )
@@ -187,6 +200,26 @@ class LiveKitAdapter:
             api.ListParticipantsRequest(room=room_name)
         )
         return any(item.identity == identity for item in participants.participants)
+
+    async def remove_participant(self, room_name: str, identity: str) -> None:
+        for attempt, delay in enumerate(REMOVE_PARTICIPANT_RETRY_DELAYS):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                await self.client.room.remove_participant(
+                    api.RoomParticipantIdentity(room=room_name, identity=identity)
+                )
+                return
+            except TwirpError as error:
+                if error.code == "not_found":
+                    return
+                if error.code not in RETRYABLE_TWIRP_CODES:
+                    raise
+                if attempt == len(REMOVE_PARTICIPANT_RETRY_DELAYS) - 1:
+                    raise
+            except TimeoutError, aiohttp.ClientError:
+                if attempt == len(REMOVE_PARTICIPANT_RETRY_DELAYS) - 1:
+                    raise
 
     async def reconcile_shared_sip(
         self,

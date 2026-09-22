@@ -1,17 +1,44 @@
 from uuid import uuid4
 
 import pytest
-from contracts import CallLifecycleResponse, LiveKitJobMetadata, VoiceExecutionContext
+from contracts import (
+    CallLifecycleResponse,
+    HandoffAttemptResponse,
+    HandoffState,
+    HumanHandoffResponse,
+    LiveKitJobMetadata,
+    VoiceCallObservation,
+    VoiceExecutionContext,
+)
 from pydantic import ValidationError
 
 
 def test_voice_execution_context_is_strict_and_semantic() -> None:
     context = VoiceExecutionContext(
         execution_id=uuid4(),
-        tenant={"locale": "sk-SK", "timezone": "Europe/Bratislava"},
-        agent={"name": "Amelia", "personality": "helpful", "greeting": "Hello"},
+        agent={
+            "display_name": "Amelia",
+            "role": "Concierge",
+            "greeting": "Hello",
+            "conversation_scope": "property_only",
+        },
+        business={
+            "name": "Hotel",
+            "type": "hotel",
+            "phones": [],
+            "emails": [],
+            "links": [],
+            "default_locale": "sk-SK",
+            "timezone": "Europe/Bratislava",
+        },
         architecture="cascade",
-        prompts={"system": "Help", "profile": "", "tenant": "", "knowledge": ""},
+        prompts={
+            "system": "Help",
+            "profile": "",
+            "interaction": "",
+            "tenant": "",
+            "knowledge": "",
+        },
         runtime={"stt": {}, "llm": {}, "tts": {}, "realtime": {}},
         actions=[],
         handoff=[{"destination_key": "reception", "description": "Reception"}],
@@ -55,3 +82,27 @@ def test_lifecycle_response_forbids_extra_fields() -> None:
         CallLifecycleResponse.model_validate(
             {**response.model_dump(), "room_name": "secret"}
         )
+
+
+def test_handoff_contracts_require_attempt_correlation() -> None:
+    attempt_id = uuid4()
+    started = HumanHandoffResponse(
+        status=HandoffState.DIALING,
+        destination="reception",
+        attempt_id=attempt_id,
+        participant_identity="handoff-participant",
+    )
+    transitioned = HandoffAttemptResponse(
+        attempt_id=attempt_id,
+        state=HandoffState.ANSWERED,
+        participant_identity="handoff-participant",
+    )
+    relinquished = VoiceCallObservation(
+        observation_type="agent_relinquished",
+        handoff_attempt_id=attempt_id,
+    )
+
+    assert started.attempt_id == transitioned.attempt_id
+    assert relinquished.handoff_attempt_id == attempt_id
+    with pytest.raises(ValidationError, match="handoff_attempt_id"):
+        VoiceCallObservation(observation_type="agent_relinquished")

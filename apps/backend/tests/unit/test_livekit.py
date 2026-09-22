@@ -3,10 +3,13 @@ from types import SimpleNamespace
 import pytest
 from backend_core.platform.livekit import LiveKitAdapter
 from livekit import api
+from livekit.api.twirp_client import TwirpError
 
 
 @pytest.mark.asyncio
-async def test_outbound_sip_participant_joins_existing_room_without_waiting_for_answer() -> None:
+async def test_outbound_sip_participant_joins_existing_room_without_waiting_for_answer() -> (
+    None
+):
     requests: list[object] = []
 
     class Sip:
@@ -66,7 +69,136 @@ async def test_participant_exists_checks_the_current_room() -> None:
 
 
 @pytest.mark.asyncio
-async def test_recording_uses_audio_only_room_composite_mp3_without_s3_credentials() -> None:
+async def test_remove_participant_is_idempotent_when_already_absent() -> None:
+    requests: list[object] = []
+
+    class Room:
+        async def remove_participant(self, request):
+            requests.append(request)
+            raise TwirpError("not_found", "missing", status=404)
+
+    adapter = LiveKitAdapter(
+        url="ws://livekit:7880",
+        api_key="key",
+        api_secret="secret",
+        participant_token_ttl_seconds=600,
+    )
+    adapter._client = SimpleNamespace(room=Room())  # type: ignore[assignment]
+
+    await adapter.remove_participant("sip-call-1", "handoff-call-1")
+
+    assert requests[0].room == "sip-call-1"  # type: ignore[union-attr]
+    assert requests[0].identity == "handoff-call-1"  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failures",
+    [
+        [TwirpError("unavailable", "retry", status=503)],
+        [
+            TwirpError("unavailable", "retry", status=503),
+            TwirpError("internal", "retry", status=500),
+        ],
+    ],
+)
+async def test_remove_participant_retries_transient_failures_without_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+    failures: list[TwirpError],
+) -> None:
+    outcomes: list[Exception | None] = [*failures, None]
+    sleeps: list[float] = []
+
+    class Room:
+        async def remove_participant(self, _request):
+            outcome = outcomes.pop(0)
+            if outcome is not None:
+                raise outcome
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr("backend_core.platform.livekit.asyncio.sleep", sleep)
+    adapter = LiveKitAdapter(
+        url="ws://livekit:7880",
+        api_key="key",
+        api_secret="secret",
+        participant_token_ttl_seconds=600,
+    )
+    adapter._client = SimpleNamespace(room=Room())  # type: ignore[assignment]
+
+    await adapter.remove_participant("sip-call-1", "handoff-call-1")
+
+    assert not outcomes
+    assert sleeps == [0.2, 0.5][: len(failures)]
+
+
+@pytest.mark.asyncio
+async def test_remove_participant_stops_after_bounded_transient_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+    sleeps: list[float] = []
+
+    class Room:
+        async def remove_participant(self, _request):
+            nonlocal attempts
+            attempts += 1
+            raise TwirpError("unavailable", "retry", status=503)
+
+    async def sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr("backend_core.platform.livekit.asyncio.sleep", sleep)
+    adapter = LiveKitAdapter(
+        url="ws://livekit:7880",
+        api_key="key",
+        api_secret="secret",
+        participant_token_ttl_seconds=600,
+    )
+    adapter._client = SimpleNamespace(room=Room())  # type: ignore[assignment]
+
+    with pytest.raises(TwirpError, match="unavailable"):
+        await adapter.remove_participant("sip-call-1", "handoff-call-1")
+
+    assert attempts == 3
+    assert sleeps == [0.2, 0.5]
+
+
+@pytest.mark.asyncio
+async def test_remove_participant_does_not_retry_non_transient_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    class Room:
+        async def remove_participant(self, _request):
+            nonlocal attempts
+            attempts += 1
+            raise TwirpError("invalid_argument", "invalid", status=400)
+
+    async def unexpected_sleep(_delay: float) -> None:
+        raise AssertionError("non-transient errors must not be retried")
+
+    monkeypatch.setattr("backend_core.platform.livekit.asyncio.sleep", unexpected_sleep)
+    adapter = LiveKitAdapter(
+        url="ws://livekit:7880",
+        api_key="key",
+        api_secret="secret",
+        participant_token_ttl_seconds=600,
+    )
+    adapter._client = SimpleNamespace(room=Room())  # type: ignore[assignment]
+
+    with pytest.raises(TwirpError, match="invalid_argument"):
+        await adapter.remove_participant("sip-call-1", "handoff-call-1")
+
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_recording_uses_audio_only_room_composite_mp3_without_s3_credentials() -> (
+    None
+):
     requests: list[object] = []
 
     class Egress:

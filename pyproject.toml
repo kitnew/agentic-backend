@@ -41,6 +41,9 @@ extend-exclude = [
     "packages/admin-client/src/admin_client/control_plane",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+"apps/backend/migrations/versions/0001_initial_backend.py" = ["I001"]
+
 [[tool.mypy.overrides]]
 module = ["admin_client.generated.*", "admin_client.control_plane.*"]
 ignore_errors = true

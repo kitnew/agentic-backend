@@ -8,7 +8,10 @@ import httpx
 from agentic_observability.domain import CoreMetrics, domain_span
 from contracts import (
     ConversationPersistenceStatus,
+    HandoffAttemptResponse,
+    HandoffEvent,
     HandoffExecutionMaterial,
+    HandoffState,
     HumanHandoffRequest,
     HumanHandoffResponse,
     InboundSipClaimRequest,
@@ -55,6 +58,17 @@ from backend_core.runtime.execution_context import (
 
 logger = logging.getLogger(__name__)
 MANUAL_TEST_CALLER_PHONE = "+15555550100"
+ACTIVE_HANDOFF_STATES = {HandoffState.DIALING, HandoffState.ANSWERED}
+HANDOFF_TRANSITIONS = {
+    (HandoffState.DIALING, HandoffEvent.ANSWER): HandoffState.ANSWERED,
+    (HandoffState.DIALING, HandoffEvent.FAIL): HandoffState.FAILED,
+    (HandoffState.DIALING, HandoffEvent.TIME_OUT): HandoffState.TIMED_OUT,
+    (HandoffState.DIALING, HandoffEvent.CANCEL): HandoffState.CANCELED,
+    (HandoffState.ANSWERED, HandoffEvent.COMPLETE): HandoffState.COMPLETED,
+    (HandoffState.ANSWERED, HandoffEvent.FAIL): HandoffState.FAILED,
+    (HandoffState.ANSWERED, HandoffEvent.TIME_OUT): HandoffState.TIMED_OUT,
+    (HandoffState.ANSWERED, HandoffEvent.CANCEL): HandoffState.CANCELED,
+}
 
 
 class CallSessionService:
@@ -445,19 +459,29 @@ class CallSessionService:
                 call.handoff_tool_call_id == data.tool_call_id
                 and call.handoff_destination == data.destination
             ):
+                if (
+                    call.handoff_attempt_id is None
+                    or call.handoff_state is None
+                    or call.handoff_participant_identity is None
+                ):
+                    raise HumanHandoffError("call_not_transferable")
                 return HumanHandoffResponse(
-                    status="dialing", destination=data.destination
+                    status=call.handoff_state,
+                    destination=data.destination,
+                    attempt_id=call.handoff_attempt_id,
+                    participant_identity=call.handoff_participant_identity,
                 )
-            if call.handoff_participant_identity is None:
+            if call.handoff_state in ACTIVE_HANDOFF_STATES:
                 raise HumanHandoffError("call_not_transferable")
-            try:
-                participant_exists = await livekit.participant_exists(
-                    call.room_name, call.handoff_participant_identity
-                )
-            except Exception as error:
-                raise HumanHandoffError("transfer_failed") from error
-            if participant_exists:
+            if call.handoff_state is HandoffState.COMPLETED:
                 raise HumanHandoffError("call_not_transferable")
+            if call.handoff_participant_identity is not None:
+                try:
+                    await livekit.remove_participant(
+                        call.room_name, call.handoff_participant_identity
+                    )
+                except Exception as error:
+                    raise HumanHandoffError("transfer_failed") from error
         if (
             call.status is not CallSessionStatus.CONNECTED
             or call.channel is not CallChannel.SIP
@@ -479,15 +503,26 @@ class CallSessionService:
             if self._metrics is not None:
                 self._metrics.telephony_handoff_failure("outbound_unavailable")
             raise HumanHandoffError("outbound_unavailable")
+        attempt_id = uuid4()
+        participant_identity = f"handoff-{call.id}-{attempt_id}"
+        call.handoff_tool_call_id = data.tool_call_id
+        call.handoff_attempt_id = attempt_id
+        call.handoff_state = HandoffState.DIALING
+        call.handoff_destination = data.destination
+        call.handoff_participant_identity = participant_identity
+        call.handoff_sip_call_id = None
+        await self._calls.flush()
         try:
             participant_identity, sip_call_id = await livekit.create_sip_participant(
                 room_name=call.room_name,
-                participant_identity=f"handoff-{call.id}",
+                participant_identity=participant_identity,
                 phone_number=destination.phone_number,
                 caller_number=phone_number,
                 outbound_trunk_id=platform.outbound_trunk_id,
             )
-        except Exception as error:
+        except Exception:
+            call.handoff_state = HandoffState.FAILED
+            await self._calls.flush()
             if self._metrics is not None:
                 self._metrics.telephony_handoff_failure("provider_failure")
             logger.exception(
@@ -498,22 +533,116 @@ class CallSessionService:
                     "destination": data.destination,
                 },
             )
-            raise HumanHandoffError("transfer_failed") from error
-        call.handoff_tool_call_id = data.tool_call_id
-        call.handoff_destination = data.destination
+            return HumanHandoffResponse(
+                status=HandoffState.FAILED,
+                destination=data.destination,
+                attempt_id=attempt_id,
+                participant_identity=participant_identity,
+                error_code="transfer_failed",
+            )
         call.handoff_participant_identity = participant_identity
         call.handoff_sip_call_id = sip_call_id
         await self._calls.flush()
         logger.info(
-            "Human handoff participant connected",
+            "Human handoff attempt started",
             extra={
                 "call_session_id": str(call.id),
+                "handoff_attempt_id": str(attempt_id),
+                "handoff_state": HandoffState.DIALING.value,
+                "participant_identity": participant_identity,
                 "tenant_id": str(call.tenant_id),
                 "destination": data.destination,
                 "reason_supplied": data.reason is not None,
             },
         )
-        return HumanHandoffResponse(status="dialing", destination=data.destination)
+        return HumanHandoffResponse(
+            status=HandoffState.DIALING,
+            destination=data.destination,
+            attempt_id=attempt_id,
+            participant_identity=participant_identity,
+        )
+
+    async def transition_handoff(
+        self,
+        call_id: UUID,
+        attempt_id: UUID,
+        event: HandoffEvent,
+        livekit: LiveKitAdapter,
+    ) -> HandoffAttemptResponse:
+        call = await self._get_for_update(call_id)
+        if (
+            call.handoff_attempt_id != attempt_id
+            or call.handoff_state is None
+            or call.handoff_participant_identity is None
+        ):
+            raise HumanHandoffError("handoff_attempt_mismatch")
+        if call.handoff_state not in ACTIVE_HANDOFF_STATES:
+            if (
+                call.handoff_state is HandoffState.CANCELED
+                and event is HandoffEvent.CANCEL
+            ) or (
+                call.handoff_state is HandoffState.TIMED_OUT
+                and event is HandoffEvent.TIME_OUT
+            ):
+                await self._cleanup_handoff(call, attempt_id, livekit)
+            return self._handoff_response(call)
+        next_state = HANDOFF_TRANSITIONS.get((call.handoff_state, event))
+        if next_state is None:
+            raise HumanHandoffError("handoff_transition_conflict")
+        if (
+            next_state is HandoffState.COMPLETED
+            and call.status is not CallSessionStatus.CONNECTED
+        ):
+            raise HumanHandoffError("handoff_transition_conflict")
+        call.handoff_state = next_state
+        await self._calls.flush()
+        logger.info(
+            "Human handoff state changed",
+            extra={
+                "call_session_id": str(call.id),
+                "handoff_attempt_id": str(attempt_id),
+                "handoff_state": next_state.value,
+                "participant_identity": call.handoff_participant_identity,
+                "reason": event.value,
+            },
+        )
+        if next_state in {HandoffState.CANCELED, HandoffState.TIMED_OUT}:
+            await self._cleanup_handoff(call, attempt_id, livekit)
+        return self._handoff_response(call)
+
+    async def _cleanup_handoff(
+        self,
+        call: CallSession,
+        attempt_id: UUID,
+        livekit: LiveKitAdapter,
+    ) -> None:
+        assert call.handoff_state is not None
+        assert call.handoff_participant_identity is not None
+        try:
+            await livekit.remove_participant(
+                call.room_name, call.handoff_participant_identity
+            )
+        except Exception:
+            logger.exception(
+                "Human handoff SIP participant cleanup failed",
+                extra={
+                    "call_session_id": str(call.id),
+                    "handoff_attempt_id": str(attempt_id),
+                    "handoff_state": call.handoff_state.value,
+                    "participant_identity": call.handoff_participant_identity,
+                },
+            )
+
+    @staticmethod
+    def _handoff_response(call: CallSession) -> HandoffAttemptResponse:
+        assert call.handoff_attempt_id is not None
+        assert call.handoff_state is not None
+        assert call.handoff_participant_identity is not None
+        return HandoffAttemptResponse(
+            attempt_id=call.handoff_attempt_id,
+            state=call.handoff_state,
+            participant_identity=call.handoff_participant_identity,
+        )
 
     async def _pinned_handoff(
         self, call: CallSession, requested_destination: str
@@ -536,12 +665,14 @@ class CallSessionService:
     async def relinquish_agent(
         self,
         call_id: UUID,
+        attempt_id: UUID,
         conversation_status: ConversationPersistenceStatus,
     ) -> CallSession:
         call = await self._get_for_update(call_id)
         if (
             call.status is not CallSessionStatus.CONNECTED
-            or call.handoff_tool_call_id is None
+            or call.handoff_attempt_id != attempt_id
+            or call.handoff_state is not HandoffState.COMPLETED
         ):
             raise CallSessionConflictError
         try:

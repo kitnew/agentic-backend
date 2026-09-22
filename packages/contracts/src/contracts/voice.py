@@ -18,6 +18,23 @@ class CallLifecycleStatus(StrEnum):
     FAILED = "failed"
 
 
+class HandoffState(StrEnum):
+    DIALING = "dialing"
+    ANSWERED = "answered"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    CANCELED = "canceled"
+
+
+class HandoffEvent(StrEnum):
+    ANSWER = "answer"
+    COMPLETE = "complete"
+    FAIL = "fail"
+    TIME_OUT = "time-out"
+    CANCEL = "cancel"
+
+
 class VoiceCallObservation(_VoiceModel):
     schema_version: Literal[1] = 1
     observation_type: Literal[
@@ -29,12 +46,18 @@ class VoiceCallObservation(_VoiceModel):
     ]
     failure_reason: str | None = Field(default=None, min_length=1, max_length=4000)
     conversation_status: Literal["complete", "incomplete"] = "complete"
+    handoff_attempt_id: UUID | None = None
 
     @model_validator(mode="after")
     def failure_reason_matches_observation(self) -> VoiceCallObservation:
         failed = self.observation_type == "session_failed"
         if failed != (self.failure_reason is not None):
             raise ValueError("failure_reason is required only for session_failed")
+        relinquished = self.observation_type == "agent_relinquished"
+        if relinquished != (self.handoff_attempt_id is not None):
+            raise ValueError(
+                "handoff_attempt_id is required only for agent_relinquished"
+            )
         return self
 
 
@@ -65,8 +88,17 @@ class HumanHandoffRequest(_VoiceModel):
 
 
 class HumanHandoffResponse(_VoiceModel):
-    status: Literal["dialing", "transferred"] = "transferred"
+    status: HandoffState
     destination: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    attempt_id: UUID
+    participant_identity: str = Field(min_length=1, max_length=255)
+    error_code: Literal["transfer_failed"] | None = None
+
+
+class HandoffAttemptResponse(_VoiceModel):
+    attempt_id: UUID
+    state: HandoffState
+    participant_identity: str = Field(min_length=1, max_length=255)
 
 
 class CallLifecycleResponse(_VoiceModel):

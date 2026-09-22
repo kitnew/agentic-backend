@@ -32,8 +32,8 @@ class Service:
         self.call.status = CallSessionStatus.CONNECTED
         return self.call
 
-    async def relinquish_agent(self, call_id, conversation_status):
-        self.observed.append(f"relinquished:{conversation_status.value}")
+    async def relinquish_agent(self, call_id, attempt_id, conversation_status):
+        self.observed.append(f"relinquished:{attempt_id}:{conversation_status.value}")
         return self.call
 
 
@@ -55,12 +55,16 @@ async def test_runtime_observation_routes_to_authoritative_call_service() -> Non
 async def test_agent_relinquish_does_not_end_the_call() -> None:
     service = Service()
     service.call.status = CallSessionStatus.CONNECTED
+    attempt_id = uuid4()
 
     response = await observe_call(
         service.call.id,
-        VoiceCallObservation(observation_type="agent_relinquished"),
+        VoiceCallObservation(
+            observation_type="agent_relinquished",
+            handoff_attempt_id=attempt_id,
+        ),
         service,  # type: ignore[arg-type]
     )
 
-    assert service.observed == ["relinquished:complete"]
+    assert service.observed == [f"relinquished:{attempt_id}:complete"]
     assert response.status.value == "connected"

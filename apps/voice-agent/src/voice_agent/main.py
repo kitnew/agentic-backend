@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from voice_agent.backend import BackendClient, CallFinalizer
 from voice_agent.calculator import calculator_tool
 from voice_agent.event_delivery import ConversationPersistence
+from voice_agent.handoff import HandoffController
 from voice_agent.observability import (
     LatencyInstrumentedAgent,
     current_voice_telemetry,
@@ -40,59 +41,6 @@ from voice_agent.providers import (
 from voice_agent.settings import VoiceAgentSettings
 
 logger = logging.getLogger(__name__)
-
-HANDOFF_TIMEOUT_SECONDS = 30.0
-
-
-async def _await_handoff_participant(
-    session: agents.AgentSession,
-    participant_identity: str,
-    on_connected: Callable[[], None],
-) -> None:
-    room = session.room_io.room
-    finished = asyncio.Event()
-    answered = False
-
-    def participant_connected(participant: rtc.RemoteParticipant) -> None:
-        nonlocal answered
-        if (
-            participant.identity == participant_identity
-            and participant.attributes.get("sip.callStatus") == "active"
-        ):
-            answered = True
-            finished.set()
-
-    def participant_attributes_changed(
-        changed_attributes: dict[str, str], participant: rtc.Participant
-    ) -> None:
-        nonlocal answered
-        if (
-            participant.identity == participant_identity
-            and changed_attributes.get("sip.callStatus") == "active"
-        ):
-            answered = True
-            finished.set()
-
-    def participant_disconnected(participant: rtc.RemoteParticipant) -> None:
-        if participant.identity == participant_identity:
-            finished.set()
-
-    room.on("participant_connected", participant_connected)
-    room.on("participant_attributes_changed", participant_attributes_changed)
-    room.on("participant_disconnected", participant_disconnected)
-    try:
-        participant = room.remote_participants.get(participant_identity)
-        if participant is not None:
-            participant_connected(participant)
-        await asyncio.wait_for(finished.wait(), HANDOFF_TIMEOUT_SECONDS)
-    except TimeoutError:
-        return
-    finally:
-        room.off("participant_connected", participant_connected)
-        room.off("participant_attributes_changed", participant_attributes_changed)
-        room.off("participant_disconnected", participant_disconnected)
-    if answered:
-        on_connected()
 
 
 def log_user_transcript(event: object) -> None:
@@ -301,7 +249,7 @@ def build_agent_tools(
     context: VoiceExecutionContext,
     backend: BackendClient,
     call_id: UUID,
-    on_handoff: Callable[[], None] | None = None,
+    handoff_controller: HandoffController | None = None,
     capability_recorder: Callable[..., None] | None = None,
 ) -> list[llm.Tool | llm.Toolset]:
     recorder = capability_recorder or record_capability_execution
@@ -332,7 +280,7 @@ def build_agent_tools(
             on_tool_completed=on_end_call_completed,
         ),
         *(
-            [handoff_tool(context, backend, call_id, on_handoff)]
+            [handoff_tool(context, backend, call_id, handoff_controller)]
             if context.handoff
             else []
         ),
@@ -347,20 +295,18 @@ def handoff_tool(
     runtime: VoiceExecutionContext,
     backend: BackendClient,
     call_id: UUID,
-    on_handoff: Callable[[], None] | None = None,
+    handoff_controller: HandoffController | None = None,
 ) -> llm.RawFunctionTool:
     destinations = {
         str(item["destination_key"]): str(item["description"])
         for item in runtime.handoff
     }
     description = "; ".join(f"{key}: {value}" for key, value in destinations.items())
-    handoff_waiter: asyncio.Task[None] | None = None
 
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
     ) -> Any:
-        nonlocal handoff_waiter
         request = HumanHandoffRequest.model_validate(
             {"tool_call_id": context.function_call.call_id, **raw_arguments}
         )
@@ -383,29 +329,12 @@ def handoff_tool(
             return {"status": "failed", "error_code": code}
         except httpx.HTTPError:
             return {"status": "failed", "error_code": "transfer_failed"}
-        if on_handoff is not None:
-            if result.status == "transferred":
-                on_handoff()
-                context.session.shutdown(drain=True)
-            else:
-                def relinquish() -> None:
-                    on_handoff()
-                    context.session.shutdown(drain=True)
-
-                if handoff_waiter is not None:
-                    handoff_waiter.cancel()
-                handoff_waiter = asyncio.create_task(
-                    _await_handoff_participant(
-                        context.session,
-                        f"handoff-{call_id}",
-                        relinquish,
-                    )
-                )
+        if handoff_controller is not None:
+            await handoff_controller.start(result, context.session)
         output = result.model_dump(mode="json")
         if result.status == "dialing":
             output["message"] = (
-                "The handoff was successfully initiated. "
-                "Waiting for confirmation."
+                "The handoff was successfully initiated. Waiting for confirmation."
             )
         return output
 
@@ -616,13 +545,14 @@ async def run_job(
     persistence: ConversationPersistence | None = None
     terminalizer: SessionTerminalizer | None = None
     failure_reason: str | None = None
-    handed_off = False
+    handoff: HandoffController | None = None
     cancelled = False
     try:
         call_id = await resolve_call_session_id(
             ctx, backend, settings.participant_wait_timeout_seconds
         )
         finalizer = CallFinalizer(backend, call_id)
+        handoff = HandoffController(backend, call_id, timeout=30.0)
         context = await backend.runtime_context(call_id)
         logger.info(
             "Voice runtime context loaded",
@@ -679,22 +609,34 @@ async def run_job(
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()
 
-        def mark_handed_off() -> None:
-            nonlocal handed_off
-            handed_off = True
-
         async def on_shutdown(_: str) -> None:
-            if not handed_off:
+            assert handoff is not None
+            if not handoff.completed:
+                await handoff.cancel("job_shutdown")
                 await terminalizer.terminalize("job_shutdown")
 
         ctx.add_shutdown_callback(on_shutdown)
 
         def on_close(event: agents.CloseEvent) -> None:
-            if not closed.done():
-                closed.set_result(event)
-            if handed_off:
+            if closed.done():
                 return
-            task = terminalizer.start(close_failure_reason(event.reason))
+            assert handoff is not None
+            if not handoff.active:
+                closed.set_result(event)
+                if not handoff.completed:
+                    task = terminalizer.start(close_failure_reason(event.reason))
+                    task.add_done_callback(log_terminalization_failure)
+                return
+
+            async def handle_close() -> None:
+                if not handoff.completed:
+                    await handoff.cancel("session_closed")
+                if not closed.done():
+                    closed.set_result(event)
+                if not handoff.completed:
+                    await terminalizer.terminalize(close_failure_reason(event.reason))
+
+            task = asyncio.create_task(handle_close())
             task.add_done_callback(log_terminalization_failure)
 
         session.on("close", on_close)
@@ -725,7 +667,7 @@ async def run_job(
                     context,
                     backend,
                     call_id,
-                    mark_handed_off,
+                    handoff,
                     telemetry.metrics.record_capability_execution
                     if telemetry is not None
                     else None,
@@ -739,7 +681,7 @@ async def run_job(
         if observe is not None:
             await observe(call_id, "session_started")
         try:
-            await asyncio.wait_for(
+            participant = await asyncio.wait_for(
                 ctx.wait_for_participant(
                     kind=[
                         rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
@@ -748,6 +690,8 @@ async def run_job(
                 ),
                 timeout=settings.participant_wait_timeout_seconds,
             )
+            if identity := getattr(participant, "identity", None):
+                handoff.set_caller_identity(identity)
         except TimeoutError:
             failure_reason = "participant_timeout"
             await session.aclose()
@@ -788,7 +732,15 @@ async def run_job(
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
         try:
-            if handed_off and persistence is not None and call_id is not None:
+            if handoff is not None:
+                await handoff.close()
+            if (
+                handoff is not None
+                and handoff.completed
+                and handoff.attempt_id is not None
+                and persistence is not None
+                and call_id is not None
+            ):
                 conversation_complete = False
                 try:
                     conversation_complete = await persistence.finish()
@@ -800,6 +752,7 @@ async def run_job(
                     conversation_status=(
                         "complete" if conversation_complete else "incomplete"
                     ),
+                    handoff_attempt_id=handoff.attempt_id,
                 )
             elif terminalizer is not None:
                 await terminalizer.terminalize(failure_reason)

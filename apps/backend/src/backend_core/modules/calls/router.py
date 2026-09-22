@@ -9,6 +9,8 @@ from contracts import (
     CallLifecycleResponse,
     CallLifecycleStatus,
     ConversationPersistenceStatus,
+    HandoffAttemptResponse,
+    HandoffEvent,
     HumanHandoffRequest,
     HumanHandoffResponse,
     InboundSipClaimRequest,
@@ -138,8 +140,11 @@ async def observe_call(
         elif data.observation_type == "participant_connected":
             call = await service.mark_connected(call_id)
         elif data.observation_type == "agent_relinquished":
+            assert data.handoff_attempt_id is not None
             call = await service.relinquish_agent(
-                call_id, ConversationPersistenceStatus(data.conversation_status)
+                call_id,
+                data.handoff_attempt_id,
+                ConversationPersistenceStatus(data.conversation_status),
             )
         elif data.observation_type == "session_finished":
             call = await service.end(
@@ -284,6 +289,8 @@ async def transfer_call_to_human(
             "telephony_not_ready": "Telephony is not ready for this call",
             "outbound_unavailable": "Outbound telephony is unavailable",
             "transfer_failed": "The call could not be transferred",
+            "handoff_attempt_mismatch": "The handoff attempt is no longer current",
+            "handoff_transition_conflict": "The handoff transition is not allowed",
         }
         raise HTTPException(
             status_code=(
@@ -291,6 +298,33 @@ async def transfer_call_to_human(
                 if error.code == "transfer_failed"
                 else status.HTTP_409_CONFLICT
             ),
+            detail={"code": error.code, "message": messages[error.code]},
+        ) from error
+
+
+@runtime_router.post(
+    "/{call_id}/handoff/{attempt_id}/{event}",
+    response_model=HandoffAttemptResponse,
+    dependencies=[Depends(require_internal_scope("call-session:handoff"))],
+)
+async def transition_handoff(
+    call_id: UUID,
+    attempt_id: UUID,
+    event: HandoffEvent,
+    service: CallSessionServiceDependency,
+    request: Request,
+) -> HandoffAttemptResponse:
+    try:
+        return await service.transition_handoff(
+            call_id, attempt_id, event, request.app.state.livekit
+        )
+    except HumanHandoffError as error:
+        messages = {
+            "handoff_attempt_mismatch": "The handoff attempt is no longer current",
+            "handoff_transition_conflict": "The handoff transition is not allowed",
+        }
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
             detail={"code": error.code, "message": messages[error.code]},
         ) from error
 

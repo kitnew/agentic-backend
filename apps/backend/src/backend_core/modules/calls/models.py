@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
+from contracts import HandoffState
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -83,6 +84,11 @@ class CallSession(Base):
             """,
             name="ck_call_sessions_lifecycle_fields",
         ),
+        CheckConstraint(
+            "(handoff_attempt_id IS NULL AND handoff_state IS NULL) OR "
+            "(handoff_attempt_id IS NOT NULL AND handoff_state IS NOT NULL)",
+            name="ck_call_sessions_handoff_attempt_fields",
+        ),
         Index("ix_call_sessions_tenant_created_at", "tenant_id", "created_at"),
         Index(
             "uq_call_sessions_provider_sip_call_id",
@@ -151,6 +157,15 @@ class CallSession(Base):
         nullable=True,
     )
     handoff_tool_call_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    handoff_attempt_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    handoff_state: Mapped[HandoffState | None] = mapped_column(
+        Enum(
+            HandoffState,
+            name="handoff_state",
+            values_callable=lambda values: [value.value for value in values],
+        ),
+        nullable=True,
+    )
     handoff_destination: Mapped[str | None] = mapped_column(String(64), nullable=True)
     handoff_participant_identity: Mapped[str | None] = mapped_column(
         String(255), nullable=True

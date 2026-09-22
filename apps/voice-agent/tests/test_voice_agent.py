@@ -10,6 +10,7 @@ import pytest
 import voice_agent.main as voice_main
 from contracts import (
     CapabilityInvocationStatus,
+    HandoffState,
     HumanHandoffResponse,
     InboundSipClaimResponse,
     VoiceExecutionContext,
@@ -23,9 +24,9 @@ from pydantic import ValidationError
 from voice_agent.backend import BackendClient
 from voice_agent.calculator import calculate, calculator_tool
 from voice_agent.event_delivery import MESSAGE_NAMESPACE, message_from_event
+from voice_agent.handoff import HandoffAttempt
 from voice_agent.main import (
     SessionTerminalizer,
-    _await_handoff_participant,
     assemble_instructions,
     build_agent_tools,
     capability_tool,
@@ -765,25 +766,25 @@ def test_prompt_assembly_uses_only_runtime_material(
     instructions = assemble_instructions(context)
     assert (
         instructions
-        == """[System]
+        == """[System instructions]
 System prompt
 
-[Profile]
+[Profile instructions]
 Profile prompt
 
-[Interaction]
+[Interaction instructions]
 Interaction prompt
 
-[Tenant]
+[Tenant instructions]
 Tenant prompt
 
-[Agent]
+[Agent context]
 Display name: Amelia
 Role: Hotel concierge
 Grammatical gender: feminine
 Conversation scope: property_only
 
-[Business]
+[Business context]
 Name: Grand Hotel
 Type: hotel
 Address: Main Street 1
@@ -798,7 +799,7 @@ Links:
 Default locale: sk-SK
 Timezone: Europe/Bratislava
 
-[Knowledge]
+[Tenant knowledge]
 Knowledge
 
 [Dynamic context]
@@ -879,25 +880,32 @@ def test_calculator_is_always_added_before_tenant_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
+async def test_handoff_tool_is_semantic_and_starts_attempt() -> None:
+    attempt_id = uuid4()
+
     class Backend:
         def __init__(self) -> None:
             self.requests: list[object] = []
 
         async def transfer_to_human(self, call_id, request):
             self.requests.append(request)
-            return HumanHandoffResponse(destination=request.destination)
+            return HumanHandoffResponse(
+                status="dialing",
+                destination=request.destination,
+                attempt_id=attempt_id,
+                participant_identity="handoff-participant",
+            )
 
-    class Session:
+    class Controller:
         def __init__(self) -> None:
-            self.shutdowns: list[bool] = []
+            self.started: list[tuple[object, object]] = []
 
-        def shutdown(self, *, drain: bool = True) -> None:
-            self.shutdowns.append(drain)
+        async def start(self, response, session) -> None:
+            self.started.append((response, session))
 
     call_id = uuid4()
     backend = Backend()
-    handed_off: list[bool] = []
+    controller = Controller()
     runtime = VoiceExecutionContext.model_validate(
         {
             **runtime_context().model_dump(),
@@ -915,13 +923,11 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
         "end_call",
         "transfer_to_human",
     ]
-    tool = handoff_tool(  # type: ignore[arg-type]
-        runtime, backend, call_id, lambda: handed_off.append(True)
-    )
+    tool = handoff_tool(runtime, backend, call_id, controller)  # type: ignore[arg-type]
     schema = tool._info.raw_schema  # type: ignore[attr-defined]
     assert schema["parameters"]["properties"]["destination"]["enum"] == ["reception"]
     assert "phone" not in str(schema).lower()
-    session = Session()
+    session = SimpleNamespace()
     result = await tool._func(  # type: ignore[attr-defined]
         SimpleNamespace(
             session=session,
@@ -929,77 +935,37 @@ async def test_handoff_tool_is_semantic_and_relinquishes() -> None:
         ),
         {"destination": "reception", "reason": "Guest asked for reception"},
     )
-    assert result == {"status": "transferred", "destination": "reception"}
-    assert handed_off == [True]
-    assert session.shutdowns == [True]
+    assert result == {
+        "status": "dialing",
+        "destination": "reception",
+        "attempt_id": str(attempt_id),
+        "participant_identity": "handoff-participant",
+        "error_code": None,
+        "message": "The handoff was successfully initiated. Waiting for confirmation.",
+    }
+    assert len(controller.started) == 1
+    started, started_session = controller.started[0]
+    assert started.attempt_id == attempt_id
+    assert started_session is session
     assert backend.requests[0].destination == "reception"  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
-async def test_handoff_waits_for_participant_before_relinquishing() -> None:
-    class Room:
-        def __init__(self) -> None:
-            self.remote_participants: dict[str, object] = {}
-            self.callbacks: dict[str, object] = {}
-
-        def on(self, event, callback):
-            self.callbacks[event] = callback
-
-        def off(self, event, callback):
-            self.callbacks.pop(event, None)
-
-        def emit(self, event, *args) -> None:
-            self.callbacks[event](*args)
-
-    room = Room()
-    connected: list[bool] = []
-    session = SimpleNamespace(room_io=SimpleNamespace(room=room))
-    task = asyncio.create_task(
-        _await_handoff_participant(
-            session, "handoff-call-1", lambda: connected.append(True)
-        )
-    )
-    await asyncio.sleep(0)
-    assert connected == []
-    participant = SimpleNamespace(
-        identity="handoff-call-1", attributes={"sip.callStatus": "dialing"}
-    )
-    room.emit("participant_connected", participant)
-    await asyncio.sleep(0)
-    assert connected == []
-    room.emit("participant_disconnected", participant)
-    await task
-    assert connected == []
-
-    task = asyncio.create_task(
-        _await_handoff_participant(
-            session, "handoff-call-1", lambda: connected.append(True)
-        )
-    )
-    await asyncio.sleep(0)
-    room.emit("participant_connected", participant)
-    room.emit(
-        "participant_attributes_changed",
-        {"sip.callStatus": "active"},
-        participant,
-    )
-    await task
-    assert connected == [True]
-
-
-@pytest.mark.asyncio
 async def test_handoff_dialing_result_tells_model_to_wait() -> None:
+    attempt_id = uuid4()
+
     class Backend:
         async def transfer_to_human(self, call_id, request):
             return HumanHandoffResponse(
-                status="dialing", destination=request.destination
+                status="dialing",
+                destination=request.destination,
+                attempt_id=attempt_id,
+                participant_identity="handoff-participant",
             )
 
     runtime = runtime_context().model_copy(
         update={
-            "handoff": [
-                {"destination_key": "reception", "description": "Reception"}
-            ]
+            "handoff": [{"destination_key": "reception", "description": "Reception"}]
         }
     )
     tool = handoff_tool(runtime, Backend(), uuid4())
@@ -1013,6 +979,9 @@ async def test_handoff_dialing_result_tells_model_to_wait() -> None:
     assert result == {
         "status": "dialing",
         "destination": "reception",
+        "attempt_id": str(attempt_id),
+        "participant_identity": "handoff-participant",
+        "error_code": None,
         "message": "The handoff was successfully initiated. Waiting for confirmation.",
     }
 
@@ -1665,6 +1634,7 @@ async def test_successful_handoff_relinquishes_without_completing_call(
             observation_type: str,
             *,
             conversation_status: str = "complete",
+            handoff_attempt_id=None,
         ) -> None:
             self.observations.append((observation_type, conversation_status))
 
@@ -1720,15 +1690,17 @@ async def test_successful_handoff_relinquishes_without_completing_call(
             return None
 
         async def wait_for_participant(self, **kwargs):
-            return object()
+            return SimpleNamespace(identity="caller")
 
     backend = Backend()
     monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: backend)
     monkeypatch.setattr("voice_agent.main.ConversationPersistence", Persistence)
     monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: Session())
 
-    def tools(runtime, client, call_id, on_handoff, capability_recorder=None):
-        on_handoff()
+    def tools(runtime, client, call_id, controller, capability_recorder=None):
+        controller._attempt = HandoffAttempt(
+            uuid4(), "handoff-participant", HandoffState.COMPLETED
+        )
         return []
 
     monkeypatch.setattr("voice_agent.main.build_agent_tools", tools)

@@ -13,6 +13,8 @@ from contracts import (
     CapabilityInvocationResponse,
     CapabilityInvocationStatus,
     ConversationMessageResponse,
+    HandoffAttemptResponse,
+    HandoffEvent,
     HumanHandoffRequest,
     HumanHandoffResponse,
     InboundSipClaimRequest,
@@ -157,6 +159,16 @@ class BackendClient:
         )
         return HumanHandoffResponse.model_validate(response.json())
 
+    async def transition_handoff(
+        self, call_id: UUID, attempt_id: UUID, event: HandoffEvent
+    ) -> HandoffAttemptResponse:
+        response = await self.request(
+            "POST",
+            f"/internal/v1/calls/{call_id}/handoff/{attempt_id}/{event.value}",
+            "call-session:handoff",
+        )
+        return HandoffAttemptResponse.model_validate(response.json())
+
     async def invoke_capability(
         self,
         call_id: UUID,
@@ -240,11 +252,13 @@ class BackendClient:
         *,
         failure_reason: str | None = None,
         conversation_status: str = "complete",
+        handoff_attempt_id: UUID | None = None,
     ) -> None:
         observation = VoiceCallObservation(
             observation_type=observation_type,  # type: ignore[arg-type]
             failure_reason=failure_reason,
             conversation_status=conversation_status,  # type: ignore[arg-type]
+            handoff_attempt_id=handoff_attempt_id,
         )
         await self.request(
             "POST",

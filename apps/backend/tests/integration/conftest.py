@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -13,27 +14,78 @@ import pytest_asyncio
 from alembic import command
 from alembic.config import Config
 from backend_core.bootstrap.settings import Settings
+from dotenv import dotenv_values
 from sqlalchemy.engine import URL, make_url
 
 BACKEND_ROOT = Path(__file__).parents[2]
+REPOSITORY_ROOT = Path(__file__).parents[4]
+TEST_DATABASE_PATTERN = re.compile(r"agentic_backend_test_[0-9a-f]{32}")
 ADMIN_TOKEN = "test-admin-token-with-at-least-32-characters"
 VOICE_AGENT_SECRET = "test-voice-agent-secret-with-at-least-32-characters"
 JOB_WORKER_SECRET = "test-job-worker-secret-with-at-least-32-characters"
-BACKEND_CORE_SERVICE_SECRET = "test-backend-core-service-secret-with-at-least-32-characters"
+BACKEND_CORE_SERVICE_SECRET = (
+    "test-backend-core-service-secret-with-at-least-32-characters"
+)
 
 
 def dsn(url: URL) -> str:
     return url.render_as_string(hide_password=False)
 
 
+def test_database_server() -> tuple[URL, set[str]]:
+    raw_admin_url = os.getenv("TEST_DATABASE_ADMIN_URL")
+    if raw_admin_url:
+        admin_url = make_url(raw_admin_url)
+    else:
+        development = dotenv_values(REPOSITORY_ROOT / "infrastructure/compose/.env.dev")
+        password = development.get("POSTGRES_PASSWORD")
+        if not password:
+            pytest.skip("development PostgreSQL credentials are unavailable")
+        admin_url = URL.create(
+            "postgresql+asyncpg",
+            username="postgres",
+            password=password,
+            host="127.0.0.1",
+            port=int(development.get("POSTGRES_PORT") or 5432),
+            database="postgres",
+        )
+    application_databases = {"backend"}
+    if configured_url := os.getenv("DATABASE_URL"):
+        application_databases.add(make_url(configured_url).database or "")
+    application_databases.add(admin_url.database or "")
+    return admin_url, application_databases
+
+
+def assert_safe_test_database(
+    admin_url: URL,
+    application_databases: set[str],
+    database_name: str,
+) -> None:
+    if (
+        TEST_DATABASE_PATTERN.fullmatch(database_name) is None
+        or database_name in application_databases
+        or database_name in {"postgres", "template0", "template1"}
+        or not admin_url.host
+    ):
+        raise RuntimeError(f"refusing unsafe test database target: {database_name}")
+
+
+async def upgrade_database(database_url: str, revision: str) -> None:
+    alembic = Config(str(BACKEND_ROOT / "alembic.ini"))
+    alembic.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+    await asyncio.to_thread(command.upgrade, alembic, revision)
+
+
+@pytest.fixture
+def migrate_database():
+    return upgrade_database
+
+
 @pytest_asyncio.fixture
 async def isolated_database_url() -> AsyncIterator[str]:
-    raw_admin_url = os.getenv("TEST_DATABASE_ADMIN_URL")
-    if not raw_admin_url:
-        pytest.skip("set TEST_DATABASE_ADMIN_URL to run PostgreSQL integration tests")
-
-    admin_url = make_url(raw_admin_url)
-    database_name = f"backend_test_{uuid4().hex}"
+    admin_url, application_databases = test_database_server()
+    database_name = f"agentic_backend_test_{uuid4().hex}"
+    assert_safe_test_database(admin_url, application_databases, database_name)
     admin_connection = await asyncpg.connect(
         dsn(admin_url.set(drivername="postgresql"))
     )
@@ -47,6 +99,7 @@ async def isolated_database_url() -> AsyncIterator[str]:
             )
         )
     finally:
+        assert_safe_test_database(admin_url, application_databases, database_name)
         await admin_connection.execute(
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
             "WHERE datname = $1 AND pid <> pg_backend_pid()",
@@ -60,12 +113,7 @@ async def isolated_database_url() -> AsyncIterator[str]:
 async def migrated_database_url(
     isolated_database_url: str,
 ) -> AsyncIterator[str]:
-    alembic = Config(str(BACKEND_ROOT / "alembic.ini"))
-    alembic.set_main_option(
-        "sqlalchemy.url",
-        isolated_database_url.replace("%", "%%"),
-    )
-    await asyncio.to_thread(command.upgrade, alembic, "head")
+    await upgrade_database(isolated_database_url, "head")
     # The component cutover is intentionally destructive; isolated databases
     # are dropped by the outer fixture instead of exercising a fake downgrade.
     yield isolated_database_url

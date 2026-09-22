@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from contracts import ConversationPersistenceStatus
+from contracts import ConversationPersistenceStatus, HandoffState
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend_core.modules.calls.models import (
@@ -82,6 +82,8 @@ class CallSessionResponse(BaseModel):
     sip_dispatch_rule_id: str | None
     livekit_participant_identity: str | None
     handoff_tool_call_id: str | None
+    handoff_attempt_id: UUID | None
+    handoff_state: HandoffState | None
     handoff_destination: str | None
     handoff_participant_identity: str | None
     handoff_sip_call_id: str | None
