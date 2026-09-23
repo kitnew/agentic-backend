@@ -190,7 +190,9 @@ async def resolve_call_session_id(
     return claim.call_session_id
 
 
-def assemble_instructions(context: VoiceExecutionContext) -> str:
+def assemble_instructions(
+    context: VoiceExecutionContext, caller_number: str | None = None
+) -> str:
     timezone = context.business.timezone
     local_now = datetime.now(ZoneInfo(timezone))
     agent = [
@@ -228,6 +230,14 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
         )
     )
 
+    dynamic_context = [
+        "[Dynamic context]",
+        f"Current local date: {local_now.date().isoformat()}",
+        f"Current local time: {local_now.strftime('%H:%M')}",
+    ]
+    if caller_number:
+        dynamic_context.append(f"Caller phone number: {caller_number}")
+
     sections = [
         f"[System instructions]\n{context.prompts.system}",
         f"[Profile instructions]\n{context.prompts.profile}",
@@ -236,11 +246,7 @@ def assemble_instructions(context: VoiceExecutionContext) -> str:
         "\n".join(agent),
         "\n".join(business),
         f"[Tenant knowledge]\n{context.prompts.knowledge}",
-        (
-            "[Dynamic context]\n"
-            f"Current local date: {local_now.date().isoformat()}\n"
-            f"Current local time: {local_now.strftime('%H:%M')}"
-        ),
+        "\n".join(dynamic_context),
     ]
     if context.architecture in ("realtime", "half-cascade"):
         sections.append(
@@ -288,13 +294,13 @@ def build_agent_tools(
             on_tool_completed=on_end_call_completed,
         ),
         *(
-            [recent_transcript_tool(recent_transcript)]
+            [recent_transcript_tool(recent_transcript, recorder)]
             if recent_transcript is not None
             and context.architecture in ("realtime", "half-cascade")
             else []
         ),
         *(
-            [handoff_tool(context, backend, call_id, handoff_controller)]
+            [handoff_tool(context, backend, call_id, handoff_controller, recorder)]
             if context.handoff
             else []
         ),
@@ -310,7 +316,9 @@ def handoff_tool(
     backend: BackendClient,
     call_id: UUID,
     handoff_controller: HandoffController | None = None,
+    capability_recorder: Callable[..., None] | None = None,
 ) -> llm.RawFunctionTool:
+    recorder = capability_recorder or record_capability_execution
     destinations = {
         str(item["destination_key"]): str(item["description"])
         for item in runtime.handoff
@@ -321,36 +329,54 @@ def handoff_tool(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
     ) -> Any:
-        request = HumanHandoffRequest.model_validate(
-            {"tool_call_id": context.function_call.call_id, **raw_arguments}
-        )
+        started = time.perf_counter()
+        status = "failed"
+        error_type: str | None = None
         try:
-            result = await backend.transfer_to_human(call_id, request)
-        except httpx.HTTPStatusError as error:
-            code = "transfer_failed"
-            try:
-                candidate = error.response.json()["detail"]["code"]
-                if candidate in {
-                    "handoff_not_configured",
-                    "unknown_destination",
-                    "call_not_transferable",
-                    "transfer_failed",
-                    "outbound_unavailable",
-                }:
-                    code = candidate
-            except KeyError, TypeError, ValueError:
-                pass
-            return {"status": "failed", "error_code": code}
-        except httpx.HTTPError:
-            return {"status": "failed", "error_code": "transfer_failed"}
-        if handoff_controller is not None:
-            await handoff_controller.start(result, context.session)
-        output = result.model_dump(mode="json")
-        if result.status == "dialing":
-            output["message"] = (
-                "The handoff was successfully initiated. Waiting for confirmation."
+            request = HumanHandoffRequest.model_validate(
+                {"tool_call_id": context.function_call.call_id, **raw_arguments}
             )
-        return output
+            try:
+                result = await backend.transfer_to_human(call_id, request)
+            except httpx.HTTPStatusError as error:
+                code = "transfer_failed"
+                try:
+                    candidate = error.response.json()["detail"]["code"]
+                    if candidate in {
+                        "handoff_not_configured",
+                        "unknown_destination",
+                        "call_not_transferable",
+                        "transfer_failed",
+                        "outbound_unavailable",
+                    }:
+                        code = candidate
+                except KeyError, TypeError, ValueError:
+                    pass
+                error_type = code
+                return {"status": "failed", "error_code": code}
+            except httpx.HTTPError:
+                error_type = "transfer_failed"
+                return {"status": "failed", "error_code": "transfer_failed"}
+            if handoff_controller is not None:
+                await handoff_controller.start(result, context.session)
+            output = result.model_dump(mode="json")
+            if result.status == "dialing":
+                output["message"] = (
+                    "The handoff was successfully initiated. Waiting for confirmation."
+                )
+            status = "ok"
+            return output
+        except Exception:
+            error_type = "execution_error"
+            raise
+        finally:
+            recorder(
+                name="transfer_to_human",
+                version="1",
+                status=status,
+                duration_seconds=time.perf_counter() - started,
+                error_type=error_type,
+            )
 
     return cast(
         llm.RawFunctionTool,
@@ -674,6 +700,25 @@ async def run_job(
                 ),
             )
         session.on("user_input_transcribed", log_user_transcript)
+        caller_number: str | None = None
+        try:
+            participant = await asyncio.wait_for(
+                ctx.wait_for_participant(
+                    kind=[
+                        rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+                        rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+                    ]
+                ),
+                timeout=settings.participant_wait_timeout_seconds,
+            )
+            if identity := getattr(participant, "identity", None):
+                handoff.set_caller_identity(identity)
+            if participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
+                caller_number = participant.attributes.get("sip.phoneNumber") or None
+        except TimeoutError:
+            failure_reason = "participant_timeout"
+            await session.aclose()
+            return
         await session.start(
             room=ctx.room,
             # Keep native spans local to the explicit OTLP pipeline. LiveKit Cloud
@@ -686,7 +731,7 @@ async def run_job(
             },
             agent=LatencyInstrumentedAgent(
                 metrics=telemetry.metrics if telemetry is not None else None,
-                instructions=assemble_instructions(context),
+                instructions=assemble_instructions(context, caller_number),
                 tools=build_agent_tools(
                     context,
                     backend,
@@ -705,23 +750,6 @@ async def run_job(
         observe = getattr(backend, "observe", None)
         if observe is not None:
             await observe(call_id, "session_started")
-        try:
-            participant = await asyncio.wait_for(
-                ctx.wait_for_participant(
-                    kind=[
-                        rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
-                        rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
-                    ]
-                ),
-                timeout=settings.participant_wait_timeout_seconds,
-            )
-            if identity := getattr(participant, "identity", None):
-                handoff.set_caller_identity(identity)
-        except TimeoutError:
-            failure_reason = "participant_timeout"
-            await session.aclose()
-            return
-
         await backend.activate(call_id)
         if not closed.done():
             try:

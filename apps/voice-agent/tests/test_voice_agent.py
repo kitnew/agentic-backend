@@ -956,6 +956,7 @@ async def test_handoff_tool_is_semantic_and_starts_attempt() -> None:
     call_id = uuid4()
     backend = Backend()
     controller = Controller()
+    recorded: list[dict[str, object]] = []
     runtime = VoiceExecutionContext.model_validate(
         {
             **runtime_context().model_dump(),
@@ -973,7 +974,13 @@ async def test_handoff_tool_is_semantic_and_starts_attempt() -> None:
         "end_call",
         "transfer_to_human",
     ]
-    tool = handoff_tool(runtime, backend, call_id, controller)  # type: ignore[arg-type]
+    tool = handoff_tool(  # type: ignore[arg-type]
+        runtime,
+        backend,
+        call_id,
+        controller,
+        lambda **values: recorded.append(values),
+    )
     schema = tool._info.raw_schema  # type: ignore[attr-defined]
     assert schema["parameters"]["properties"]["destination"]["enum"] == ["reception"]
     assert "phone" not in str(schema).lower()
@@ -998,6 +1005,9 @@ async def test_handoff_tool_is_semantic_and_starts_attempt() -> None:
     assert started.attempt_id == attempt_id
     assert started_session is session
     assert backend.requests[0].destination == "reception"  # type: ignore[union-attr]
+    assert len(recorded) == 1
+    assert recorded[0]["name"] == "transfer_to_human"
+    assert recorded[0]["status"] == "ok"
 
 
 @pytest.mark.asyncio
