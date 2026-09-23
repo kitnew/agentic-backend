@@ -32,7 +32,8 @@ const completeSystemDesired = {
   tts_defaults: { deployment_ref: "tts-id", default_voice_id: "voice" },
   realtime_defaults: {
     deployment_ref: "realtime-id",
-      default_voice: "marin",
+    input_transcription: { deployment_ref: "realtime-stt-id" },
+    default_voice: "marin",
     turn_completion: {
       strategy: "semantic_vad",
       eagerness: "medium",
@@ -129,7 +130,7 @@ describe("configuration form mappings", () => {
         .getAllByLabelText("Deployment")
         .every((element) => (element as HTMLSelectElement).value === ""),
     ).toBe(true);
-    expect(screen.queryByLabelText("Input transcription")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Realtime input transcription")).toBeVisible();
 
     expect(
       systemDesiredFromForm({

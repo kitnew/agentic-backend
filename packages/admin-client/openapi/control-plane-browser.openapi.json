@@ -2989,6 +2989,9 @@
             "title": "Deployment Ref",
             "type": "string"
           },
+          "input_transcription": {
+            "$ref": "#/components/schemas/RealtimeInputTranscription"
+          },
           "interruption": {
             "$ref": "#/components/schemas/RealtimeInterruption"
           },
@@ -3013,11 +3016,27 @@
         },
         "required": [
           "deployment_ref",
+          "input_transcription",
           "default_voice",
           "turn_completion",
           "interruption"
         ],
         "title": "RealtimeDefaults",
+        "type": "object"
+      },
+      "RealtimeInputTranscription": {
+        "additionalProperties": false,
+        "properties": {
+          "deployment_ref": {
+            "format": "uuid",
+            "title": "Deployment Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_ref"
+        ],
+        "title": "RealtimeInputTranscription",
         "type": "object"
       },
       "RealtimeInterruption": {

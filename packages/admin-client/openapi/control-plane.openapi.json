@@ -3147,6 +3147,9 @@
             "title": "Deployment Ref",
             "type": "string"
           },
+          "input_transcription": {
+            "$ref": "#/components/schemas/RealtimeInputTranscription"
+          },
           "interruption": {
             "$ref": "#/components/schemas/RealtimeInterruption"
           },
@@ -3171,11 +3174,27 @@
         },
         "required": [
           "deployment_ref",
+          "input_transcription",
           "default_voice",
           "turn_completion",
           "interruption"
         ],
         "title": "RealtimeDefaults",
+        "type": "object"
+      },
+      "RealtimeInputTranscription": {
+        "additionalProperties": false,
+        "properties": {
+          "deployment_ref": {
+            "format": "uuid",
+            "title": "Deployment Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_ref"
+        ],
+        "title": "RealtimeInputTranscription",
         "type": "object"
       },
       "RealtimeInterruption": {
@@ -3541,7 +3560,8 @@
           "llm",
           "stt",
           "tts",
-          "model"
+          "model",
+          "input_transcription"
         ],
         "title": "RuntimeSecretSlot",
         "type": "string"
@@ -5532,6 +5552,153 @@
           }
         ],
         "summary": "Worker Context"
+      }
+    },
+    "/internal/v1/telephony/inbound-numbers": {
+      "get": {
+        "operationId": "inbound_numbers_internal_v1_telephony_inbound_numbers_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tenant_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tenant Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Inbound Numbers Internal V1 Telephony Inbound Numbers Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Precondition Failed"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "InternalServiceToken": []
+          }
+        ],
+        "summary": "Inbound Numbers"
       }
     },
     "/internal/v1/telephony/inbound-route": {
@@ -21091,4 +21258,4 @@
       }
     }
   }
-}\n
+}
