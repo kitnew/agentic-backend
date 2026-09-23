@@ -1079,18 +1079,19 @@ Example:
 ```text
 raw tool arguments:
 {
-  "phone": "0900 123 456",
+  "phone_number": "0900 123 456",
+  "phone_country": "SK",
   "note": "Window seat"
 }
 
 bindings:
-  phone: guest.phone
+  phone_number: guest.phone
 ```
 
 after normalization:
 
 ```text
-inputs.phone
+inputs.phone_number
 → normalized phone value
 
 business.guest.phone
@@ -1103,7 +1104,15 @@ business.note
 → does not exist
 ```
 
-There is no separate raw-input expression namespace.
+For the `guest.phone` binding, `phone_country` is an optional ISO 3166-1
+alpha-2 input. International numbers identify their own country; national
+numbers require an explicitly confirmed country. The worker parses and validates
+the raw number and projects canonical E.164 into `inputs.phone_number` and
+`business.guest.phone`. Without a country, national-format numbers fail with
+`phone_country_required`; the tenant country is never inferred.
+
+The raw number remains available only as the action input before normalization;
+there is no separate raw-input expression namespace.
 
 ### Runtime expression context
 

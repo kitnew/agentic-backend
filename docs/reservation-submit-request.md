@@ -126,14 +126,15 @@ Tenant B uses the same semantic capability and handler. Only its profile differs
         "type": "object",
         "properties": {
           "guest_name": {"type": "string", "minLength": 1, "description": "Full name of the guest", "x-canonical-field": "guest.name"},
-          "reservation_phone": {"type": "string", "minLength": 1, "description": "Confirmed reservation contact phone", "x-canonical-field": "guest.phone"},
+          "phone_number": {"type": "string", "minLength": 1, "description": "Reservation contact phone as spoken; may be national or international", "x-canonical-field": "guest.phone"},
+          "phone_country": {"type": "string", "pattern": "^[A-Z]{2}$", "description": "Confirmed ISO 3166-1 alpha-2 country for a national-format phone number"},
           "email": {"type": "string", "format": "email", "description": "Guest email", "x-canonical-field": "guest.email"},
           "check_in": {"type": "string", "format": "date", "description": "Arrival date", "x-canonical-field": "stay.check_in"},
           "check_out": {"type": "string", "format": "date", "description": "Departure date", "x-canonical-field": "stay.check_out"},
           "room_type": {"type": "integer", "enum": [2, 3, 4], "x-canonical-field": "allocation.room_type"},
           "room_count": {"type": "integer", "minimum": 1, "x-canonical-field": "allocation.room_count"}
         },
-        "required": ["guest_name", "reservation_phone", "check_in", "check_out", "room_type", "room_count"],
+        "required": ["guest_name", "phone_number", "check_in", "check_out", "room_type", "room_count"],
         "additionalProperties": false
       },
       "business_policy": {"requires_final_confirmation": true, "requires_availability_proof": false, "requires_caller_phone": true},
