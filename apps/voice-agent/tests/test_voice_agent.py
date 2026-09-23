@@ -283,6 +283,10 @@ def test_realtime_factory_uses_snapshot_runtime_values(
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
             "voice": "custom-voice",
+            "input_transcription": {
+                "deployment_config": {"model": "gpt-live-transcribe"},
+                "language": "sk-SK",
+            },
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
             "stt": {
@@ -297,7 +301,10 @@ def test_realtime_factory_uses_snapshot_runtime_values(
     assert captured["base_url"] == "https://realtime.example/openai"
     assert captured["api_version"] == "2026-02-01"
     assert captured["voice"] == "custom-voice"
-    assert captured["input_audio_transcription"] is None
+    assert captured["input_audio_transcription"] == {
+        "model": "gpt-live-transcribe",
+        "language": "sk",
+    }
     assert captured["turn_detection"].type == "semantic_vad"  # type: ignore[union-attr]
     assert captured["turn_detection"].interrupt_response is True  # type: ignore[union-attr]
     assert session["vad"] is None
@@ -328,6 +335,10 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
                 },
             },
             "voice": "marin",
+            "input_transcription": {
+                "deployment_config": {"model": "gpt-live-transcribe"},
+                "language": "sk-SK",
+            },
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
             "stt": {
@@ -392,6 +403,10 @@ def test_realtime_factory_uses_configured_azure_stt_connection(
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
             "turn_completion": {"strategy": "server_vad"},
+            "input_transcription": {
+                "deployment_config": {"model": "gpt-live-transcribe"},
+                "language": "sk-SK",
+            },
             "interruption": {"enabled": True},
             "stt": {
                 "provider_kind": "azure_openai",
@@ -439,6 +454,10 @@ def test_realtime_factory_normalizes_regional_locale_for_standalone_stt(
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
             "voice": "marin",
+            "input_transcription": {
+                "deployment_config": {"model": "gpt-live-transcribe"},
+                "language": "sk-SK",
+            },
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
             "stt": {
@@ -450,7 +469,10 @@ def test_realtime_factory_normalizes_regional_locale_for_standalone_stt(
         {"model": "secret", "stt": "eleven-secret"},
     )
 
-    assert captured["input_audio_transcription"] is None
+    assert captured["input_audio_transcription"] == {
+        "model": "gpt-live-transcribe",
+        "language": "sk",
+    }
     assert isinstance(session["stt"], elevenlabs.STT)
     assert session["stt"].model == "transcribe-model"
 
@@ -489,6 +511,10 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
                 "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
             },
+            "input_transcription": {
+                "deployment_config": {"model": "gpt-live-transcribe"},
+                "language": "sk-SK",
+            },
             "tts": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "eleven_flash_v2_5"},
@@ -510,7 +536,10 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
     )
 
     assert captured_model["modalities"] == ["text"]
-    assert captured_model["input_audio_transcription"] is None
+    assert captured_model["input_audio_transcription"] == {
+        "model": "gpt-live-transcribe",
+        "language": "sk",
+    }
     assert "voice" not in captured_model
     assert captured_model["api_key"] == "realtime-secret"
     assert captured_model["turn_detection"].type == "server_vad"  # type: ignore[union-attr]
@@ -576,6 +605,10 @@ async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_outp
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
+            },
+            "input_transcription": {
+                "deployment_config": {"model": "gpt-live-transcribe"},
+                "language": "sk-SK",
             },
             "tts": {
                 "provider_kind": "elevenlabs",

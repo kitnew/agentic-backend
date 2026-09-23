@@ -10,7 +10,7 @@ import os
 import time
 from collections.abc import AsyncGenerator, AsyncIterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from agentic_observability.attributes import metric_attributes
@@ -18,7 +18,7 @@ from agentic_observability.bootstrap import TelemetryProviders, bootstrap
 from agentic_observability.config import TelemetryConfig
 from agentic_observability.logging import install_trace_context_filter
 from livekit import agents, rtc
-from livekit.agents import llm
+from livekit.agents import llm, stt
 from livekit.agents.telemetry import set_tracer_provider
 from livekit.agents.types import USERDATA_TTS_STARTED_TIME, FlushSentinel
 from livekit.agents.voice.agent import ModelSettings
@@ -28,6 +28,9 @@ from opentelemetry.context import Context
 from opentelemetry.sdk.trace import ReadableSpan, Span, SpanProcessor
 from opentelemetry.sdk.util import BoundedList
 from opentelemetry.trace import Status
+
+if TYPE_CHECKING:
+    from voice_agent.recent_transcript import RecentTranscriptBuffer
 
 _runtime: VoiceTelemetryRuntime | None = None
 _MAX_PIPELINE_TRACKERS = 128
@@ -697,10 +700,31 @@ def _turn_attrs(values: Mapping[str, object], metadata_name: str) -> dict[str, s
 
 
 class LatencyInstrumentedAgent(agents.Agent):
-    def __init__(self, *, metrics: VoiceMetrics | None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        metrics: VoiceMetrics | None,
+        recent_transcript: RecentTranscriptBuffer | None = None,
+        **kwargs: Any,
+    ) -> None:
         kwargs.setdefault("id", "default_agent")
         super().__init__(**kwargs)
         self._voice_metrics = metrics
+        self._recent_transcript = recent_transcript
+
+    async def stt_node(
+        self, audio: AsyncIterable[rtc.AudioFrame], model_settings: ModelSettings
+    ) -> AsyncGenerator[stt.SpeechEvent | str]:
+        # LiveKit suppresses session STT transcript events when Realtime transcribes.
+        async for event in agents.Agent.default.stt_node(self, audio, model_settings):
+            if (
+                self._recent_transcript is not None
+                and isinstance(event, stt.SpeechEvent)
+                and event.type == stt.SpeechEventType.FINAL_TRANSCRIPT
+                and event.alternatives
+            ):
+                self._recent_transcript.on_stt_final(event.alternatives[0].text)
+            yield event
 
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage

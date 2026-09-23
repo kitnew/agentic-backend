@@ -3,10 +3,10 @@ from uuid import uuid4
 
 import pytest
 from livekit.agents import llm
-from livekit.agents.voice.events import UserInputTranscribedEvent
 from voice_agent.event_delivery import (
     ConversationPersistence,
 )
+from voice_agent.recent_transcript import RecentTranscriptBuffer
 
 
 def event(item_id: str, content: str, role: str = "user") -> object:
@@ -39,7 +39,7 @@ async def test_persistence_writes_committed_items_in_queue_order() -> None:
 
 
 @pytest.mark.asyncio
-async def test_persistence_writes_final_standalone_stt_transcript() -> None:
+async def test_persistence_writes_only_realtime_conversation_items() -> None:
     class Backend:
         def __init__(self) -> None:
             self.messages = []
@@ -49,17 +49,17 @@ async def test_persistence_writes_final_standalone_stt_transcript() -> None:
 
     backend = Backend()
     persistence = ConversationPersistence(backend, uuid4())  # type: ignore[arg-type]
-    persistence.on_user_input_transcribed(
-        UserInputTranscribedEvent(transcript="Dobrý deň", is_final=True)
-    )
-    persistence.on_user_input_transcribed(
-        UserInputTranscribedEvent(transcript="Dobrý", is_final=False)
-    )
+    precision = RecentTranscriptBuffer()
+    precision.on_stt_final("Dobrý den")
+    persistence.on_conversation_item_added(event("realtime-user", "Dobrý deň"))
+    persistence.on_conversation_item_added(event("reply", "Vitajte", "assistant"))
 
     assert await persistence.finish()
     assert [(item.role.value, item.content) for item in backend.messages] == [
-        ("user", "Dobrý deň")
+        ("user", "Dobrý deň"),
+        ("assistant", "Vitajte"),
     ]
+    assert precision.recent(1)["combined_text"] == "Dobrý den"
 
 
 @pytest.mark.asyncio

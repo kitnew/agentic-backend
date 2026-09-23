@@ -614,9 +614,9 @@ async def run_job(
             case "cascade":
                 slots = ("stt", "llm", "tts")
             case "realtime":
-                slots = ("model", "stt")
+                slots = ("model", "input_transcription", "stt")
             case "half-cascade":
-                slots = ("model", "stt", "tts")
+                slots = ("model", "input_transcription", "stt", "tts")
             case _:
                 raise ValueError(
                     f"unsupported voice architecture: {context.architecture}"
@@ -685,13 +685,6 @@ async def run_job(
 
         session.on("close", on_close)
         session.on("conversation_item_added", persistence.on_conversation_item_added)
-        if context.architecture in ("realtime", "half-cascade"):
-            session.on("user_input_transcribed", persistence.on_user_input_transcribed)
-            assert recent_transcript is not None
-            session.on(
-                "user_input_transcribed",
-                recent_transcript.on_user_input_transcribed,
-            )
         if telemetry is not None:
             telemetry.metrics.attach_speculative_generation(session)
             session.on(
@@ -732,6 +725,7 @@ async def run_job(
             },
             agent=LatencyInstrumentedAgent(
                 metrics=telemetry.metrics if telemetry is not None else None,
+                recent_transcript=recent_transcript,
                 instructions=assemble_instructions(context, caller_number),
                 tools=build_agent_tools(
                     context,
@@ -785,19 +779,6 @@ async def run_job(
             off = getattr(session, "off", None)
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
-                if context is not None and context.architecture in (
-                    "realtime",
-                    "half-cascade",
-                ):
-                    off(
-                        "user_input_transcribed",
-                        persistence.on_user_input_transcribed,
-                    )
-                    if recent_transcript is not None:
-                        off(
-                            "user_input_transcribed",
-                            recent_transcript.on_user_input_transcribed,
-                        )
         try:
             if handoff is not None:
                 await handoff.close()

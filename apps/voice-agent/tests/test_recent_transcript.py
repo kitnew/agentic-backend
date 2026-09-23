@@ -2,22 +2,17 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from livekit.agents.voice.events import UserInputTranscribedEvent
+from livekit.agents import Agent, stt
 from test_voice_agent import runtime_context
 from voice_agent.main import build_agent_tools
+from voice_agent.observability import LatencyInstrumentedAgent
 from voice_agent.recent_transcript import RecentTranscriptBuffer, recent_transcript_tool
 
 
-def event(text: str, *, final: bool = True) -> UserInputTranscribedEvent:
-    return UserInputTranscribedEvent(transcript=text, is_final=final)
-
-
-def test_buffer_accepts_only_finalized_stt_events_and_retains_recent_segments() -> None:
+def test_buffer_retains_recent_final_stt_segments() -> None:
     buffer = RecentTranscriptBuffer(max_segments=2)
-    buffer.on_user_input_transcribed(event("draft", final=False))
-    buffer.on_user_input_transcribed(event("one"))
-    buffer.on_user_input_transcribed(event("two"))
-    buffer.on_user_input_transcribed(event("three"))
+    for text in ("one", "two", "three"):
+        buffer.on_stt_final(text)
 
     assert buffer.recent(10) == {
         "segments": [{"seq": 2, "text": "two"}, {"seq": 3, "text": "three"}],
@@ -30,7 +25,7 @@ async def test_tool_returns_one_or_multiple_recent_segments() -> None:
     buffer = RecentTranscriptBuffer()
     recorded: list[dict[str, object]] = []
     for text in ("one", "two", "three"):
-        buffer.on_user_input_transcribed(event(text))
+        buffer.on_stt_final(text)
     tool = recent_transcript_tool(buffer, lambda **values: recorded.append(values))
     context = SimpleNamespace()
     turns_schema = tool._info.raw_schema["parameters"]["properties"]["turns"]  # type: ignore[attr-defined]
@@ -57,8 +52,8 @@ async def test_multi_turn_spelling_and_buffer_isolation() -> None:
     first = RecentTranscriptBuffer()
     second = RecentTranscriptBuffer()
     for text in ("F", "R I", "E S E", "N"):
-        first.on_user_input_transcribed(event(text))
-    second.on_user_input_transcribed(event("other call"))
+        first.on_stt_final(text)
+    second.on_stt_final("other call")
 
     tool = recent_transcript_tool(first)
     result = await tool._func(  # type: ignore[attr-defined]
@@ -88,3 +83,28 @@ def test_realtime_architectures_expose_recent_transcript_tool(
         for tool in tools
     ]
     assert "get_recent_transcript" in names
+
+
+@pytest.mark.asyncio
+async def test_standalone_stt_final_reaches_only_precision_buffer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def provider_events(*_args: object):
+        yield stt.SpeechEvent(
+            type=stt.SpeechEventType.INTERIM_TRANSCRIPT,
+            alternatives=[stt.SpeechData(language="sk", text="draft")],
+        )
+        yield stt.SpeechEvent(
+            type=stt.SpeechEventType.FINAL_TRANSCRIPT,
+            alternatives=[stt.SpeechData(language="sk", text="F R I E S E N")],
+        )
+
+    monkeypatch.setattr(Agent.default, "stt_node", staticmethod(provider_events))
+    buffer = RecentTranscriptBuffer()
+    agent = LatencyInstrumentedAgent(
+        metrics=None, recent_transcript=buffer, instructions="test"
+    )
+    events = [event async for event in agent.stt_node(None, None)]  # type: ignore[arg-type]
+
+    assert len(events) == 2
+    assert buffer.recent(10)["combined_text"] == "F R I E S E N"

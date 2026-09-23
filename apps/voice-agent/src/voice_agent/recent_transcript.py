@@ -5,7 +5,6 @@ from typing import Any, cast
 
 from livekit import agents
 from livekit.agents import llm
-from livekit.agents.voice.events import UserInputTranscribedEvent
 
 from voice_agent.observability import record_capability_execution
 
@@ -15,10 +14,10 @@ class RecentTranscriptBuffer:
         self._segments: deque[tuple[int, str]] = deque(maxlen=max_segments)
         self._next_seq = 1
 
-    def on_user_input_transcribed(self, event: UserInputTranscribedEvent) -> None:
-        if not event.is_final or not event.transcript:
+    def on_stt_final(self, transcript: str) -> None:
+        if not transcript:
             return
-        self._segments.append((self._next_seq, event.transcript))
+        self._segments.append((self._next_seq, transcript))
         self._next_seq += 1
 
     def recent(self, turns: int) -> dict[str, object]:

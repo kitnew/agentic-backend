@@ -193,12 +193,14 @@ def create_realtime_session(
         stt_config,
         str(stt_config["language"]),
         secrets["stt"],
-        keyterms=stt_config.get("speech_hints", {}).get("keyterms", {}).get("values", [])
+        keyterms=stt_config.get("speech_hints", {})
+        .get("keyterms", {})
+        .get("values", [])
         or NOT_GIVEN,
     )
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
-        input_audio_transcription=None,
+        input_audio_transcription=_realtime_transcription(runtime),
     )
     connect_options = agents.APIConnectOptions(
         timeout=settings.provider_timeout_seconds,
@@ -231,7 +233,9 @@ def create_half_cascade_session(
         stt_config,
         str(stt_config["language"]),
         secrets["stt"],
-        keyterms=stt_config.get("speech_hints", {}).get("keyterms", {}).get("values", [])
+        keyterms=stt_config.get("speech_hints", {})
+        .get("keyterms", {})
+        .get("values", [])
         or NOT_GIVEN,
     )
     # LiveKit streams text-only Realtime output through session TTS and cancels
@@ -239,7 +243,7 @@ def create_half_cascade_session(
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
         modalities=["text"],
-        input_audio_transcription=None,
+        input_audio_transcription=_realtime_transcription(runtime),
     )
     tts = _create_tts(tts_config, tts_language, secrets["tts"])
     connect_options = agents.APIConnectOptions(
@@ -333,6 +337,16 @@ def _realtime_options(
     if "voice" in runtime:
         options["voice"] = _required_string(runtime, "voice")
     return options
+
+
+def _realtime_transcription(runtime: dict[str, Any]) -> dict[str, str]:
+    transcription = runtime["input_transcription"]
+    return {
+        "model": _required_string(transcription["deployment_config"], "model"),
+        "language": _required_string(transcription, "language")
+        .partition("-")[0]
+        .lower(),
+    }
 
 
 def _realtime_turn_detection(runtime: dict[str, Any]) -> object:
