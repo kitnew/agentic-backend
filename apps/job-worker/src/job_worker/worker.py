@@ -21,6 +21,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx
 import jsonata  # type: ignore[import-untyped]
 import jwt
+import phonenumbers
 from agentic_observability.bootstrap import TelemetryProviders, bootstrap
 from agentic_observability.config import TelemetryConfig
 from agentic_observability.domain import CoreMetrics, domain_span
@@ -950,15 +951,37 @@ def _bind_input(
                     "Phone number must be a string",
                     transient=False,
                 )
-            value = re.sub(r"[\s()-]", "", value)
-            if value.startswith("00"):
-                value = f"+{value[2:]}"
-            if not re.fullmatch(r"\+[1-9][0-9]{7,14}", value):
+            raw_phone = re.sub(r"[\s()-]", "", value)
+            phone_country = inputs.get("phone_country")
+            if raw_phone.startswith("00"):
+                raw_phone = f"+{raw_phone[2:]}"
+            international = raw_phone.startswith("+")
+            region: str | None = None
+            if not international:
+                if not isinstance(phone_country, str):
+                    raise ExecutionError(
+                        "phone_country_required",
+                        "Confirm the country for this national phone number",
+                        transient=False,
+                    )
+                region = phone_country
+            try:
+                parsed_phone = phonenumbers.parse(raw_phone, region)
+            except phonenumbers.NumberParseException as error:
                 raise ExecutionError(
                     "invalid_canonical_field",
-                    "Phone number must be E.164",
+                    "Phone number is invalid",
+                    transient=False,
+                ) from error
+            if not phonenumbers.is_valid_number(parsed_phone):
+                raise ExecutionError(
+                    "invalid_canonical_field",
+                    "Phone number is invalid",
                     transient=False,
                 )
+            value = phonenumbers.format_number(
+                parsed_phone, phonenumbers.PhoneNumberFormat.E164
+            )
         inputs[source] = value
         current = business
         parts = target_value.split(".")

@@ -825,6 +825,9 @@ Profile prompt
 [Interaction instructions]
 Interaction prompt
 
+[Phone number handling]
+Capture the caller's phone number as spoken and pass it unchanged to reservation actions. Never construct or guess an E.164 number or add digits. A number with an explicit international prefix such as +420 or 00421 already identifies its country; do not ask for country confirmation. For a local/national number, briefly confirm which country it belongs to and pass that ISO alpha-2 country code as phone_country. If the caller number from SIP is used, preserve it as received.
+
 [Tenant instructions]
 Tenant prompt
 
@@ -858,6 +861,28 @@ Current local time: 14:05"""
     )
     assert context.agent.greeting not in instructions
     assert "Use the calculator" not in instructions
+
+
+def test_capability_tool_exposes_raw_phone_and_optional_country() -> None:
+    action = {
+        "key": "reservation.create",
+        "definition": {
+            "description": "Create reservation",
+            "agent_input_schema": {
+                "type": "object",
+                "properties": {
+                    "phone_number": {"type": "string", "minLength": 1},
+                    "phone_country": {"type": "string", "pattern": "^[A-Z]{2}$"},
+                },
+                "required": ["phone_number"],
+                "additionalProperties": False,
+            },
+        },
+    }
+    tool = capability_tool(action, object(), uuid4())  # type: ignore[arg-type]
+    schema = tool._info.raw_schema["parameters"]  # type: ignore[attr-defined]
+    assert schema["required"] == ["phone_number"]
+    assert "pattern" not in schema["properties"]["phone_number"]
 
 
 @pytest.mark.parametrize(

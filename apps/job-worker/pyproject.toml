@@ -18,6 +18,7 @@ dependencies = [
     "redis>=8.0.1",
     "opentelemetry-instrumentation-httpx>=0.60b1",
     "opentelemetry-instrumentation-redis>=0.60b1",
+    "phonenumbers>=9.0.0",
 ]
 
 [tool.uv.sources]
