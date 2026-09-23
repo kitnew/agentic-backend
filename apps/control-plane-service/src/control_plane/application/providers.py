@@ -568,24 +568,18 @@ class ProviderService:
                     raise ManagedResourceConflict(
                         "deployment capability update would invalidate system configuration"
                     )
-            if kind == "RealtimeDefaults":
-                if value.get("deployment_ref") == reference and isinstance(
-                    capabilities, RealtimeCapabilities
-                ):
-                    strategy = value.get("turn_completion", {}).get("strategy")
-                    supported = (
-                        capabilities.supports_server_vad
-                        if strategy == "server_vad"
-                        else capabilities.supports_semantic_vad
-                    )
-                    if not supported:
-                        raise ManagedResourceConflict(
-                            "deployment capability update would invalidate system configuration"
-                        )
-                transcription = value.get("input_transcription") or {}
-                if transcription.get("deployment_ref") == reference and not getattr(
-                    capabilities, "supports_realtime_input_transcription", False
-                ):
+            if (
+                kind == "RealtimeDefaults"
+                and value.get("deployment_ref") == reference
+                and isinstance(capabilities, RealtimeCapabilities)
+            ):
+                strategy = value.get("turn_completion", {}).get("strategy")
+                supported = (
+                    capabilities.supports_server_vad
+                    if strategy == "server_vad"
+                    else capabilities.supports_semantic_vad
+                )
+                if not supported:
                     raise ManagedResourceConflict(
                         "deployment capability update would invalidate system configuration"
                     )

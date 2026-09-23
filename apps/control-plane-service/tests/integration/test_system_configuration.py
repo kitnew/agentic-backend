@@ -154,7 +154,6 @@ def desired(refs, voice="marin"):
             },
             "realtime_defaults": {
                 "deployment_ref": str(refs["realtime"]),
-                "input_transcription": {"deployment_ref": str(refs["stt"])},
                 "default_voice": "marin",
                 "turn_completion": {"strategy": "semantic_vad"},
                 "interruption": {"enabled": True},

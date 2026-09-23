@@ -134,7 +134,6 @@ export * from './providerVADCommit';
 export * from './providerValidationResponse';
 export * from './realtimeCapabilitiesWrite';
 export * from './realtimeDefaults';
-export * from './realtimeInputTranscription';
 export * from './realtimeInterruption';
 export * from './realtimeOverrides';
 export * from './realtimeSemanticVAD';

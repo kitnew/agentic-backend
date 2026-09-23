@@ -44,7 +44,6 @@ type SystemFormState = {
   tts_defaults: { deployment_ref: string; default_voice_id: string };
   realtime_defaults: {
     deployment_ref: string;
-    input_transcription: { deployment_ref: string };
     default_voice: string;
     turn_completion: {
       strategy: "" | "server_vad" | "semantic_vad";
@@ -160,7 +159,6 @@ export function emptySystemFormState(): SystemFormState {
     tts_defaults: { deployment_ref: "", default_voice_id: "" },
     realtime_defaults: {
       deployment_ref: "",
-      input_transcription: { deployment_ref: "" },
       default_voice: "marin",
       turn_completion: {
         strategy: "",
@@ -225,7 +223,6 @@ export function systemFormState(
     tts_defaults: { ...value.tts_defaults },
     realtime_defaults: {
       deployment_ref: value.realtime_defaults.deployment_ref,
-      input_transcription: { ...value.realtime_defaults.input_transcription },
       default_voice: value.realtime_defaults.default_voice,
       turn_completion: {
         strategy: turnCompletion.strategy,
@@ -324,10 +321,6 @@ export function systemDesiredFromForm(
     },
     realtime_defaults: {
       deployment_ref: form.realtime_defaults.deployment_ref.trim(),
-      input_transcription: {
-        deployment_ref:
-          form.realtime_defaults.input_transcription.deployment_ref.trim(),
-      },
       default_voice: form.realtime_defaults.default_voice.trim(),
       turn_completion:
         turn.strategy === "semantic_vad"
@@ -885,26 +878,6 @@ export function SystemConfigurationForm({
             }
             deployments={allDeployments}
             kind="realtime"
-          />
-          <DeploymentSelect
-            label="Input transcription"
-            helperText="Prefer an STT deployment that supports realtime input transcription."
-            value={value.realtime_defaults.input_transcription.deployment_ref}
-            error={errorAt(
-              errors,
-              "realtime_defaults.input_transcription.deployment_ref",
-            )}
-            onChange={(deployment_ref) =>
-              onChange({
-                ...value,
-                realtime_defaults: {
-                  ...value.realtime_defaults,
-                  input_transcription: { deployment_ref },
-                },
-              })
-            }
-            deployments={allDeployments}
-            kind="stt"
           />
           <Field
             error={errorAt(errors, "realtime_defaults.default_voice")}

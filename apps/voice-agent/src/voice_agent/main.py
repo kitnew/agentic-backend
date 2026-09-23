@@ -587,9 +587,9 @@ async def run_job(
             case "cascade":
                 slots = ("stt", "llm", "tts")
             case "realtime":
-                slots = ("model", "input_transcription")
+                slots = ("model", "stt")
             case "half-cascade":
-                slots = ("model", "input_transcription", "tts")
+                slots = ("model", "stt", "tts")
             case _:
                 raise ValueError(
                     f"unsupported voice architecture: {context.architecture}"

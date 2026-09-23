@@ -58,10 +58,6 @@ class TTSDefaults(FrozenValue):
     default_voice_id: str = Field(min_length=1, max_length=255)
 
 
-class RealtimeInputTranscription(FrozenValue):
-    deployment_ref: UUID
-
-
 class RealtimeServerVAD(FrozenValue):
     strategy: Literal["server_vad"]
     activation_threshold: float = Field(default=0.5, ge=0, le=1)
@@ -84,7 +80,6 @@ class RealtimeInterruption(FrozenValue):
 
 class RealtimeDefaults(FrozenValue):
     deployment_ref: UUID
-    input_transcription: RealtimeInputTranscription
     default_voice: str = Field(
         min_length=1, max_length=255, json_schema_extra={"default": "marin"}
     )

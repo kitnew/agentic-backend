@@ -160,7 +160,6 @@ from .provider_validation_response import ProviderValidationResponse
 from .ready_ready_get_response_ready_ready_get import ReadyReadyGetResponseReadyReadyGet
 from .realtime_capabilities_write import RealtimeCapabilitiesWrite
 from .realtime_defaults import RealtimeDefaults
-from .realtime_input_transcription import RealtimeInputTranscription
 from .realtime_interruption import RealtimeInterruption
 from .realtime_overrides import RealtimeOverrides
 from .realtime_semantic_vad import RealtimeSemanticVAD
@@ -375,7 +374,6 @@ __all__ = (
     "ReadyReadyGetResponseReadyReadyGet",
     "RealtimeCapabilitiesWrite",
     "RealtimeDefaults",
-    "RealtimeInputTranscription",
     "RealtimeInterruption",
     "RealtimeOverrides",
     "RealtimeSemanticVAD",

@@ -8,7 +8,6 @@ from attrs import define as _attrs_define
 from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from ..models.realtime_input_transcription import RealtimeInputTranscription
     from ..models.realtime_interruption import RealtimeInterruption
     from ..models.realtime_semantic_vad import RealtimeSemanticVAD
     from ..models.realtime_server_vad import RealtimeServerVAD
@@ -23,13 +22,11 @@ class RealtimeDefaults:
     Attributes:
         default_voice (str):  Default: 'marin'.
         deployment_ref (UUID):
-        input_transcription (RealtimeInputTranscription):
         interruption (RealtimeInterruption):
         turn_completion (RealtimeSemanticVAD | RealtimeServerVAD):
     """
 
     deployment_ref: UUID
-    input_transcription: RealtimeInputTranscription
     interruption: RealtimeInterruption
     turn_completion: RealtimeSemanticVAD | RealtimeServerVAD
     default_voice: str = "marin"
@@ -40,8 +37,6 @@ class RealtimeDefaults:
         default_voice = self.default_voice
 
         deployment_ref = str(self.deployment_ref)
-
-        input_transcription = self.input_transcription.to_dict()
 
         interruption = self.interruption.to_dict()
 
@@ -57,7 +52,6 @@ class RealtimeDefaults:
             {
                 "default_voice": default_voice,
                 "deployment_ref": deployment_ref,
-                "input_transcription": input_transcription,
                 "interruption": interruption,
                 "turn_completion": turn_completion,
             }
@@ -67,7 +61,6 @@ class RealtimeDefaults:
 
     @classmethod
     def from_dict(cls, src_dict: Mapping[str, Any]) -> Self:
-        from ..models.realtime_input_transcription import RealtimeInputTranscription
         from ..models.realtime_interruption import RealtimeInterruption
         from ..models.realtime_semantic_vad import RealtimeSemanticVAD
         from ..models.realtime_server_vad import RealtimeServerVAD
@@ -76,10 +69,6 @@ class RealtimeDefaults:
         default_voice = d.pop("default_voice")
 
         deployment_ref = UUID(d.pop("deployment_ref"))
-
-        input_transcription = RealtimeInputTranscription.from_dict(
-            d.pop("input_transcription")
-        )
 
         interruption = RealtimeInterruption.from_dict(d.pop("interruption"))
 
@@ -105,7 +94,6 @@ class RealtimeDefaults:
         realtime_defaults = cls(
             default_voice=default_voice,
             deployment_ref=deployment_ref,
-            input_transcription=input_transcription,
             interruption=interruption,
             turn_completion=turn_completion,
         )

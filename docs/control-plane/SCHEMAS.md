@@ -267,21 +267,12 @@ RealtimeDefaults:
   additionalProperties: false
   required:
     - deployment_ref
-    - input_transcription
     - default_voice
     - turn_completion
     - interruption
   properties:
     deployment_ref:
       $ref: DeploymentRef
-
-    input_transcription:
-      type: object
-      additionalProperties: false
-      required: [deployment_ref]
-      properties:
-        deployment_ref:
-          $ref: DeploymentRef
 
     default_voice:
       type: string
@@ -2011,16 +2002,16 @@ TTSDefaults.deployment_ref
 RealtimeDefaults.deployment_ref
 → ModelDeployment(kind = realtime)
 
-RealtimeDefaults.input_transcription.deployment_ref
-→ ModelDeployment(kind = stt, realtime-transcription capable)
+STTDefaults.deployment_ref
+→ ModelDeployment(kind = stt, supports_cascade)
 ```
 
 Runtime architecture resolution composes those references as follows:
 
 ```text
 cascade      → STTDefaults + LLMDefaults + TTSDefaults
-realtime     → RealtimeDefaults + RealtimeDefaults.input_transcription
-half-cascade → RealtimeDefaults + RealtimeDefaults.input_transcription + TTSDefaults
+realtime     → RealtimeDefaults + STTDefaults
+half-cascade → RealtimeDefaults + STTDefaults + TTSDefaults
 ```
 
 `half-cascade` and `realtime` use the configured STT deployment as a standalone
@@ -2097,7 +2088,7 @@ platform tts voice                        → TTSDefaults.default_voice_id
 platform min_sentence_chars               → Policies.cascade.tokenizer
 
 realtime deployment                       → RealtimeDefaults.deployment_ref
-realtime transcription deployment         → RealtimeDefaults.input_transcription
+realtime transcription deployment         → STTDefaults.deployment_ref
 realtime voice                            → RealtimeDefaults.default_voice
 realtime VAD/interruption                 → RealtimeDefaults
 

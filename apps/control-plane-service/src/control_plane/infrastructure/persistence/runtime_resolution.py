@@ -325,12 +325,6 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
                     result.add(UUID(str(raw)))
                 except ValueError:
                     pass
-            transcription = component.value.get("input_transcription")
-            if isinstance(transcription, dict) and transcription.get("deployment_ref"):
-                try:
-                    result.add(UUID(str(transcription["deployment_ref"])))
-                except ValueError:
-                    pass
         return result
 
     @staticmethod

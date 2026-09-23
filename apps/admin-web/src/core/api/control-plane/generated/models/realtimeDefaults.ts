@@ -4,7 +4,6 @@
  * Agentic Backend Control Plane
  * OpenAPI spec version: 0.1.0
  */
-import type { RealtimeInputTranscription } from './realtimeInputTranscription';
 import type { RealtimeInterruption } from './realtimeInterruption';
 import type { RealtimeSemanticVAD } from './realtimeSemanticVAD';
 import type { RealtimeServerVAD } from './realtimeServerVAD';
@@ -16,7 +15,6 @@ export interface RealtimeDefaults {
      */
   default_voice: string;
   deployment_ref: string;
-  input_transcription: RealtimeInputTranscription;
   interruption: RealtimeInterruption;
   turn_completion: RealtimeServerVAD | RealtimeSemanticVAD;
 }

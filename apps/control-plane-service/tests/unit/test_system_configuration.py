@@ -47,7 +47,6 @@ def desired(refs, *, voice="marin"):
             },
             "realtime_defaults": {
                 "deployment_ref": str(refs["realtime"]),
-                "input_transcription": {"deployment_ref": str(refs["stt"])},
                 "default_voice": "marin",
                 "turn_completion": {"strategy": "semantic_vad"},
                 "interruption": {"enabled": True},
@@ -298,11 +297,6 @@ async def test_each_system_deployment_role_accepts_only_enabled_usable_matching_
     ("role", "capabilities", "path"),
     [
         ("stt", STTCapabilities(False, True), "stt_defaults.deployment_ref"),
-        (
-            "stt",
-            STTCapabilities(True, False),
-            "realtime_defaults.input_transcription.deployment_ref",
-        ),
         ("llm", LLMCapabilities(False, True), "llm_defaults.temperature"),
         ("llm", LLMCapabilities(True, False), "llm_defaults.reasoning_effort"),
         (

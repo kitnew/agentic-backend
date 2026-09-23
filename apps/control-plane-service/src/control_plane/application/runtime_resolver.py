@@ -60,7 +60,6 @@ from control_plane.domain.runtime_resolution import (
     ResolvedProviderResource,
     ResolvedRealtimeModel,
     ResolvedRealtimeRuntime,
-    ResolvedRealtimeTranscription,
     ResolvedRuntime,
     ResolvedSpeechHints,
     RuntimeResolution,
@@ -296,49 +295,38 @@ class RuntimeResolver:
         business: BusinessIdentity,
     ) -> ResolvedRealtimeRuntime:
         policy, model = self._realtime_model(state)
-        transcription = self._realtime_transcription(state, policy, overrides, business)
+        stt = self._standalone_stt(state, overrides, business)
         return ResolvedRealtimeRuntime(
             "realtime",
             ResolvedRealtimeModel(self._provenance(policy), model),
-            transcription,
+            stt,
             str(overrides.get("realtime", {}).get("voice", policy.value.default_voice)),
             policy.value.turn_completion,
             policy.value.interruption,
         )
 
-    def _realtime_transcription(
+    def _standalone_stt(
         self,
         state: RuntimeResolutionState,
-        policy: _ActiveRuntimeComponent[RealtimeDefaults],
         overrides: RuntimeOverrides,
         business: BusinessIdentity,
-    ) -> ResolvedRealtimeTranscription:
-        transcription = self._resource(
-            state,
-            policy.value.input_transcription.deployment_ref,
-            DeploymentKind.STT,
+    ) -> ResolvedCascadeSTT:
+        component = self._system(state, "STTDefaults", STTDefaults)
+        resource = self._resource(
+            state, component.value.deployment_ref, DeploymentKind.STT, component
         )
-        transcription_capabilities = transcription.deployment.capabilities
-        if (
-            not isinstance(transcription_capabilities, STTCapabilities)
-            or not transcription_capabilities.supports_realtime_input_transcription
-        ):
-            self._reject(
-                ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
-                deployment_ref=transcription.deployment.ref.value,
-                capability="realtime_input_transcription",
-            )
-        return ResolvedRealtimeTranscription(
-            transcription,
+        return ResolvedCascadeSTT(
+            self._provenance(component),
+            component.value,
+            resource,
             business.localization.default_locale,
             ResolvedSpeechHints(
                 ResolvedKeyterms(
-                    SpeechHintStatus.UNSUPPORTED,
+                    SpeechHintStatus.APPLIED,
                     tuple(overrides.get("stt", {}).get("keyterms", [])),
-                ),
+                )
             ),
         )
-
     def _half_cascade(
         self,
         state: RuntimeResolutionState,
@@ -346,7 +334,7 @@ class RuntimeResolver:
         business: BusinessIdentity,
     ) -> ResolvedHalfCascadeRuntime:
         policy, model = self._realtime_model(state)
-        transcription = self._realtime_transcription(state, policy, overrides, business)
+        stt = self._standalone_stt(state, overrides, business)
         tts = self._system(state, "TTSDefaults", TTSDefaults)
         tts_resource = self._resource(
             state, tts.value.deployment_ref, DeploymentKind.TTS, tts
@@ -355,7 +343,7 @@ class RuntimeResolver:
         return ResolvedHalfCascadeRuntime(
             "half-cascade",
             ResolvedRealtimeModel(self._provenance(policy), model),
-            transcription,
+            stt,
             ResolvedCascadeTTS(
                 self._provenance(tts), tts.value, tts_resource, str(voice)
             ),

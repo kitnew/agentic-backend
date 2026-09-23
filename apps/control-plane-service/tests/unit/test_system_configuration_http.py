@@ -34,7 +34,6 @@ def payload():
         "tts_defaults": {"deployment_ref": refs["tts"], "default_voice_id": "marin"},
         "realtime_defaults": {
             "deployment_ref": refs["realtime"],
-            "input_transcription": {"deployment_ref": refs["stt"]},
             "default_voice": "marin",
             "turn_completion": {"strategy": "server_vad"},
             "interruption": {"enabled": True},

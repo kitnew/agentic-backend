@@ -198,13 +198,8 @@ class SqlAlchemyProviderRepository:
             await self._session.execute(
                 select(LiveComponentRow.kind, LiveComponentRow.value).where(
                     LiveComponentRow.scope_type == "system",
-                    (LiveComponentRow.value["deployment_ref"].as_string() == value)
-                    | (
-                        LiveComponentRow.value["input_transcription"][
-                            "deployment_ref"
-                        ].as_string()
-                        == value
-                    ),
+                    LiveComponentRow.value["deployment_ref"].as_string() == value,
+
                 )
             )
         ).all()

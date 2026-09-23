@@ -403,12 +403,11 @@ class ExecutionMaterializationService:
                 "realtime": None,
                 "half_cascade": {
                     "model": cls._provider_semantics(runtime.model.resource),
-                    "input_transcription": {
-                        "language": runtime.input_transcription.language,
-                        "speech_hints": cls._plain(
-                            runtime.input_transcription.speech_hints
-                        ),
-                        **cls._provider_semantics(runtime.input_transcription.resource),
+                    "stt": {
+                        **cls._without_deployment_ref(runtime.stt.defaults),
+                        "language": runtime.stt.language,
+                        "speech_hints": cls._plain(runtime.stt.speech_hints),
+                        **cls._provider_semantics(runtime.stt.resource),
                     },
                     "tts": {
                         **cls._without_deployment_ref(runtime.tts.defaults),
@@ -425,12 +424,11 @@ class ExecutionMaterializationService:
             "tts": None,
             "realtime": {
                 "model": cls._provider_semantics(runtime.model.resource),
-                "input_transcription": {
-                    "language": runtime.input_transcription.language,
-                    "speech_hints": cls._plain(
-                        runtime.input_transcription.speech_hints
-                    ),
-                    **cls._provider_semantics(runtime.input_transcription.resource),
+                "stt": {
+                    **cls._without_deployment_ref(runtime.stt.defaults),
+                    "language": runtime.stt.language,
+                    "speech_hints": cls._plain(runtime.stt.speech_hints),
+                    **cls._provider_semantics(runtime.stt.resource),
                 },
                 "voice": runtime.voice,
                 "turn_completion": cls._plain(runtime.turn_completion),
@@ -472,13 +470,13 @@ class ExecutionMaterializationService:
         elif isinstance(runtime, ResolvedHalfCascadeRuntime):
             resources = {
                 RuntimeSecretSlot.MODEL: runtime.model.resource,
-                RuntimeSecretSlot.INPUT_TRANSCRIPTION: runtime.input_transcription.resource,
+                RuntimeSecretSlot.STT: runtime.stt.resource,
                 RuntimeSecretSlot.TTS: runtime.tts.resource,
             }
         else:
             resources = {
                 RuntimeSecretSlot.MODEL: runtime.model.resource,
-                RuntimeSecretSlot.INPUT_TRANSCRIPTION: runtime.input_transcription.resource,
+                RuntimeSecretSlot.STT: runtime.stt.resource,
             }
         return {
             slot.value: str(resource.credential.credential_ref)

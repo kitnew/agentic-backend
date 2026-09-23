@@ -253,15 +253,6 @@ class SystemConfigurationService:
             issues,
             lock,
         )
-        await self._deployment(
-            repository,
-            desired.realtime_defaults.input_transcription.deployment_ref,
-            DeploymentKind.STT,
-            "realtime_defaults.input_transcription.deployment_ref",
-            issues,
-            lock,
-            capability="supports_realtime_input_transcription",
-        )
         if llm and isinstance(llm.capabilities, LLMCapabilities):
             if (
                 desired.llm_defaults.temperature is not None
@@ -364,15 +355,6 @@ class SystemConfigurationService:
                 "value.deployment_ref",
                 issues,
                 True,
-            )
-            await self._deployment(
-                repository,
-                value.input_transcription.deployment_ref,
-                DeploymentKind.STT,
-                "value.input_transcription.deployment_ref",
-                issues,
-                True,
-                capability="supports_realtime_input_transcription",
             )
             if deployment and isinstance(deployment.capabilities, RealtimeCapabilities):
                 strategy = value.turn_completion.strategy

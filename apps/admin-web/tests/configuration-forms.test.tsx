@@ -32,8 +32,7 @@ const completeSystemDesired = {
   tts_defaults: { deployment_ref: "tts-id", default_voice_id: "voice" },
   realtime_defaults: {
     deployment_ref: "realtime-id",
-    input_transcription: { deployment_ref: "stt-id" },
-    default_voice: "marin",
+      default_voice: "marin",
     turn_completion: {
       strategy: "semantic_vad",
       eagerness: "medium",
@@ -130,7 +129,7 @@ describe("configuration form mappings", () => {
         .getAllByLabelText("Deployment")
         .every((element) => (element as HTMLSelectElement).value === ""),
     ).toBe(true);
-    expect(screen.getByLabelText("Input transcription")).toHaveValue("");
+    expect(screen.queryByLabelText("Input transcription")).not.toBeInTheDocument();
 
     expect(
       systemDesiredFromForm({
@@ -199,8 +198,6 @@ describe("configuration form mappings", () => {
     form.tts_defaults.deployment_ref = "tts-id";
     form.tts_defaults.default_voice_id = "voice";
     form.realtime_defaults.deployment_ref = "realtime-id";
-    form.realtime_defaults.input_transcription.deployment_ref =
-      "transcription-id";
     form.policies.cascade.stt_commit.strategy = "provider_vad";
     form.policies.cascade.stt_commit.provider_vad.threshold = "0.5";
     form.policies.cascade.stt_commit.provider_vad.silence_threshold_seconds =
@@ -217,7 +214,6 @@ describe("configuration form mappings", () => {
       tts_defaults: { deployment_ref: "tts-id", default_voice_id: "voice" },
       realtime_defaults: {
         deployment_ref: "realtime-id",
-        input_transcription: { deployment_ref: "transcription-id" },
       },
       policies: {
         cascade: {

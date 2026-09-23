@@ -51,7 +51,6 @@ const systemConfiguration = {
   tts_defaults: { deployment_ref: "tts-id", default_voice_id: "voice" },
   realtime_defaults: {
     deployment_ref: "realtime-id",
-    input_transcription: { deployment_ref: "stt-id" },
     default_voice: "marin",
     turn_completion: {
       strategy: "server_vad",
@@ -381,7 +380,6 @@ it("plans before initialization and applies with If-None-Match, then refetches",
       tts_defaults: expect.objectContaining({ deployment_ref: "tts-uuid" }),
       realtime_defaults: expect.objectContaining({
         deployment_ref: "realtime-uuid",
-        input_transcription: { deployment_ref: "stt-uuid" },
       }),
     }),
   );

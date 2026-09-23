@@ -188,11 +188,13 @@ def create_realtime_session(
     runtime: dict[str, Any],
     secrets: dict[str, str],
 ) -> agents.AgentSession:
-    transcription = runtime["input_transcription"]
+    stt_config = runtime["stt"]
     standalone_stt = _create_stt(
-        transcription,
-        str(transcription["language"]),
-        secrets["input_transcription"],
+        stt_config,
+        str(stt_config["language"]),
+        secrets["stt"],
+        keyterms=stt_config.get("speech_hints", {}).get("keyterms", {}).get("values", [])
+        or NOT_GIVEN,
     )
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
@@ -223,12 +225,14 @@ def create_half_cascade_session(
     tts_config = runtime["tts"]
     if tts_config["provider_kind"] != "elevenlabs":
         raise ValueError(f"unsupported TTS provider: {tts_config['provider_kind']}")
-    transcription = runtime["input_transcription"]
+    stt_config = runtime["stt"]
     _, tts_language = provider_languages(str(runtime["locale"]))
     standalone_stt = _create_stt(
-        transcription,
-        str(transcription["language"]),
-        secrets["input_transcription"],
+        stt_config,
+        str(stt_config["language"]),
+        secrets["stt"],
+        keyterms=stt_config.get("speech_hints", {}).get("keyterms", {}).get("values", [])
+        or NOT_GIVEN,
     )
     # LiveKit streams text-only Realtime output through session TTS and cancels
     # both the generation and synthesis when the caller interrupts.

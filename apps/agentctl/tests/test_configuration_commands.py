@@ -65,7 +65,6 @@ SYSTEM_DESIRED = {
     "tts_defaults": {"deployment_ref": "tts-1", "default_voice_id": "alloy"},
     "realtime_defaults": {
         "deployment_ref": "rt-1",
-        "input_transcription": {"deployment_ref": "stt-rt-1"},
         "default_voice": "marin",
         "turn_completion": {"strategy": "server_vad"},
         "interruption": {"enabled": True},

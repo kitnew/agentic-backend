@@ -245,7 +245,6 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
             "RealtimeDefaults",
             {
                 "deployment_ref": str(IDS["realtime"]),
-                "input_transcription": {"deployment_ref": str(IDS["realtime_stt"])},
                 "default_voice": "platform-realtime",
                 "turn_completion": {"strategy": "server_vad"},
                 "interruption": {"enabled": True},
@@ -634,7 +633,7 @@ async def test_tenant_voices_override_platform_defaults() -> None:
 
 
 @pytest.mark.asyncio
-async def test_half_cascade_resolves_realtime_tts_and_input_transcription() -> None:
+async def test_half_cascade_resolves_stt_independently_from_realtime_model() -> None:
     value = state(["half-cascade"])
     deployments = dict(value.deployments)
 
@@ -645,23 +644,26 @@ async def test_half_cascade_resolves_realtime_tts_and_input_transcription() -> N
 
     assert isinstance(selected, ResolvedHalfCascadeRuntime)
     assert selected.model.resource.deployment.ref.value == IDS["realtime"]
+    assert selected.stt.resource.deployment.ref.value == IDS["cascade_stt"]
+    assert selected.model.resource.connection.provider_kind == "azure_openai"
+    assert selected.stt.resource.connection.provider_kind == "elevenlabs"
     assert (
-        selected.input_transcription.resource.deployment.ref.value
-        == IDS["realtime_stt"]
+        selected.model.resource.connection.ref
+        != selected.stt.resource.connection.ref
     )
     assert selected.tts.resource.deployment.ref.value == IDS["tts"]
     assert selected.tts.voice == "platform-cascade"
 
     runtime = ExecutionMaterializationService._voice_runtime(selected)
-    assert runtime["stt"] is None
+    assert runtime["half_cascade"]["stt"]["provider_kind"] == "elevenlabs"  # type: ignore[index]
     assert runtime["llm"] is None
     assert runtime["realtime"] is None
     assert runtime["half_cascade"]["model"]["deployment_kind"] == "realtime"  # type: ignore[index]
-    assert runtime["half_cascade"]["input_transcription"]["deployment_kind"] == "stt"  # type: ignore[index]
+    assert runtime["half_cascade"]["stt"]["deployment_kind"] == "stt"  # type: ignore[index]
     assert runtime["half_cascade"]["tts"]["deployment_kind"] == "tts"  # type: ignore[index]
     assert ExecutionMaterializationService._runtime_bindings(selected) == {
         RuntimeSecretSlot.MODEL.value: str(IDS["realtime_credential"]),
-        RuntimeSecretSlot.INPUT_TRANSCRIPTION.value: str(IDS["eleven_credential"]),
+        RuntimeSecretSlot.STT.value: str(IDS["eleven_credential"]),
         RuntimeSecretSlot.TTS.value: str(IDS["eleven_credential"]),
     }
 
@@ -671,10 +673,10 @@ async def test_half_cascade_resolves_realtime_tts_and_input_transcription() -> N
     ("deployment_name", "mutation", "reason"),
     [
         ("realtime", "missing", ResolutionFailureReason.MISSING_RESOURCE),
-        ("realtime_stt", "missing", ResolutionFailureReason.MISSING_RESOURCE),
+        ("cascade_stt", "missing", ResolutionFailureReason.MISSING_RESOURCE),
         ("tts", "missing", ResolutionFailureReason.MISSING_RESOURCE),
         ("realtime", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
-        ("realtime_stt", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
+        ("cascade_stt", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
         ("tts", "disabled", ResolutionFailureReason.RESOURCE_DISABLED),
         ("tts", "wrong_kind", ResolutionFailureReason.WRONG_RESOURCE_KIND),
         ("tts", "wrong_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
@@ -809,24 +811,22 @@ async def test_provider_vad_is_revalidated() -> None:
 
 
 @pytest.mark.asyncio
-async def test_realtime_materializes_independent_stt_provider_and_credential() -> None:
+async def test_realtime_uses_standalone_stt_on_independent_elevenlabs_connection() -> None:
     result = await resolver(state()).resolve_runtime(TENANT)
     selected = result.selected
 
     assert isinstance(selected, ResolvedRealtimeRuntime)
-    assert selected.input_transcription.language == "sk-SK"
-    assert (
-        selected.input_transcription.speech_hints.keyterms.status
-        is SpeechHintStatus.UNSUPPORTED
-    )
-    assert selected.input_transcription.speech_hints.keyterms.values == (
-        "Penzión Grand",
-    )
+    assert selected.stt.language == "sk-SK"
+    assert selected.stt.speech_hints.keyterms.status is SpeechHintStatus.APPLIED
+    assert selected.stt.speech_hints.keyterms.values == ("Penzión Grand",)
+    assert selected.model.resource.connection.provider_kind == "azure_openai"
+    assert selected.stt.resource.connection.provider_kind == "elevenlabs"
+    assert selected.model.resource.connection.ref != selected.stt.resource.connection.ref
     runtime = ExecutionMaterializationService._voice_runtime(selected)
-    assert runtime["realtime"]["input_transcription"]["provider_kind"] == "elevenlabs"  # type: ignore[index]
+    assert runtime["realtime"]["stt"]["provider_kind"] == "elevenlabs"  # type: ignore[index]
     assert ExecutionMaterializationService._runtime_bindings(selected) == {
         RuntimeSecretSlot.MODEL.value: str(IDS["realtime_credential"]),
-        RuntimeSecretSlot.INPUT_TRANSCRIPTION.value: str(IDS["eleven_credential"]),
+        RuntimeSecretSlot.STT.value: str(IDS["eleven_credential"]),
     }
 
 
@@ -835,7 +835,7 @@ async def test_realtime_materializes_independent_stt_provider_and_credential() -
     "mutation, reason",
     [
         ("vad_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
-        ("transcription_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
+        ("stt_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
         ("connection_disabled", ResolutionFailureReason.RESOURCE_DISABLED),
         ("credential_revoked", ResolutionFailureReason.CREDENTIAL_REVOKED),
     ],
@@ -849,9 +849,9 @@ async def test_realtime_revalidates_live_compatibility(mutation: str, reason) ->
             deployments[IDS["realtime"]],
             capabilities=RealtimeCapabilities(False, True),
         )
-    elif mutation == "transcription_capability":
-        deployments[IDS["realtime_stt"]] = replace(
-            deployments[IDS["realtime_stt"]],
+    elif mutation == "stt_capability":
+        deployments[IDS["cascade_stt"]] = replace(
+            deployments[IDS["cascade_stt"]],
             capabilities=STTCapabilities(False, False),
         )
     elif mutation == "connection_disabled":

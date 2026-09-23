@@ -285,13 +285,13 @@ def test_realtime_factory_uses_snapshot_runtime_values(
             "voice": "custom-voice",
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
-            "input_transcription": {
+            "stt": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
             },
         },
-        {"model": "secret", "input_transcription": "eleven-secret"},
+        {"model": "secret", "stt": "eleven-secret"},
     )
     assert captured["azure_deployment"] == "realtime-deployment"
     assert captured["base_url"] == "https://realtime.example/openai"
@@ -330,13 +330,13 @@ def test_realtime_factory_uses_azure_v1_endpoint_without_api_version(
             "voice": "marin",
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
-            "input_transcription": {
+            "stt": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "scribe_v2_realtime"},
                 "language": "sk",
             },
         },
-        {"model": "secret", "input_transcription": "eleven-secret"},
+        {"model": "secret", "stt": "eleven-secret"},
     )
 
     assert captured["base_url"] == "https://realtime.example/openai/v1"
@@ -361,13 +361,13 @@ def test_realtime_factory_rejects_unsupported_standalone_stt_provider(
                     "silence_duration_ms": 500,
                 },
                 "interruption": {"enabled": True},
-                "input_transcription": {
+                "stt": {
                     "provider_kind": "deepgram",
                     "deployment_config": {"model_id": "nova-3"},
                     "language": "sk",
                 },
             },
-            {"model": "secret", "input_transcription": "eleven-secret"},
+            {"model": "secret", "stt": "eleven-secret"},
         )
 
 
@@ -393,7 +393,7 @@ def test_realtime_factory_uses_configured_azure_stt_connection(
             },
             "turn_completion": {"strategy": "server_vad"},
             "interruption": {"enabled": True},
-            "input_transcription": {
+            "stt": {
                 "provider_kind": "azure_openai",
                 "connection_config": {
                     "endpoint": "https://transcription.example",
@@ -406,7 +406,7 @@ def test_realtime_factory_uses_configured_azure_stt_connection(
                 "language": "sk-SK",
             },
         },
-        {"model": "realtime-secret", "input_transcription": "stt-secret"},
+        {"model": "realtime-secret", "stt": "stt-secret"},
     )
 
     assert session["stt"] is standalone_stt
@@ -441,13 +441,13 @@ def test_realtime_factory_normalizes_regional_locale_for_standalone_stt(
             "voice": "marin",
             "turn_completion": {"strategy": "semantic_vad", "eagerness": "medium"},
             "interruption": {"enabled": True},
-            "input_transcription": {
+            "stt": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk-SK",
             },
         },
-        {"model": "secret", "input_transcription": "eleven-secret"},
+        {"model": "secret", "stt": "eleven-secret"},
     )
 
     assert captured["input_audio_transcription"] is None
@@ -484,7 +484,7 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
                 },
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
-            "input_transcription": {
+            "stt": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
@@ -504,7 +504,7 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
         },
         {
             "model": "realtime-secret",
-            "input_transcription": "realtime-secret",
+            "stt": "realtime-secret",
             "tts": "tts-secret",
         },
     )
@@ -572,7 +572,7 @@ async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_outp
                 },
                 "connection_config": {"endpoint": "https://realtime.example"},
             },
-            "input_transcription": {
+            "stt": {
                 "provider_kind": "elevenlabs",
                 "deployment_config": {"model_id": "transcribe-model"},
                 "language": "sk",
@@ -588,7 +588,7 @@ async def test_half_cascade_installed_livekit_pipeline_has_audio_input_text_outp
         },
         {
             "model": "realtime-secret",
-            "input_transcription": "realtime-secret",
+            "stt": "realtime-secret",
             "tts": "tts-secret",
         },
     )
