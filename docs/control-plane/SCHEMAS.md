@@ -267,12 +267,21 @@ RealtimeDefaults:
   additionalProperties: false
   required:
     - deployment_ref
+    - input_transcription
     - default_voice
     - turn_completion
     - interruption
   properties:
     deployment_ref:
       $ref: DeploymentRef
+
+    input_transcription:
+      type: object
+      additionalProperties: false
+      required: [deployment_ref]
+      properties:
+        deployment_ref:
+          $ref: DeploymentRef
 
     default_voice:
       type: string
@@ -2011,6 +2020,9 @@ TTSDefaults.deployment_ref
 RealtimeDefaults.deployment_ref
 → ModelDeployment(kind = realtime)
 
+RealtimeDefaults.input_transcription.deployment_ref
+→ ModelDeployment(kind = stt, supports_realtime_input_transcription)
+
 STTDefaults.deployment_ref
 → ModelDeployment(kind = stt, supports_cascade)
 ```
@@ -2019,13 +2031,19 @@ Runtime architecture resolution composes those references as follows:
 
 ```text
 cascade      → STTDefaults + LLMDefaults + TTSDefaults
-realtime     → RealtimeDefaults + STTDefaults
-half-cascade → RealtimeDefaults + STTDefaults + TTSDefaults
+realtime     → RealtimeDefaults + input_transcription + STTDefaults
+half-cascade → RealtimeDefaults + input_transcription + STTDefaults + TTSDefaults
 ```
 
-`half-cascade` and `realtime` use the configured STT deployment as a standalone
-transcription provider, while `half-cascade` routes Realtime text output through
-the configured TTS.
+`input_transcription` supplies the Realtime conversation and canonical persisted
+transcript. `STTDefaults` supplies a separate precision transcript to
+`get_recent_transcript`; its text is not persisted as conversation messages.
+Azure Realtime input transcription must use a deployment on the Realtime model's
+ProviderConnection. The standalone STT may use an independent provider and credential.
+`half-cascade` routes Realtime text output through the configured TTS.
+Migration `0005` restores a removed input-transcription reference only when one
+eligible deployment exists on that connection; ambiguous or missing candidates
+stop the migration for explicit operator selection. It does not change STTDefaults.
 
 ## Credential ownership
 
@@ -2097,7 +2115,7 @@ platform tts voice                        → TTSDefaults.default_voice_id
 platform min_sentence_chars               → Policies.cascade.tokenizer
 
 realtime deployment                       → RealtimeDefaults.deployment_ref
-realtime transcription deployment         → STTDefaults.deployment_ref
+realtime transcription deployment         → RealtimeDefaults.input_transcription.deployment_ref
 realtime voice                            → RealtimeDefaults.default_voice
 realtime VAD/interruption                 → RealtimeDefaults
 
