@@ -319,8 +319,20 @@ class SqlAlchemyRuntimeResolutionReader(RuntimeResolutionReader):
     ) -> set[UUID]:
         result: set[UUID] = set()
         for component in components:
-            raw = component.value.get("deployment_ref")
-            if raw:
+            transcription = (
+                component.value.get("input_transcription")
+                if component.address.kind.value == "RealtimeDefaults"
+                else None
+            )
+            refs = (
+                component.value.get("deployment_ref"),
+                transcription.get("deployment_ref")
+                if isinstance(transcription, dict)
+                else None,
+            )
+            for raw in refs:
+                if not raw:
+                    continue
                 try:
                     result.add(UUID(str(raw)))
                 except ValueError:

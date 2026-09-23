@@ -170,6 +170,9 @@ export function PlatformProvidersPage() {
       await queryClient.invalidateQueries({
         queryKey: ["control-plane", "providers"],
       });
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "model-deployments"],
+      });
     },
   });
 
@@ -198,6 +201,9 @@ export function PlatformProvidersPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({
         queryKey: ["control-plane", "providers"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "model-deployments"],
       });
     },
   });

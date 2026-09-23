@@ -596,11 +596,22 @@ function deploymentsForKind(deployments: Deployment[], kind: string) {
     .sort((left, right) => Number(right.enabled) - Number(left.enabled));
 }
 
-function deploymentOptions(deployments: Deployment[], kind: string) {
-  return deploymentsForKind(deployments, kind).map((deployment) => ({
-    value: deployment.id,
-    label: `${deployment.key} (${deployment.deployment_kind})`,
-  }));
+function deploymentOptions(
+  deployments: Deployment[],
+  kind: string,
+  sttCapability?: "supports_cascade" | "supports_realtime_input_transcription",
+) {
+  return deploymentsForKind(deployments, kind)
+    .filter(
+      (deployment) =>
+        !sttCapability ||
+        (deployment.capabilities.kind === "stt" &&
+          deployment.capabilities[sttCapability]),
+    )
+    .map((deployment) => ({
+      value: deployment.id,
+      label: `${deployment.key} (${deployment.deployment_kind})`,
+    }));
 }
 
 function useDeployments() {
@@ -684,6 +695,7 @@ function DeploymentSelect({
   onChange,
   deployments,
   kind,
+  sttCapability,
   helperText,
   error,
   required = true,
@@ -693,6 +705,7 @@ function DeploymentSelect({
   onChange: (value: string) => void;
   deployments: Deployment[];
   kind: string;
+  sttCapability?: "supports_cascade" | "supports_realtime_input_transcription";
   helperText?: string;
   error?: string;
   required?: boolean;
@@ -702,7 +715,7 @@ function DeploymentSelect({
       error={error}
       helperText={helperText}
       label={label}
-      options={deploymentOptions(deployments, kind)}
+      options={deploymentOptions(deployments, kind, sttCapability)}
       required={required}
       value={value}
       onChange={onChange}
@@ -747,11 +760,11 @@ export function SystemConfigurationForm({
         />
       )}
       <FormSection
-        title="Speech to text"
-        description="Select the system STT deployment."
+        title="Standalone speech to text"
+        description="Used for cascade conversations and precision transcripts in realtime and half-cascade."
       >
         <DeploymentSelect
-          label="Deployment"
+          label="Standalone STT deployment"
           value={value.stt_defaults.deployment_ref}
           error={errorAt(errors, "stt_defaults.deployment_ref")}
           onChange={(deployment_ref) =>
@@ -759,6 +772,7 @@ export function SystemConfigurationForm({
           }
           deployments={allDeployments}
           kind="stt"
+          sttCapability="supports_cascade"
           required
         />
       </FormSection>
@@ -904,6 +918,8 @@ export function SystemConfigurationForm({
             }
             deployments={allDeployments}
             kind="stt"
+            sttCapability="supports_realtime_input_transcription"
+            helperText="Canonical conversation transcript for realtime and half-cascade."
           />
           <Field
             error={errorAt(errors, "realtime_defaults.default_voice")}
@@ -2021,6 +2037,13 @@ export function TenantConfigurationForm({
             </p>
             <p>Speech output: System default TTS deployment</p>
           </div>
+        )}
+        {(value.architecture_key === "realtime" ||
+          value.architecture_key === "half-cascade") && (
+          <p className="mt-3 text-sm text-muted">
+            Realtime input transcription and standalone precision STT are
+            configured separately under Platform → System configuration.
+          </p>
         )}
       </FormSection>
       <FormSection

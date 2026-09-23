@@ -36,6 +36,8 @@ from control_plane.domain.managed_resource_errors import (
 from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.domain.runtime_resolution import (
     ResolvedCascadeRuntime,
+    ResolvedHalfCascadeRuntime,
+    ResolvedRealtimeRuntime,
     RuntimeResolutionError,
 )
 from control_plane.infrastructure.encryption import CredentialCipher
@@ -106,7 +108,11 @@ def component_service(database: Database):
 
 
 async def configure_tenant(
-    database, components, tenant_id, actions: dict[str, object] | None = None
+    database,
+    components,
+    tenant_id,
+    actions: dict[str, object] | None = None,
+    architecture: str = "cascade",
 ):
     actions = actions or {}
     async with database.sessions.begin() as session:
@@ -186,7 +192,7 @@ async def configure_tenant(
     async with database.sessions.begin() as session:
         live = SqlAlchemyLiveComponentRepository(session)
         for kind, value in (
-            ("Architecture", {"architecture_key": "cascade"}),
+            ("Architecture", {"architecture_key": architecture}),
             ("RuntimeOverrides", {"stt": {"keyterms": ["Penzión Grand"]}}),
             ("ProfileReference", {"profile_key": "default"}),
             ("InteractionModeReference", {"mode_key": "voice"}),
@@ -246,6 +252,37 @@ def execution_service(database: Database) -> ExecutionMaterializationService:
         ExecutionResolver(registry, runtime),
         reader,
     )
+
+
+@pytest.mark.parametrize("architecture", ["realtime", "half-cascade"])
+@pytest.mark.asyncio
+async def test_realtime_architectures_load_distinct_transcription_deployments(
+    migrated_database_url: str, architecture: str
+) -> None:
+    database = Database(migrated_database_url)
+    try:
+        components = component_service(database)
+        system, _, refs = await setup(database)
+        await system.apply(desired(refs), "*", "test", "dual-stt-system")
+        await configure_tenant(
+            database, components, "dual-stt-tenant", architecture=architecture
+        )
+
+        result = await RuntimeResolver(
+            default_component_definition_registry(),
+            ProviderKindRegistry(),
+            SqlAlchemyRuntimeResolutionReader(database.sessions),
+        ).resolve_runtime("dual-stt-tenant")
+        assert isinstance(
+            result.selected, ResolvedRealtimeRuntime | ResolvedHalfCascadeRuntime
+        )
+        assert result.selected.architecture == architecture
+        assert result.selected.input_transcription.resource.deployment.ref.value == refs[
+            "realtime_stt"
+        ]
+        assert result.selected.stt.resource.deployment.ref.value == refs["stt"]
+    finally:
+        await database.close()
 
 
 @pytest.mark.asyncio

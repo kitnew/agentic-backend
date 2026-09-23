@@ -98,6 +98,11 @@ async def setup(database):
             STTCapabilities(True, True),
             {"deployment_name": "stt", "model": "whisper-1"},
         ),
+        "realtime_stt": (
+            DeploymentKind.STT,
+            STTCapabilities(False, True),
+            {"deployment_name": "realtime-stt", "model": "whisper-1"},
+        ),
         "llm": (
             DeploymentKind.LLM,
             LLMCapabilities(True, True),
@@ -154,7 +159,7 @@ def desired(refs, voice="marin"):
             },
             "realtime_defaults": {
                 "deployment_ref": str(refs["realtime"]),
-                "input_transcription": {"deployment_ref": str(refs["stt"])},
+                "input_transcription": {"deployment_ref": str(refs["realtime_stt"])},
                 "default_voice": "marin",
                 "turn_completion": {"strategy": "semantic_vad"},
                 "interruption": {"enabled": True},

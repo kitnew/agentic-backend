@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
 import { useState } from "react";
@@ -116,6 +116,65 @@ describe("configuration form mappings", () => {
     ).toEqual(completeSystemDesired);
   });
 
+  it("offers separate eligible STT deployments for precision and Realtime input", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("/management/v1/providers/deployments", () =>
+        HttpResponse.json([
+          {
+            id: "precision-id",
+            key: "elevenlabs-precision",
+            deployment_kind: "stt",
+            enabled: true,
+            capabilities: {
+              kind: "stt",
+              supports_cascade: true,
+              supports_realtime_input_transcription: false,
+            },
+          },
+          {
+            id: "input-id",
+            key: "gpt-live-transcribe",
+            deployment_kind: "stt",
+            enabled: true,
+            capabilities: {
+              kind: "stt",
+              supports_cascade: false,
+              supports_realtime_input_transcription: true,
+            },
+          },
+        ]),
+      ),
+    );
+    render(
+      <AppProviders>
+        <SystemFormHarness />
+      </AppProviders>,
+    );
+
+    const precision = await screen.findByLabelText("Standalone STT deployment");
+    const input = screen.getByLabelText("Realtime input transcription");
+    expect(
+      await within(precision).findByRole("option", {
+        name: /elevenlabs-precision/,
+      }),
+    ).toBeVisible();
+    expect(
+      within(precision).queryByRole("option", { name: /gpt-live-transcribe/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(input).getByRole("option", { name: /gpt-live-transcribe/ }),
+    ).toBeVisible();
+    expect(
+      within(input).queryByRole("option", { name: /elevenlabs-precision/ }),
+    ).not.toBeInTheDocument();
+
+    await user.selectOptions(precision, "precision-id");
+    await user.selectOptions(input, "input-id");
+    expect(precision).toHaveValue("precision-id");
+    expect(input).toHaveValue("input-id");
+  });
+
   it("renders deployment UUIDs and switches conditional VAD fields", async () => {
     const user = userEvent.setup();
     render(
@@ -124,7 +183,7 @@ describe("configuration form mappings", () => {
       </AppProviders>,
     );
     await screen.findAllByRole("option", { name: "speech (stt)" });
-    expect(screen.getAllByLabelText("Deployment")).toHaveLength(4);
+    expect(screen.getAllByLabelText("Deployment")).toHaveLength(3);
     expect(
       screen
         .getAllByLabelText("Deployment")
@@ -319,7 +378,11 @@ describe("configuration form mappings", () => {
       </AppProviders>,
     );
 
-    await screen.findByRole("option", { name: "Half cascade (half-cascade)" });
+    await screen.findByRole(
+      "option",
+      { name: "Half cascade (half-cascade)" },
+      { timeout: 5000 },
+    );
     await user.selectOptions(
       screen.getByLabelText("Architecture"),
       "half-cascade",
@@ -330,6 +393,9 @@ describe("configuration form mappings", () => {
       screen.getByText(/System default realtime deployment/),
     ).toBeVisible();
     expect(screen.getByText(/System default TTS deployment/)).toBeVisible();
+    expect(
+      screen.getByText(/standalone precision STT are configured separately/),
+    ).toBeVisible();
     await user.click(screen.getByText("Override system TTS voice"));
     expect(screen.getByLabelText("TTS voice ID")).toBeRequired();
     expect(

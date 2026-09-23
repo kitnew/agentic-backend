@@ -22,7 +22,11 @@ beforeEach(() => {
           key: "speech",
           deployment_kind: "stt",
           enabled: true,
-          capabilities: {},
+          capabilities: {
+            kind: "stt",
+            supports_cascade: true,
+            supports_realtime_input_transcription: true,
+          },
         },
         {
           id: "llm-uuid",

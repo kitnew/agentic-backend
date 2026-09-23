@@ -4,6 +4,7 @@ import { HttpResponse, http } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppProviders } from "../src/app/providers";
+import { queryClient } from "../src/app/query-client";
 import { PlatformProvidersPage } from "../src/features/platform/providers-page";
 import { server } from "./setup";
 
@@ -210,6 +211,7 @@ describe("Admin Web Slice B provider provisioning", () => {
   it("creates deployments with registry kind, selected connection ID, and preserved JSON", async () => {
     const user = userEvent.setup();
     let deploymentRequest: Request | undefined;
+    queryClient.setQueryData(["control-plane", "model-deployments"], []);
     server.use(
       http.get("/management/v1/credentials", () =>
         HttpResponse.json([credential]),
@@ -282,6 +284,12 @@ describe("Admin Web Slice B provider provisioning", () => {
     ]);
     expect(createdDeploymentRequest.headers.get("Idempotency-Key")).toMatch(
       /^[0-9a-f-]{36}$/,
+    );
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryState(["control-plane", "model-deployments"])
+          ?.isInvalidated,
+      ).toBe(true),
     );
   });
 
