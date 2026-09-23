@@ -116,7 +116,9 @@ configured LiveKit runtime has no unambiguous authoritative per-operation source
 Voice-local tool executions use the same capability metric names at their
 execution boundary. Canonical identities are `reservation.check_availability@1`
 from the Backend semantic definition, `calculator.calculate@1` for the native
-deterministic calculator, and `call.end@1` for the native `end_call` tool.
+deterministic calculator, `get_recent_transcript@1` for recent finalized caller
+speech, `transfer_to_human@1` for human handoff, and `call.end@1` for the native
+`end_call` tool. Every voice-local tool invocation records one execution.
 Arguments and results are never metric or span attributes.
 
 Voice histogram views use bounded explicit buckets: fast pipeline metrics use

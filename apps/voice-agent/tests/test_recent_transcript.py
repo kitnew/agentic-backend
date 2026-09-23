@@ -28,9 +28,10 @@ def test_buffer_accepts_only_finalized_stt_events_and_retains_recent_segments() 
 @pytest.mark.asyncio
 async def test_tool_returns_one_or_multiple_recent_segments() -> None:
     buffer = RecentTranscriptBuffer()
+    recorded: list[dict[str, object]] = []
     for text in ("one", "two", "three"):
         buffer.on_user_input_transcribed(event(text))
-    tool = recent_transcript_tool(buffer)
+    tool = recent_transcript_tool(buffer, lambda **values: recorded.append(values))
     context = SimpleNamespace()
     turns_schema = tool._info.raw_schema["parameters"]["properties"]["turns"]  # type: ignore[attr-defined]
     assert turns_schema["minimum"] == 1
@@ -44,6 +45,11 @@ async def test_tool_returns_one_or_multiple_recent_segments() -> None:
         "segments": [{"seq": 2, "text": "two"}, {"seq": 3, "text": "three"}],
         "combined_text": "two three",
     }
+    assert [item["name"] for item in recorded] == [
+        "get_recent_transcript",
+        "get_recent_transcript",
+    ]
+    assert [item["status"] for item in recorded] == ["ok", "ok"]
 
 
 @pytest.mark.asyncio

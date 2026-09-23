@@ -1,9 +1,13 @@
+import time
 from collections import deque
+from collections.abc import Callable
 from typing import Any, cast
 
 from livekit import agents
 from livekit.agents import llm
 from livekit.agents.voice.events import UserInputTranscribedEvent
+
+from voice_agent.observability import record_capability_execution
 
 
 class RecentTranscriptBuffer:
@@ -25,13 +29,35 @@ class RecentTranscriptBuffer:
         }
 
 
-def recent_transcript_tool(buffer: RecentTranscriptBuffer) -> llm.RawFunctionTool:
+def recent_transcript_tool(
+    buffer: RecentTranscriptBuffer,
+    capability_recorder: Callable[..., None] | None = None,
+) -> llm.RawFunctionTool:
+    recorder = capability_recorder or record_capability_execution
+
     async def invoke(
         context: agents.RunContext[Any],
         raw_arguments: dict[str, object],
     ) -> dict[str, object]:
         del context
-        return buffer.recent(cast(int, raw_arguments["turns"]))
+        started = time.perf_counter()
+        status = "failed"
+        error_type: str | None = None
+        try:
+            result = buffer.recent(cast(int, raw_arguments["turns"]))
+            status = "ok"
+            return result
+        except Exception:
+            error_type = "execution_error"
+            raise
+        finally:
+            recorder(
+                name="get_recent_transcript",
+                version="1",
+                status=status,
+                duration_seconds=time.perf_counter() - started,
+                error_type=error_type,
+            )
 
     return cast(
         llm.RawFunctionTool,
