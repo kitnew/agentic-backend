@@ -1,12 +1,12 @@
 """Restore the Realtime transcription reference removed by revision 0004.
 
-Revision ID: 0005_restore_realtime_transcription
+Revision ID: 0005_realtime_transcription
 Revises: 0004_standalone_stt_runtime
 """
 
 from alembic import op
 
-revision = "0005_restore_realtime_transcription"
+revision = "0005_realtime_transcription"
 down_revision = "0004_standalone_stt_runtime"
 branch_labels = None
 depends_on = None

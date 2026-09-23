@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from alembic import command
+from alembic.config import Config
 from alembic.script import ScriptDirectory
 from control_plane.application.components import ComponentService
 from control_plane.domain.components import (
@@ -46,6 +47,14 @@ from sqlalchemy.exc import IntegrityError
 class ExampleSettings(BaseModel):
     enabled: bool
     label: str
+
+
+def test_migration_revision_fits_alembic_version_column() -> None:
+    scripts = ScriptDirectory.from_config(
+        Config("apps/control-plane-service/alembic.ini")
+    )
+    assert scripts.get_current_head() == CONTROL_PLANE_SCHEMA_REVISION
+    assert all(len(script.revision) <= 32 for script in scripts.walk_revisions())
 
 
 def registry(schema_version: int = 1) -> ComponentDefinitionRegistry:
