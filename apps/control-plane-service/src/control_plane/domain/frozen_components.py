@@ -78,8 +78,13 @@ class RealtimeInterruption(FrozenValue):
     enabled: bool = Field(json_schema_extra={"default": True})
 
 
+class RealtimeInputTranscription(FrozenValue):
+    deployment_ref: UUID
+
+
 class RealtimeDefaults(FrozenValue):
     deployment_ref: UUID
+    input_transcription: RealtimeInputTranscription
     default_voice: str = Field(
         min_length=1, max_length=255, json_schema_extra={"default": "marin"}
     )

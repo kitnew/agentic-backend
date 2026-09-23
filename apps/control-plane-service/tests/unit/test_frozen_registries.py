@@ -148,6 +148,9 @@ def test_frozen_component_scopes_reject_every_other_scope(
             "RealtimeDefaults",
             {
                 "deployment_ref": "00000000-0000-0000-0000-000000000001",
+                "input_transcription": {
+                    "deployment_ref": "00000000-0000-0000-0000-000000000002"
+                },
                 "default_voice": "marin",
                 "turn_completion": {"strategy": "semantic_vad", "eagerness": "auto"},
                 "interruption": {"enabled": True},
@@ -316,9 +319,6 @@ def test_each_frozen_component_accepts_its_minimal_structural_value(
             "RealtimeDefaults",
             {
                 "deployment_ref": "00000000-0000-0000-0000-000000000001",
-                "input_transcription": {
-                    "deployment_ref": "00000000-0000-0000-0000-000000000002"
-                },
                 "default_voice": "marin",
                 "turn_completion": {"strategy": "server_vad"},
                 "interruption": {"enabled": True},

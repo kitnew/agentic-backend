@@ -60,6 +60,7 @@ from control_plane.domain.runtime_resolution import (
     ResolvedProviderResource,
     ResolvedRealtimeModel,
     ResolvedRealtimeRuntime,
+    ResolvedRealtimeTranscription,
     ResolvedRuntime,
     ResolvedSpeechHints,
     RuntimeResolution,
@@ -295,10 +296,12 @@ class RuntimeResolver:
         business: BusinessIdentity,
     ) -> ResolvedRealtimeRuntime:
         policy, model = self._realtime_model(state)
+        transcription = self._realtime_transcription(state, policy, model, business)
         stt = self._standalone_stt(state, overrides, business)
         return ResolvedRealtimeRuntime(
             "realtime",
             ResolvedRealtimeModel(self._provenance(policy), model),
+            transcription,
             stt,
             str(overrides.get("realtime", {}).get("voice", policy.value.default_voice)),
             policy.value.turn_completion,
@@ -327,6 +330,41 @@ class RuntimeResolver:
                 )
             ),
         )
+
+    def _realtime_transcription(
+        self,
+        state: RuntimeResolutionState,
+        policy: _ActiveRuntimeComponent[RealtimeDefaults],
+        model: ResolvedProviderResource,
+        business: BusinessIdentity,
+    ) -> ResolvedRealtimeTranscription:
+        resource = self._resource(
+            state, policy.value.input_transcription.deployment_ref, DeploymentKind.STT
+        )
+        capabilities = resource.deployment.capabilities
+        if (
+            not isinstance(capabilities, STTCapabilities)
+            or not capabilities.supports_realtime_input_transcription
+        ):
+            self._reject(
+                ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
+                deployment_ref=resource.deployment.ref.value,
+                capability="realtime_input_transcription",
+            )
+        if (
+            model.connection.provider_kind == "azure_openai"
+            and model.connection.ref != resource.connection.ref
+        ):
+            self._reject(
+                ResolutionFailureReason.INCOMPATIBLE_CONNECTION,
+                realtime_connection_ref=model.connection.ref.value,
+                transcription_connection_ref=resource.connection.ref.value,
+                invariant="azure_same_connection",
+            )
+        return ResolvedRealtimeTranscription(
+            resource, business.localization.default_locale
+        )
+
     def _half_cascade(
         self,
         state: RuntimeResolutionState,
@@ -334,6 +372,7 @@ class RuntimeResolver:
         business: BusinessIdentity,
     ) -> ResolvedHalfCascadeRuntime:
         policy, model = self._realtime_model(state)
+        transcription = self._realtime_transcription(state, policy, model, business)
         stt = self._standalone_stt(state, overrides, business)
         tts = self._system(state, "TTSDefaults", TTSDefaults)
         tts_resource = self._resource(
@@ -343,6 +382,7 @@ class RuntimeResolver:
         return ResolvedHalfCascadeRuntime(
             "half-cascade",
             ResolvedRealtimeModel(self._provenance(policy), model),
+            transcription,
             stt,
             ResolvedCascadeTTS(
                 self._provenance(tts), tts.value, tts_resource, str(voice)

@@ -253,6 +253,23 @@ class SystemConfigurationService:
             issues,
             lock,
         )
+        transcription = await self._deployment(
+            repository,
+            desired.realtime_defaults.input_transcription.deployment_ref,
+            DeploymentKind.STT,
+            "realtime_defaults.input_transcription.deployment_ref",
+            issues,
+            lock,
+            capability="supports_realtime_input_transcription",
+        )
+        await self._realtime_transcription_connection(
+            repository,
+            realtime,
+            transcription,
+            "realtime_defaults.input_transcription.deployment_ref",
+            issues,
+            lock,
+        )
         if llm and isinstance(llm.capabilities, LLMCapabilities):
             if (
                 desired.llm_defaults.temperature is not None
@@ -356,6 +373,23 @@ class SystemConfigurationService:
                 issues,
                 True,
             )
+            transcription = await self._deployment(
+                repository,
+                value.input_transcription.deployment_ref,
+                DeploymentKind.STT,
+                "value.input_transcription.deployment_ref",
+                issues,
+                True,
+                capability="supports_realtime_input_transcription",
+            )
+            await self._realtime_transcription_connection(
+                repository,
+                deployment,
+                transcription,
+                "value.input_transcription.deployment_ref",
+                issues,
+                True,
+            )
             if deployment and isinstance(deployment.capabilities, RealtimeCapabilities):
                 strategy = value.turn_completion.strategy
                 supported = (
@@ -373,6 +407,30 @@ class SystemConfigurationService:
                     )
         if issues:
             raise SystemConfigurationError(issues[0].message)
+
+    @staticmethod
+    async def _realtime_transcription_connection(
+        repository, realtime, transcription, path, issues, lock
+    ) -> None:
+        if realtime is None or transcription is None:
+            return
+        try:
+            connection = await repository.get_connection(
+                realtime.connection_ref, lock=lock
+            )
+        except ManagedResourceNotFound, KeyError:
+            return
+        if (
+            connection.provider_kind == "azure_openai"
+            and realtime.connection_ref != transcription.connection_ref
+        ):
+            issues.append(
+                ValidationIssue(
+                    "incompatible_connection",
+                    path,
+                    "Azure Realtime input transcription must use the Realtime model connection",
+                )
+            )
 
     async def _deployment(
         self, repository, ref, expected, path, issues, lock, *, capability=None

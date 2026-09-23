@@ -133,9 +133,16 @@ class ResolvedRealtimeModel:
 
 
 @dataclass(frozen=True, slots=True)
+class ResolvedRealtimeTranscription:
+    resource: ResolvedProviderResource
+    language: str
+
+
+@dataclass(frozen=True, slots=True)
 class ResolvedRealtimeRuntime:
     architecture: Literal["realtime"]
     model: ResolvedRealtimeModel
+    input_transcription: ResolvedRealtimeTranscription
     stt: ResolvedCascadeSTT
     voice: str
     turn_completion: RealtimeTurnCompletion
@@ -146,6 +153,7 @@ class ResolvedRealtimeRuntime:
 class ResolvedHalfCascadeRuntime:
     architecture: Literal["half-cascade"]
     model: ResolvedRealtimeModel
+    input_transcription: ResolvedRealtimeTranscription
     stt: ResolvedCascadeSTT
     tts: ResolvedCascadeTTS
     turn_completion: RealtimeTurnCompletion

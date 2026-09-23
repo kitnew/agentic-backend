@@ -15,6 +15,7 @@ class RuntimeSecretSlot(StrEnum):
     STT = "stt"
     TTS = "tts"
     MODEL = "model"
+    INPUT_TRANSCRIPTION = "input_transcription"
 
 
 class CreateExecutionRequest(_ExecutionContract):
