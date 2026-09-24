@@ -1,9 +1,12 @@
 import asyncio
 import hashlib
 import logging
+import os
+import subprocess
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -28,6 +31,7 @@ from voice_agent.event_delivery import ConversationPersistence
 from voice_agent.handoff import HandoffController
 from voice_agent.observability import (
     LatencyInstrumentedAgent,
+    _install_eot_hooks,
     current_voice_telemetry,
     record_capability_execution,
     setup_voice_telemetry,
@@ -41,6 +45,7 @@ from voice_agent.providers import (
 from voice_agent.recent_transcript import RecentTranscriptBuffer, recent_transcript_tool
 from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_role import role_for_architecture
+from voice_agent.turn_measurement import TurnRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -589,6 +594,7 @@ async def run_job(
     failure_reason: str | None = None
     handoff: HandoffController | None = None
     recent_transcript: RecentTranscriptBuffer | None = None
+    turn_recorder: TurnRecorder | None = None
     cancelled = False
     try:
         call_id = await resolve_call_session_id(
@@ -648,6 +654,67 @@ async def run_job(
                     "locale": context.business.default_locale,
                 }
                 session = create_half_cascade_session(settings, runtime, secrets)
+        if benchmark_root := os.getenv("VOICE_TURN_BENCHMARK_DIR"):
+            model_config = runtime.get("model", runtime.get("llm", {}))
+            stt_config = runtime.get("stt", {})
+            tts_config = runtime.get("tts", {})
+
+            def identity(config: dict[str, Any]) -> dict[str, str | None]:
+                deployment_config = config.get("deployment_config", {})
+                return {
+                    "provider": config.get("provider_kind"),
+                    "model": deployment_config.get("model_id")
+                    or deployment_config.get("model"),
+                    "deployment": deployment_config.get("deployment_name"),
+                    "service_tier": config.get("service_tier"),
+                }
+
+            git_sha = os.getenv("VCS_REF_HEAD_REVISION")
+            if git_sha is None:
+                git_sha = next(
+                    (
+                        item.partition("=")[2]
+                        for item in os.getenv("OTEL_RESOURCE_ATTRIBUTES", "").split(",")
+                        if item.partition("=")[0] == "vcs.ref.head.revision"
+                    ),
+                    None,
+                )
+            if git_sha is None:
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        "git",
+                        "rev-parse",
+                        "HEAD",
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    stdout, _ = await process.communicate()
+                    git_sha = stdout.decode().strip() or None
+                except OSError:
+                    pass
+            try:
+                turn_recorder = TurnRecorder(
+                    Path(benchmark_root)
+                    / f"{datetime.now(UTC).strftime('%Y-%m-%dT%H%M%SZ')}-{call_id}",
+                    call_id=str(call_id),
+                    architecture=context.architecture,
+                    tenant_id=context.tenant_id,
+                    metadata={
+                        "git_sha": git_sha,
+                        "stt": identity(stt_config),
+                        "llm_or_realtime": identity(model_config),
+                        "tts": identity(tts_config),
+                        "runtime_region": os.getenv("AGENT_REGION"),
+                        "configured_provider_regions": {
+                            "stt": os.getenv("ELEVENLABS_REGION"),
+                            "llm_or_realtime": os.getenv("AZURE_OPENAI_REGION"),
+                            "tts": os.getenv("ELEVENLABS_REGION"),
+                        },
+                        "test_call": os.getenv("VOICE_TURN_TEST_LABEL"),
+                    },
+                )
+            except OSError:
+                logger.exception("Voice turn benchmark initialization failed")
         persistence = ConversationPersistence(backend, call_id)
         if context.architecture in ("realtime", "half-cascade"):
             recent_transcript = RecentTranscriptBuffer()
@@ -663,6 +730,8 @@ async def run_job(
         ctx.add_shutdown_callback(on_shutdown)
 
         def on_close(event: agents.CloseEvent) -> None:
+            if turn_recorder is not None:
+                turn_recorder.flush()
             if closed.done():
                 return
             assert handoff is not None
@@ -726,6 +795,7 @@ async def run_job(
             },
             agent=LatencyInstrumentedAgent(
                 metrics=telemetry.metrics if telemetry is not None else None,
+                turn_recorder=turn_recorder,
                 recent_transcript=recent_transcript,
                 standalone_stt_role=role_for_architecture(context.architecture),
                 instructions=assemble_instructions(context, caller_number),
@@ -741,8 +811,56 @@ async def run_job(
                 ),
             ),
         )
+        if telemetry is not None or turn_recorder is not None:
+            _install_eot_hooks(
+                session,
+                telemetry.metrics if telemetry is not None else None,
+                turn_recorder,
+            )
+        if turn_recorder is not None:
+
+            def on_user_state(event: object) -> None:
+                if getattr(event, "new_state", None) == "speaking":
+                    turn_recorder.start(speech_started=time.perf_counter_ns())
+                elif (
+                    context.architecture != "cascade"
+                    and getattr(event, "old_state", None) == "speaking"
+                ):
+                    turn_recorder.mark("speech_end_proxy")
+
+            session.on("user_state_changed", on_user_state)
+
+            def on_speech_created(event: object) -> None:
+                handle = event.speech_handle
+                turn_recorder.bind_speech(handle.id)
+                handle.add_done_callback(
+                    lambda _: turn_recorder.complete_speech(
+                        handle.id, interrupted=handle.interrupted
+                    )
+                )
+
+            session.on("speech_created", on_speech_created)
+            if session.llm is not None:
+                session.llm.on("metrics_collected", turn_recorder.record_llm_usage)
+            if session.output.audio is not None:
+                session.output.audio.on(
+                    "playback_started", lambda _: turn_recorder.output_started()
+                )
+            if context.architecture in ("realtime", "half-cascade"):
+                realtime_session = getattr(session._activity, "_rt_session", None)
+                if realtime_session is not None:
+
+                    def on_realtime_speech_stopped(_: object) -> None:
+                        turn_recorder.mark("speech_end_proxy")
+
+                    realtime_session.on(
+                        "input_speech_stopped", on_realtime_speech_stopped
+                    )
+                    realtime_session.on(
+                        "generation_created",
+                        lambda _: turn_recorder.mark("response_created"),
+                    )
         if telemetry is not None:
-            telemetry.metrics.attach_eot_decomposition(session)
             telemetry.set_session_correlation(call_id)
         observe = getattr(backend, "observe", None)
         if observe is not None:
