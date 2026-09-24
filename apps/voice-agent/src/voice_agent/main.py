@@ -840,7 +840,7 @@ async def run_job(
                 )
 
             session.on("speech_created", on_speech_created)
-            if session.llm is not None:
+            if isinstance(session.llm, llm.LLM):
                 session.llm.on("metrics_collected", turn_recorder.record_llm_usage)
             if session.output.audio is not None:
                 session.output.audio.on(
