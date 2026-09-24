@@ -1482,6 +1482,33 @@ async def test_provider_factory_uses_runtime_logical_azure_model() -> None:
         await session.tts.aclose()
 
 
+@pytest.mark.asyncio
+async def test_provider_factory_uses_direct_openai_llm_deployment() -> None:
+    runtime = runtime_settings()
+    llm = runtime["llm"]
+    assert isinstance(llm, dict)
+    llm["provider_kind"] = "openai"
+    llm["deployment_config"] = {"model": "gpt-4.1"}
+    llm["connection_config"] = {}
+    session = create_agent_session(
+        settings(),
+        runtime,
+        "voice-agent-prompt:test",
+        secrets={
+            "llm": "openai-key",
+            "stt": "eleven-key",
+            "tts": "eleven-key",
+        },
+    )
+    try:
+        assert session.llm._opts.model == "gpt-4.1"
+        assert session.llm._client.api_key == "openai-key"
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
 @pytest.mark.parametrize(
     ("reason", "failure_reason"),
     [

@@ -34,6 +34,13 @@ const connection = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
+const openaiConnection = {
+  ...connection,
+  key: "openai-main",
+  provider_kind: "openai",
+  connection_config: {},
+};
+
 const deployment = {
   id: deploymentId,
   key: "llm-main",
@@ -65,6 +72,12 @@ function emptyProviderHandlers() {
           key: "azure_openai",
           name: "Azure OpenAI",
           description: "Azure provider",
+          metadata: {},
+        },
+        {
+          key: "openai",
+          name: "OpenAI",
+          description: "OpenAI API provider",
           metadata: {},
         },
       ]),
@@ -144,16 +157,13 @@ describe("Admin Web Slice B provider provisioning", () => {
     );
     expect(screen.queryByText("top-secret")).not.toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("Connection key"), "azure-main");
-    await user.selectOptions(
-      screen.getByLabelText("Provider kind"),
-      "azure_openai",
-    );
+    await user.type(screen.getByLabelText("Connection key"), "openai-main");
+    await user.selectOptions(screen.getByLabelText("Provider kind"), "openai");
     await user.selectOptions(screen.getByLabelText("Credential"), credentialId);
     await user.clear(screen.getByLabelText("Connection config"));
     fireEvent.change(screen.getByLabelText("Connection config"), {
       target: {
-        value: '{"endpoint":"https://example.test","region":"west"}',
+        value: "{}",
       },
     });
     await user.click(screen.getByRole("button", { name: "Create connection" }));
@@ -161,13 +171,10 @@ describe("Admin Web Slice B provider provisioning", () => {
     await waitFor(() => expect(connectionRequest).toBeDefined());
     const createdConnectionRequest = requiredRequest(connectionRequest);
     expect(await createdConnectionRequest.clone().json()).toEqual({
-      key: "azure-main",
-      provider_kind: "azure_openai",
+      key: "openai-main",
+      provider_kind: "openai",
       credential_ref: credentialId,
-      connection_config: {
-        endpoint: "https://example.test",
-        region: "west",
-      },
+      connection_config: {},
     });
     expect(Object.keys(await createdConnectionRequest.clone().json())).toEqual([
       "key",
@@ -217,13 +224,20 @@ describe("Admin Web Slice B provider provisioning", () => {
         HttpResponse.json([credential]),
       ),
       http.get("/management/v1/providers/connections", () =>
-        HttpResponse.json([connection]),
+        HttpResponse.json([openaiConnection]),
       ),
       http.get("/management/v1/providers/deployments", () =>
         HttpResponse.json([]),
       ),
       http.get("/management/v1/registries/provider-kinds", () =>
-        HttpResponse.json([]),
+        HttpResponse.json([
+          {
+            key: "openai",
+            name: "OpenAI",
+            description: "OpenAI API provider",
+            metadata: {},
+          },
+        ]),
       ),
       http.get("/management/v1/registries/deployment-kinds", () =>
         HttpResponse.json([
@@ -308,6 +322,12 @@ describe("Admin Web Slice B provider provisioning", () => {
       ),
       http.get("/management/v1/registries/provider-kinds", () =>
         HttpResponse.json([
+          {
+            key: "openai",
+            name: "OpenAI",
+            description: "OpenAI API provider",
+            metadata: {},
+          },
           {
             key: "azure_openai",
             name: "Azure OpenAI",

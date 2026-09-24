@@ -58,6 +58,12 @@ class HttpProviderValidator:
                 else {}
             )
             return f"{endpoint}/openai/models", {"api-key": secret}, params
+        if provider_kind == "openai":
+            return (
+                "https://api.openai.com/v1/models",
+                {"Authorization": f"Bearer {secret}"},
+                {},
+            )
         if provider_kind == "elevenlabs":
             return (
                 "https://api.elevenlabs.io/v1/models",

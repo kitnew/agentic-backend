@@ -59,7 +59,7 @@ def create_agent_session(
     llm = runtime["llm"]
     stt_config = runtime["stt"]
     tts_config = runtime["tts"]
-    if llm["provider_kind"] != "azure_openai":
+    if llm["provider_kind"] not in {"azure_openai", "openai"}:
         raise ValueError(f"unsupported LLM provider: {llm['provider_kind']}")
     if stt_config["provider_kind"] != "elevenlabs":
         raise ValueError(f"unsupported STT provider: {stt_config['provider_kind']}")
@@ -104,8 +104,6 @@ def create_agent_session(
     deployment = _runtime_value(runtime, "llm", "deployment_name")
     endpoint = _runtime_value(runtime, "llm", "endpoint")
     api_version = _runtime_value(runtime, "llm", "api_version")
-    if not deployment or not endpoint or not api_version:
-        raise ValueError("execution LLM configuration is unavailable")
     llm_options = {
         "model": llm["deployment_config"].get(
             "model", llm["deployment_config"].get("deployment_name")
@@ -116,7 +114,11 @@ def create_agent_session(
         "max_completion_tokens": llm["max_completion_tokens"],
         **llm_behavior_options(runtime),
     }
-    if endpoint.rstrip("/").endswith("/openai/v1"):
+    if llm["provider_kind"] == "openai":
+        llm_provider = openai.LLM(**llm_options)  # type: ignore[arg-type]
+    elif not deployment or not endpoint or not api_version:
+        raise ValueError("execution LLM configuration is unavailable")
+    elif endpoint.rstrip("/").endswith("/openai/v1"):
         llm_provider = openai.LLM(
             base_url=endpoint.rstrip("/"),
             **llm_options,  # type: ignore[arg-type]

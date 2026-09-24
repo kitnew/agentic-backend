@@ -366,7 +366,7 @@ def test_code_owned_registries_resolve_frozen_keys_and_are_read_only() -> None:
     registries_and_keys = (
         (ArchitectureRegistry(), ("cascade", "realtime", "half-cascade")),
         (GrammaticalGenderRegistry(), ("feminine", "masculine", "neutral")),
-        (ProviderKindRegistry(), ("azure_openai", "elevenlabs", "deepgram")),
+        (ProviderKindRegistry(), ("azure_openai", "openai", "elevenlabs", "deepgram")),
         (DeploymentKindRegistry(), ("llm", "realtime", "stt", "tts")),
         (IntegrationKindRegistry(), ("http",)),
     )
@@ -382,6 +382,7 @@ def test_code_owned_registries_resolve_frozen_keys_and_are_read_only() -> None:
     assert ArchitectureRegistry().resolve("half-cascade").metadata["runtime_supported"]
 
     assert ProviderKindRegistry().resolve_for_deployment("azure_openai", "llm")
+    assert ProviderKindRegistry().resolve_for_deployment("openai", "llm")
     with pytest.raises(IncompatibleRegistryReference):
         ProviderKindRegistry().resolve_for_deployment("azure_openai", "tts")
 

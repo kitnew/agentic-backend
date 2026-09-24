@@ -36,6 +36,10 @@ class _AzureOpenAILLMDeploymentConfig(_ProviderConfig):
     api_version: str = Field(min_length=1)
 
 
+class _OpenAILLMDeploymentConfig(_ProviderConfig):
+    model: str = Field(min_length=1)
+
+
 class _AzureOpenAIDeploymentConfig(_ProviderConfig):
     deployment_name: str = Field(min_length=1)
 
@@ -121,6 +125,12 @@ class ProviderKindRegistry:
             {"deployment_kinds": ("llm", "realtime", "stt")},
         ),
         RegistryEntry(
+            "openai",
+            "OpenAI",
+            "OpenAI API provider",
+            {"deployment_kinds": ("llm",)},
+        ),
+        RegistryEntry(
             "elevenlabs",
             "ElevenLabs",
             "ElevenLabs speech provider",
@@ -137,6 +147,7 @@ class ProviderKindRegistry:
     _connection_schemas: Mapping[str, type[_ProviderConfig]] = MappingProxyType(
         {
             "azure_openai": _AzureOpenAIConnectionConfig,
+            "openai": _EmptyConnectionConfig,
             "elevenlabs": _EmptyConnectionConfig,
             "deepgram": _EmptyConnectionConfig,
         }
@@ -145,6 +156,7 @@ class ProviderKindRegistry:
         MappingProxyType(
             {
                 ("azure_openai", DeploymentKind.LLM): _AzureOpenAILLMDeploymentConfig,
+                ("openai", DeploymentKind.LLM): _OpenAILLMDeploymentConfig,
                 ("azure_openai", DeploymentKind.REALTIME): _AzureOpenAIDeploymentConfig,
                 ("azure_openai", DeploymentKind.STT): _AzureOpenAISTTDeploymentConfig,
                 ("elevenlabs", DeploymentKind.STT): _ModelDeploymentConfig,

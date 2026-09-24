@@ -10,6 +10,7 @@ from control_plane.domain.managed_resources import (
 )
 from control_plane.domain.registries import ProviderKindRegistry
 from control_plane.infrastructure.encryption import CredentialCipher
+from control_plane.infrastructure.provider_validation import HttpProviderValidator
 from control_plane.interfaces.http.app import (
     ModelDeploymentUpdate,
     ProviderConnectionUpdate,
@@ -75,6 +76,17 @@ def test_provider_registry_validates_current_provider_shapes() -> None:
         "azure_openai", DeploymentKind.STT, {"deployment_name": "whisper-prod", "model": "whisper-1"}
     ) == {"deployment_name": "whisper-prod", "model": "whisper-1"}
     assert registry.validate_connection("elevenlabs", {}) == {}
+    assert registry.validate_connection("openai", {}) == {}
+    assert registry.validate_deployment(
+        "openai", DeploymentKind.LLM, {"model": "gpt-4.1"}
+    ) == {"model": "gpt-4.1"}
+    with pytest.raises(InvalidManagedResource, match="does not support realtime"):
+        registry.validate_deployment("openai", DeploymentKind.REALTIME, {})
+    assert HttpProviderValidator._request("openai", {}, "key") == (
+        "https://api.openai.com/v1/models",
+        {"Authorization": "Bearer key"},
+        {},
+    )
     assert registry.validate_deployment(
         "elevenlabs", DeploymentKind.STT, {"model_id": "scribe_v2_realtime"}
     ) == {"model_id": "scribe_v2_realtime"}

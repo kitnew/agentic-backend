@@ -704,8 +704,9 @@ flowchart LR
 
     PKR[ProviderKindRegistry]
     PKR --> PK1[azure_openai]
-    PKR --> PK2[elevenlabs]
-    PKR --> PK3[deepgram]
+    PKR --> PK2[openai]
+    PKR --> PK3[elevenlabs]
+    PKR --> PK4[deepgram]
 
     DKR[DeploymentKindRegistry]
     DKR --> DK1[llm]
@@ -756,6 +757,7 @@ Defines metadata for component kinds, for example:
 Supported provider families, e.g.:
 
 * `azure_openai`
+* `openai`
 * `elevenlabs`
 * `deepgram`
 
