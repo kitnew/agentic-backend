@@ -761,6 +761,10 @@ Supported provider families, e.g.:
 * `elevenlabs`
 * `deepgram`
 
+LLM provider entries expose supported `service_tiers` in registry metadata for
+authoring clients. Azure OpenAI maps Standard/Fast to `default`/`priority`;
+OpenAI maps them to `default`/`fast`.
+
 ##### `DeploymentKindRegistry`
 
 Supported deployment families:

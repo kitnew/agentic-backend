@@ -114,6 +114,8 @@ def create_agent_session(
         "max_completion_tokens": llm["max_completion_tokens"],
         **llm_behavior_options(runtime),
     }
+    if service_tier := llm["deployment_config"].get("service_tier"):
+        llm_options["service_tier"] = service_tier
     if llm["provider_kind"] == "openai":
         llm_provider = openai.LLM(**llm_options)  # type: ignore[arg-type]
     elif not deployment or not endpoint or not api_version:
@@ -124,12 +126,16 @@ def create_agent_session(
             **llm_options,  # type: ignore[arg-type]
         )
     else:
+        azure_service_tier = llm_options.pop("service_tier", None)
         llm_provider = openai.LLM.with_azure(
             azure_deployment=deployment,
             azure_endpoint=azure_endpoint(endpoint),
             api_version=api_version,
             **llm_options,  # type: ignore[arg-type]
         )
+        if azure_service_tier is not None:
+            # LiveKit's with_azure wrapper omits this option; the request serializer supports it.
+            llm_provider._opts.service_tier = azure_service_tier
     tts = _create_tts(
         tts_config,
         tts_language,

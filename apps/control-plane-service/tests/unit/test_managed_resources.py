@@ -78,10 +78,33 @@ def test_provider_registry_validates_current_provider_shapes() -> None:
     assert registry.validate_connection("elevenlabs", {}) == {}
     assert registry.validate_connection("openai", {}) == {}
     assert registry.validate_deployment(
-        "openai", DeploymentKind.LLM, {"model": "gpt-4.1"}
-    ) == {"model": "gpt-4.1"}
+        "openai",
+        DeploymentKind.LLM,
+        {"model": "gpt-4.1", "service_tier": "fast"},
+    ) == {"model": "gpt-4.1", "service_tier": "fast"}
+    assert registry.validate_deployment(
+        "azure_openai",
+        DeploymentKind.LLM,
+        {
+            "deployment_name": "chat-prod",
+            "model": "gpt-5.6-terra",
+            "api_version": "2025-01-01-preview",
+            "service_tier": "priority",
+        },
+    )["service_tier"] == "priority"
     with pytest.raises(InvalidManagedResource, match="does not support realtime"):
         registry.validate_deployment("openai", DeploymentKind.REALTIME, {})
+    with pytest.raises(InvalidManagedResource):
+        registry.validate_deployment(
+            "azure_openai",
+            DeploymentKind.LLM,
+            {
+                "deployment_name": "chat-prod",
+                "model": "gpt-5.6-terra",
+                "api_version": "2025-01-01-preview",
+                "service_tier": "fast",
+            },
+        )
     assert HttpProviderValidator._request("openai", {}, "key") == (
         "https://api.openai.com/v1/models",
         {"Authorization": "Bearer key"},

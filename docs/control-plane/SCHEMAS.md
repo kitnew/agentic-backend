@@ -1839,6 +1839,8 @@ TTSDeploymentCapabilities:
 ```
 
 Provider-specific model/deployment identity belongs to `deployment_config`.
+Azure OpenAI and OpenAI LLM deployments may set `service_tier`; its allowed
+values are provider-specific and are published by `ProviderKindRegistry`.
 
 ---
 

@@ -1488,7 +1488,7 @@ async def test_provider_factory_uses_direct_openai_llm_deployment() -> None:
     llm = runtime["llm"]
     assert isinstance(llm, dict)
     llm["provider_kind"] = "openai"
-    llm["deployment_config"] = {"model": "gpt-4.1"}
+    llm["deployment_config"] = {"model": "gpt-4.1", "service_tier": "fast"}
     llm["connection_config"] = {}
     session = create_agent_session(
         settings(),
@@ -1502,7 +1502,28 @@ async def test_provider_factory_uses_direct_openai_llm_deployment() -> None:
     )
     try:
         assert session.llm._opts.model == "gpt-4.1"
+        assert session.llm._opts.service_tier == "fast"
         assert session.llm._client.api_key == "openai-key"
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_provider_factory_applies_azure_service_tier() -> None:
+    runtime = runtime_settings()
+    llm = runtime["llm"]
+    assert isinstance(llm, dict)
+    llm["deployment_config"]["service_tier"] = "priority"
+    session = create_agent_session(
+        settings(),
+        runtime,
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+    )
+    try:
+        assert session.llm._opts.service_tier == "priority"
     finally:
         await session.stt.aclose()
         await session.llm.aclose()

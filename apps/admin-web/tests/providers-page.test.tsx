@@ -78,7 +78,9 @@ function emptyProviderHandlers() {
           key: "openai",
           name: "OpenAI",
           description: "OpenAI API provider",
-          metadata: {},
+          metadata: {
+            service_tiers: { default: "Standard", fast: "Fast" },
+          },
         },
       ]),
     ),
@@ -235,7 +237,9 @@ describe("Admin Web Slice B provider provisioning", () => {
             key: "openai",
             name: "OpenAI",
             description: "OpenAI API provider",
-            metadata: {},
+            metadata: {
+              service_tiers: { default: "Standard", fast: "Fast" },
+            },
           },
         ]),
       ),
@@ -263,6 +267,10 @@ describe("Admin Web Slice B provider provisioning", () => {
       connectionId,
     );
     await user.selectOptions(screen.getByLabelText("Deployment kind"), "llm");
+    await user.selectOptions(
+      await screen.findByLabelText("Service tier"),
+      "fast",
+    );
     await user.clear(screen.getByLabelText("Deployment config"));
     fireEvent.change(screen.getByLabelText("Deployment config"), {
       target: { value: '{"model":"gpt"}' },
@@ -282,7 +290,7 @@ describe("Admin Web Slice B provider provisioning", () => {
       key: "llm-main",
       connection_ref: connectionId,
       deployment_kind: "llm",
-      deployment_config: { model: "gpt" },
+      deployment_config: { model: "gpt", service_tier: "fast" },
       capabilities: {
         kind: "llm",
         supports_temperature: true,

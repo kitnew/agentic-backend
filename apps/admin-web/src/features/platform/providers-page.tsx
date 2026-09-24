@@ -65,6 +65,7 @@ export function PlatformProvidersPage() {
   const [deploymentKey, setDeploymentKey] = useState("");
   const [connectionRef, setConnectionRef] = useState("");
   const [deploymentKind, setDeploymentKind] = useState("");
+  const [serviceTier, setServiceTier] = useState("default");
   const [deploymentJson, setDeploymentJson] = useState("{}");
   const [capabilitiesJson, setCapabilitiesJson] = useState("{}");
 
@@ -105,6 +106,20 @@ export function PlatformProvidersPage() {
       };
     },
   });
+
+  const selectedConnection = query.data?.connections.find(
+    ({ id }) => id === connectionRef,
+  );
+  const selectedProvider = query.data?.providerKinds.find(
+    ({ key }) => key === selectedConnection?.provider_kind,
+  );
+  const configuredTiers = selectedProvider?.metadata.service_tiers;
+  const serviceTiers =
+    configuredTiers && typeof configuredTiers === "object"
+      ? Object.entries(configuredTiers as Record<string, unknown>).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        )
+      : [];
 
   const createCredential = useMutation({
     mutationFn: async () =>
@@ -154,10 +169,13 @@ export function PlatformProvidersPage() {
             connection_ref: connectionRef,
             deployment_kind:
               deploymentKind as ModelDeploymentCreate["deployment_kind"],
-            deployment_config: parseJson(
-              deploymentJson,
-              "Deployment config",
-            ) as ModelDeploymentCreate["deployment_config"],
+            deployment_config: {
+              ...(parseJson(
+                deploymentJson,
+                "Deployment config",
+              ) as ModelDeploymentCreate["deployment_config"]),
+              ...(serviceTiers.length ? { service_tier: serviceTier } : {}),
+            },
             capabilities: parseJson(
               capabilitiesJson,
               "Capabilities",
@@ -364,7 +382,10 @@ export function PlatformProvidersPage() {
           aria-label="Connection"
           className="rounded border p-2"
           value={connectionRef}
-          onChange={(event) => setConnectionRef(event.target.value)}
+          onChange={(event) => {
+            setConnectionRef(event.target.value);
+            setServiceTier("default");
+          }}
         >
           <option value="">Select provider connection</option>
           {connections.map((connection) => (
@@ -386,6 +407,23 @@ export function PlatformProvidersPage() {
             </option>
           ))}
         </select>
+        {deploymentKind === "llm" && serviceTiers.length > 0 && (
+          <label className="block text-sm">
+            Service tier
+            <select
+              aria-label="Service tier"
+              className="mt-1 block w-full rounded border p-2"
+              value={serviceTier}
+              onChange={(event) => setServiceTier(event.target.value)}
+            >
+              {serviceTiers.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <textarea
           aria-label="Deployment config"
           className="min-h-20 rounded border p-2 font-mono md:col-span-2"

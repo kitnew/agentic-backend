@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import Literal
 
 from contracts.integration import HttpConnectionConfiguration
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, ValidationError
@@ -34,10 +35,12 @@ class _AzureOpenAILLMDeploymentConfig(_ProviderConfig):
     deployment_name: str = Field(min_length=1)
     model: str = Field(min_length=1)
     api_version: str = Field(min_length=1)
+    service_tier: Literal["default", "priority"] = "default"
 
 
 class _OpenAILLMDeploymentConfig(_ProviderConfig):
     model: str = Field(min_length=1)
+    service_tier: Literal["default", "fast"] = "default"
 
 
 class _AzureOpenAIDeploymentConfig(_ProviderConfig):
@@ -122,13 +125,19 @@ class ProviderKindRegistry:
             "azure_openai",
             "Azure OpenAI",
             "Azure OpenAI provider",
-            {"deployment_kinds": ("llm", "realtime", "stt")},
+            {
+                "deployment_kinds": ("llm", "realtime", "stt"),
+                "service_tiers": {"default": "Standard", "priority": "Fast"},
+            },
         ),
         RegistryEntry(
             "openai",
             "OpenAI",
             "OpenAI API provider",
-            {"deployment_kinds": ("llm",)},
+            {
+                "deployment_kinds": ("llm",),
+                "service_tiers": {"default": "Standard", "fast": "Fast"},
+            },
         ),
         RegistryEntry(
             "elevenlabs",
