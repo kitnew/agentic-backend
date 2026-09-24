@@ -731,11 +731,14 @@ flowchart LR
 
 Allowed architecture modes:
 
-* `cascade`: STT → text LLM → TTS;
-* `realtime`: Realtime input transcription for conversation persistence plus
-  standalone STT for precision lookup → native Realtime audio output;
-* `half-cascade`: Realtime input transcription for conversation persistence plus
-  standalone STT for precision lookup → Realtime text output → TTS.
+* `cascade`: standalone STT is primary and participates in LiveKit turn
+  processing → text LLM → TTS;
+* `realtime`: Realtime input transcription supplies conversation persistence;
+  standalone STT is sidecar-only for precision lookup and does not enter LiveKit
+  turn processing → native Realtime audio output;
+* `half-cascade`: Realtime input transcription supplies conversation
+  persistence; standalone STT is sidecar-only for precision lookup and does not
+  enter LiveKit turn processing → Realtime text output → TTS.
 
 ##### `ComponentDefinitionRegistry`
 

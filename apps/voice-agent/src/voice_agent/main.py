@@ -40,6 +40,7 @@ from voice_agent.providers import (
 )
 from voice_agent.recent_transcript import RecentTranscriptBuffer, recent_transcript_tool
 from voice_agent.settings import VoiceAgentSettings
+from voice_agent.stt_role import role_for_architecture
 
 logger = logging.getLogger(__name__)
 
@@ -726,6 +727,7 @@ async def run_job(
             agent=LatencyInstrumentedAgent(
                 metrics=telemetry.metrics if telemetry is not None else None,
                 recent_transcript=recent_transcript,
+                standalone_stt_role=role_for_architecture(context.architecture),
                 instructions=assemble_instructions(context, caller_number),
                 tools=build_agent_tools(
                     context,

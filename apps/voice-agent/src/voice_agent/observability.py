@@ -32,6 +32,8 @@ from opentelemetry.trace import Status
 if TYPE_CHECKING:
     from voice_agent.recent_transcript import RecentTranscriptBuffer
 
+from voice_agent.stt_role import StandaloneSTTRole
+
 _runtime: VoiceTelemetryRuntime | None = None
 _MAX_PIPELINE_TRACKERS = 128
 
@@ -705,17 +707,18 @@ class LatencyInstrumentedAgent(agents.Agent):
         *,
         metrics: VoiceMetrics | None,
         recent_transcript: RecentTranscriptBuffer | None = None,
+        standalone_stt_role: StandaloneSTTRole = StandaloneSTTRole.PRIMARY,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("id", "default_agent")
         super().__init__(**kwargs)
         self._voice_metrics = metrics
         self._recent_transcript = recent_transcript
+        self._standalone_stt_role = standalone_stt_role
 
     async def stt_node(
         self, audio: AsyncIterable[rtc.AudioFrame], model_settings: ModelSettings
     ) -> AsyncGenerator[stt.SpeechEvent | str]:
-        # LiveKit suppresses session STT transcript events when Realtime transcribes.
         async for event in agents.Agent.default.stt_node(self, audio, model_settings):
             if (
                 self._recent_transcript is not None
@@ -724,7 +727,8 @@ class LatencyInstrumentedAgent(agents.Agent):
                 and event.alternatives
             ):
                 self._recent_transcript.on_stt_final(event.alternatives[0].text)
-            yield event
+            if self._standalone_stt_role is StandaloneSTTRole.PRIMARY:
+                yield event
 
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
