@@ -2,43 +2,7 @@ import asyncio
 
 import pytest
 
-from benchmarks.e2e.analyze import analyze
 from benchmarks.pipeline.first_chunk import FirstChunkTTS
-
-
-def test_analyzer_counts_sparse_architecture_metrics_without_summing_observers():
-    rows = [
-        {
-            "architecture": "cascade",
-            "latencies_ms": {
-                "speech_to_eou": 100,
-                "speech_to_first_audio_output": 500,
-            },
-        },
-        {
-            "architecture": "cascade",
-            "latencies_ms": {
-                "speech_to_eou": 200,
-                "speech_to_first_audio_output": None,
-            },
-        },
-        {
-            "architecture": "half-cascade",
-            "latencies_ms": {
-                "speech_to_stt_final": 900,
-                "speech_to_response_created": 250,
-                "speech_to_first_audio_output": 600,
-            },
-        },
-    ]
-    summary = analyze(rows)
-    assert summary["cascade"]["metrics"]["speech_to_eou"]["median"] == 150
-    assert summary["cascade"]["metrics"]["speech_to_first_audio_output"]["count"] == 1
-    assert (
-        summary["half-cascade"]["metrics"]["speech_to_response_created"]["median"]
-        == 250
-    )
-    assert "causal_total" not in summary["half-cascade"]["metrics"]
 
 
 @pytest.mark.asyncio

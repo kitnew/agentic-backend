@@ -31,7 +31,6 @@ from opentelemetry.trace import Status
 
 if TYPE_CHECKING:
     from voice_agent.recent_transcript import RecentTranscriptBuffer
-    from voice_agent.turn_measurement import TurnRecorder
 
 from voice_agent.stt_role import StandaloneSTTRole
 
@@ -709,7 +708,6 @@ class LatencyInstrumentedAgent(agents.Agent):
         metrics: VoiceMetrics | None,
         recent_transcript: RecentTranscriptBuffer | None = None,
         standalone_stt_role: StandaloneSTTRole = StandaloneSTTRole.PRIMARY,
-        turn_recorder: TurnRecorder | None = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("id", "default_agent")
@@ -717,19 +715,11 @@ class LatencyInstrumentedAgent(agents.Agent):
         self._voice_metrics = metrics
         self._recent_transcript = recent_transcript
         self._standalone_stt_role = standalone_stt_role
-        self._turn_recorder = turn_recorder
 
     async def stt_node(
         self, audio: AsyncIterable[rtc.AudioFrame], model_settings: ModelSettings
     ) -> AsyncGenerator[stt.SpeechEvent | str]:
-        if self._turn_recorder is not None:
-            self._turn_recorder.stream_started()
         async for event in agents.Agent.default.stt_node(self, audio, model_settings):
-            if self._turn_recorder is not None and isinstance(event, stt.SpeechEvent):
-                if event.type == stt.SpeechEventType.INTERIM_TRANSCRIPT:
-                    self._turn_recorder.stt_partial()
-                elif event.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
-                    self._turn_recorder.mark("stt_final")
             if (
                 self._recent_transcript is not None
                 and isinstance(event, stt.SpeechEvent)
@@ -743,8 +733,6 @@ class LatencyInstrumentedAgent(agents.Agent):
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
-        if self._turn_recorder is not None:
-            self._turn_recorder.mark("input_committed")
         if self._voice_metrics is not None:
             self._voice_metrics.record_on_user_turn_completed_started(
                 time.perf_counter()
@@ -758,8 +746,6 @@ class LatencyInstrumentedAgent(agents.Agent):
         model_settings: ModelSettings,
     ) -> AsyncGenerator[llm.ChatChunk | str | FlushSentinel]:
         speech_id = _current_speech_id()
-        if self._turn_recorder is not None:
-            self._turn_recorder.mark_speech(speech_id, "llm_start")
         if self._voice_metrics is not None and speech_id is not None:
             self._voice_metrics.record_llm_request_started(
                 speech_id, time.perf_counter()
@@ -785,8 +771,6 @@ class LatencyInstrumentedAgent(agents.Agent):
                 self._voice_metrics.record_llm_first_nonempty_text(
                     speech_id, time.perf_counter()
                 )
-            if isinstance(content, str) and content.strip() and self._turn_recorder:
-                self._turn_recorder.mark_speech(speech_id, "llm_first_token")
             yield chunk
 
     async def tts_node(
@@ -796,14 +780,7 @@ class LatencyInstrumentedAgent(agents.Agent):
     ) -> AsyncGenerator[rtc.AudioFrame]:
         speech_id = _current_speech_id()
         first_audio = True
-
-        async def timed_text() -> AsyncGenerator[str]:
-            async for chunk in text:
-                if chunk and self._turn_recorder is not None:
-                    self._turn_recorder.mark_speech(speech_id, "tts_input_first_text")
-                yield chunk
-
-        raw_output = super().tts_node(timed_text(), model_settings)
+        raw_output = super().tts_node(text, model_settings)
         if inspect.isawaitable(raw_output):
             output = await raw_output
         else:
@@ -811,17 +788,6 @@ class LatencyInstrumentedAgent(agents.Agent):
         if not isinstance(output, AsyncIterable):
             return
         async for frame in output:
-            if first_audio and self._turn_recorder is not None:
-                provider_started = frame.userdata.get(USERDATA_TTS_STARTED_TIME)
-                if isinstance(provider_started, int | float) and provider_started > 0:
-                    # SDK perf_counter is sampled after the production tokenizer.
-                    self._turn_recorder.mark_speech(
-                        speech_id, "first_speakable", int(provider_started * 1e9)
-                    )
-                    self._turn_recorder.mark_speech(
-                        speech_id, "tts_start", int(provider_started * 1e9)
-                    )
-                self._turn_recorder.mark_speech(speech_id, "tts_first_audio")
             if (
                 self._voice_metrics is not None
                 and speech_id is not None
@@ -835,20 +801,6 @@ class LatencyInstrumentedAgent(agents.Agent):
                         tts_first_text_sent=float(tts_first_text_sent),
                         tts_first_audio=time.perf_counter(),
                     )
-            first_audio = False
-            yield frame
-
-    async def realtime_audio_output_node(
-        self,
-        audio: AsyncIterable[rtc.AudioFrame],
-        model_settings: ModelSettings,
-    ) -> AsyncGenerator[rtc.AudioFrame]:
-        speech_id = _current_speech_id()
-        async for frame in agents.Agent.default.realtime_audio_output_node(
-            self, audio, model_settings
-        ):
-            if self._turn_recorder is not None:
-                self._turn_recorder.mark_speech(speech_id, "realtime_first_audio")
             yield frame
 
 
@@ -858,18 +810,14 @@ def _current_speech_id() -> str | None:
     return speech.id if speech is not None else None
 
 
-def _install_eot_hooks(
-    session: agents.AgentSession,
-    metrics: VoiceMetrics | None = None,
-    recorder: TurnRecorder | None = None,
-) -> None:
-    """Attach to the pinned 1.8.2 recognition boundary missing from public events."""
+def _install_eot_hooks(session: agents.AgentSession, metrics: VoiceMetrics) -> None:
+    """Attach to the pinned 1.6.7 recognition boundary missing from public events."""
     activity = getattr(session, "_activity", None)
     required = ("on_end_of_speech", "on_final_transcript", "on_end_of_turn")
     if activity is None or not all(
         callable(getattr(activity, name, None)) for name in required
     ):
-        raise RuntimeError("LiveKit 1.8.2 recognition hooks are unavailable")
+        raise RuntimeError("LiveKit 1.6.7 recognition hooks are unavailable")
 
     on_end_of_speech = activity.on_end_of_speech
     on_final_transcript = activity.on_final_transcript
@@ -877,38 +825,22 @@ def _install_eot_hooks(
 
     def instrumented_end_of_speech(event: object | None) -> None:
         timestamp = time.perf_counter()
-        if metrics is not None:
-            if event is None:
-                metrics.record_stt_eos_received(timestamp)
-            else:
-                metrics.record_local_vad_end(timestamp)
-        if recorder is not None and event is not None:
-            now = time.perf_counter_ns()
-            recorder.mark("vad_end_received", now)
-            silence = getattr(event, "silence_duration", 0)
-            inference = getattr(event, "inference_duration", 0)
-            if isinstance(silence, int | float) and isinstance(inference, int | float):
-                recorder.mark(
-                    "speech_end_proxy", now - int((silence + inference) * 1e9)
-                )
+        if event is None:
+            metrics.record_stt_eos_received(timestamp)
+        else:
+            metrics.record_local_vad_end(timestamp)
         on_end_of_speech(event)
 
     def instrumented_final_transcript(
         event: object, *, speaking: bool | None = None
     ) -> None:
-        if metrics is not None:
-            metrics.record_stt_final_received(time.perf_counter())
-        if recorder is not None:
-            recorder.mark("stt_final")
+        metrics.record_stt_final_received(time.perf_counter())
         on_final_transcript(event, speaking=speaking)
 
     def instrumented_end_of_turn(info: object) -> bool:
         committed = on_end_of_turn(info)
         if committed:
-            if metrics is not None:
-                metrics.record_livekit_turn_committed(time.perf_counter())
-            if recorder is not None:
-                recorder.mark("eou")
+            metrics.record_livekit_turn_committed(time.perf_counter())
         return committed
 
     activity.on_end_of_speech = instrumented_end_of_speech
