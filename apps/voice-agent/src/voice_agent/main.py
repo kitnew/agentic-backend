@@ -698,7 +698,7 @@ async def run_job(
                     / f"{datetime.now(UTC).strftime('%Y-%m-%dT%H%M%SZ')}-{call_id}",
                     call_id=str(call_id),
                     architecture=context.architecture,
-                    tenant_id=context.tenant_id,
+                    tenant_id=None,
                     metadata={
                         "git_sha": git_sha,
                         "stt": identity(stt_config),
