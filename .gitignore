@@ -261,3 +261,9 @@ definitions/
 # Codex reports
 
 CODEX_*/
+
+/benchmarks/.env.benchmark.local
+/benchmarks/*.production.local.txt
+/benchmarks/**/artifacts/*
+!/benchmarks/.env.example
+!/benchmarks/**/artifacts/.gitkeep
