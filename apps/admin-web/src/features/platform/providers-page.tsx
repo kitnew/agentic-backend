@@ -30,6 +30,7 @@ import {
   listCredentialsManagementV1CredentialsGet,
   listDeploymentsManagementV1ProvidersDeploymentsGet,
   providerKindsManagementV1RegistriesProviderKindsGet,
+  updateDeploymentManagementV1ProvidersDeploymentsIdPut,
 } from "../../core/api/control-plane";
 
 type ProviderData = {
@@ -212,6 +213,43 @@ export function PlatformProvidersPage() {
       return responseData(
         await mutation(
           id,
+          managementMutationOptions(current.headers.get("etag")),
+        ),
+      );
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "providers"],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["control-plane", "model-deployments"],
+      });
+    },
+  });
+
+  const updateServiceTier = useMutation({
+    mutationFn: async ({
+      deployment,
+      serviceTier,
+    }: {
+      deployment: ModelDeploymentResponse;
+      serviceTier: string;
+    }) => {
+      const current = await getDeploymentManagementV1ProvidersDeploymentsIdGet(
+        deployment.id,
+      );
+      const value = responseData<ModelDeploymentResponse>(current);
+      return responseData(
+        await updateDeploymentManagementV1ProvidersDeploymentsIdPut(
+          deployment.id,
+          {
+            connection_ref: value.connection_ref,
+            deployment_config: {
+              ...value.deployment_config,
+              service_tier: serviceTier,
+            },
+            capabilities: value.capabilities,
+          },
           managementMutationOptions(current.headers.get("etag")),
         ),
       );
@@ -464,19 +502,95 @@ export function PlatformProvidersPage() {
           toggle.mutate({ id: resource.id, resource: "connection", operation })
         }
       />
-      <ResourceList
-        title="Model Deployments"
-        items={deployments}
-        onToggle={(resource, operation) =>
-          toggle.mutate({ id: resource.id, resource: "deployment", operation })
-        }
-      />
+      <section>
+        <h2 className="mb-2 text-lg font-semibold">Model Deployments</h2>
+        <ul className="divide-y border-y">
+          {deployments.map((deployment) => {
+            const providerKind = connections.find(
+              ({ id }) => id === deployment.connection_ref,
+            )?.provider_kind;
+            const tierMetadata = providerKinds.find(
+              ({ key }) => key === providerKind,
+            )?.metadata.service_tiers;
+            const tiers =
+              deployment.deployment_kind === "llm" &&
+              tierMetadata &&
+              typeof tierMetadata === "object"
+                ? Object.entries(
+                    tierMetadata as Record<string, unknown>,
+                  ).filter(
+                    (entry): entry is [string, string] =>
+                      typeof entry[1] === "string",
+                  )
+                : [];
+            return (
+              <li
+                className="flex flex-wrap items-center justify-between gap-3 py-3"
+                key={deployment.id}
+              >
+                <span>
+                  {deployment.key}{" "}
+                  <span className="text-sm text-muted">
+                    {deployment.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </span>
+                {tiers.length > 0 && (
+                  <label className="text-sm">
+                    Service tier
+                    <select
+                      aria-label={`Service tier ${deployment.key}`}
+                      className="ml-2 rounded border p-1"
+                      value={String(
+                        deployment.deployment_config.service_tier ?? "default",
+                      )}
+                      disabled={updateServiceTier.isPending}
+                      onChange={(event) =>
+                        updateServiceTier.mutate({
+                          deployment,
+                          serviceTier: event.target.value,
+                        })
+                      }
+                    >
+                      {tiers.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <button
+                  className="rounded border px-2 py-1 text-sm"
+                  onClick={() =>
+                    toggle.mutate({
+                      id: deployment.id,
+                      resource: "deployment",
+                      operation: deployment.enabled ? "disable" : "enable",
+                    })
+                  }
+                  type="button"
+                >
+                  {deployment.enabled ? "Disable" : "Enable"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
       {toggle.isError && (
         <PageError
           compact
           error={toggle.error}
           onRetry={() => query.refetch()}
           title="Provider resource action failed"
+        />
+      )}
+      {updateServiceTier.isError && (
+        <PageError
+          compact
+          error={updateServiceTier.error}
+          onRetry={() => query.refetch()}
+          title="Service tier could not be updated"
         />
       )}
 

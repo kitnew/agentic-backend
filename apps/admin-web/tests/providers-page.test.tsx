@@ -72,7 +72,9 @@ function emptyProviderHandlers() {
           key: "azure_openai",
           name: "Azure OpenAI",
           description: "Azure provider",
-          metadata: {},
+          metadata: {
+            service_tiers: { default: "Standard", priority: "Fast" },
+          },
         },
         {
           key: "openai",
@@ -313,6 +315,72 @@ describe("Admin Web Slice B provider provisioning", () => {
           ?.isInvalidated,
       ).toBe(true),
     );
+  });
+
+  it("updates the service tier of an existing deployment from the list", async () => {
+    const user = userEvent.setup();
+    let updateRequest: Request | undefined;
+    const existingDeployment = {
+      ...deployment,
+      connection_ref: openaiConnection.id,
+      deployment_config: { model: "gpt", service_tier: "default" },
+    };
+    server.use(
+      http.get("/management/v1/credentials", () =>
+        HttpResponse.json([credential]),
+      ),
+      http.get("/management/v1/providers/connections", () =>
+        HttpResponse.json([openaiConnection]),
+      ),
+      http.get("/management/v1/providers/deployments", () =>
+        HttpResponse.json([existingDeployment]),
+      ),
+      http.get("/management/v1/providers/deployments/:id", () =>
+        HttpResponse.json(existingDeployment, {
+          headers: { ETag: '"deployment-v1"' },
+        }),
+      ),
+      http.put(
+        "/management/v1/providers/deployments/:id",
+        async ({ request }) => {
+          updateRequest = request;
+          return HttpResponse.json({
+            ...existingDeployment,
+            deployment_config: { model: "gpt", service_tier: "fast" },
+          });
+        },
+      ),
+      http.get("/management/v1/registries/provider-kinds", () =>
+        HttpResponse.json([
+          {
+            key: "openai",
+            name: "OpenAI",
+            description: "OpenAI API provider",
+            metadata: {
+              service_tiers: { default: "Standard", fast: "Fast" },
+            },
+          },
+        ]),
+      ),
+      http.get("/management/v1/registries/deployment-kinds", () =>
+        HttpResponse.json([]),
+      ),
+    );
+    window.history.pushState({}, "", "/platform/providers");
+    renderProviders();
+
+    const tierSelect = await screen.findByLabelText("Service tier llm-main");
+    expect(tierSelect).toHaveValue("default");
+    await user.selectOptions(tierSelect, "fast");
+
+    await waitFor(() => expect(updateRequest).toBeDefined());
+    const request = requiredRequest(updateRequest);
+    expect(await request.clone().json()).toEqual({
+      connection_ref: openaiConnection.id,
+      deployment_config: { model: "gpt", service_tier: "fast" },
+      capabilities: deployment.capabilities,
+    });
+    expect(request.headers.get("If-Match")).toBe('"deployment-v1"');
   });
 
   it("rejects malformed JSON locally and does not send a connection request", async () => {
