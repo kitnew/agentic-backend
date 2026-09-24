@@ -14,7 +14,11 @@ from livekit.agents.types import (
     NotGivenOr,
 )
 from livekit.plugins.elevenlabs import stt as elevenlabs_stt
-from voice_agent.stt_endpointing import LocalVadCommitController, LocalVadCommitSTT
+from voice_agent.stt_endpointing import (
+    MIN_ELEVENLABS_COMMIT_AUDIO_SECONDS,
+    LocalVadCommitController,
+    LocalVadCommitSTT,
+)
 
 
 class Metrics:
@@ -127,6 +131,22 @@ def test_livekit_171_elevenlabs_flush_has_native_manual_commit() -> None:
         'commit_strategy = "vad" if self._server_vad is not None else "manual"'
         in inspect.getsource(elevenlabs_stt.SpeechStream._connect_ws)
     )
+
+
+@pytest.mark.asyncio
+async def test_short_segment_is_padded_to_elevenlabs_commit_minimum() -> None:
+    adapter, controller, provider, stream, _ = await open_stream(["short"])
+    try:
+        controller.speech_started()
+        stream.push_frame(utils.audio.silence_frame(0.1, 48000))
+        controller.speech_ended()
+        await next_segment(stream)
+
+        assert MIN_ELEVENLABS_COMMIT_AUDIO_SECONDS == 0.33
+        assert provider.streams[0].audio_duration == pytest.approx(0.33)
+    finally:
+        await stream.aclose()
+        await adapter.aclose()
 
 
 @pytest.mark.asyncio

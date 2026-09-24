@@ -6,7 +6,7 @@ import time
 from collections.abc import AsyncIterable
 from typing import TYPE_CHECKING, Any
 
-MIN_ELEVENLABS_COMMIT_AUDIO_SECONDS = 0.3
+MIN_ELEVENLABS_COMMIT_AUDIO_SECONDS = 0.33
 
 from livekit import agents, rtc
 from livekit.agents import stt, utils
