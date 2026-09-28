@@ -30,6 +30,7 @@ import {
   listCredentialsManagementV1CredentialsGet,
   listDeploymentsManagementV1ProvidersDeploymentsGet,
   providerKindsManagementV1RegistriesProviderKindsGet,
+  updateConnectionManagementV1ProvidersConnectionsIdPut,
   updateDeploymentManagementV1ProvidersDeploymentsIdPut,
 } from "../../core/api/control-plane";
 
@@ -47,12 +48,195 @@ type ToggleInput = {
   operation: "enable" | "disable";
 };
 
-function parseJson(value: string, label: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    throw new Error(`${label} must be valid JSON.`);
+type ConfigField = {
+  name: string;
+  label: string;
+  type?: "text" | "url" | "number";
+  required?: boolean;
+  min?: number;
+  max?: number;
+  step?: number | "any";
+  defaultValue?: string;
+  staticValue?: string;
+};
+
+const connectionFields: Record<string, ConfigField[]> = {
+  azure_openai: [
+    { name: "endpoint", label: "Azure OpenAI endpoint", type: "url", required: true },
+    { name: "api_version", label: "API version" },
+  ],
+};
+
+const deploymentFields: Record<string, Record<string, ConfigField[]>> = {
+  azure_openai: {
+    llm: [
+      { name: "deployment_name", label: "Azure deployment name", required: true },
+      { name: "model", label: "Model", required: true },
+      { name: "api_version", label: "API version", required: true },
+    ],
+    realtime: [
+      { name: "deployment_name", label: "Azure deployment name", required: true },
+    ],
+    stt: [
+      { name: "deployment_name", label: "Azure deployment name", required: true },
+      { name: "model", label: "Model", required: true },
+    ],
+  },
+  openai: {
+    llm: [{ name: "model", label: "Model", required: true }],
+  },
+  elevenlabs: {
+    stt: [{ name: "model_id", label: "Model ID", required: true }],
+    tts: [{ name: "model_id", label: "Model ID", required: true }],
+  },
+  deepgram: {
+    stt: [{ name: "model_id", label: "Model ID", required: true }],
+  },
+  soniox: {
+    stt: [
+      {
+        name: "model",
+        label: "Soniox model",
+        staticValue: "stt-rt-v5",
+      },
+      {
+        name: "max_endpoint_delay_ms",
+        label: "Soniox maximum endpoint delay",
+        type: "number",
+        min: 500,
+        max: 3000,
+        defaultValue: "2000",
+        required: true,
+      },
+      {
+        name: "endpoint_sensitivity",
+        label: "Soniox endpoint sensitivity",
+        type: "number",
+        min: -1,
+        max: 1,
+        step: "any",
+      },
+      {
+        name: "endpoint_latency_adjustment_level",
+        label: "Soniox endpoint latency adjustment",
+        type: "number",
+        min: 0,
+        max: 3,
+      },
+    ],
+  },
+};
+
+const capabilityFields: Record<string, { name: string; label: string }[]> = {
+  llm: [
+    { name: "supports_temperature", label: "Supports temperature" },
+    { name: "supports_reasoning_effort", label: "Supports reasoning effort" },
+  ],
+  realtime: [
+    { name: "supports_server_vad", label: "Supports server VAD" },
+    { name: "supports_semantic_vad", label: "Supports semantic VAD" },
+  ],
+  stt: [
+    { name: "supports_cascade", label: "Supports cascade STT" },
+    {
+      name: "supports_realtime_input_transcription",
+      label: "Supports Realtime input transcription",
+    },
+  ],
+  tts: [],
+};
+
+function buildConfig(
+  fields: ConfigField[],
+  values: Record<string, string>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    fields.flatMap((field) => {
+      const value = field.staticValue ?? values[field.name] ?? field.defaultValue ?? "";
+      if (value === "" && !field.required && field.type !== "number") return [];
+      return [[
+        field.name,
+        field.type === "number"
+          ? value === ""
+            ? null
+            : Number(value)
+          : value,
+      ]];
+    }),
+  );
+}
+
+function buildCapabilities(
+  providerKind: string,
+  deploymentKind: string,
+  values: Record<string, boolean>,
+): Record<string, unknown> {
+  if (providerKind === "soniox") {
+    return {
+      kind: "stt",
+      supports_cascade: true,
+      supports_realtime_input_transcription: false,
+    };
   }
+  return {
+    kind: deploymentKind,
+    ...Object.fromEntries(
+      (capabilityFields[deploymentKind] ?? []).map(({ name }) => [
+        name,
+        Boolean(values[name]),
+      ]),
+    ),
+  };
+}
+
+function supportedDeploymentKinds(provider: RegistryEntryResponse | undefined) {
+  const kinds = provider?.metadata.deployment_kinds;
+  return Array.isArray(kinds) ? kinds.filter((kind): kind is string => typeof kind === "string") : null;
+}
+
+function connectionsForKind(
+  connections: ProviderConnectionResponse[],
+  providers: RegistryEntryResponse[],
+  deploymentKind: string,
+) {
+  if (!deploymentKind) return connections;
+  return connections.filter((connection) => {
+    const provider = providers.find(({ key }) => key === connection.provider_kind);
+    const kinds = supportedDeploymentKinds(provider);
+    return !kinds || kinds.includes(deploymentKind);
+  });
+}
+
+function ConfigInputs({
+  fields,
+  values,
+  onChange,
+}: {
+  fields: ConfigField[];
+  values: Record<string, string>;
+  onChange: (name: string, value: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+      {fields.map((field) => (
+        <label className="block text-sm" key={field.name}>
+          {field.label}
+          <input
+            aria-label={field.label}
+            className="mt-1 block w-full rounded border p-2"
+            type={field.type ?? "text"}
+            required={field.required}
+            min={field.min}
+            max={field.max}
+            step={field.step}
+            readOnly={field.staticValue !== undefined}
+            value={field.staticValue ?? values[field.name] ?? field.defaultValue ?? ""}
+            onChange={(event) => onChange(field.name, event.target.value)}
+          />
+        </label>
+      ))}
+    </div>
+  );
 }
 
 export function PlatformProvidersPage() {
@@ -62,19 +246,15 @@ export function PlatformProvidersPage() {
   const [connectionKey, setConnectionKey] = useState("");
   const [providerKind, setProviderKind] = useState("");
   const [credentialRef, setCredentialRef] = useState("");
-  const [connectionJson, setConnectionJson] = useState("{}");
+  const [connectionValues, setConnectionValues] = useState<Record<string, string>>({});
+  const [editingConnectionId, setEditingConnectionId] = useState<string>();
   const [deploymentKey, setDeploymentKey] = useState("");
   const [connectionRef, setConnectionRef] = useState("");
   const [deploymentKind, setDeploymentKind] = useState("");
   const [serviceTier, setServiceTier] = useState("default");
-  const [deploymentJson, setDeploymentJson] = useState("{}");
-  const [capabilitiesJson, setCapabilitiesJson] = useState("{}");
+  const [deploymentValues, setDeploymentValues] = useState<Record<string, string>>({});
+  const [capabilityValues, setCapabilityValues] = useState<Record<string, boolean>>({});
   const [editingDeploymentId, setEditingDeploymentId] = useState<string>();
-  const [sonioxMaxEndpointDelay, setSonioxMaxEndpointDelay] = useState("2000");
-  const [sonioxEndpointSensitivity, setSonioxEndpointSensitivity] =
-    useState("");
-  const [sonioxEndpointLatencyAdjustment, setSonioxEndpointLatencyAdjustment] =
-    useState("");
   const [sonioxRegion, setSonioxRegion] = useState("eu");
 
   const query = useQuery({
@@ -121,6 +301,20 @@ export function PlatformProvidersPage() {
   const selectedProvider = query.data?.providerKinds.find(
     ({ key }) => key === selectedConnection?.provider_kind,
   );
+  const connectionConfigFields = connectionFields[providerKind] ?? [];
+  const deploymentConfigFields =
+    deploymentFields[selectedConnection?.provider_kind ?? ""]?.[deploymentKind] ?? [];
+  const deploymentKindsForConnection = supportedDeploymentKinds(selectedProvider);
+  const availableDeploymentKinds = deploymentKindsForConnection
+    ? query.data?.deploymentKinds.filter(({ key }) =>
+        deploymentKindsForConnection.includes(key),
+      ) ?? []
+    : (query.data?.deploymentKinds ?? []);
+  const availableConnections = connectionsForKind(
+    query.data?.connections ?? [],
+    query.data?.providerKinds ?? [],
+    deploymentKind,
+  );
   const configuredTiers = selectedProvider?.metadata.service_tiers;
   const serviceTiers =
     configuredTiers && typeof configuredTiers === "object"
@@ -131,6 +325,25 @@ export function PlatformProvidersPage() {
   const sonioxStt =
     selectedConnection?.provider_kind === "soniox" && deploymentKind === "stt";
   const sonioxConnection = providerKind === "soniox";
+
+  const clearDeploymentForm = () => {
+    setEditingDeploymentId(undefined);
+    setDeploymentKey("");
+    setConnectionRef("");
+    setDeploymentKind("");
+    setDeploymentValues({});
+    setCapabilityValues({});
+    setServiceTier("default");
+  };
+
+  const clearConnectionForm = () => {
+    setEditingConnectionId(undefined);
+    setConnectionKey("");
+    setProviderKind("");
+    setCredentialRef("");
+    setConnectionValues({});
+    setSonioxRegion("eu");
+  };
 
   const createCredential = useMutation({
     mutationFn: async () =>
@@ -149,24 +362,39 @@ export function PlatformProvidersPage() {
   });
 
   const createConnection = useMutation({
-    mutationFn: async () =>
-      responseData(
+    mutationFn: async () => {
+      const connectionConfig = sonioxConnection
+        ? { region: sonioxRegion }
+        : (buildConfig(
+            connectionConfigFields,
+            connectionValues,
+          ) as ProviderConnectionCreateConnectionConfig);
+      if (editingConnectionId) {
+        const current = await getConnectionManagementV1ProvidersConnectionsIdGet(
+          editingConnectionId,
+        );
+        return responseData(
+          await updateConnectionManagementV1ProvidersConnectionsIdPut(
+            editingConnectionId,
+            { credential_ref: credentialRef, connection_config: connectionConfig },
+            managementMutationOptions(current.headers.get("etag")),
+          ),
+        );
+      }
+      return responseData(
         await createConnectionManagementV1ProvidersConnectionsPost(
           {
             key: connectionKey,
             provider_kind: providerKind,
             credential_ref: credentialRef,
-            connection_config: sonioxConnection
-              ? { region: sonioxRegion }
-              : (parseJson(
-                  connectionJson,
-                  "Connection config",
-                ) as ProviderConnectionCreateConnectionConfig),
+            connection_config: connectionConfig,
           },
           managementMutationOptions(),
         ),
-      ),
+      );
+    },
     onSuccess: async () => {
+      clearConnectionForm();
       await queryClient.invalidateQueries({
         queryKey: ["control-plane", "providers"],
       });
@@ -175,34 +403,17 @@ export function PlatformProvidersPage() {
 
   const createDeployment = useMutation({
     mutationFn: async () => {
-      const deploymentConfig = sonioxStt
-        ? {
-            model: "stt-rt-v5",
-            max_endpoint_delay_ms: Number(sonioxMaxEndpointDelay),
-            endpoint_sensitivity: sonioxEndpointSensitivity
-              ? Number(sonioxEndpointSensitivity)
-              : null,
-            endpoint_latency_adjustment_level: sonioxEndpointLatencyAdjustment
-              ? Number(sonioxEndpointLatencyAdjustment)
-              : null,
-          }
-        : {
-            ...(parseJson(
-              deploymentJson,
-              "Deployment config",
-            ) as ModelDeploymentCreate["deployment_config"]),
-            ...(serviceTiers.length ? { service_tier: serviceTier } : {}),
-          };
-      const capabilities = sonioxStt
-        ? {
-            kind: "stt" as const,
-            supports_cascade: true,
-            supports_realtime_input_transcription: false,
-          }
-        : (parseJson(
-            capabilitiesJson,
-            "Capabilities",
-          ) as ModelDeploymentCreate["capabilities"]);
+      const deploymentConfig = {
+        ...buildConfig(deploymentConfigFields, deploymentValues),
+        ...(deploymentKind === "llm" && serviceTiers.length
+          ? { service_tier: serviceTier }
+          : {}),
+      } as ModelDeploymentCreate["deployment_config"];
+      const capabilities = buildCapabilities(
+        selectedConnection?.provider_kind ?? "",
+        deploymentKind,
+        capabilityValues,
+      ) as ModelDeploymentCreate["capabilities"];
       if (editingDeploymentId) {
         const current =
           await getDeploymentManagementV1ProvidersDeploymentsIdGet(
@@ -235,7 +446,7 @@ export function PlatformProvidersPage() {
       );
     },
     onSuccess: async () => {
-      setEditingDeploymentId(undefined);
+      clearDeploymentForm();
       await queryClient.invalidateQueries({
         queryKey: ["control-plane", "providers"],
       });
@@ -387,20 +598,25 @@ export function PlatformProvidersPage() {
         }}
       >
         <h2 className="md:col-span-2 text-lg font-semibold">
-          Provider Connections
+          {editingConnectionId ? "Edit provider connection" : "Provider Connections"}
         </h2>
         <input
           aria-label="Connection key"
           className="rounded border p-2"
           placeholder="Key"
           value={connectionKey}
+          readOnly={Boolean(editingConnectionId)}
           onChange={(event) => setConnectionKey(event.target.value)}
         />
         <select
           aria-label="Provider kind"
           className="rounded border p-2"
+          disabled={Boolean(editingConnectionId)}
           value={providerKind}
-          onChange={(event) => setProviderKind(event.target.value)}
+          onChange={(event) => {
+            setProviderKind(event.target.value);
+            setConnectionValues({});
+          }}
         >
           <option value="">Select provider kind</option>
           {providerKinds.map((kind) => (
@@ -422,12 +638,13 @@ export function PlatformProvidersPage() {
             </option>
           ))}
         </select>
-        {!sonioxConnection && (
-          <textarea
-            aria-label="Connection config"
-            className="min-h-20 rounded border p-2 font-mono md:col-span-2"
-            value={connectionJson}
-            onChange={(event) => setConnectionJson(event.target.value)}
+        {connectionConfigFields.length > 0 && (
+          <ConfigInputs
+            fields={connectionConfigFields}
+            values={connectionValues}
+            onChange={(field, value) =>
+              setConnectionValues((current) => ({ ...current, [field]: value }))
+            }
           />
         )}
         {sonioxConnection && (
@@ -444,6 +661,11 @@ export function PlatformProvidersPage() {
             </select>
           </label>
         )}
+        {!sonioxConnection && connectionConfigFields.length === 0 && providerKind && (
+          <p className="text-sm text-muted md:col-span-2">
+            This provider has no connection-specific settings.
+          </p>
+        )}
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
@@ -454,13 +676,22 @@ export function PlatformProvidersPage() {
           }
           type="submit"
         >
-          Create connection
+          {editingConnectionId ? "Save connection" : "Create connection"}
         </button>
+        {editingConnectionId && (
+          <button
+            className="rounded border px-3 py-2 text-sm md:col-span-2"
+            onClick={clearConnectionForm}
+            type="button"
+          >
+            Cancel edit
+          </button>
+        )}
         {createConnection.isError && (
           <PageError
             compact
             error={createConnection.error}
-            title="Provider connection could not be created"
+            title="Provider connection could not be saved"
           />
         )}
       </form>
@@ -486,15 +717,26 @@ export function PlatformProvidersPage() {
         <select
           aria-label="Connection"
           className="rounded border p-2"
-          disabled={Boolean(editingDeploymentId)}
           value={connectionRef}
           onChange={(event) => {
             setConnectionRef(event.target.value);
             setServiceTier("default");
+            setDeploymentValues({});
+            setCapabilityValues({});
+            const nextConnection = connections.find(
+              ({ id }) => id === event.target.value,
+            );
+            const nextProvider = providerKinds.find(
+              ({ key }) => key === nextConnection?.provider_kind,
+            );
+            const kinds = supportedDeploymentKinds(nextProvider);
+            if (deploymentKind && kinds && !kinds.includes(deploymentKind)) {
+              setDeploymentKind("");
+            }
           }}
         >
           <option value="">Select provider connection</option>
-          {connections.map((connection) => (
+          {availableConnections.map((connection) => (
             <option key={connection.id} value={connection.id}>
               {connection.key} ({connection.id.slice(0, 8)})
             </option>
@@ -505,10 +747,15 @@ export function PlatformProvidersPage() {
           className="rounded border p-2"
           disabled={Boolean(editingDeploymentId)}
           value={deploymentKind}
-          onChange={(event) => setDeploymentKind(event.target.value)}
+          onChange={(event) => {
+            setDeploymentKind(event.target.value);
+            setDeploymentValues({});
+            setCapabilityValues({});
+            setServiceTier("default");
+          }}
         >
           <option value="">Select deployment kind</option>
-          {deploymentKinds.map((kind) => (
+          {availableDeploymentKinds.map((kind) => (
             <option key={kind.key} value={kind.key}>
               {kind.name} ({kind.key})
             </option>
@@ -531,77 +778,43 @@ export function PlatformProvidersPage() {
             </select>
           </label>
         )}
-        {sonioxStt ? (
-          <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
-            <label className="block text-sm">
-              Model
-              <input
-                aria-label="Soniox model"
-                className="mt-1 block w-full rounded border p-2"
-                value="stt-rt-v5"
-                readOnly
-              />
-            </label>
-            <label className="block text-sm">
-              Maximum endpoint delay (ms)
-              <input
-                aria-label="Soniox maximum endpoint delay"
-                className="mt-1 block w-full rounded border p-2"
-                type="number"
-                min={500}
-                max={3000}
-                value={sonioxMaxEndpointDelay}
-                onChange={(event) =>
-                  setSonioxMaxEndpointDelay(event.target.value)
-                }
-              />
-            </label>
-            <label className="block text-sm">
-              Endpoint sensitivity (−1 to 1)
-              <input
-                aria-label="Soniox endpoint sensitivity"
-                className="mt-1 block w-full rounded border p-2"
-                type="number"
-                min={-1}
-                max={1}
-                step="any"
-                value={sonioxEndpointSensitivity}
-                onChange={(event) =>
-                  setSonioxEndpointSensitivity(event.target.value)
-                }
-              />
-            </label>
-            <label className="block text-sm">
-              Endpoint latency adjustment (0 to 3)
-              <input
-                aria-label="Soniox endpoint latency adjustment"
-                className="mt-1 block w-full rounded border p-2"
-                type="number"
-                min={0}
-                max={3}
-                value={sonioxEndpointLatencyAdjustment}
-                onChange={(event) =>
-                  setSonioxEndpointLatencyAdjustment(event.target.value)
-                }
-              />
-            </label>
-          </div>
-        ) : (
-          <>
-            <textarea
-              aria-label="Deployment config"
-              className="min-h-20 rounded border p-2 font-mono md:col-span-2"
-              value={deploymentJson}
-              onChange={(event) => setDeploymentJson(event.target.value)}
-            />
-            <textarea
-              aria-label="Capabilities"
-              className="min-h-20 rounded border p-2 font-mono md:col-span-2"
-              value={capabilitiesJson}
-              onChange={(event) => setCapabilitiesJson(event.target.value)}
-            />
-          </>
+        {deploymentConfigFields.length > 0 && (
+          <ConfigInputs
+            fields={deploymentConfigFields}
+            values={deploymentValues}
+            onChange={(field, value) =>
+              setDeploymentValues((current) => ({ ...current, [field]: value }))
+            }
+          />
         )}
+        {deploymentKind && (sonioxStt ? (
+          <p className="text-sm text-muted md:col-span-2">
+            Soniox capabilities are fixed by the Control Plane schema.
+          </p>
+        ) : (
+          <fieldset className="grid gap-2 md:col-span-2 md:grid-cols-2">
+            <legend className="mb-1 text-sm font-medium">Capabilities</legend>
+            {(capabilityFields[deploymentKind] ?? []).map((field) => (
+              <label className="flex items-center gap-2 text-sm" key={field.name}>
+                <input
+                  aria-label={field.label}
+                  checked={Boolean(capabilityValues[field.name])}
+                  onChange={(event) =>
+                    setCapabilityValues((current) => ({
+                      ...current,
+                      [field.name]: event.target.checked,
+                    }))
+                  }
+                  type="checkbox"
+                />
+                {field.label}
+              </label>
+            ))}
+            {deploymentKind === "tts" && (
+              <p className="text-sm text-muted">No additional TTS capability flags.</p>
+            )}
+          </fieldset>
+        ))}
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
@@ -617,7 +830,7 @@ export function PlatformProvidersPage() {
         {editingDeploymentId && (
           <button
             className="rounded border px-3 py-2 text-sm md:col-span-2"
-            onClick={() => setEditingDeploymentId(undefined)}
+            onClick={clearDeploymentForm}
             type="button"
           >
             Cancel edit
@@ -627,7 +840,7 @@ export function PlatformProvidersPage() {
           <PageError
             compact
             error={createDeployment.error}
-            title="Model deployment could not be created"
+            title="Model deployment could not be saved"
           />
         )}
       </form>
@@ -635,6 +848,22 @@ export function PlatformProvidersPage() {
       <ResourceList
         title="Provider Connections"
         items={connections}
+        onEdit={(connection) => {
+          const config = connection.connection_config;
+          setEditingConnectionId(connection.id);
+          setConnectionKey(connection.key);
+          setProviderKind(connection.provider_kind);
+          setCredentialRef(connection.credential_ref);
+          setConnectionValues(
+            Object.fromEntries(
+              (connectionFields[connection.provider_kind] ?? []).map((field) => [
+                field.name,
+                String(config[field.name] ?? ""),
+              ]),
+            ),
+          );
+          setSonioxRegion(String(config.region ?? "global"));
+        }}
         onToggle={(resource, operation) =>
           toggle.mutate({ id: resource.id, resource: "connection", operation })
         }
@@ -696,44 +925,47 @@ export function PlatformProvidersPage() {
                     </select>
                   </label>
                 )}
-                {providerKind === "soniox" && (
-                  <button
-                    className="rounded border px-2 py-1 text-sm"
-                    onClick={() => {
-                      setEditingDeploymentId(deployment.id);
-                      setDeploymentKey(deployment.key);
-                      setConnectionRef(deployment.connection_ref);
-                      setDeploymentKind(deployment.deployment_kind);
-                      setDeploymentJson(
-                        JSON.stringify(deployment.deployment_config, null, 2),
-                      );
-                      setCapabilitiesJson(
-                        JSON.stringify(deployment.capabilities, null, 2),
-                      );
-                      setSonioxMaxEndpointDelay(
-                        String(
-                          deployment.deployment_config.max_endpoint_delay_ms ??
-                            2000,
+                <button
+                  className="rounded border px-2 py-1 text-sm"
+                  onClick={() => {
+                    const fields =
+                      deploymentFields[providerKind ?? ""]?.[
+                        deployment.deployment_kind
+                      ] ?? [];
+                    const config = deployment.deployment_config;
+                    const capabilities = deployment.capabilities as Record<
+                      string,
+                      unknown
+                    >;
+                    setEditingDeploymentId(deployment.id);
+                    setDeploymentKey(deployment.key);
+                    setConnectionRef(deployment.connection_ref);
+                    setDeploymentKind(deployment.deployment_kind);
+                    setDeploymentValues(
+                      Object.fromEntries(
+                        fields.map((field) => [
+                          field.name,
+                          String(
+                            config[field.name] ?? field.defaultValue ?? "",
+                          ),
+                        ]),
+                      ),
+                    );
+                    setCapabilityValues(
+                      Object.fromEntries(
+                        (capabilityFields[deployment.deployment_kind] ?? []).map(
+                          ({ name }) => [name, Boolean(capabilities[name])],
                         ),
-                      );
-                      setSonioxEndpointSensitivity(
-                        String(
-                          deployment.deployment_config.endpoint_sensitivity ??
-                            "",
-                        ),
-                      );
-                      setSonioxEndpointLatencyAdjustment(
-                        String(
-                          deployment.deployment_config
-                            .endpoint_latency_adjustment_level ?? "",
-                        ),
-                      );
-                    }}
-                    type="button"
-                  >
-                    Edit
-                  </button>
-                )}
+                      ),
+                    );
+                    setServiceTier(
+                      String(config.service_tier ?? "default"),
+                    );
+                  }}
+                  type="button"
+                >
+                  Edit
+                </button>
                 <button
                   className="rounded border px-2 py-1 text-sm"
                   onClick={() =>
@@ -788,10 +1020,12 @@ function ResourceList<T extends { id: string; key: string; enabled: boolean }>({
   title,
   items,
   onToggle,
+  onEdit,
 }: {
   title: string;
   items: T[];
   onToggle: (resource: T, operation: "enable" | "disable") => void;
+  onEdit?: (resource: T) => void;
 }) {
   return (
     <section>
@@ -808,15 +1042,26 @@ function ResourceList<T extends { id: string; key: string; enabled: boolean }>({
                 {resource.enabled ? "Enabled" : "Disabled"}
               </span>
             </span>
-            <button
-              className="rounded border px-2 py-1 text-sm"
-              onClick={() =>
-                onToggle(resource, resource.enabled ? "disable" : "enable")
-              }
-              type="button"
-            >
-              {resource.enabled ? "Disable" : "Enable"}
-            </button>
+            <div className="flex gap-2">
+              {onEdit && (
+                <button
+                  className="rounded border px-2 py-1 text-sm"
+                  onClick={() => onEdit(resource)}
+                  type="button"
+                >
+                  Edit
+                </button>
+              )}
+              <button
+                className="rounded border px-2 py-1 text-sm"
+                onClick={() =>
+                  onToggle(resource, resource.enabled ? "disable" : "enable")
+                }
+                type="button"
+              >
+                {resource.enabled ? "Disable" : "Enable"}
+              </button>
+            </div>
           </li>
         ))}
       </ul>

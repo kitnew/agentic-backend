@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { AppProviders } from "../src/app/providers";
 import { queryClient } from "../src/app/query-client";
@@ -164,12 +164,7 @@ describe("Admin Web Slice B provider provisioning", () => {
     await user.type(screen.getByLabelText("Connection key"), "openai-main");
     await user.selectOptions(screen.getByLabelText("Provider kind"), "openai");
     await user.selectOptions(screen.getByLabelText("Credential"), credentialId);
-    await user.clear(screen.getByLabelText("Connection config"));
-    fireEvent.change(screen.getByLabelText("Connection config"), {
-      target: {
-        value: "{}",
-      },
-    });
+    expect(screen.queryByLabelText("Connection config")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create connection" }));
 
     await waitFor(() => expect(connectionRequest).toBeDefined());
@@ -219,7 +214,7 @@ describe("Admin Web Slice B provider provisioning", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("creates deployments with registry kind, selected connection ID, and preserved JSON", async () => {
+  it("creates OpenAI deployments from typed model, service tier, and capabilities", async () => {
     const user = userEvent.setup();
     let deploymentRequest: Request | undefined;
     queryClient.setQueryData(["control-plane", "model-deployments"], []);
@@ -273,17 +268,8 @@ describe("Admin Web Slice B provider provisioning", () => {
       await screen.findByLabelText("Service tier"),
       "fast",
     );
-    await user.clear(screen.getByLabelText("Deployment config"));
-    fireEvent.change(screen.getByLabelText("Deployment config"), {
-      target: { value: '{"model":"gpt"}' },
-    });
-    await user.clear(screen.getByLabelText("Capabilities"));
-    fireEvent.change(screen.getByLabelText("Capabilities"), {
-      target: {
-        value:
-          '{"kind":"llm","supports_temperature":true,"supports_reasoning_effort":false}',
-      },
-    });
+    await user.type(screen.getByLabelText("Model"), "gpt");
+    await user.click(screen.getByLabelText("Supports temperature"));
     await user.click(screen.getByRole("button", { name: "Create deployment" }));
 
     await waitFor(() => expect(deploymentRequest).toBeDefined());
@@ -515,7 +501,8 @@ describe("Admin Web Slice B provider provisioning", () => {
     window.history.pushState({}, "", "/platform/providers");
     renderProviders();
 
-    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    const editButtons = await screen.findAllByRole("button", { name: "Edit" });
+    await user.click(editButtons[1]);
     expect(screen.getByLabelText("Soniox maximum endpoint delay")).toHaveValue(
       2000,
     );
@@ -602,9 +589,9 @@ describe("Admin Web Slice B provider provisioning", () => {
     expect(request.headers.get("If-Match")).toBe('"deployment-v1"');
   });
 
-  it("rejects malformed JSON locally and does not send a connection request", async () => {
+  it("creates Azure connections from endpoint and optional API version fields", async () => {
     const user = userEvent.setup();
-    const post = vi.fn();
+    let connectionRequest: Request | undefined;
     server.use(
       http.get("/management/v1/credentials", () =>
         HttpResponse.json([credential]),
@@ -634,8 +621,8 @@ describe("Admin Web Slice B provider provisioning", () => {
       http.get("/management/v1/registries/deployment-kinds", () =>
         HttpResponse.json([]),
       ),
-      http.post("/management/v1/providers/connections", () => {
-        post();
+      http.post("/management/v1/providers/connections", async ({ request }) => {
+        connectionRequest = request;
         return HttpResponse.json(connection, { status: 201 });
       }),
     );
@@ -651,16 +638,21 @@ describe("Admin Web Slice B provider provisioning", () => {
       await screen.findByLabelText("Credential"),
       credentialId,
     );
-    await user.clear(screen.getByLabelText("Connection config"));
-    fireEvent.change(screen.getByLabelText("Connection config"), {
-      target: { value: "{broken" },
-    });
+    await user.type(
+      screen.getByLabelText("Azure OpenAI endpoint"),
+      "https://azure.example.test",
+    );
+    await user.type(screen.getByLabelText("API version"), "2026-01-01");
     await user.click(screen.getByRole("button", { name: "Create connection" }));
 
-    expect(
-      await screen.findByText("Connection config must be valid JSON."),
-    ).toBeVisible();
-    expect(post).not.toHaveBeenCalled();
+    await waitFor(() => expect(connectionRequest).toBeDefined());
+    expect(await requiredRequest(connectionRequest).clone().json()).toMatchObject({
+      provider_kind: "azure_openai",
+      connection_config: {
+        endpoint: "https://azure.example.test",
+        api_version: "2026-01-01",
+      },
+    });
   });
 
   it("enables a disabled connection with its current ETag and refetches state", async () => {
