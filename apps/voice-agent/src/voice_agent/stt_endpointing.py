@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import time
 from collections.abc import AsyncIterable
 from typing import TYPE_CHECKING, Any
@@ -19,6 +20,8 @@ from livekit.agents.types import (
 
 if TYPE_CHECKING:
     from voice_agent.observability import VoiceMetrics
+
+logger = logging.getLogger(__name__)
 
 
 class LocalVadCommitController:
@@ -61,6 +64,11 @@ class LocalVadCommitController:
     def stream_failed(self, stream: stt.RecognizeStream) -> None:
         if self._stream is not stream:
             return
+        if self._pending_commits:
+            logger.warning(
+                "Local VAD STT stream failed with pending commits",
+                extra={"pending_commits": self._pending_commits},
+            )
         if self._pending_commits and self._metrics is not None:
             self._metrics.record_local_vad_commit_failure(self._pending_commits)
         self._pending_commits = 0
@@ -70,6 +78,7 @@ class LocalVadCommitController:
     def speech_started(self) -> None:
         self._speech_active = True
         self._segment_committed = False
+        logger.info("Local VAD user speech started")
 
     def speech_ended(self) -> None:
         if not self._speech_active:
@@ -85,17 +94,23 @@ class LocalVadCommitController:
         self._segment_committed = True
         stream = self._stream
         if stream is None:
+            logger.warning("Local VAD speech ended without an active STT stream")
             if self._metrics is not None:
                 self._metrics.record_local_vad_commit_failure()
             return
 
         requested_at = time.perf_counter()
         self._pending_commits += 1
+        logger.info(
+            "Local VAD speech ended; requesting STT commit",
+            extra={"pending_commits": self._pending_commits},
+        )
         if self._metrics is not None:
             self._metrics.record_local_vad_commit_requested(requested_at)
         try:
             stream.flush()
         except Exception:
+            logger.exception("Local VAD STT commit flush failed")
             self._pending_commits -= 1
             if self._metrics is not None:
                 self._metrics.record_local_vad_commit_failure()
@@ -103,14 +118,29 @@ class LocalVadCommitController:
 
     def final_received(self, stream: stt.RecognizeStream) -> bool:
         if self._stream is not stream or self._pending_commits == 0:
+            logger.warning(
+                "STT final received without a pending local VAD commit",
+                extra={
+                    "stream_matches": self._stream is stream,
+                    "pending_commits": self._pending_commits,
+                },
+            )
             return False
         self._pending_commits -= 1
+        logger.info(
+            "STT final matched to local VAD commit",
+            extra={"pending_commits": self._pending_commits},
+        )
         return True
 
     def provider_eos_received(self, stream: stt.RecognizeStream) -> bool:
         if self._stream is not stream or self._pending_commits == 0:
             return False
         self._pending_commits -= 1
+        logger.info(
+            "STT provider end-of-speech matched to local VAD commit",
+            extra={"pending_commits": self._pending_commits},
+        )
         return True
 
     def _on_user_state_changed(self, event: agents.UserStateChangedEvent) -> None:
@@ -249,6 +279,7 @@ class _LocalVadCommitStream(stt.RecognizeStream):
                     event.type == stt.SpeechEventType.FINAL_TRANSCRIPT
                     and self._controller.final_received(self)
                 ):
+                    logger.info("Generated end-of-speech after local VAD STT final")
                     self._event_ch.send_nowait(
                         stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH)
                     )
