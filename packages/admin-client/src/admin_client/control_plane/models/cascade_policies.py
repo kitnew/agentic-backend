@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ..models.cascade_tokenizer import CascadeTokenizer
     from ..models.local_vad_commit import LocalVADCommit
     from ..models.provider_vad_commit import ProviderVADCommit
+    from ..models.stt_commit import STTCommit
 
 
 T = TypeVar("T", bound="CascadePolicies")
@@ -27,7 +28,7 @@ class CascadePolicies:
         interruption (CascadeInterruption):
         response_scheduling (CascadeResponseScheduling):
         speech_activity (CascadeSpeechActivity):
-        stt_commit (LocalVADCommit | ProviderVADCommit):
+        stt_commit (LocalVADCommit | ProviderVADCommit | STTCommit):
         tokenizer (CascadeTokenizer):
     """
 
@@ -35,11 +36,12 @@ class CascadePolicies:
     interruption: CascadeInterruption
     response_scheduling: CascadeResponseScheduling
     speech_activity: CascadeSpeechActivity
-    stt_commit: LocalVADCommit | ProviderVADCommit
+    stt_commit: LocalVADCommit | ProviderVADCommit | STTCommit
     tokenizer: CascadeTokenizer
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.local_vad_commit import LocalVADCommit
+        from ..models.provider_vad_commit import ProviderVADCommit
 
         endpointing = self.endpointing.to_dict()
 
@@ -50,7 +52,9 @@ class CascadePolicies:
         speech_activity = self.speech_activity.to_dict()
 
         stt_commit: dict[str, Any]
-        if isinstance(self.stt_commit, LocalVADCommit):
+        if isinstance(self.stt_commit, LocalVADCommit) or isinstance(
+            self.stt_commit, ProviderVADCommit
+        ):
             stt_commit = self.stt_commit.to_dict()
         else:
             stt_commit = self.stt_commit.to_dict()
@@ -81,6 +85,7 @@ class CascadePolicies:
         from ..models.cascade_tokenizer import CascadeTokenizer
         from ..models.local_vad_commit import LocalVADCommit
         from ..models.provider_vad_commit import ProviderVADCommit
+        from ..models.stt_commit import STTCommit
 
         d = dict(src_dict)
         endpointing = CascadeEndpointing.from_dict(d.pop("endpointing"))
@@ -93,7 +98,9 @@ class CascadePolicies:
 
         speech_activity = CascadeSpeechActivity.from_dict(d.pop("speech_activity"))
 
-        def _parse_stt_commit(data: object) -> LocalVADCommit | ProviderVADCommit:
+        def _parse_stt_commit(
+            data: object,
+        ) -> LocalVADCommit | ProviderVADCommit | STTCommit:
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
@@ -102,11 +109,19 @@ class CascadePolicies:
                 return stt_commit_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                stt_commit_type_1 = ProviderVADCommit.from_dict(data)
+
+                return stt_commit_type_1
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
             if not isinstance(data, dict):
                 raise TypeError()
-            stt_commit_type_1 = ProviderVADCommit.from_dict(data)
+            stt_commit_type_2 = STTCommit.from_dict(data)
 
-            return stt_commit_type_1
+            return stt_commit_type_2
 
         stt_commit = _parse_stt_commit(d.pop("stt_commit"))
 

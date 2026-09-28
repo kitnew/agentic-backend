@@ -517,7 +517,8 @@ Backend/Worker normalization is downstream and may reject invalid/national numbe
 
 - local `inference.VAD`;
 - `turn_detection="stt"`;
-- provider VAD or `LocalVadCommitSTT` depending on policy;
+- exactly one completion authority from `Policies.cascade.stt_commit`: local VAD,
+  provider VAD, or native STT endpointing;
 - endpoint/interruption/preemptive settings come from runtime policy.
 
 ### 13.2 Realtime / half-cascade

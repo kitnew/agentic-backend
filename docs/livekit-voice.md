@@ -37,13 +37,14 @@ it does not replace ElevenLabs end-of-speech ownership. These values, provider
 models, logical Azure model, and TTS voice come from the call-pinned
 `VoiceRuntimeRevision`.
 
-Cascade Soniox STT uses the installed LiveKit Soniox plugin's
-`PREFLIGHT_TRANSCRIPT` events for stable tokens. `LocalVadCommitSTT` forwards
-these events immediately, so LiveKit's existing preemptive generation can run
-before the turn endpoint. The wrapper still gates provider
-`END_OF_SPEECH` until local VAD requests a flush; with the current local-VAD
-commit policy, local VAD remains the turn-completion authority. `RuntimeResolver`
-rejects the ElevenLabs-specific `provider_vad` commit policy for Soniox.
+`Policies.cascade.stt_commit.strategy` selects one authority: `local_vad`,
+`provider_vad`, or `stt`. For Soniox RT v5, `stt` uses the installed LiveKit
+plugin's `FINAL_TRANSCRIPT` followed by `END_OF_SPEECH` events directly;
+`LocalVadCommitSTT` is not installed and local VAD does not flush the stream.
+Silero VAD remains configured for speech activity and interruption detection.
+The Control Plane validates `stt` against the selected deployment's
+`supports_native_endpointing` capability. Existing `local_vad` configurations
+continue to use the wrapper and its manual finalization behavior.
 
 Soniox emits `PREFLIGHT_TRANSCRIPT` when a response contains finalized text
 tokens and no non-final text tokens; this can happen before the speaker stops.

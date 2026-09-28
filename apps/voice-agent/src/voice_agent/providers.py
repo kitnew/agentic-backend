@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 import httpx
@@ -14,6 +15,8 @@ from openai.types import realtime as openai_realtime
 from voice_agent.observability import VoiceMetrics
 from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_endpointing import LocalVadCommitController, LocalVadCommitSTT
+
+logger = logging.getLogger(__name__)
 
 
 def provider_languages(locale: str) -> tuple[str, str]:
@@ -74,8 +77,17 @@ def create_agent_session(
         stt_config["speech_hints"]["keyterms"]["values"] or NOT_GIVEN
     )
     commit = stt_config["commit"]
+    logger.info(
+        "Voice turn completion authority configured",
+        extra={
+            "turn_detection.source": (
+                "vad" if commit["strategy"] == "local_vad" else "stt"
+            ),
+            "stt.provider": stt_config["provider_kind"],
+        },
+    )
     server = commit.get("provider_vad", {})
-    if commit["strategy"] != "local_vad":
+    if commit["strategy"] == "provider_vad":
         server_vad = {
             "vad_silence_threshold_secs": server.get("silence_threshold_seconds", 0.5),
             "vad_threshold": server.get("threshold", 0.5),

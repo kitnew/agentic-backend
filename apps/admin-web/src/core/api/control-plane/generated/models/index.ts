@@ -162,6 +162,7 @@ export * from './runtimeActionDefinitionOutputResultSchema';
 export * from './runtimeBusinessPolicy';
 export * from './runtimeOverrides';
 export * from './sTTCapabilitiesWrite';
+export * from './sTTCommit';
 export * from './sTTDefaults';
 export * from './sTTOverrides';
 export * from './summaryArtifactInput';

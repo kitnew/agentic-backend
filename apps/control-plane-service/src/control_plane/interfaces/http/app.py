@@ -451,6 +451,7 @@ class STTCapabilitiesWrite(BaseModel):
     kind: Literal["stt"]
     supports_cascade: StrictBool
     supports_realtime_input_transcription: StrictBool
+    supports_native_endpointing: StrictBool = False
 
 
 class TTSCapabilitiesWrite(BaseModel):
@@ -2026,6 +2027,7 @@ def _deployment_response(value: ModelDeployment) -> dict[str, object]:
             supports_realtime_input_transcription=(
                 capabilities.supports_realtime_input_transcription
             ),
+            supports_native_endpointing=capabilities.supports_native_endpointing,
         )
     return {
         "id": value.ref.value,

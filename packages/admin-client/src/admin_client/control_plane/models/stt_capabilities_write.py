@@ -11,6 +11,8 @@ from typing import (
 from attrs import define as _attrs_define
 from typing_extensions import Self
 
+from ..types import UNSET, Unset
+
 T = TypeVar("T", bound="STTCapabilitiesWrite")
 
 
@@ -21,11 +23,13 @@ class STTCapabilitiesWrite:
         kind (Literal['stt']):
         supports_cascade (bool):
         supports_realtime_input_transcription (bool):
+        supports_native_endpointing (bool | Unset):  Default: False.
     """
 
     kind: Literal["stt"]
     supports_cascade: bool
     supports_realtime_input_transcription: bool
+    supports_native_endpointing: bool | Unset = False
 
     def to_dict(self) -> dict[str, Any]:
         kind = self.kind
@@ -36,6 +40,8 @@ class STTCapabilitiesWrite:
             self.supports_realtime_input_transcription
         )
 
+        supports_native_endpointing = self.supports_native_endpointing
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -45,6 +51,8 @@ class STTCapabilitiesWrite:
                 "supports_realtime_input_transcription": supports_realtime_input_transcription,
             }
         )
+        if supports_native_endpointing is not UNSET:
+            field_dict["supports_native_endpointing"] = supports_native_endpointing
 
         return field_dict
 
@@ -61,10 +69,13 @@ class STTCapabilitiesWrite:
             "supports_realtime_input_transcription"
         )
 
+        supports_native_endpointing = d.pop("supports_native_endpointing", UNSET)
+
         stt_capabilities_write = cls(
             kind=kind,
             supports_cascade=supports_cascade,
             supports_realtime_input_transcription=supports_realtime_input_transcription,
+            supports_native_endpointing=supports_native_endpointing,
         )
 
         return stt_capabilities_write

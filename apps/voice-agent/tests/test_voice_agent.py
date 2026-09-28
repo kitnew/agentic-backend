@@ -1460,6 +1460,29 @@ async def test_provider_factory_enables_manual_scribe_commit_without_changing_tu
 
 
 @pytest.mark.asyncio
+async def test_provider_factory_uses_native_soniox_endpoint_without_vad_commit_wrapper() -> (
+    None
+):
+    payload = runtime_settings(stt={"provider": "soniox", "model": "stt-rt-v5"})
+    payload["stt"]["deployment_config"] = {"model": "stt-rt-v5"}  # type: ignore[index]
+    payload["stt"]["commit"] = {"strategy": "stt"}  # type: ignore[index]
+    session = create_agent_session(
+        settings(),
+        payload,
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "soniox-key", "tts": "eleven-key"},
+    )
+    try:
+        assert isinstance(session.stt, soniox.STT)
+        assert session.vad is not None
+        assert session.turn_detection == "stt"
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
+@pytest.mark.asyncio
 async def test_provider_factory_passes_tenant_keyterms_to_elevenlabs() -> None:
     session = create_agent_session(
         settings(),

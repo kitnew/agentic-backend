@@ -222,7 +222,7 @@ describe("configuration form mappings", () => {
       screen.queryByLabelText("Silence duration (ms)"),
     ).not.toBeInTheDocument();
 
-    const commitStrategy = screen.getByLabelText("Strategy");
+    const commitStrategy = screen.getByLabelText("Authority");
     await user.selectOptions(commitStrategy, "provider_vad");
     expect(screen.getByLabelText("Threshold")).toBeVisible();
     await user.selectOptions(commitStrategy, "local_vad");

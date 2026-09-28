@@ -267,6 +267,15 @@ class RuntimeResolver:
                 provider_kind=stt_resource.connection.provider_kind,
                 requirement="provider_vad",
             )
+        if policies.value.cascade.stt_commit.strategy == "stt" and (
+            not isinstance(stt_resource.deployment.capabilities, STTCapabilities)
+            or not stt_resource.deployment.capabilities.supports_native_endpointing
+        ):
+            self._reject(
+                ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
+                deployment_ref=stt_resource.deployment.ref.value,
+                capability="native_endpointing",
+            )
         voice = overrides.get("tts", {}).get("voice_id", tts.value.default_voice_id)
         keyterms = overrides.get("stt", {}).get("keyterms", [])
         return ResolvedCascadeRuntime(

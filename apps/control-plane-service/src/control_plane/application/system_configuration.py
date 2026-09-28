@@ -33,6 +33,7 @@ from control_plane.domain.managed_resources import (
     ModelDeploymentRef,
     PlatformCredentialScope,
     RealtimeCapabilities,
+    STTCapabilities,
 )
 
 _FIELDS = (
@@ -220,7 +221,7 @@ class SystemConfigurationService:
 
     async def _validate(self, repository, desired, *, lock=False):
         issues: list[ValidationIssue] = []
-        await self._deployment(
+        stt = await self._deployment(
             repository,
             desired.stt_defaults.deployment_ref,
             DeploymentKind.STT,
@@ -229,6 +230,18 @@ class SystemConfigurationService:
             lock,
             capability="supports_cascade",
         )
+        if desired.policies.cascade.stt_commit.strategy == "stt" and (
+            stt is None
+            or not isinstance(stt.capabilities, STTCapabilities)
+            or not stt.capabilities.supports_native_endpointing
+        ):
+            issues.append(
+                ValidationIssue(
+                    "unsupported_capability",
+                    "policies.cascade.stt_commit",
+                    "selected STT deployment does not support native endpointing",
+                )
+            )
         llm = await self._deployment(
             repository,
             desired.llm_defaults.deployment_ref,
@@ -314,7 +327,7 @@ class SystemConfigurationService:
         issues: list[ValidationIssue] = []
         kind = str(address.kind)
         if kind == "STTDefaults":
-            await self._deployment(
+            deployment = await self._deployment(
                 repository,
                 value.deployment_ref,
                 DeploymentKind.STT,
@@ -323,6 +336,29 @@ class SystemConfigurationService:
                 True,
                 capability="supports_cascade",
             )
+            policies_state = await repository.get(
+                ComponentAddress(ComponentKind("Policies"), SystemScope()),
+                lock=True,
+            )
+            if (
+                policies_state is not None
+                and Policies.model_validate(
+                    policies_state.value
+                ).cascade.stt_commit.strategy
+                == "stt"
+                and (
+                    deployment is None
+                    or not isinstance(deployment.capabilities, STTCapabilities)
+                    or not deployment.capabilities.supports_native_endpointing
+                )
+            ):
+                issues.append(
+                    ValidationIssue(
+                        "unsupported_capability",
+                        "value.deployment_ref",
+                        "selected STT deployment does not support native endpointing",
+                    )
+                )
         elif kind == "LLMDefaults":
             deployment = await self._deployment(
                 repository,
@@ -403,6 +439,34 @@ class SystemConfigurationService:
                             "unsupported_capability",
                             "value.turn_completion",
                             f"deployment does not support {strategy}",
+                        )
+                    )
+
+        elif kind == "Policies" and value.cascade.stt_commit.strategy == "stt":
+            stt_state = await repository.get(
+                ComponentAddress(ComponentKind("STTDefaults"), SystemScope()),
+                lock=True,
+            )
+            if stt_state is not None:
+                stt_defaults = STTDefaults.model_validate(stt_state.value)
+                deployment = await self._deployment(
+                    repository,
+                    stt_defaults.deployment_ref,
+                    DeploymentKind.STT,
+                    "STTDefaults.deployment_ref",
+                    issues,
+                    True,
+                )
+                if (
+                    deployment is None
+                    or not isinstance(deployment.capabilities, STTCapabilities)
+                    or not deployment.capabilities.supports_native_endpointing
+                ):
+                    issues.append(
+                        ValidationIssue(
+                            "unsupported_capability",
+                            "value.cascade.stt_commit",
+                            "selected STT deployment does not support native endpointing",
                         )
                     )
         if issues:

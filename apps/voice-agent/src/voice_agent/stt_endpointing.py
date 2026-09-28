@@ -30,10 +30,11 @@ class LocalVadCommitController:
     def __init__(self, metrics: VoiceMetrics | None = None) -> None:
         self._metrics = metrics
         self._session: agents.AgentSession | None = None
-        self._stream: stt.RecognizeStream | None = None
+        self._stream: _LocalVadCommitStream | None = None
         self._speech_active = False
         self._segment_committed = False
         self._pending_commits = 0
+        self._final_before_speech_end = False
 
     def attach(self, session: agents.AgentSession) -> None:
         self._session = session
@@ -49,19 +50,21 @@ class LocalVadCommitController:
         self._speech_active = False
         self._segment_committed = False
         self._pending_commits = 0
+        self._final_before_speech_end = False
 
-    def replace_stream(self, stream: stt.RecognizeStream) -> None:
+    def replace_stream(self, stream: _LocalVadCommitStream) -> None:
         if self._stream is not None and self._stream is not stream:
             self.stream_failed(self._stream)
             self._speech_active = False
             self._segment_committed = False
+            self._final_before_speech_end = False
         self._stream = stream
 
-    def clear_stream(self, stream: stt.RecognizeStream) -> None:
+    def clear_stream(self, stream: _LocalVadCommitStream) -> None:
         if self._stream is stream:
             self._stream = None
 
-    def stream_failed(self, stream: stt.RecognizeStream) -> None:
+    def stream_failed(self, stream: _LocalVadCommitStream) -> None:
         if self._stream is not stream:
             return
         if self._pending_commits:
@@ -74,6 +77,7 @@ class LocalVadCommitController:
         self._pending_commits = 0
         self._speech_active = False
         self._segment_committed = False
+        self._final_before_speech_end = False
 
     def speech_started(self) -> None:
         self._speech_active = True
@@ -98,6 +102,11 @@ class LocalVadCommitController:
             if self._metrics is not None:
                 self._metrics.record_local_vad_commit_failure()
             return
+        if self._final_before_speech_end:
+            self._final_before_speech_end = False
+            logger.info("Sending end-of-speech after early STT final")
+            stream.send_end_of_speech()
+            return
 
         requested_at = time.perf_counter()
         self._pending_commits += 1
@@ -116,15 +125,25 @@ class LocalVadCommitController:
                 self._metrics.record_local_vad_commit_failure()
             raise
 
-    def final_received(self, stream: stt.RecognizeStream) -> bool:
-        if self._stream is not stream or self._pending_commits == 0:
+    def final_received(self, stream: _LocalVadCommitStream) -> bool:
+        if self._stream is not stream:
             logger.warning(
                 "STT final received without a pending local VAD commit",
                 extra={
-                    "stream_matches": self._stream is stream,
+                    "stream_matches": False,
                     "pending_commits": self._pending_commits,
                 },
             )
+            return False
+        if self._pending_commits == 0:
+            if self._speech_active:
+                self._final_before_speech_end = True
+                logger.info("STT final arrived before local VAD speech end")
+            else:
+                logger.warning(
+                    "STT final received without an active local VAD commit",
+                    extra={"pending_commits": self._pending_commits},
+                )
             return False
         self._pending_commits -= 1
         logger.info(
@@ -133,7 +152,7 @@ class LocalVadCommitController:
         )
         return True
 
-    def provider_eos_received(self, stream: stt.RecognizeStream) -> bool:
+    def provider_eos_received(self, stream: _LocalVadCommitStream) -> bool:
         if self._stream is not stream or self._pending_commits == 0:
             return False
         self._pending_commits -= 1
@@ -235,6 +254,11 @@ class _LocalVadCommitStream(stt.RecognizeStream):
         self._wrapped = wrapped
         self._controller = controller
 
+    def send_end_of_speech(self) -> None:
+        self._event_ch.send_nowait(
+            stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH)
+        )
+
     async def _metrics_monitor_task(
         self, event_aiter: AsyncIterable[stt.SpeechEvent]
     ) -> None:
@@ -280,9 +304,7 @@ class _LocalVadCommitStream(stt.RecognizeStream):
                     and self._controller.final_received(self)
                 ):
                     logger.info("Generated end-of-speech after local VAD STT final")
-                    self._event_ch.send_nowait(
-                        stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH)
-                    )
+                    self.send_end_of_speech()
 
         tasks = [
             asyncio.create_task(forward_input()),

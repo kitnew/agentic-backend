@@ -11,12 +11,13 @@ import type { CascadeSpeechActivity } from './cascadeSpeechActivity';
 import type { CascadeTokenizer } from './cascadeTokenizer';
 import type { LocalVADCommit } from './localVADCommit';
 import type { ProviderVADCommit } from './providerVADCommit';
+import type { STTCommit } from './sTTCommit';
 
 export interface CascadePolicies {
   endpointing: CascadeEndpointing;
   interruption: CascadeInterruption;
   response_scheduling: CascadeResponseScheduling;
   speech_activity: CascadeSpeechActivity;
-  stt_commit: LocalVADCommit | ProviderVADCommit;
+  stt_commit: LocalVADCommit | ProviderVADCommit | STTCommit;
   tokenizer: CascadeTokenizer;
 }

@@ -309,7 +309,8 @@
             "discriminator": {
               "mapping": {
                 "local_vad": "#/components/schemas/LocalVADCommit",
-                "provider_vad": "#/components/schemas/ProviderVADCommit"
+                "provider_vad": "#/components/schemas/ProviderVADCommit",
+                "stt": "#/components/schemas/STTCommit"
               },
               "propertyName": "strategy"
             },
@@ -319,6 +320,9 @@
               },
               {
                 "$ref": "#/components/schemas/ProviderVADCommit"
+              },
+              {
+                "$ref": "#/components/schemas/STTCommit"
               }
             ],
             "title": "Stt Commit"
@@ -3390,6 +3394,11 @@
             "title": "Supports Cascade",
             "type": "boolean"
           },
+          "supports_native_endpointing": {
+            "default": false,
+            "title": "Supports Native Endpointing",
+            "type": "boolean"
+          },
           "supports_realtime_input_transcription": {
             "title": "Supports Realtime Input Transcription",
             "type": "boolean"
@@ -3401,6 +3410,21 @@
           "supports_realtime_input_transcription"
         ],
         "title": "STTCapabilitiesWrite",
+        "type": "object"
+      },
+      "STTCommit": {
+        "additionalProperties": false,
+        "properties": {
+          "strategy": {
+            "const": "stt",
+            "title": "Strategy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy"
+        ],
+        "title": "STTCommit",
         "type": "object"
       },
       "STTDefaults": {

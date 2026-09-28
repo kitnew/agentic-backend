@@ -80,6 +80,7 @@ class RealtimeCapabilities:
 class STTCapabilities:
     supports_cascade: bool
     supports_realtime_input_transcription: bool
+    supports_native_endpointing: bool = False
     kind: Literal["stt"] = field(default="stt", init=False)
 
 

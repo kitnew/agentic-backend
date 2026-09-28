@@ -64,9 +64,11 @@ IDS = {
             "cascade_credential",
             "realtime_credential",
             "eleven_credential",
+            "soniox_credential",
             "cascade_connection",
             "realtime_connection",
             "eleven_connection",
+            "soniox_connection",
             "llm",
             "realtime",
             "realtime_stt",
@@ -267,6 +269,7 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
             credential("cascade"),
             credential("realtime"),
             credential("eleven"),
+            credential("soniox"),
         )
     }
     connections = {
@@ -275,6 +278,7 @@ def state(architectures: list[str] | None = None) -> RuntimeResolutionState:
             connection("cascade", "azure_openai", "cascade"),
             connection("realtime", "azure_openai", "realtime"),
             connection("eleven", "elevenlabs", "eleven"),
+            connection("soniox", "soniox", "soniox"),
         )
     }
     deployments = {
@@ -961,6 +965,72 @@ async def test_provider_vad_is_revalidated() -> None:
         captured.value.attempts[0].failure.reason
         is ResolutionFailureReason.INCOMPATIBLE_PROVIDER
     )
+
+
+@pytest.mark.asyncio
+async def test_stt_native_endpointing_requires_deployment_capability() -> None:
+    value = state(["cascade"])
+    live_components = dict(value.live_components)
+    address = ComponentAddress(ComponentKind("Policies"), SystemScope())
+    policies = live_components[address]
+    live_components[address] = replace(
+        policies,
+        value={
+            "cascade": {
+                **policies.value["cascade"],
+                "stt_commit": {"strategy": "stt"},
+            }
+        },
+    )
+
+    with pytest.raises(RuntimeResolutionError) as captured:
+        await resolver(replace(value, live_components=live_components)).resolve_runtime(
+            TENANT
+        )
+
+    assert captured.value.attempts[0].failure is not None
+    assert (
+        captured.value.attempts[0].failure.reason
+        is ResolutionFailureReason.UNSUPPORTED_CAPABILITY
+    )
+
+
+@pytest.mark.asyncio
+async def test_soniox_native_endpointing_is_materialized() -> None:
+    value = state(["cascade"])
+    live_components = dict(value.live_components)
+    address = ComponentAddress(ComponentKind("Policies"), SystemScope())
+    policies = live_components[address]
+    live_components[address] = replace(
+        policies,
+        value={
+            "cascade": {
+                **policies.value["cascade"],
+                "stt_commit": {"strategy": "stt"},
+            }
+        },
+    )
+    deployments = dict(value.deployments)
+    deployments[IDS["cascade_stt"]] = replace(
+        deployments[IDS["cascade_stt"]],
+        deployment_config={"model": "stt-rt-v5"},
+        connection_ref=ProviderConnectionRef(IDS["soniox_connection"]),
+        capabilities=STTCapabilities(True, False, supports_native_endpointing=True),
+    )
+
+    result = await resolver(
+        replace(
+            value,
+            live_components=live_components,
+            deployments=deployments,
+        )
+    ).resolve_runtime(TENANT)
+
+    assert isinstance(result.selected, ResolvedCascadeRuntime)
+    assert result.selected.stt.resource.connection.provider_kind == "soniox"
+    assert ExecutionMaterializationService._voice_runtime(result.selected)["stt"][
+        "commit"
+    ] == {"strategy": "stt"}  # type: ignore[index]
 
 
 @pytest.mark.asyncio

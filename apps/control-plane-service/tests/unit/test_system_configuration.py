@@ -325,6 +325,21 @@ async def test_system_configuration_enforces_frozen_capability_relationships(
 
 
 @pytest.mark.asyncio
+async def test_system_plan_rejects_stt_endpointing_without_capability() -> None:
+    service, _, _, refs = setup()
+    payload = desired(refs).model_dump(mode="json")
+    payload["policies"]["cascade"]["stt_commit"] = {"strategy": "stt"}
+
+    plan = await service.plan(SystemConfigurationDesired.model_validate(payload))
+
+    assert any(
+        error.path == "policies.cascade.stt_commit"
+        and error.code == "unsupported_capability"
+        for error in plan.errors
+    )
+
+
+@pytest.mark.asyncio
 async def test_failure_in_final_component_rolls_back_complete_apply() -> None:
     service, repository, _, refs = setup()
     original_set = repository.set

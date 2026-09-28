@@ -106,6 +106,10 @@ class LocalVADCommit(FrozenValue):
     strategy: Literal["local_vad"]
 
 
+class STTCommit(FrozenValue):
+    strategy: Literal["stt"]
+
+
 class ProviderVAD(FrozenValue):
     threshold: Threshold
     silence_threshold_seconds: PositiveSeconds
@@ -119,7 +123,7 @@ class ProviderVADCommit(FrozenValue):
 
 
 CascadeSTTCommit = Annotated[
-    LocalVADCommit | ProviderVADCommit, Field(discriminator="strategy")
+    LocalVADCommit | ProviderVADCommit | STTCommit, Field(discriminator="strategy")
 ]
 
 

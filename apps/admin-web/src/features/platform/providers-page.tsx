@@ -142,6 +142,10 @@ const capabilityFields: Record<string, { name: string; label: string }[]> = {
       name: "supports_realtime_input_transcription",
       label: "Supports Realtime input transcription",
     },
+    {
+      name: "supports_native_endpointing",
+      label: "Supports native STT endpointing",
+    },
   ],
   tts: [],
 };
@@ -176,6 +180,7 @@ function buildCapabilities(
       kind: "stt",
       supports_cascade: true,
       supports_realtime_input_transcription: false,
+      supports_native_endpointing: true,
     };
   }
   return {

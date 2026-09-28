@@ -202,6 +202,7 @@ from .runtime_action_definition_output_result_schema_type_0 import (
 from .runtime_business_policy import RuntimeBusinessPolicy
 from .runtime_overrides import RuntimeOverrides
 from .stt_capabilities_write import STTCapabilitiesWrite
+from .stt_commit import STTCommit
 from .stt_defaults import STTDefaults
 from .stt_overrides import STTOverrides
 from .summary_artifact_input import SummaryArtifactInput
@@ -399,6 +400,7 @@ __all__ = (
     "RuntimeBusinessPolicy",
     "RuntimeOverrides",
     "STTCapabilitiesWrite",
+    "STTCommit",
     "STTDefaults",
     "STTOverrides",
     "SummaryArtifactInput",

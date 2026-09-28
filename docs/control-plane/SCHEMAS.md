@@ -436,6 +436,13 @@ CascadeSTTCommit:
 
     - type: object
       additionalProperties: false
+      required: [strategy]
+      properties:
+        strategy:
+          const: stt
+
+    - type: object
+      additionalProperties: false
       required:
         - strategy
         - provider_vad
@@ -1824,6 +1831,9 @@ STTDeploymentCapabilities:
       type: boolean
     supports_realtime_input_transcription:
       type: boolean
+    supports_native_endpointing:
+      type: boolean
+      default: false
 ```
 
 ### TTSDeploymentCapabilities
@@ -1881,9 +1891,12 @@ endpoint_latency_adjustment_level:
 
 Voice Agent maps the effective runtime locale's language subtag to Soniox's
 `language_hints` (for example, `sk-SK` becomes `sk`). Existing cascade
-`stt_commit` and `endpointing` policies retain their current ownership; the
-Soniox endpoint options configure the provider stream and do not replace those
-policies.
+`Policies.cascade.stt_commit.strategy` selects exactly one turn-completion
+authority: `local_vad`, `provider_vad`, or `stt`. `stt` is valid only when the
+selected STT deployment advertises `supports_native_endpointing`. Local VAD
+speech activity remains independently configured and available for interruption
+detection; it does not flush or commit STT turns when `stt` is selected. Soniox
+endpoint options configure the provider stream and remain on the deployment.
 
 ---
 

@@ -62,7 +62,7 @@ type SystemFormState = {
         activation_threshold: string;
       };
       stt_commit: {
-        strategy: "" | "local_vad" | "provider_vad";
+        strategy: "" | "local_vad" | "provider_vad" | "stt";
         provider_vad: {
           threshold: string;
           silence_threshold_seconds: string;
@@ -375,7 +375,7 @@ export function systemDesiredFromForm(
                   ),
                 },
               }
-            : { strategy: sttCommit.strategy as "local_vad" },
+            : { strategy: sttCommit.strategy as "local_vad" | "stt" },
         endpointing: {
           min_delay_seconds: numberValue(
             form.policies.cascade.endpointing.min_delay_seconds,
@@ -1134,10 +1134,10 @@ export function SystemConfigurationForm({
               />
             </FormGrid>
           </FormSection>
-          <FormSection title="STT commit" collapsible={false}>
+          <FormSection title="Turn completion" collapsible={false}>
             <Field
               error={errorAt(errors, "policies.cascade.stt_commit.strategy")}
-              label="Strategy"
+              label="Authority"
             >
               <select
                 required
@@ -1153,8 +1153,9 @@ export function SystemConfigurationForm({
                 }
               >
                 <option value="">Select a strategy</option>
-                <option value="local_vad">local_vad</option>
-                <option value="provider_vad">provider_vad</option>
+                <option value="local_vad">Local VAD</option>
+                <option value="provider_vad">Provider VAD</option>
+                <option value="stt">STT native endpoint</option>
               </select>
             </Field>
             {cascade.stt_commit.strategy === "provider_vad" && (
