@@ -30,17 +30,16 @@ def azure_endpoint(value: str) -> str:
 
 def llm_behavior_options(runtime: dict[str, Any]) -> dict[str, object]:
     llm = runtime["llm"]
+    reasoning_effort = llm.get("reasoning_effort")
+    if reasoning_effort is not None:
+        return {"reasoning_effort": reasoning_effort}
     model = str(
         llm["deployment_config"].get(
             "model", llm["deployment_config"].get("deployment_name", "")
         )
     )
     if model.rsplit("/", 1)[-1].lower().startswith(("gpt-5", "o1", "o3", "o4")):
-        return (
-            {"reasoning_effort": llm["reasoning_effort"]}
-            if llm.get("reasoning_effort") is not None
-            else {}
-        )
+        return {}
     return (
         {"temperature": llm["temperature"]}
         if llm.get("temperature") is not None

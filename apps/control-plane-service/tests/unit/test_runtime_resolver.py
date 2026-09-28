@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from contracts import VoiceExecutionContext
 from control_plane.application.execution_materialization import (
     ExecutionMaterializationService,
     RuntimeSecretSlot,
@@ -606,6 +607,63 @@ async def test_cascade_materializes_current_state_hints_voice_and_provenance() -
     assert selected.llm.component.revision_number is None
     assert selected.llm.component.component_kind == "LLMDefaults"
     assert result.architecture_policy.component_kind == "Architecture"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reasoning_effort", [None, "none"])
+async def test_reasoning_effort_survives_execution_snapshot_and_voice_context(
+    reasoning_effort: str | None,
+) -> None:
+    value = state(["cascade"])
+    live_components = dict(value.live_components)
+    address = ComponentAddress(ComponentKind("LLMDefaults"), SystemScope())
+    llm = live_components[address]
+    live_components[address] = replace(
+        llm,
+        value={**llm.value, "reasoning_effort": reasoning_effort},
+    )
+    selected = (
+        await resolver(replace(value, live_components=live_components)).resolve_runtime(
+            TENANT
+        )
+    ).selected
+    assert isinstance(selected, ResolvedCascadeRuntime)
+
+    runtime = ExecutionMaterializationService._voice_runtime(selected)
+    voice_context = VoiceExecutionContext.model_validate(
+        {
+            "execution_id": str(UUID(int=1)),
+            "agent": {
+                "display_name": "Amélia",
+                "role": "Concierge",
+                "greeting": "Hello",
+                "conversation_scope": "property_only",
+            },
+            "business": {
+                "name": "Hotel",
+                "type": "hotel",
+                "phones": [],
+                "emails": [],
+                "links": [],
+                "default_locale": "sk-SK",
+                "timezone": "Europe/Bratislava",
+            },
+            "architecture": "cascade",
+            "prompts": {
+                "system": "system",
+                "profile": "profile",
+                "interaction": "interaction",
+                "tenant": "tenant",
+                "knowledge": "knowledge",
+            },
+            "runtime": snapshot_payload(runtime),
+            "actions": [],
+            "handoff": [],
+        }
+    )
+
+    assert selected.llm.parameters.reasoning_effort == reasoning_effort
+    assert voice_context.runtime["llm"]["reasoning_effort"] == reasoning_effort  # type: ignore[index]
 
 
 @pytest.mark.asyncio

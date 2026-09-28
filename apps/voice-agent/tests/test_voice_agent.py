@@ -121,7 +121,7 @@ def target_runtime() -> dict[str, object]:
             "connection_config": {},
             "max_completion_tokens": 256,
             "temperature": 0,
-            "reasoning_effort": "none",
+            "reasoning_effort": None,
             **policy,
         },
         "stt": {
@@ -250,10 +250,76 @@ def test_llm_behavior_options_follow_runtime_model() -> None:
             "model": "gpt-4o-mini",
             "max_completion_tokens": 256,
             "temperature": 0,
-            "reasoning_effort": "none",
+            "reasoning_effort": None,
         }
     )
     assert llm_behavior_options(classic) == {"temperature": 0}
+
+
+@pytest.mark.parametrize("effort", ["none", "low", "medium", "high", "xhigh", "max"])
+def test_reasoning_effort_survives_azure_deployment_alias(effort: str) -> None:
+    runtime = runtime_settings(
+        llm={
+            "provider": "azure_openai",
+            "model": "hotel-fast-alias",
+            "temperature": None,
+            "reasoning_effort": effort,
+        }
+    )
+
+    assert llm_behavior_options(runtime) == {"reasoning_effort": effort}
+
+
+def test_provider_default_omits_reasoning_effort() -> None:
+    runtime = runtime_settings(
+        llm={
+            "provider": "azure_openai",
+            "model": "gpt-5.6-terra",
+            "reasoning_effort": None,
+        }
+    )
+
+    assert runtime["llm"]["reasoning_effort"] is None  # type: ignore[index]
+    assert llm_behavior_options(runtime) == {}
+
+
+@pytest.mark.asyncio
+async def test_provider_default_is_omitted_from_livekit_request_kwargs() -> None:
+    runtime = runtime_settings(
+        llm={
+            "provider": "azure_openai",
+            "model": "gpt-5.6-terra",
+            "reasoning_effort": None,
+        }
+    )
+    options = llm_behavior_options(runtime)
+    provider = openai.LLM(model="gpt-5.6-terra", api_key="unit-test", **options)
+    try:
+        stream = provider.chat(chat_ctx=agents.llm.ChatContext())
+
+        assert "reasoning_effort" not in stream._extra_kwargs
+    finally:
+        await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_explicit_none_reaches_livekit_openai_request_kwargs() -> None:
+    runtime = runtime_settings(
+        llm={
+            "provider": "azure_openai",
+            "model": "hotel-fast-alias",
+            "temperature": None,
+            "reasoning_effort": "none",
+        }
+    )
+    options = llm_behavior_options(runtime)
+    provider = openai.LLM(model="hotel-fast-alias", api_key="unit-test", **options)
+    try:
+        stream = provider.chat(chat_ctx=agents.llm.ChatContext())
+
+        assert stream._extra_kwargs["reasoning_effort"] == "none"
+    finally:
+        await provider.aclose()
 
 
 def test_elevenlabs_public_stt_api_exposes_realtime_keyterms() -> None:
