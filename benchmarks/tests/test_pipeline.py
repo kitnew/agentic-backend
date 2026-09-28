@@ -23,6 +23,21 @@ async def test_first_chunk_starts_tts_before_model_stream_finishes():
 
 
 @pytest.mark.asyncio
+async def test_half_cascade_uses_first_word_for_v3_default():
+    synthesized = []
+
+    async def synthesize(text):
+        synthesized.append(text)
+        return {"status": "ok"}
+
+    chunker = FirstChunkTTS(synthesize, min_sentence_chars=None)
+    chunker.push("Dobrý deň. ", 0)
+    await asyncio.sleep(0)
+    await chunker.finish()
+    assert synthesized == ["Dobrý"]
+
+
+@pytest.mark.asyncio
 async def test_realtime_text_mode_feeds_half_cascade_tts():
     import json
     import time

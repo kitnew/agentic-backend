@@ -19,23 +19,32 @@ from tts.run import measure as tts_measure
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", type=int, default=20)
+    parser.add_argument("--runs", type=int, default=30)
+    parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--audio", type=Path, required=True)
     parser.add_argument("--min-sentence-chars", type=int, default=20)
-    args = parser.parse_args()
-    config = load_env()
-    stt_key, stt_model, llm_endpoint, llm_key, llm_deployment, tts_model, voice = (
-        required(
-            config,
-            "ELEVENLABS_API_KEY",
-            "ELEVENLABS_STT_MODEL",
-            "AZURE_LLM_ENDPOINT",
-            "AZURE_LLM_API_KEY",
-            "AZURE_LLM_DEPLOYMENT",
-            "ELEVENLABS_TTS_MODEL",
-            "ELEVENLABS_VOICE_ID",
-        )
+    parser.add_argument("--max-output-tokens", type=int, default=512)
+    parser.add_argument("--llm-provider", choices=("azure", "openai"), default="azure")
+    parser.add_argument(
+        "--service-tier", choices=("default", "fast"), default="default"
     )
+    args = parser.parse_args()
+    if args.llm_provider == "azure" and args.service_tier == "fast":
+        parser.error("fast service tier requires --llm-provider openai")
+    config = load_env()
+    stt_key, stt_model, tts_model, voice = required(
+        config,
+        "ELEVENLABS_API_KEY",
+        "ELEVENLABS_STT_MODEL",
+        "ELEVENLABS_TTS_MODEL",
+        "ELEVENLABS_VOICE_ID",
+    )
+    if args.llm_provider == "openai":
+        llm_key, llm_deployment = required(config, "OPENAI_API_KEY", "OPENAI_LLM_MODEL")
+    else:
+        llm_endpoint, llm_key, llm_deployment = required(
+            config, "AZURE_LLM_ENDPOINT", "AZURE_LLM_API_KEY", "AZURE_LLM_DEPLOYMENT"
+        )
     if stt_model != "scribe_v2_realtime":
         parser.error("cascade STT requires scribe_v2_realtime")
     with wave.open(str(args.audio)) as wav:
@@ -50,19 +59,20 @@ async def main():
     import httpx
     from openai import AsyncAzureOpenAI, AsyncOpenAI
 
-    llm = (
-        AsyncOpenAI(
+    if args.llm_provider == "openai":
+        llm = AsyncOpenAI(api_key=llm_key, max_retries=0)
+    elif llm_endpoint.rstrip("/").endswith("/openai/v1"):
+        llm = AsyncOpenAI(
             base_url=llm_endpoint.rstrip("/") + "/", api_key=llm_key, max_retries=0
         )
-        if llm_endpoint.rstrip("/").endswith("/openai/v1")
-        else AsyncAzureOpenAI(
+    else:
+        llm = AsyncAzureOpenAI(
             azure_endpoint=llm_endpoint,
             api_key=llm_key,
             azure_deployment=llm_deployment,
             api_version=required(config, "AZURE_LLM_API_VERSION")[0],
             max_retries=0,
         )
-    )
     stt_uri = "wss://api.elevenlabs.io/v1/speech-to-text/realtime?" + urlencode(
         {
             "model_id": stt_model,
@@ -83,31 +93,38 @@ async def main():
         __file__,
         manifest(
             "pipeline_cascade",
-            "multiple",
-            config.get("AZURE_LLM_MODEL"),
+            f"elevenlabs+{'openai' if args.llm_provider == 'openai' else 'azure_openai'}",
             llm_deployment,
-            config.get("AGENT_REGION"),
+            llm_deployment,
+            config.get("AGENT_REGION")
+            if args.llm_provider == "azure"
+            else "provider_routed",
             args.runs,
-            0,
+            args.warmups,
             {
                 "audio_file": str(args.audio),
+                "audio_duration_seconds": len(pcm) / (rate * 2),
+                "input_mode": "real-time-paced 50 ms PCM16 chunks, manual STT commit",
                 "stt_model": stt_model,
                 "tts_model": tts_model,
+                "llm_provider": args.llm_provider,
                 "llm_to_tts": "LiveKit sentence tokenizer starts direct ElevenLabs TTS on first emitted chunk; model continues streaming",
                 "min_sentence_chars": args.min_sentence_chars,
+                "max_output_tokens": args.max_output_tokens,
+                "service_tier": args.service_tier,
             },
         ),
     )
     rows = []
     async with httpx.AsyncClient(timeout=60) as http:
-        for i in range(args.runs):
+        for i in range(args.runs + args.warmups):
             start = time.perf_counter_ns()
             stt_start = time.perf_counter_ns()
             stt = await stt_measure(stt_uri, stt_key, pcm, rate, 60)
             stt_done = time.perf_counter_ns()
             row = {
                 "run_index": i + 1,
-                "warmup": False,
+                "warmup": i < args.warmups,
                 "status": "ok",
                 "stt_latency_ms": stt.get("audio_end_to_final_ms"),
                 "stt_total_ms": stt["total_ms"],
@@ -131,9 +148,10 @@ async def main():
                     "cascade",
                     i + 1,
                     False,
-                    128,
+                    args.max_output_tokens,
                     None,
                     stt["transcript"],
+                    service_tier=args.service_tier,
                     on_text_delta=first_chunk.push,
                 )
                 tts = await first_chunk.finish()
@@ -145,6 +163,14 @@ async def main():
                         else None
                     ),
                     llm_total_ms=llm_row["total_ms"],
+                    llm_requested_service_tier=llm_row["requested_service_tier"],
+                    llm_response_service_tier=llm_row["response_service_tier"],
+                    first_speakable_to_tts_start_ms=(
+                        (first_chunk.tts_start_ns - first_chunk.first_speakable_ns)
+                        / 1e6
+                        if first_chunk.tts_start_ns and first_chunk.first_speakable_ns
+                        else None
+                    ),
                 )
                 if llm_row["status"] == "ok" and tts is not None:
                     tts_start = first_chunk.tts_start_ns
@@ -163,6 +189,9 @@ async def main():
                             - (stt_start - start) / 1e6
                             - stt["last_audio_sent_ms"]
                         )
+                        row["audio_end_to_first_tts_audio_ms"] = row[
+                            "synthetic_pipeline_latency_ms"
+                        ]
                     else:
                         row.update(status="error", error=tts.get("error"))
                 else:
@@ -181,7 +210,7 @@ async def main():
             if row["status"] == "error":
                 append(path, "errors.jsonl", row)
             print(
-                f"[{i + 1:02}/{args.runs:02}] cascade first_audio={row.get('synthetic_pipeline_latency_ms')}ms {row['status']}"
+                f"[{i + 1:02}/{args.runs + args.warmups:02}] cascade first_audio={row.get('synthetic_pipeline_latency_ms')}ms {row['status']}"
             )
     finish(path, rows)
     await llm.close()

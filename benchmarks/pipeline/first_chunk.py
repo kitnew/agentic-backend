@@ -7,10 +7,13 @@ from livekit.agents import tokenize
 
 
 class FirstChunkTTS:
-    def __init__(self, synthesize, *, min_sentence_chars: int = 20):
-        self.stream = tokenize.blingfire.SentenceTokenizer(
-            min_sentence_len=min_sentence_chars
-        ).stream()
+    def __init__(self, synthesize, *, min_sentence_chars: int | None = 20):
+        tokenizer = (
+            tokenize.blingfire.SentenceTokenizer(min_sentence_len=min_sentence_chars)
+            if min_sentence_chars is not None
+            else tokenize.basic.WordTokenizer(ignore_punctuation=False)
+        )
+        self.stream = tokenizer.stream()
         self.synthesize = synthesize
         self.first_speakable_ns = None
         self.tts_start_ns = None

@@ -12,9 +12,9 @@ from common.config import load_env, required
 from common.metadata import manifest
 
 TEXTS = {
-    "short": "Áno, samozrejme.",
-    "normal": "Dobrý deň. Rada vám pomôžem s rezerváciou izby. Na aký dátum ju potrebujete?",
-    "long": "Dobrý deň. Rada vám pomôžem s rezerváciou izby. Povedzte mi, prosím, dátum príchodu a odchodu, počet hostí a aký typ izby uprednostňujete. Potom spolu preveríme dostupnosť.",
+    "short": "Áno.",
+    "normal": "Samozrejme, pozriem sa na dostupnosť izby.",
+    "long": "Samozrejme, rád vám pomôžem s rezerváciou. Prosím, povedzte mi dátum príchodu a odchodu a počet hostí. Potom preverím dostupné izby.",
 }
 
 
@@ -97,8 +97,8 @@ async def measure(client, url, key, model, text, voice):
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", type=int, default=20)
-    parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument("--runs", type=int, default=30)
+    parser.add_argument("--warmups", type=int, default=2)
     args = parser.parse_args()
     config = load_env()
     key, model, voice = required(

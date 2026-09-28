@@ -127,7 +127,7 @@ async def http_reuse_measure(url: str) -> list[dict]:
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", type=int, default=20)
+    parser.add_argument("--runs", type=int, default=30)
     args = parser.parse_args()
     config = load_env()
     targets = {
@@ -195,6 +195,8 @@ async def main():
                     reuse_row.update(target=name, run_index=i + 1, warmup=False)
                     rows.append(reuse_row)
                     append(path, "raw.jsonl", reuse_row)
+                    if reuse_row["status"] == "error":
+                        append(path, "errors.jsonl", reuse_row)
             print(
                 f"[{i + 1:02}/{args.runs:02}] {name} total={row['total_ms']:.1f}ms {row['status']}"
             )
@@ -230,6 +232,8 @@ async def main():
             )
             rows.append(row)
             append(path, "raw.jsonl", row)
+            if row["status"] == "error":
+                append(path, "errors.jsonl", row)
     finish(path, rows)
 
 

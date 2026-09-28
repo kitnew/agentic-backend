@@ -50,6 +50,7 @@ def test_realtime_boundaries():
         ]
     )
     assert result["input_end_to_first_audio_ms"] == 40
+    assert result["input_end_to_response_created_ms"] == 20
     assert result["input_end_to_completion_ms"] == 80
     assert result["session_init_ms"] is None
 

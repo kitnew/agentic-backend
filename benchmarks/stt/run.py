@@ -41,9 +41,9 @@ async def measure(uri: str, key: str, pcm: bytes, rate: int, timeout: float) -> 
                     kind = message.get("message_type")
                     if kind == "partial_transcript" and message.get("text"):
                         row["first_partial_ms"] = row["first_partial_ms"] or elapsed
-                        if row.get("last_audio_sent_ms") is not None:
+                        if row.get("last_audio_sent_ms") is not None and row["first_partial_after_audio_end_ms"] is None:
                             row["first_partial_after_audio_end_ms"] = (
-                                row["first_partial_after_audio_end_ms"] or elapsed
+                                elapsed
                             )
                     if kind == "committed_transcript":
                         row["first_final_ms"] = row["first_final_ms"] or elapsed
@@ -81,6 +81,8 @@ async def measure(uri: str, key: str, pcm: bytes, rate: int, timeout: float) -> 
             )
             row["commit_sent_ms"] = (time.perf_counter_ns() - start) / 1e6
             await receiver
+            if not row["transcript"].strip():
+                raise RuntimeError("empty_transcript")
             row["completion_ms"] = (time.perf_counter_ns() - start) / 1e6
             row["audio_end_to_final_ms"] = (
                 row["first_final_ms"] - row["last_audio_sent_ms"]
@@ -102,8 +104,8 @@ async def measure(uri: str, key: str, pcm: bytes, rate: int, timeout: float) -> 
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", type=int, default=20)
-    parser.add_argument("--warmups", type=int, default=1)
+    parser.add_argument("--runs", type=int, default=30)
+    parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--audio", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=60)
     args = parser.parse_args()
@@ -143,6 +145,7 @@ async def main():
                 "audio_duration_seconds": duration,
                 "audio_sha256": hashlib.sha256(pcm).hexdigest(),
                 "sample_rate_hz": rate,
+                "channels": 1,
                 "encoding": "pcm16",
                 "mode": "realtime websocket, paced 50ms chunks",
             },

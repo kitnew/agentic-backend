@@ -13,7 +13,8 @@ from realtime.run import audio_bytes, derive, trial, ws_url
 
 async def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--runs", type=int, default=20)
+    parser.add_argument("--runs", type=int, default=30)
+    parser.add_argument("--warmups", type=int, default=2)
     parser.add_argument("--audio", type=Path, required=True)
     args = parser.parse_args()
     config = load_env()
@@ -39,16 +40,16 @@ async def main():
             deployment,
             config.get("AZURE_REALTIME_REGION"),
             args.runs,
-            0,
+            args.warmups,
             {
                 "audio_file": str(args.audio),
                 "audio_duration_seconds": duration,
-                "input_mode": "single append, manual commit",
+                "input_mode": "burst uploaded PCM16 24 kHz, single append, manual commit; independent session per run",
             },
         ),
     )
     rows = []
-    for i in range(args.runs):
+    for i in range(args.runs + args.warmups):
         origin = time.perf_counter_ns()
         events = [{"event": "connection_start", "elapsed_ms": 0.0}]
         try:
@@ -61,7 +62,7 @@ async def main():
                         "elapsed_ms": (time.perf_counter_ns() - origin) / 1e6,
                     }
                 )
-                row, stage_events = await trial(ws, pcm, prompt, origin, 60)
+                row, stage_events = await trial(ws, pcm, prompt, origin, 60, key=key)
                 events.extend(stage_events)
                 row.update(derive(events))
         except Exception as exc:  # noqa: BLE001 - record provider failure
@@ -70,7 +71,7 @@ async def main():
                 "error": {"type": type(exc).__name__},
                 "total_ms": (time.perf_counter_ns() - origin) / 1e6,
             }
-        row.update(run_index=i + 1, warmup=False)
+        row.update(run_index=i + 1, warmup=i < args.warmups)
         rows.append(row)
         append(path, "raw.jsonl", row)
         for event in events:
@@ -78,7 +79,7 @@ async def main():
         if row["status"] == "error":
             append(path, "errors.jsonl", row)
         print(
-            f"[{i + 1:02}/{args.runs:02}] realtime first_audio={row.get('input_end_to_first_audio_ms')}ms {row['status']}"
+            f"[{i + 1:02}/{args.runs + args.warmups:02}] realtime first_audio={row.get('input_end_to_first_audio_ms')}ms {row['status']}"
         )
     finish(path, rows)
 

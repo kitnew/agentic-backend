@@ -97,9 +97,13 @@ def derive(events: list[dict]) -> dict:
         "commit_to_response_created_ms": delta(
             "response.created", "input_audio_buffer.commit_sent"
         ),
+        "input_end_to_response_created_ms": delta(
+            "response.created", "last_input_audio_sent"
+        ),
         "input_end_to_first_text_ms": (
             delta("response.output_text.delta", "last_input_audio_sent")
-            or delta("response.output_audio_transcript.delta", "last_input_audio_sent")
+            if "response.output_text.delta" in times
+            else delta("response.output_audio_transcript.delta", "last_input_audio_sent")
         ),
         "input_end_to_completion_ms": delta("response.done", "last_input_audio_sent"),
     }
