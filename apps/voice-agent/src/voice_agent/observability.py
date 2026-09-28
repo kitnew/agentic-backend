@@ -36,6 +36,19 @@ from voice_agent.stt_role import StandaloneSTTRole
 
 _runtime: VoiceTelemetryRuntime | None = None
 _MAX_PIPELINE_TRACKERS = 128
+logger = logging.getLogger(__name__)
+
+
+def _log_stage_timing(
+    message: str,
+    speech_id: str | None,
+    started_at: float | None = None,
+    **fields: Any,
+) -> None:
+    extra = {"speech_id": speech_id, **fields}
+    if started_at is not None:
+        extra["elapsed_ms"] = round((time.perf_counter() - started_at) * 1000, 1)
+    logger.info(message, extra=extra)
 
 
 @dataclass(slots=True)
@@ -733,6 +746,13 @@ class LatencyInstrumentedAgent(agents.Agent):
     async def on_user_turn_completed(
         self, turn_ctx: llm.ChatContext, new_message: llm.ChatMessage
     ) -> None:
+        logger.info(
+            "Voice user turn completed",
+            extra={
+                "speech_id": _current_speech_id(),
+                "transcript_length": len(new_message.raw_text_content or ""),
+            },
+        )
         if self._voice_metrics is not None:
             self._voice_metrics.record_on_user_turn_completed_started(
                 time.perf_counter()
@@ -746,32 +766,68 @@ class LatencyInstrumentedAgent(agents.Agent):
         model_settings: ModelSettings,
     ) -> AsyncGenerator[llm.ChatChunk | str | FlushSentinel]:
         speech_id = _current_speech_id()
+        started_at = time.perf_counter()
+        _log_stage_timing("LLM generation started", speech_id)
         if self._voice_metrics is not None and speech_id is not None:
-            self._voice_metrics.record_llm_request_started(
-                speech_id, time.perf_counter()
-            )
-        raw_output = super().llm_node(chat_ctx, tools, model_settings)
-        if inspect.isawaitable(raw_output):
-            output = await raw_output
-        else:
-            output = raw_output
-        if not isinstance(output, AsyncIterable):
-            return
-        async for chunk in output:
-            delta = getattr(chunk, "delta", None)
-            content = (
-                chunk if isinstance(chunk, str) else getattr(delta, "content", None)
-            )
-            if (
-                self._voice_metrics is not None
-                and speech_id is not None
-                and isinstance(content, str)
-                and content.strip()
-            ):
-                self._voice_metrics.record_llm_first_nonempty_text(
-                    speech_id, time.perf_counter()
+            self._voice_metrics.record_llm_request_started(speech_id, started_at)
+        first_text = True
+        try:
+            raw_output = super().llm_node(chat_ctx, tools, model_settings)
+            if inspect.isawaitable(raw_output):
+                output = await raw_output
+            else:
+                output = raw_output
+            if not isinstance(output, AsyncIterable):
+                _log_stage_timing(
+                    "LLM generation completed",
+                    speech_id,
+                    started_at,
+                    first_text_received=False,
                 )
-            yield chunk
+                return
+            async for chunk in output:
+                delta = getattr(chunk, "delta", None)
+                content = (
+                    chunk if isinstance(chunk, str) else getattr(delta, "content", None)
+                )
+                if isinstance(content, str) and content.strip() and first_text:
+                    first_text = False
+                    first_text_at = time.perf_counter()
+                    _log_stage_timing(
+                        "LLM first text received",
+                        speech_id,
+                        started_at,
+                    )
+                    if self._voice_metrics is not None and speech_id is not None:
+                        self._voice_metrics.record_llm_first_nonempty_text(
+                            speech_id, first_text_at
+                        )
+                yield chunk
+        except asyncio.CancelledError:
+            _log_stage_timing(
+                "LLM generation cancelled",
+                speech_id,
+                started_at,
+                first_text_received=not first_text,
+            )
+            raise
+        except Exception as error:
+            logger.exception(
+                "LLM generation failed",
+                extra={
+                    "speech_id": speech_id,
+                    "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                    "first_text_received": not first_text,
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+        _log_stage_timing(
+            "LLM generation completed",
+            speech_id,
+            started_at,
+            first_text_received=not first_text,
+        )
 
     async def tts_node(
         self,
@@ -779,29 +835,76 @@ class LatencyInstrumentedAgent(agents.Agent):
         model_settings: ModelSettings,
     ) -> AsyncGenerator[rtc.AudioFrame]:
         speech_id = _current_speech_id()
+        started_at = time.perf_counter()
+        _log_stage_timing("TTS synthesis started", speech_id)
         first_audio = True
-        raw_output = super().tts_node(text, model_settings)
-        if inspect.isawaitable(raw_output):
-            output = await raw_output
-        else:
-            output = raw_output
-        if not isinstance(output, AsyncIterable):
-            return
-        async for frame in output:
-            if (
-                self._voice_metrics is not None
-                and speech_id is not None
-                and first_audio
-            ):
-                first_audio = False
-                tts_first_text_sent = frame.userdata.get(USERDATA_TTS_STARTED_TIME)
-                if isinstance(tts_first_text_sent, int | float):
-                    self._voice_metrics.record_tts_first_audio(
+        try:
+            raw_output = super().tts_node(text, model_settings)
+            if inspect.isawaitable(raw_output):
+                output = await raw_output
+            else:
+                output = raw_output
+            if not isinstance(output, AsyncIterable):
+                _log_stage_timing(
+                    "TTS synthesis completed",
+                    speech_id,
+                    started_at,
+                    first_audio_received=False,
+                )
+                return
+            async for frame in output:
+                if first_audio:
+                    first_audio = False
+                    first_audio_at = time.perf_counter()
+                    tts_first_text_sent = frame.userdata.get(USERDATA_TTS_STARTED_TIME)
+                    _log_stage_timing(
+                        "TTS first audio ready",
                         speech_id,
-                        tts_first_text_sent=float(tts_first_text_sent),
-                        tts_first_audio=time.perf_counter(),
+                        started_at,
+                        text_to_audio_ms=(
+                            round(
+                                (first_audio_at - float(tts_first_text_sent)) * 1000, 1
+                            )
+                            if isinstance(tts_first_text_sent, int | float)
+                            else None
+                        ),
                     )
-            yield frame
+                    if (
+                        self._voice_metrics is not None
+                        and speech_id is not None
+                        and isinstance(tts_first_text_sent, int | float)
+                    ):
+                        self._voice_metrics.record_tts_first_audio(
+                            speech_id,
+                            tts_first_text_sent=float(tts_first_text_sent),
+                            tts_first_audio=first_audio_at,
+                        )
+                yield frame
+        except asyncio.CancelledError:
+            _log_stage_timing(
+                "TTS synthesis cancelled",
+                speech_id,
+                started_at,
+                first_audio_received=not first_audio,
+            )
+            raise
+        except Exception as error:
+            logger.exception(
+                "TTS synthesis failed",
+                extra={
+                    "speech_id": speech_id,
+                    "elapsed_ms": round((time.perf_counter() - started_at) * 1000, 1),
+                    "first_audio_received": not first_audio,
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+        _log_stage_timing(
+            "TTS synthesis completed",
+            speech_id,
+            started_at,
+            first_audio_received=not first_audio,
+        )
 
 
 def _current_speech_id() -> str | None:
