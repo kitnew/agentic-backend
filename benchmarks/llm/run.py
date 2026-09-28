@@ -48,6 +48,7 @@ async def request(
     user_text: str = USER_TEXT,
     service_tier: str = "default",
     on_text_delta: Callable[[str, int], None] | None = None,
+    reasoning_effort: str | None = None,
 ) -> tuple[dict, list[dict]]:
     marker = f"[cache namespace {namespace}]\n"
     started = time.perf_counter_ns()
@@ -83,6 +84,11 @@ async def request(
             prompt_cache_key="benchmark:" + namespace,
             service_tier=service_tier,
             **({"temperature": temperature} if temperature is not None else {}),
+            **(
+                {"reasoning_effort": reasoning_effort}
+                if reasoning_effort is not None
+                else {}
+            ),
         )
         response = getattr(stream, "response", None)
         headers = getattr(response, "headers", {})
