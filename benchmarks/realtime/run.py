@@ -103,7 +103,9 @@ def derive(events: list[dict]) -> dict:
         "input_end_to_first_text_ms": (
             delta("response.output_text.delta", "last_input_audio_sent")
             if "response.output_text.delta" in times
-            else delta("response.output_audio_transcript.delta", "last_input_audio_sent")
+            else delta(
+                "response.output_audio_transcript.delta", "last_input_audio_sent"
+            )
         ),
         "input_end_to_completion_ms": delta("response.done", "last_input_audio_sent"),
     }
