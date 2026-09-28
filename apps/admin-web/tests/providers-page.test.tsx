@@ -317,6 +317,225 @@ describe("Admin Web Slice B provider provisioning", () => {
     );
   });
 
+  it("creates a Soniox cascade STT deployment from its focused form", async () => {
+    const user = userEvent.setup();
+    let deploymentRequest: Request | undefined;
+    const sonioxConnection = { ...openaiConnection, provider_kind: "soniox" };
+    server.use(
+      http.get("/management/v1/credentials", () =>
+        HttpResponse.json([credential]),
+      ),
+      http.get("/management/v1/providers/connections", () =>
+        HttpResponse.json([sonioxConnection]),
+      ),
+      http.get("/management/v1/providers/deployments", () =>
+        HttpResponse.json([]),
+      ),
+      http.get("/management/v1/registries/provider-kinds", () =>
+        HttpResponse.json([
+          {
+            key: "soniox",
+            name: "Soniox",
+            description: "Soniox STT",
+            metadata: { deployment_kinds: ["stt"] },
+          },
+        ]),
+      ),
+      http.get("/management/v1/registries/deployment-kinds", () =>
+        HttpResponse.json([
+          {
+            key: "stt",
+            name: "STT",
+            description: "STT deployment",
+            metadata: {},
+          },
+        ]),
+      ),
+      http.post("/management/v1/providers/deployments", async ({ request }) => {
+        deploymentRequest = request;
+        return HttpResponse.json(deployment, { status: 201 });
+      }),
+    );
+    window.history.pushState({}, "", "/platform/providers");
+    renderProviders();
+
+    expect(
+      await screen.findByRole("option", { name: "Soniox (soniox)" }),
+    ).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Deployment key"), "soniox-sk");
+    await user.selectOptions(screen.getByLabelText("Connection"), connectionId);
+    await user.selectOptions(screen.getByLabelText("Deployment kind"), "stt");
+    expect(screen.getByLabelText("Soniox model")).toHaveValue("stt-rt-v5");
+    expect(
+      screen.queryByLabelText("Deployment config"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Capabilities")).not.toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Soniox maximum endpoint delay"));
+    await user.type(
+      screen.getByLabelText("Soniox maximum endpoint delay"),
+      "700",
+    );
+    await user.click(screen.getByRole("button", { name: "Create deployment" }));
+
+    await waitFor(() => expect(deploymentRequest).toBeDefined());
+    expect(
+      await requiredRequest(deploymentRequest).clone().json(),
+    ).toMatchObject({
+      key: "soniox-sk",
+      connection_ref: connectionId,
+      deployment_kind: "stt",
+      deployment_config: {
+        model: "stt-rt-v5",
+        max_endpoint_delay_ms: 700,
+        endpoint_sensitivity: null,
+        endpoint_latency_adjustment_level: null,
+      },
+      capabilities: {
+        kind: "stt",
+        supports_cascade: true,
+        supports_realtime_input_transcription: false,
+      },
+    });
+  });
+
+  it("creates a Soniox EU connection with its credential", async () => {
+    const user = userEvent.setup();
+    let connectionRequest: Request | undefined;
+    server.use(
+      http.get("/management/v1/credentials", () =>
+        HttpResponse.json([credential]),
+      ),
+      http.get("/management/v1/providers/connections", () =>
+        HttpResponse.json([]),
+      ),
+      http.get("/management/v1/providers/deployments", () =>
+        HttpResponse.json([]),
+      ),
+      http.get("/management/v1/registries/provider-kinds", () =>
+        HttpResponse.json([
+          {
+            key: "soniox",
+            name: "Soniox",
+            description: "Soniox STT",
+            metadata: {},
+          },
+        ]),
+      ),
+      http.get("/management/v1/registries/deployment-kinds", () =>
+        HttpResponse.json([]),
+      ),
+      http.post("/management/v1/providers/connections", async ({ request }) => {
+        connectionRequest = request;
+        return HttpResponse.json(connection, { status: 201 });
+      }),
+    );
+    window.history.pushState({}, "", "/platform/providers");
+    renderProviders();
+
+    await user.type(
+      await screen.findByLabelText("Connection key"),
+      "soniox-main",
+    );
+    await user.selectOptions(screen.getByLabelText("Provider kind"), "soniox");
+    await user.selectOptions(screen.getByLabelText("Credential"), credentialId);
+    expect(
+      screen.queryByLabelText("Connection config"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Soniox processing region")).toHaveValue("eu");
+    await user.click(screen.getByRole("button", { name: "Create connection" }));
+
+    await waitFor(() => expect(connectionRequest).toBeDefined());
+    expect(await requiredRequest(connectionRequest).clone().json()).toEqual({
+      key: "soniox-main",
+      provider_kind: "soniox",
+      credential_ref: credentialId,
+      connection_config: { region: "eu" },
+    });
+  });
+
+  it("edits an existing Soniox deployment with its current ETag", async () => {
+    const user = userEvent.setup();
+    let updateRequest: Request | undefined;
+    const sonioxConnection = { ...openaiConnection, provider_kind: "soniox" };
+    const sonioxDeployment = {
+      ...deployment,
+      key: "soniox-sk",
+      connection_ref: connectionId,
+      deployment_kind: "stt",
+      deployment_config: { model: "stt-rt-v5", max_endpoint_delay_ms: 2000 },
+      capabilities: {
+        kind: "stt",
+        supports_cascade: true,
+        supports_realtime_input_transcription: false,
+      },
+    };
+    server.use(
+      http.get("/management/v1/credentials", () =>
+        HttpResponse.json([credential]),
+      ),
+      http.get("/management/v1/providers/connections", () =>
+        HttpResponse.json([sonioxConnection]),
+      ),
+      http.get("/management/v1/providers/deployments", () =>
+        HttpResponse.json([sonioxDeployment]),
+      ),
+      http.get("/management/v1/providers/deployments/:id", () =>
+        HttpResponse.json(sonioxDeployment, {
+          headers: { ETag: '"soniox-v1"' },
+        }),
+      ),
+      http.get("/management/v1/registries/provider-kinds", () =>
+        HttpResponse.json([
+          {
+            key: "soniox",
+            name: "Soniox",
+            description: "Soniox STT",
+            metadata: {},
+          },
+        ]),
+      ),
+      http.get("/management/v1/registries/deployment-kinds", () =>
+        HttpResponse.json([
+          {
+            key: "stt",
+            name: "STT",
+            description: "STT deployment",
+            metadata: {},
+          },
+        ]),
+      ),
+      http.put(
+        "/management/v1/providers/deployments/:id",
+        async ({ request }) => {
+          updateRequest = request;
+          return HttpResponse.json(sonioxDeployment);
+        },
+      ),
+    );
+    window.history.pushState({}, "", "/platform/providers");
+    renderProviders();
+
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    expect(screen.getByLabelText("Soniox maximum endpoint delay")).toHaveValue(
+      2000,
+    );
+    await user.clear(screen.getByLabelText("Soniox maximum endpoint delay"));
+    await user.type(
+      screen.getByLabelText("Soniox maximum endpoint delay"),
+      "700",
+    );
+    await user.click(screen.getByRole("button", { name: "Save deployment" }));
+
+    await waitFor(() => expect(updateRequest).toBeDefined());
+    const request = requiredRequest(updateRequest);
+    expect(request.headers.get("If-Match")).toBe('"soniox-v1"');
+    expect(await request.clone().json()).toMatchObject({
+      connection_ref: connectionId,
+      deployment_config: { model: "stt-rt-v5", max_endpoint_delay_ms: 700 },
+      capabilities: sonioxDeployment.capabilities,
+    });
+  });
+
   it("updates the service tier of an existing deployment from the list", async () => {
     const user = userEvent.setup();
     let updateRequest: Request | undefined;

@@ -1842,6 +1842,49 @@ Provider-specific model/deployment identity belongs to `deployment_config`.
 Azure OpenAI and OpenAI LLM deployments may set `service_tier`; its allowed
 values are provider-specific and are published by `ProviderKindRegistry`.
 
+#### Soniox STT
+
+Soniox connections accept `region: global | eu` (default `global`); the region
+selects a fixed provider endpoint and does not accept arbitrary URLs. The
+Soniox API key is held by the referenced platform `Credential` and is
+late-bound for Voice Agent use. Admin Web defaults new Soniox connections to
+the EU endpoint.
+
+```yaml
+region:
+  enum: [global, eu]
+  default: global
+```
+
+`global` uses `wss://stt-rt.soniox.com/transcribe-websocket`; `eu` uses
+`wss://stt-rt.eu.soniox.com/transcribe-websocket`.
+Soniox STT `deployment_config` accepts:
+
+```yaml
+model:
+  const: stt-rt-v5
+  default: stt-rt-v5
+max_endpoint_delay_ms:
+  type: integer
+  minimum: 500
+  maximum: 3000
+  default: 2000
+endpoint_sensitivity:
+  type: [number, 'null']
+  minimum: -1
+  maximum: 1
+endpoint_latency_adjustment_level:
+  type: [integer, 'null']
+  minimum: 0
+  maximum: 3
+```
+
+Voice Agent maps the effective runtime locale's language subtag to Soniox's
+`language_hints` (for example, `sk-SK` becomes `sk`). Existing cascade
+`stt_commit` and `endpointing` policies retain their current ownership; the
+Soniox endpoint options configure the provider stream and do not replace those
+policies.
+
 ---
 
 ## PhoneNumberAssignment

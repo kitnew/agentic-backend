@@ -69,6 +69,13 @@ export function PlatformProvidersPage() {
   const [serviceTier, setServiceTier] = useState("default");
   const [deploymentJson, setDeploymentJson] = useState("{}");
   const [capabilitiesJson, setCapabilitiesJson] = useState("{}");
+  const [editingDeploymentId, setEditingDeploymentId] = useState<string>();
+  const [sonioxMaxEndpointDelay, setSonioxMaxEndpointDelay] = useState("2000");
+  const [sonioxEndpointSensitivity, setSonioxEndpointSensitivity] =
+    useState("");
+  const [sonioxEndpointLatencyAdjustment, setSonioxEndpointLatencyAdjustment] =
+    useState("");
+  const [sonioxRegion, setSonioxRegion] = useState("eu");
 
   const query = useQuery({
     queryKey: ["control-plane", "providers"],
@@ -121,6 +128,9 @@ export function PlatformProvidersPage() {
           (entry): entry is [string, string] => typeof entry[1] === "string",
         )
       : [];
+  const sonioxStt =
+    selectedConnection?.provider_kind === "soniox" && deploymentKind === "stt";
+  const sonioxConnection = providerKind === "soniox";
 
   const createCredential = useMutation({
     mutationFn: async () =>
@@ -146,10 +156,12 @@ export function PlatformProvidersPage() {
             key: connectionKey,
             provider_kind: providerKind,
             credential_ref: credentialRef,
-            connection_config: parseJson(
-              connectionJson,
-              "Connection config",
-            ) as ProviderConnectionCreateConnectionConfig,
+            connection_config: sonioxConnection
+              ? { region: sonioxRegion }
+              : (parseJson(
+                  connectionJson,
+                  "Connection config",
+                ) as ProviderConnectionCreateConnectionConfig),
           },
           managementMutationOptions(),
         ),
@@ -162,30 +174,68 @@ export function PlatformProvidersPage() {
   });
 
   const createDeployment = useMutation({
-    mutationFn: async () =>
-      responseData(
+    mutationFn: async () => {
+      const deploymentConfig = sonioxStt
+        ? {
+            model: "stt-rt-v5",
+            max_endpoint_delay_ms: Number(sonioxMaxEndpointDelay),
+            endpoint_sensitivity: sonioxEndpointSensitivity
+              ? Number(sonioxEndpointSensitivity)
+              : null,
+            endpoint_latency_adjustment_level: sonioxEndpointLatencyAdjustment
+              ? Number(sonioxEndpointLatencyAdjustment)
+              : null,
+          }
+        : {
+            ...(parseJson(
+              deploymentJson,
+              "Deployment config",
+            ) as ModelDeploymentCreate["deployment_config"]),
+            ...(serviceTiers.length ? { service_tier: serviceTier } : {}),
+          };
+      const capabilities = sonioxStt
+        ? {
+            kind: "stt" as const,
+            supports_cascade: true,
+            supports_realtime_input_transcription: false,
+          }
+        : (parseJson(
+            capabilitiesJson,
+            "Capabilities",
+          ) as ModelDeploymentCreate["capabilities"]);
+      if (editingDeploymentId) {
+        const current =
+          await getDeploymentManagementV1ProvidersDeploymentsIdGet(
+            editingDeploymentId,
+          );
+        return responseData(
+          await updateDeploymentManagementV1ProvidersDeploymentsIdPut(
+            editingDeploymentId,
+            {
+              connection_ref: connectionRef,
+              deployment_config: deploymentConfig,
+              capabilities,
+            },
+            managementMutationOptions(current.headers.get("etag")),
+          ),
+        );
+      }
+      return responseData(
         await createDeploymentManagementV1ProvidersDeploymentsPost(
           {
             key: deploymentKey,
             connection_ref: connectionRef,
             deployment_kind:
               deploymentKind as ModelDeploymentCreate["deployment_kind"],
-            deployment_config: {
-              ...(parseJson(
-                deploymentJson,
-                "Deployment config",
-              ) as ModelDeploymentCreate["deployment_config"]),
-              ...(serviceTiers.length ? { service_tier: serviceTier } : {}),
-            },
-            capabilities: parseJson(
-              capabilitiesJson,
-              "Capabilities",
-            ) as ModelDeploymentCreate["capabilities"],
+            deployment_config: deploymentConfig,
+            capabilities,
           },
           managementMutationOptions(),
         ),
-      ),
+      );
+    },
     onSuccess: async () => {
+      setEditingDeploymentId(undefined);
       await queryClient.invalidateQueries({
         queryKey: ["control-plane", "providers"],
       });
@@ -372,12 +422,28 @@ export function PlatformProvidersPage() {
             </option>
           ))}
         </select>
-        <textarea
-          aria-label="Connection config"
-          className="min-h-20 rounded border p-2 font-mono md:col-span-2"
-          value={connectionJson}
-          onChange={(event) => setConnectionJson(event.target.value)}
-        />
+        {!sonioxConnection && (
+          <textarea
+            aria-label="Connection config"
+            className="min-h-20 rounded border p-2 font-mono md:col-span-2"
+            value={connectionJson}
+            onChange={(event) => setConnectionJson(event.target.value)}
+          />
+        )}
+        {sonioxConnection && (
+          <label className="block text-sm md:col-span-2">
+            Soniox processing region
+            <select
+              aria-label="Soniox processing region"
+              className="mt-1 block w-full rounded border p-2"
+              value={sonioxRegion}
+              onChange={(event) => setSonioxRegion(event.target.value)}
+            >
+              <option value="eu">EU</option>
+              <option value="global">Global</option>
+            </select>
+          </label>
+        )}
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
@@ -407,18 +473,20 @@ export function PlatformProvidersPage() {
         }}
       >
         <h2 className="md:col-span-2 text-lg font-semibold">
-          Model Deployments
+          {editingDeploymentId ? "Edit model deployment" : "Model Deployments"}
         </h2>
         <input
           aria-label="Deployment key"
           className="rounded border p-2"
           placeholder="Key"
           value={deploymentKey}
+          readOnly={Boolean(editingDeploymentId)}
           onChange={(event) => setDeploymentKey(event.target.value)}
         />
         <select
           aria-label="Connection"
           className="rounded border p-2"
+          disabled={Boolean(editingDeploymentId)}
           value={connectionRef}
           onChange={(event) => {
             setConnectionRef(event.target.value);
@@ -435,6 +503,7 @@ export function PlatformProvidersPage() {
         <select
           aria-label="Deployment kind"
           className="rounded border p-2"
+          disabled={Boolean(editingDeploymentId)}
           value={deploymentKind}
           onChange={(event) => setDeploymentKind(event.target.value)}
         >
@@ -462,18 +531,77 @@ export function PlatformProvidersPage() {
             </select>
           </label>
         )}
-        <textarea
-          aria-label="Deployment config"
-          className="min-h-20 rounded border p-2 font-mono md:col-span-2"
-          value={deploymentJson}
-          onChange={(event) => setDeploymentJson(event.target.value)}
-        />
-        <textarea
-          aria-label="Capabilities"
-          className="min-h-20 rounded border p-2 font-mono md:col-span-2"
-          value={capabilitiesJson}
-          onChange={(event) => setCapabilitiesJson(event.target.value)}
-        />
+        {sonioxStt ? (
+          <div className="grid gap-3 md:col-span-2 md:grid-cols-3">
+            <label className="block text-sm">
+              Model
+              <input
+                aria-label="Soniox model"
+                className="mt-1 block w-full rounded border p-2"
+                value="stt-rt-v5"
+                readOnly
+              />
+            </label>
+            <label className="block text-sm">
+              Maximum endpoint delay (ms)
+              <input
+                aria-label="Soniox maximum endpoint delay"
+                className="mt-1 block w-full rounded border p-2"
+                type="number"
+                min={500}
+                max={3000}
+                value={sonioxMaxEndpointDelay}
+                onChange={(event) =>
+                  setSonioxMaxEndpointDelay(event.target.value)
+                }
+              />
+            </label>
+            <label className="block text-sm">
+              Endpoint sensitivity (−1 to 1)
+              <input
+                aria-label="Soniox endpoint sensitivity"
+                className="mt-1 block w-full rounded border p-2"
+                type="number"
+                min={-1}
+                max={1}
+                step="any"
+                value={sonioxEndpointSensitivity}
+                onChange={(event) =>
+                  setSonioxEndpointSensitivity(event.target.value)
+                }
+              />
+            </label>
+            <label className="block text-sm">
+              Endpoint latency adjustment (0 to 3)
+              <input
+                aria-label="Soniox endpoint latency adjustment"
+                className="mt-1 block w-full rounded border p-2"
+                type="number"
+                min={0}
+                max={3}
+                value={sonioxEndpointLatencyAdjustment}
+                onChange={(event) =>
+                  setSonioxEndpointLatencyAdjustment(event.target.value)
+                }
+              />
+            </label>
+          </div>
+        ) : (
+          <>
+            <textarea
+              aria-label="Deployment config"
+              className="min-h-20 rounded border p-2 font-mono md:col-span-2"
+              value={deploymentJson}
+              onChange={(event) => setDeploymentJson(event.target.value)}
+            />
+            <textarea
+              aria-label="Capabilities"
+              className="min-h-20 rounded border p-2 font-mono md:col-span-2"
+              value={capabilitiesJson}
+              onChange={(event) => setCapabilitiesJson(event.target.value)}
+            />
+          </>
+        )}
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
@@ -484,8 +612,17 @@ export function PlatformProvidersPage() {
           }
           type="submit"
         >
-          Create deployment
+          {editingDeploymentId ? "Save deployment" : "Create deployment"}
         </button>
+        {editingDeploymentId && (
+          <button
+            className="rounded border px-3 py-2 text-sm md:col-span-2"
+            onClick={() => setEditingDeploymentId(undefined)}
+            type="button"
+          >
+            Cancel edit
+          </button>
+        )}
         {createDeployment.isError && (
           <PageError
             compact
@@ -558,6 +695,44 @@ export function PlatformProvidersPage() {
                       ))}
                     </select>
                   </label>
+                )}
+                {providerKind === "soniox" && (
+                  <button
+                    className="rounded border px-2 py-1 text-sm"
+                    onClick={() => {
+                      setEditingDeploymentId(deployment.id);
+                      setDeploymentKey(deployment.key);
+                      setConnectionRef(deployment.connection_ref);
+                      setDeploymentKind(deployment.deployment_kind);
+                      setDeploymentJson(
+                        JSON.stringify(deployment.deployment_config, null, 2),
+                      );
+                      setCapabilitiesJson(
+                        JSON.stringify(deployment.capabilities, null, 2),
+                      );
+                      setSonioxMaxEndpointDelay(
+                        String(
+                          deployment.deployment_config.max_endpoint_delay_ms ??
+                            2000,
+                        ),
+                      );
+                      setSonioxEndpointSensitivity(
+                        String(
+                          deployment.deployment_config.endpoint_sensitivity ??
+                            "",
+                        ),
+                      );
+                      setSonioxEndpointLatencyAdjustment(
+                        String(
+                          deployment.deployment_config
+                            .endpoint_latency_adjustment_level ?? "",
+                        ),
+                      );
+                    }}
+                    type="button"
+                  >
+                    Edit
+                  </button>
                 )}
                 <button
                   className="rounded border px-2 py-1 text-sm"

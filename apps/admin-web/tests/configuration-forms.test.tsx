@@ -133,6 +133,17 @@ describe("configuration form mappings", () => {
             },
           },
           {
+            id: "soniox-id",
+            key: "soniox-stt-rt-v5",
+            deployment_kind: "stt",
+            enabled: true,
+            capabilities: {
+              kind: "stt",
+              supports_cascade: true,
+              supports_realtime_input_transcription: false,
+            },
+          },
+          {
             id: "input-id",
             key: "gpt-live-transcribe",
             deployment_kind: "stt",
@@ -160,6 +171,9 @@ describe("configuration form mappings", () => {
       }),
     ).toBeVisible();
     expect(
+      within(precision).getByRole("option", { name: /soniox-stt-rt-v5/ }),
+    ).toBeVisible();
+    expect(
       within(precision).queryByRole("option", { name: /gpt-live-transcribe/ }),
     ).not.toBeInTheDocument();
     expect(
@@ -169,9 +183,9 @@ describe("configuration form mappings", () => {
       within(input).queryByRole("option", { name: /elevenlabs-precision/ }),
     ).not.toBeInTheDocument();
 
-    await user.selectOptions(precision, "precision-id");
+    await user.selectOptions(precision, "soniox-id");
     await user.selectOptions(input, "input-id");
-    expect(precision).toHaveValue("precision-id");
+    expect(precision).toHaveValue("soniox-id");
     expect(input).toHaveValue("input-id");
   });
 

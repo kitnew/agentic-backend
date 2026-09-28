@@ -707,6 +707,7 @@ flowchart LR
     PKR --> PK2[openai]
     PKR --> PK3[elevenlabs]
     PKR --> PK4[deepgram]
+    PKR --> PK5[soniox]
 
     DKR[DeploymentKindRegistry]
     DKR --> DK1[llm]
@@ -760,6 +761,7 @@ Supported provider families, e.g.:
 * `openai`
 * `elevenlabs`
 * `deepgram`
+* `soniox`
 
 LLM provider entries expose supported `service_tiers` in registry metadata for
 authoring clients. Azure OpenAI maps Standard/Fast to `default`/`priority`;

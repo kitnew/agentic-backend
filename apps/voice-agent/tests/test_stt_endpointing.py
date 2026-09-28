@@ -44,9 +44,11 @@ class FakeProviderStream(stt.RecognizeStream):
         transcripts: list[str],
         *,
         fail: bool,
+        preflight_on_audio: bool = False,
     ) -> None:
         self.transcripts = transcripts
         self.fail = fail
+        self.preflight_on_audio = preflight_on_audio
         self.flushes = 0
         self.audio_duration = 0.0
         super().__init__(stt=owner, conn_options=DEFAULT_API_CONNECT_OPTIONS)
@@ -55,6 +57,14 @@ class FakeProviderStream(stt.RecognizeStream):
         async for item in self._input_ch:
             if isinstance(item, rtc.AudioFrame):
                 self.audio_duration += item.duration
+                if self.preflight_on_audio:
+                    self._event_ch.send_nowait(
+                        stt.SpeechEvent(
+                            type=stt.SpeechEventType.PREFLIGHT_TRANSCRIPT,
+                            alternatives=[stt.SpeechData(language="sk", text="early")],
+                        )
+                    )
+                    self.preflight_on_audio = False
                 continue
             if isinstance(item, self._FlushSentinel):
                 self.flushes += 1
@@ -70,12 +80,19 @@ class FakeProviderStream(stt.RecognizeStream):
 
 
 class FakeProvider(stt.STT):
-    def __init__(self, transcripts: list[str], *, fail_first: bool = False) -> None:
+    def __init__(
+        self,
+        transcripts: list[str],
+        *,
+        fail_first: bool = False,
+        preflight_on_audio: bool = False,
+    ) -> None:
         super().__init__(
             capabilities=stt.STTCapabilities(streaming=True, interim_results=True)
         )
         self.transcripts = transcripts
         self.fail_first = fail_first
+        self.preflight_on_audio = preflight_on_audio
         self.streams: list[FakeProviderStream] = []
 
     async def _recognize_impl(
@@ -97,13 +114,17 @@ class FakeProvider(stt.STT):
             self,
             self.transcripts,
             fail=self.fail_first and not self.streams,
+            preflight_on_audio=self.preflight_on_audio,
         )
         self.streams.append(stream)
         return stream
 
 
 async def open_stream(
-    transcripts: list[str], *, fail_first: bool = False
+    transcripts: list[str],
+    *,
+    fail_first: bool = False,
+    preflight_on_audio: bool = False,
 ) -> tuple[
     LocalVadCommitSTT,
     LocalVadCommitController,
@@ -113,7 +134,11 @@ async def open_stream(
 ]:
     metrics = Metrics()
     controller = LocalVadCommitController(metrics)  # type: ignore[arg-type]
-    provider = FakeProvider(transcripts, fail_first=fail_first)
+    provider = FakeProvider(
+        transcripts,
+        fail_first=fail_first,
+        preflight_on_audio=preflight_on_audio,
+    )
     adapter = LocalVadCommitSTT(provider, controller)
     stream = adapter.stream(conn_options=APIConnectOptions(max_retry=0))
     await asyncio.sleep(0)
@@ -173,6 +198,25 @@ async def test_one_vad_end_commits_once_and_emits_final_then_eos() -> None:
         assert provider.streams[0].flushes == 1
         assert provider.streams[0].audio_duration >= 0.3
         assert metrics.requests == 1
+    finally:
+        await stream.aclose()
+        await adapter.aclose()
+
+
+@pytest.mark.asyncio
+async def test_local_vad_wrapper_forwards_preflight_before_local_commit() -> None:
+    adapter, controller, provider, stream, _ = await open_stream(
+        ["final"], preflight_on_audio=True
+    )
+    try:
+        stream.push_frame(utils.audio.silence_frame(0.1, 48000))
+
+        event = await anext(stream)
+
+        assert event.type is stt.SpeechEventType.PREFLIGHT_TRANSCRIPT
+        assert event.alternatives[0].text == "early"
+        assert provider.streams[0].flushes == 0
+        assert controller._pending_commits == 0
     finally:
         await stream.aclose()
         await adapter.aclose()

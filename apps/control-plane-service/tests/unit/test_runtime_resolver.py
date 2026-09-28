@@ -660,7 +660,10 @@ async def test_half_cascade_resolves_stt_independently_from_realtime_model() -> 
 
     runtime = ExecutionMaterializationService._voice_runtime(selected)
     assert runtime["half_cascade"]["stt"]["provider_kind"] == "elevenlabs"  # type: ignore[index]
-    assert runtime["half_cascade"]["input_transcription"]["provider_kind"] == "azure_openai"  # type: ignore[index]
+    assert (
+        runtime["half_cascade"]["input_transcription"]["provider_kind"]
+        == "azure_openai"
+    )  # type: ignore[index]
     assert runtime["llm"] is None
     assert runtime["realtime"] is None
     assert runtime["half_cascade"]["model"]["deployment_kind"] == "realtime"  # type: ignore[index]
@@ -672,6 +675,92 @@ async def test_half_cascade_resolves_stt_independently_from_realtime_model() -> 
         RuntimeSecretSlot.STT.value: str(IDS["eleven_credential"]),
         RuntimeSecretSlot.TTS.value: str(IDS["eleven_credential"]),
     }
+
+
+@pytest.mark.asyncio
+async def test_soniox_cascade_selection_materializes_options_and_secret_slot() -> None:
+    value = state(["cascade"])
+    credential_id, connection_id, deployment_id = (UUID(int=i) for i in (900, 901, 902))
+    credentials = dict(value.credentials)
+    credentials[credential_id] = Credential(
+        CredentialRef(credential_id),
+        PlatformCredentialScope(),
+        "soniox",
+        UUID(int=903),
+        1,
+        CredentialStatus.ACTIVE,
+        3,
+        NOW,
+        "test",
+        None,
+        None,
+    )
+    connections = dict(value.connections)
+    connections[connection_id] = ProviderConnection(
+        ProviderConnectionRef(connection_id),
+        "soniox",
+        "soniox",
+        CredentialRef(credential_id),
+        {"region": "eu"},
+        True,
+        1,
+        NOW,
+        "test",
+        NOW,
+        "test",
+    )
+    deployments = dict(value.deployments)
+    deployments[deployment_id] = ModelDeployment(
+        ModelDeploymentRef(deployment_id),
+        "soniox-stt",
+        ProviderConnectionRef(connection_id),
+        DeploymentKind.STT,
+        {
+            "model": "stt-rt-v5",
+            "max_endpoint_delay_ms": 700,
+            "endpoint_sensitivity": 0.2,
+            "endpoint_latency_adjustment_level": 2,
+        },
+        STTCapabilities(True, False),
+        True,
+        1,
+        NOW,
+        "test",
+        NOW,
+        "test",
+    )
+    live_components = dict(value.live_components)
+    defaults_address = ComponentAddress(ComponentKind("STTDefaults"), SystemScope())
+    live_components[defaults_address] = replace(
+        live_components[defaults_address],
+        value={"deployment_ref": str(deployment_id)},
+    )
+
+    selected = await resolver(
+        replace(
+            value,
+            credentials=credentials,
+            connections=connections,
+            deployments=deployments,
+            live_components=live_components,
+        )
+    ).resolve_candidate(TENANT, "cascade")
+
+    assert isinstance(selected, ResolvedCascadeRuntime)
+    runtime = ExecutionMaterializationService._voice_runtime(selected)
+    assert runtime["stt"]["provider_kind"] == "soniox"  # type: ignore[index]
+    assert runtime["stt"]["connection_config"] == {"region": "eu"}  # type: ignore[index]
+    assert (
+        runtime["stt"]["deployment_config"]
+        == deployments[deployment_id].deployment_config
+    )  # type: ignore[index]
+    assert runtime["llm"]["response_scheduling"] == {  # type: ignore[index]
+        "preemptive_generation": True,
+        "preemptive_tts": True,
+    }
+    assert ExecutionMaterializationService._runtime_bindings(selected)[
+        RuntimeSecretSlot.STT.value
+    ] == str(credential_id)
 
 
 @pytest.mark.asyncio
@@ -848,8 +937,14 @@ async def test_realtime_uses_standalone_stt_on_independent_elevenlabs_connection
     [
         ("vad_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
         ("stt_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
-        ("input_transcription_capability", ResolutionFailureReason.UNSUPPORTED_CAPABILITY),
-        ("input_transcription_connection", ResolutionFailureReason.INCOMPATIBLE_CONNECTION),
+        (
+            "input_transcription_capability",
+            ResolutionFailureReason.UNSUPPORTED_CAPABILITY,
+        ),
+        (
+            "input_transcription_connection",
+            ResolutionFailureReason.INCOMPATIBLE_CONNECTION,
+        ),
         ("connection_disabled", ResolutionFailureReason.RESOURCE_DISABLED),
         ("credential_revoked", ResolutionFailureReason.CREDENTIAL_REVOKED),
     ],

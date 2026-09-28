@@ -18,7 +18,7 @@ from contracts import (
 from livekit import agents, rtc
 from livekit.agents.beta.tools import EndCallTool
 from livekit.agents.utils import is_given
-from livekit.plugins import elevenlabs, openai
+from livekit.plugins import elevenlabs, openai, soniox
 from livekit.plugins.openai import realtime
 from pydantic import ValidationError
 from voice_agent.backend import BackendClient
@@ -1415,6 +1415,89 @@ async def test_provider_factory_passes_tenant_keyterms_to_elevenlabs() -> None:
     )
     try:
         assert session.stt._opts.keyterms == ["Kováčska", "Penzión Grand"]
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_soniox_factory_uses_slovak_hints_and_keeps_scheduling_independent() -> (
+    None
+):
+    runtime = runtime_settings(
+        response_scheduling={
+            "preemptive_generation": True,
+            "preemptive_tts": False,
+        }
+    )
+    runtime["stt"]["provider_kind"] = "soniox"  # type: ignore[index]
+    runtime["stt"]["connection_config"] = {"region": "eu"}  # type: ignore[index]
+    runtime["stt"]["deployment_config"] = {  # type: ignore[index]
+        "model": "stt-rt-v5",
+        "max_endpoint_delay_ms": 700,
+        "endpoint_sensitivity": 0.2,
+        "endpoint_latency_adjustment_level": 2,
+    }
+    session = create_agent_session(
+        settings(),
+        runtime,
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "soniox-key", "tts": "eleven-key"},
+    )
+    try:
+        assert isinstance(session.stt, soniox.STT)
+        assert (
+            session.stt._base_url == "wss://stt-rt.eu.soniox.com/transcribe-websocket"
+        )
+        assert session.stt._params.model == "stt-rt-v5"
+        assert session.stt._params.language_hints == ["sk"]
+        assert session.stt._params.max_endpoint_delay_ms == 700
+        assert session.stt._params.endpoint_sensitivity == 0.2
+        assert session.stt._params.endpoint_latency_adjustment_level == 2
+        assert session.stt._api_key == "soniox-key"
+        assert isinstance(session.llm, openai.LLM)
+        assert isinstance(session.tts, elevenlabs.TTS)
+        assert session._opts.turn_handling["preemptive_generation"]["enabled"] is True
+        assert (
+            session._opts.turn_handling["preemptive_generation"]["preemptive_tts"]
+            is False
+        )
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_soniox_local_vad_commit_wrapper_preserves_preflight_events() -> None:
+    runtime = runtime_settings(
+        response_scheduling={
+            "preemptive_generation": True,
+            "preemptive_tts": True,
+        }
+    )
+    runtime["stt"]["provider_kind"] = "soniox"  # type: ignore[index]
+    runtime["stt"]["connection_config"] = {"region": "eu"}  # type: ignore[index]
+    runtime["stt"]["commit"]["strategy"] = "local_vad"  # type: ignore[index]
+    runtime["stt"]["deployment_config"] = {"model": "stt-rt-v5"}  # type: ignore[index]
+    session = create_agent_session(
+        settings(),
+        runtime,
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "soniox-key", "tts": "eleven-key"},
+    )
+    try:
+        assert isinstance(session.stt, LocalVadCommitSTT)
+        assert isinstance(session.stt.wrapped_stt, soniox.STT)
+        assert session.stt.wrapped_stt._params.max_endpoint_delay_ms == 2000
+        assert session.stt.wrapped_stt._params.endpoint_sensitivity is None
+        assert session.stt.wrapped_stt._params.endpoint_latency_adjustment_level is None
+        assert session._opts.turn_handling["preemptive_generation"]["enabled"] is True
+        assert (
+            session._opts.turn_handling["preemptive_generation"]["preemptive_tts"]
+            is True
+        )
     finally:
         await session.stt.aclose()
         await session.llm.aclose()

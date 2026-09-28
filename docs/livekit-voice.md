@@ -37,6 +37,39 @@ it does not replace ElevenLabs end-of-speech ownership. These values, provider
 models, logical Azure model, and TTS voice come from the call-pinned
 `VoiceRuntimeRevision`.
 
+Cascade Soniox STT uses the installed LiveKit Soniox plugin's
+`PREFLIGHT_TRANSCRIPT` events for stable tokens. `LocalVadCommitSTT` forwards
+these events immediately, so LiveKit's existing preemptive generation can run
+before the turn endpoint. The wrapper still gates provider
+`END_OF_SPEECH` until local VAD requests a flush; with the current local-VAD
+commit policy, local VAD remains the turn-completion authority. `RuntimeResolver`
+rejects the ElevenLabs-specific `provider_vad` commit policy for Soniox.
+
+Soniox emits `PREFLIGHT_TRANSCRIPT` when a response contains finalized text
+tokens and no non-final text tokens; this can happen before the speaker stops.
+The final-token accumulator persists across messages, while provisional tokens
+are accumulated only within each message. An interim-only update does not
+restart a preemptive attempt. A later preflight replaces it; final-turn reuse
+additionally requires equivalent final transcript, chat context, tools, and
+tool choice. Soniox treats both `<end>` and `<fin>` as endpoint markers, emits
+`FINAL_TRANSCRIPT` then `END_OF_SPEECH`, and resets accumulated final-token
+buffers after endpoint emission. New provisional tokens may follow a preflight
+before endpoint detection. A changed final transcript starts a newer attempt
+when LiveKit reports it before EOU; otherwise transcript mismatch invalidates
+the earlier attempt at turn completion.
+
+LiveKit 1.8.2 handles preflight in `audio_recognition.py`, calls
+`AgentActivity.on_preemptive_generation`, and logs `using preemptive generation`
+with `preemptive_lead_time` only when it reuses the attempt. With
+`preemptive_tts`, synthesis starts before the speech is scheduled, while output
+still waits for scheduling and authorization; invalidated speech is canceled.
+For development evidence, set `LIVEKIT_LOG_LEVEL=DEBUG` to include the LiveKit
+agent and Soniox plugin debug messages; keep that temporary in development.
+
+The current runtime locale mapper intentionally supports Slovak only:
+`sk-SK` maps to Soniox `sk`; `cs-CZ` is rejected by the voice deployment's
+existing locale validation.
+
 The pinned logical Azure model comes from the effective VoiceRuntime: the
 published platform runtime is the default and a published tenant runtime may
 override its logical model. Azure endpoint, API version, deployment, provider

@@ -1228,6 +1228,18 @@ wheels = [
 ]
 
 [[package]]
+name = "livekit-plugins-soniox"
+version = "1.8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "livekit-agents" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/46/71/a20e1e1286c28338463af71f9c57909c550e356cc2c5580cfe063b0db53d/livekit_plugins_soniox-1.8.2.tar.gz", hash = "sha256:026bc270e18adf279f40676ffb9f95441471c673560dd4ac679fc119aac08ea1", size = 20158, upload-time = "2026-09-15T18:32:21.486Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/66/f6b2add717fa8df757afc13d439b5c6e79e0155f9958f79eb8bb7c1ef2ff/livekit_plugins_soniox-1.8.2-py3-none-any.whl", hash = "sha256:a2418676f066c27527396f0625eed89eb22114518c902523b9abcad834a38143", size = 21303, upload-time = "2026-09-15T18:32:20.145Z" },
+]
+
+[[package]]
 name = "livekit-protocol"
 version = "1.1.21"
 source = { registry = "https://pypi.org/simple" }
@@ -2407,6 +2419,7 @@ dependencies = [
     { name = "livekit-agents" },
     { name = "livekit-plugins-elevenlabs" },
     { name = "livekit-plugins-openai" },
+    { name = "livekit-plugins-soniox" },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
 ]
@@ -2419,6 +2432,7 @@ requires-dist = [
     { name = "livekit-agents", specifier = "==1.8.2" },
     { name = "livekit-plugins-elevenlabs", specifier = "==1.8.2" },
     { name = "livekit-plugins-openai", specifier = "==1.8.2" },
+    { name = "livekit-plugins-soniox", specifier = "==1.8.2" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
     { name = "pyjwt", specifier = ">=2.13.0" },
 ]

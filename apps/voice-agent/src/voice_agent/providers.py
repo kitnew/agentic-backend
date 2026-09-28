@@ -6,7 +6,7 @@ from livekit.agents import inference, tokenize
 from livekit.agents import stt as livekit_stt
 from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.agents.voice.agent_session import SessionConnectOptions
-from livekit.plugins import elevenlabs, openai
+from livekit.plugins import elevenlabs, openai, soniox
 from livekit.plugins.elevenlabs.stt import VADOptions
 from livekit.plugins.openai import realtime
 from openai.types import realtime as openai_realtime
@@ -61,7 +61,7 @@ def create_agent_session(
     tts_config = runtime["tts"]
     if llm["provider_kind"] not in {"azure_openai", "openai"}:
         raise ValueError(f"unsupported LLM provider: {llm['provider_kind']}")
-    if stt_config["provider_kind"] != "elevenlabs":
+    if stt_config["provider_kind"] not in {"elevenlabs", "soniox"}:
         raise ValueError(f"unsupported STT provider: {stt_config['provider_kind']}")
     if tts_config["provider_kind"] != "elevenlabs":
         raise ValueError(f"unsupported TTS provider: {tts_config['provider_kind']}")
@@ -293,6 +293,25 @@ def _create_stt(
             language_code=elevenlabs_language,
             keyterms=keyterms,
             server_vad=server_vad,
+        )
+    if config["provider_kind"] == "soniox":
+        region = config["connection_config"].get("region", "global")
+        base_url = {
+            "global": "wss://stt-rt.soniox.com/transcribe-websocket",
+            "eu": "wss://stt-rt.eu.soniox.com/transcribe-websocket",
+        }[region]
+        return soniox.STT(
+            api_key=secret,
+            base_url=base_url,
+            params=soniox.STTOptions(
+                model=_required_string(deployment, "model"),
+                language_hints=[openai_language],
+                max_endpoint_delay_ms=deployment.get("max_endpoint_delay_ms", 2000),
+                endpoint_sensitivity=deployment.get("endpoint_sensitivity"),
+                endpoint_latency_adjustment_level=deployment.get(
+                    "endpoint_latency_adjustment_level"
+                ),
+            ),
         )
     if config["provider_kind"] == "azure_openai":
         connection = config["connection_config"]

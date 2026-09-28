@@ -31,6 +31,10 @@ class _EmptyConnectionConfig(_ProviderConfig):
     pass
 
 
+class _SonioxConnectionConfig(_ProviderConfig):
+    region: Literal["global", "eu"] = "global"
+
+
 class _AzureOpenAILLMDeploymentConfig(_ProviderConfig):
     deployment_name: str = Field(min_length=1)
     model: str = Field(min_length=1)
@@ -53,6 +57,13 @@ class _AzureOpenAISTTDeploymentConfig(_AzureOpenAIDeploymentConfig):
 
 class _ModelDeploymentConfig(_ProviderConfig):
     model_id: str = Field(min_length=1)
+
+
+class _SonioxSTTDeploymentConfig(_ProviderConfig):
+    model: Literal["stt-rt-v5"] = "stt-rt-v5"
+    max_endpoint_delay_ms: int = Field(default=2000, ge=500, le=3000)
+    endpoint_sensitivity: float | None = Field(default=None, ge=-1, le=1)
+    endpoint_latency_adjustment_level: int | None = Field(default=None, ge=0, le=3)
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +162,12 @@ class ProviderKindRegistry:
             "Deepgram speech provider",
             {"deployment_kinds": ("stt",)},
         ),
+        RegistryEntry(
+            "soniox",
+            "Soniox",
+            "Soniox speech recognition provider",
+            {"deployment_kinds": ("stt",)},
+        ),
     )
 
     _connection_schemas: Mapping[str, type[_ProviderConfig]] = MappingProxyType(
@@ -159,6 +176,7 @@ class ProviderKindRegistry:
             "openai": _EmptyConnectionConfig,
             "elevenlabs": _EmptyConnectionConfig,
             "deepgram": _EmptyConnectionConfig,
+            "soniox": _SonioxConnectionConfig,
         }
     )
     _deployment_schemas: Mapping[tuple[str, DeploymentKind], type[_ProviderConfig]] = (
@@ -171,6 +189,7 @@ class ProviderKindRegistry:
                 ("elevenlabs", DeploymentKind.STT): _ModelDeploymentConfig,
                 ("elevenlabs", DeploymentKind.TTS): _ModelDeploymentConfig,
                 ("deepgram", DeploymentKind.STT): _ModelDeploymentConfig,
+                ("soniox", DeploymentKind.STT): _SonioxSTTDeploymentConfig,
             }
         )
     )
