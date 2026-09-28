@@ -30,6 +30,7 @@ def manifest(
         "websockets",
         "livekit-agents",
         "livekit-plugins-elevenlabs",
+        "livekit-plugins-soniox",
     ):
         try:
             versions[name] = importlib.metadata.version(name)
