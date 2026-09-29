@@ -210,6 +210,31 @@ class RecordingCoordinator:
             async with self._database.transaction() as session:
                 await self._service(session).fail_start(recording_id, str(error))
 
+    async def stop(self, call_id: UUID) -> None:
+        try:
+            async with self._database.transaction() as session:
+                recording = await session.scalar(
+                    select(CallRecording)
+                    .where(CallRecording.call_id == call_id)
+                    .with_for_update()
+                )
+                if (
+                    recording is None
+                    or recording.status
+                    in {RecordingStatus.READY, RecordingStatus.FAILED}
+                    or recording.egress_id is None
+                ):
+                    return
+                egress_id = recording.egress_id
+            result = await self._livekit.stop_call_recording(egress_id)
+            async with self._database.transaction() as session:
+                await self._service(session).apply(result)
+        except Exception:
+            logger.exception(
+                "LiveKit call recording could not stop",
+                extra={"call_session_id": str(call_id)},
+            )
+
     async def apply(self, result: EgressResult) -> CallRecording | None:
         async with self._database.transaction() as session:
             return await self._service(session).apply(result)

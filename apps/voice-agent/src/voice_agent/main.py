@@ -596,6 +596,7 @@ async def run_job(
     recent_transcript: RecentTranscriptBuffer | None = None
     inactivity_task: asyncio.Task[None] | None = None
     nudge_task: asyncio.Task[None] | None = None
+    sip_disconnect_handler: Callable[[rtc.RemoteParticipant], None] | None = None
     cancelled = False
     try:
         call_id = await resolve_call_session_id(
@@ -798,6 +799,20 @@ async def run_job(
                 handoff.set_caller_identity(identity)
             if participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
                 caller_number = participant.attributes.get("sip.phoneNumber") or None
+                caller_identity = participant.identity
+
+                def on_participant_disconnected(
+                    disconnected: rtc.RemoteParticipant,
+                ) -> None:
+                    if disconnected.identity == caller_identity:
+                        on_close(
+                            agents.CloseEvent(
+                                reason=agents.CloseReason.PARTICIPANT_DISCONNECTED
+                            )
+                        )
+
+                sip_disconnect_handler = on_participant_disconnected
+                ctx.room.on("participant_disconnected", sip_disconnect_handler)
         except TimeoutError:
             failure_reason = "participant_timeout"
             await session.aclose()
@@ -867,6 +882,8 @@ async def run_job(
         if session is not None:
             await session.aclose()
     finally:
+        if sip_disconnect_handler is not None:
+            ctx.room.off("participant_disconnected", sip_disconnect_handler)
         for task in (inactivity_task, nudge_task):
             if task is not None:
                 task.cancel()

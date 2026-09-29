@@ -134,6 +134,7 @@ async def observe_call(
     call_id: UUID,
     data: VoiceCallObservation,
     service: CallSessionServiceDependency,
+    request: Request,
 ) -> CallLifecycleResponse:
     try:
         if data.observation_type == "session_started":
@@ -158,6 +159,17 @@ async def observe_call(
                 data.failure_reason,
                 ConversationPersistenceStatus(data.conversation_status),
             )
+        if (
+            data.observation_type in {"session_finished", "session_failed"}
+            and request.app.state.settings.call_recording_enabled
+        ):
+            await RecordingCoordinator(
+                request.app.state.database,
+                request.app.state.livekit,
+                event_stream=request.app.state.settings.domain_event_stream,
+                command_stream=request.app.state.settings.command_stream,
+                tracer=getattr(request.app.state, "outbox_tracer", None),
+            ).stop(call_id)
         return lifecycle_response(call)
     except (CallSessionNotFoundError, CallSessionConflictError) as error:
         raise call_http_exception(error) from error

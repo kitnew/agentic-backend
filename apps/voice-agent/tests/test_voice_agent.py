@@ -2007,9 +2007,21 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         },
     )
 
+    room_callbacks: dict[str, object] = {}
+
+    class Room:
+        name = "sip-call-run-job"
+
+        def on(self, event, callback) -> None:
+            room_callbacks[event] = callback
+
+        def off(self, event, callback) -> None:
+            assert room_callbacks[event] is callback
+            del room_callbacks[event]
+
     class Context:
         job = SimpleNamespace(metadata="")
-        room = SimpleNamespace(name="sip-call-run-job")
+        room = Room()
 
         def add_shutdown_callback(self, callback) -> None:
             return None
@@ -2044,31 +2056,44 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         "logs": False,
         "transcript": False,
     }
+    assert not room_callbacks
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("user_speaks", "handoff_starts"),
-    [(True, False), (False, False), (False, True)],
+    ("user_speaks", "handoff_starts", "caller_disconnects"),
+    [
+        (True, False, False),
+        (False, False, False),
+        (False, True, False),
+        (False, False, True),
+    ],
 )
 async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it(
     monkeypatch: pytest.MonkeyPatch,
     user_speaks: bool,
     handoff_starts: bool,
+    caller_disconnects: bool,
 ) -> None:
     context = runtime_context()
     call_id = uuid4()
     deadline = asyncio.Event()
     timer_started = asyncio.Event()
+    timer_cancelled = asyncio.Event()
     nudge_started = asyncio.Event()
     nudge_release = asyncio.Event()
+    call_finalized = asyncio.Event()
     deleted_rooms: list[str] = []
     original_sleep = asyncio.sleep
 
     async def controlled_sleep(delay: float) -> None:
         assert delay == 19.0
         timer_started.set()
-        await deadline.wait()
+        try:
+            await deadline.wait()
+        except asyncio.CancelledError:
+            timer_cancelled.set()
+            raise
 
     monkeypatch.setattr("voice_agent.main.asyncio.sleep", controlled_sleep)
 
@@ -2089,7 +2114,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
             return None
 
         async def complete(self, call_id, conversation_status: str) -> None:
-            return None
+            call_finalized.set()
 
         async def fail(self, call_id, reason: str, conversation_status: str) -> None:
             raise AssertionError(f"call unexpectedly failed: {reason}")
@@ -2179,6 +2204,13 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                 self.callbacks["close"](
                     SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
                 )  # type: ignore[operator]
+            elif caller_disconnects:
+                room_callbacks["participant_disconnected"](
+                    SimpleNamespace(identity="caller")
+                )  # type: ignore[operator]
+                nudge_release.set()
+                await original_sleep(0)
+                assert not deleted_rooms
             else:
                 # The nudge remains in progress when the 19-second timer expires.
                 deadline.set()
@@ -2194,16 +2226,32 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
 
     session = Session()
 
+    room_callbacks: dict[str, object] = {}
+
+    class Room:
+        name = "inactivity-test"
+
+        def on(self, event, callback) -> None:
+            room_callbacks[event] = callback
+
+        def off(self, event, callback) -> None:
+            assert room_callbacks[event] is callback
+            del room_callbacks[event]
+
     class Context:
         job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
-        room = SimpleNamespace(name="inactivity-test")
+        room = Room()
 
         def add_shutdown_callback(self, callback) -> None:
             return None
 
         async def wait_for_participant(self, **kwargs):
             return SimpleNamespace(
-                kind=rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+                kind=(
+                    rtc.ParticipantKind.PARTICIPANT_KIND_SIP
+                    if caller_disconnects
+                    else rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD
+                ),
                 identity="caller",
                 attributes={},
             )
@@ -2222,8 +2270,14 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
     await run_job(Context(), settings())  # type: ignore[arg-type]
 
     assert deleted_rooms == (
-        ["inactivity-test"] if not user_speaks and not handoff_starts else []
+        ["inactivity-test"]
+        if not user_speaks and not handoff_starts and not caller_disconnects
+        else []
     )
+    if caller_disconnects:
+        assert timer_cancelled.is_set()
+        assert call_finalized.is_set()
+        assert not room_callbacks
 
 
 @pytest.mark.asyncio

@@ -188,3 +188,45 @@ async def test_coordinator_ensure_starts_egress_once() -> None:
 
     assert len(starts) == 1
     assert starts[0][0] == current_call.room_name
+
+
+@pytest.mark.asyncio
+async def test_coordinator_stops_egress_and_applies_final_result_once() -> None:
+    current_call = call()
+    session = Session(current_call)
+    stop_requests: list[str] = []
+
+    class Database:
+        @asynccontextmanager
+        async def transaction(self):
+            yield session
+
+    class LiveKit:
+        async def start_call_recording(self, *, room_name: str, storage_key: str):
+            return EgressResult("EG_stop", room_name, "starting")
+
+        async def stop_call_recording(self, egress_id: str):
+            stop_requests.append(egress_id)
+            assert session.recording is not None
+            return EgressResult(
+                egress_id,
+                current_call.room_name,
+                "complete",
+                filename=session.recording.storage_key,
+                size=123,
+                duration_ns=2_500_000_000,
+            )
+
+    coordinator = RecordingCoordinator(
+        Database(),  # type: ignore[arg-type]
+        LiveKit(),  # type: ignore[arg-type]
+        event_stream="events",
+        command_stream="commands",
+    )
+    await coordinator.ensure(current_call.id)
+    await coordinator.stop(current_call.id)
+    await coordinator.stop(current_call.id)
+
+    assert stop_requests == ["EG_stop"]
+    assert session.recording is not None
+    assert session.recording.status is RecordingStatus.READY

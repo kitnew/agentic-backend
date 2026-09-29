@@ -129,6 +129,12 @@ class LiveKitAdapter:
         )
         return self.egress_result(info)
 
+    async def stop_call_recording(self, egress_id: str) -> EgressResult:
+        info = await self.client.egress.stop_egress(
+            api.StopEgressRequest(egress_id=egress_id)
+        )
+        return self.egress_result(info)
+
     async def get_egress(self, egress_id: str) -> EgressResult | None:
         response = await self.client.egress.list_egress(
             api.ListEgressRequest(egress_id=egress_id)

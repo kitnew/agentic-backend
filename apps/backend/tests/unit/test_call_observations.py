@@ -47,6 +47,7 @@ async def test_runtime_observation_routes_to_authoritative_call_service() -> Non
         service.call.id,
         VoiceCallObservation(observation_type="session_started"),
         service,  # type: ignore[arg-type]
+        SimpleNamespace(),  # type: ignore[arg-type]
     )
 
     assert service.observed == ["started"]
@@ -66,6 +67,7 @@ async def test_agent_relinquish_does_not_end_the_call() -> None:
             handoff_attempt_id=attempt_id,
         ),
         service,  # type: ignore[arg-type]
+        SimpleNamespace(),  # type: ignore[arg-type]
     )
 
     assert service.observed == [f"relinquished:{attempt_id}:complete"]
@@ -117,3 +119,58 @@ async def test_recording_start_operation_uses_existing_coordinator(
         "tracer": None,
     }
     assert started[1] == call_id
+
+
+@pytest.mark.asyncio
+async def test_session_finished_stops_recording_in_terminalization_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    order: list[str] = []
+
+    class Service:
+        call = SimpleNamespace(
+            id=uuid4(),
+            status=CallSessionStatus.ENDED,
+            started_at=None,
+            connected_at=None,
+            ended_at=None,
+            failure_reason=None,
+        )
+
+        async def end(self, call_id, conversation_status):
+            order.append("call-ended")
+            return self.call
+
+    class Coordinator:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def stop(self, call_id) -> None:
+            order.append("egress-stop")
+
+    monkeypatch.setattr(
+        "backend_core.modules.calls.router.RecordingCoordinator", Coordinator
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                settings=SimpleNamespace(
+                    call_recording_enabled=True,
+                    domain_event_stream="events",
+                    command_stream="commands",
+                ),
+                database=object(),
+                livekit=object(),
+            )
+        )
+    )
+
+    response = await observe_call(
+        Service.call.id,
+        VoiceCallObservation(observation_type="session_finished"),
+        Service(),  # type: ignore[arg-type]
+        request,  # type: ignore[arg-type]
+    )
+
+    assert response.status.value == "ended"
+    assert order == ["call-ended", "egress-stop"]
