@@ -12,6 +12,7 @@ import httpx
 from contracts import (
     CapabilityInvocationRequest,
     CapabilityInvocationStatus,
+    HandoffState,
     HumanHandoffRequest,
     InboundSipClaimRequest,
     LiveKitJobMetadata,
@@ -115,12 +116,16 @@ async def send_greeting(
     tts_available: bool | None = None,
 ) -> None:
     if tts_available if tts_available is not None else session.tts is not None:
-        await session.say(greeting, add_to_chat_ctx=True)
-        return
-    await session.generate_reply(
-        instructions=f"say {greeting}",
-        input_modality="audio",
-    )
+        speech = await session.say(
+            greeting, add_to_chat_ctx=True, allow_interruptions=False
+        )
+    else:
+        speech = await session.generate_reply(
+            instructions=f"say {greeting}",
+            input_modality="audio",
+            allow_interruptions=False,
+        )
+    await speech.wait_for_playout()
 
 
 def context_has_tts(context: VoiceExecutionContext) -> bool:
@@ -589,6 +594,8 @@ async def run_job(
     failure_reason: str | None = None
     handoff: HandoffController | None = None
     recent_transcript: RecentTranscriptBuffer | None = None
+    inactivity_task: asyncio.Task[None] | None = None
+    nudge_task: asyncio.Task[None] | None = None
     cancelled = False
     try:
         call_id = await resolve_call_session_id(
@@ -654,7 +661,86 @@ async def run_job(
         terminalizer = SessionTerminalizer(finalizer, persistence)
         closed = asyncio.get_running_loop().create_future()
 
+        async def check_inactivity() -> None:
+            try:
+                await asyncio.sleep(19.0)
+                assert handoff is not None
+                if not closed.done() and not handoff.active and not handoff.completed:
+                    # EndCallTool uses this path to disconnect SIP callers.
+                    await ctx.delete_room()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("inactivity call termination failed")
+
+        async def nudge_caller() -> None:
+            try:
+                assert session is not None
+                await session.generate_reply(
+                    instructions=(
+                        "Briefly ask whether the caller is still present. "
+                        "Preserve your current language and persona."
+                    )
+                )
+            except Exception:
+                logger.exception("inactivity check-in response failed")
+
+        def cancel_inactivity(*, cancel_nudge: bool = False) -> None:
+            nonlocal inactivity_task, nudge_task
+            if inactivity_task is not None:
+                inactivity_task.cancel()
+                inactivity_task = None
+            if cancel_nudge and nudge_task is not None:
+                nudge_task.cancel()
+                nudge_task = None
+
+        def start_inactivity() -> None:
+            nonlocal inactivity_task, nudge_task
+            assert handoff is not None
+            if closed.done() or handoff.active or handoff.completed:
+                return
+            if inactivity_task is None or inactivity_task.done():
+                inactivity_task = asyncio.create_task(check_inactivity())
+            if nudge_task is None or nudge_task.done():
+                nudge_task = asyncio.create_task(nudge_caller())
+
+        def on_user_state_changed(event: agents.UserStateChangedEvent) -> None:
+            if event.new_state == "away":
+                start_inactivity()
+            else:
+                cancel_inactivity()
+
+        def on_handoff_state_changed(state: HandoffState, reason: str) -> None:
+            if state in {
+                HandoffState.DIALING,
+                HandoffState.ANSWERED,
+                HandoffState.COMPLETED,
+            }:
+                cancel_inactivity(cancel_nudge=True)
+            elif (
+                state
+                in {
+                    HandoffState.FAILED,
+                    HandoffState.TIMED_OUT,
+                    HandoffState.CANCELED,
+                }
+                and reason
+                not in {
+                    "caller_disconnected",
+                    "job_shutdown",
+                    "session_closed",
+                    "voice_agent_shutdown",
+                }
+                and session is not None
+                and session.user_state == "away"
+            ):
+                start_inactivity()
+
+        assert handoff is not None
+        handoff.set_state_listener(on_handoff_state_changed)
+
         async def on_shutdown(_: str) -> None:
+            cancel_inactivity(cancel_nudge=True)
             assert handoff is not None
             if not handoff.completed:
                 await handoff.cancel("job_shutdown")
@@ -665,6 +751,7 @@ async def run_job(
         def on_close(event: agents.CloseEvent) -> None:
             if closed.done():
                 return
+            cancel_inactivity(cancel_nudge=True)
             assert handoff is not None
             if not handoff.active:
                 closed.set_result(event)
@@ -685,6 +772,7 @@ async def run_job(
             task.add_done_callback(log_terminalization_failure)
 
         session.on("close", on_close)
+        session.on("user_state_changed", on_user_state_changed)
         session.on("conversation_item_added", persistence.on_conversation_item_added)
         if telemetry is not None:
             telemetry.metrics.attach_speculative_generation(session)
@@ -758,6 +846,8 @@ async def run_job(
             except Exception:
                 if not closed.done():
                     raise
+        if not closed.done():
+            await backend.start_recording(call_id)
         close_event = await closed
         failure_reason = close_failure_reason(close_event.reason)
     except asyncio.CancelledError:
@@ -777,6 +867,10 @@ async def run_job(
         if session is not None:
             await session.aclose()
     finally:
+        for task in (inactivity_task, nudge_task):
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
         if session is not None and persistence is not None:
             off = getattr(session, "off", None)
             if off is not None:

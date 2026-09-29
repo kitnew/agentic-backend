@@ -166,6 +166,7 @@ def create_agent_session(
                 ),
             )
     session: agents.AgentSession = agents.AgentSession(
+        user_away_timeout=6.0,
         stt=stt,
         vad=vad,
         turn_handling={
@@ -229,6 +230,7 @@ def create_realtime_session(
         max_retry=settings.provider_retry_limit,
     )
     return agents.AgentSession(
+        user_away_timeout=6.0,
         stt=standalone_stt,
         llm=realtime_model,
         vad=None,
@@ -273,6 +275,7 @@ def create_half_cascade_session(
         max_retry=settings.provider_retry_limit,
     )
     return agents.AgentSession(
+        user_away_timeout=6.0,
         stt=standalone_stt,
         llm=realtime_model,
         tts=tts,

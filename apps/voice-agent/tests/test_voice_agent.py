@@ -380,6 +380,7 @@ def test_realtime_factory_uses_snapshot_runtime_values(
     assert captured["turn_detection"].type == "semantic_vad"  # type: ignore[union-attr]
     assert captured["turn_detection"].interrupt_response is True  # type: ignore[union-attr]
     assert session["vad"] is None
+    assert session["user_away_timeout"] == 6.0
     assert isinstance(session["stt"], elevenlabs.STT)
     assert session["stt"].model == "transcribe-model"
     assert session["stt"].provider == "ElevenLabs"
@@ -624,6 +625,7 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
     assert session["vad"] is None
     assert session["llm"] is not None
     assert session["tts"] is not None
+    assert session["user_away_timeout"] == 6.0
     assert session["turn_handling"] == {
         "turn_detection": "realtime_llm",
         "interruption": {"enabled": True},
@@ -1414,6 +1416,7 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.35
         assert provider_stt._opts.server_vad["min_silence_duration_ms"] == 350
         assert session.vad is not None
+        assert session._opts.user_away_timeout == 6.0
         assert session.vad.model == "silero"
         assert session.vad._opts.min_speech_duration == 0.05
         assert session.vad._opts.min_silence_duration == 0.25
@@ -1764,41 +1767,69 @@ def test_close_reason_mapping(
 @pytest.mark.asyncio
 async def test_greeting_uses_configured_tts_and_chat_history() -> None:
     calls: list[tuple[str, object]] = []
+    speech = asyncio.get_running_loop().create_future()
+
+    class FakeSpeech:
+        async def wait_for_playout(self) -> None:
+            await speech
 
     class FakeSession:
         def __init__(self) -> None:
             self.tts = object()
 
-        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
-            calls.append(("say", (text, add_to_chat_ctx)))
+        async def say(
+            self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
+        ):
+            calls.append(("say", (text, add_to_chat_ctx, allow_interruptions)))
+            return FakeSpeech()
 
-        async def generate_reply(self, **kwargs: object) -> None:
+        async def generate_reply(self, **kwargs: object):
             calls.append(("generate_reply", kwargs))
 
-    await send_greeting(FakeSession(), "Добрый день")  # type: ignore[arg-type]
+    task = asyncio.create_task(send_greeting(FakeSession(), "Добрый день"))  # type: ignore[arg-type]
+    await asyncio.sleep(0)
+    assert not task.done()
+    speech.set_result(None)
+    await task
 
-    assert calls == [("say", ("Добрый день", True))]
+    assert calls == [("say", ("Добрый день", True, False))]
 
 
 @pytest.mark.asyncio
 async def test_realtime_greeting_falls_back_to_generation() -> None:
     calls: list[tuple[str, object]] = []
+    speech = asyncio.get_running_loop().create_future()
+
+    class FakeSpeech:
+        async def wait_for_playout(self) -> None:
+            await speech
 
     class FakeSession:
         tts = None
 
-        async def generate_reply(self, **kwargs: object) -> None:
+        async def generate_reply(self, **kwargs: object):
             calls.append(("generate_reply", kwargs))
+            return FakeSpeech()
 
-        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
+        async def say(
+            self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
+        ):
             raise AssertionError("realtime greeting should use generation fallback")
 
-    await send_greeting(FakeSession(), "Добрый день")  # type: ignore[arg-type]
+    task = asyncio.create_task(send_greeting(FakeSession(), "Добрый день"))  # type: ignore[arg-type]
+    await asyncio.sleep(0)
+    assert not task.done()
+    speech.set_result(None)
+    await task
 
     assert calls == [
         (
             "generate_reply",
-            {"instructions": "say Добрый день", "input_modality": "audio"},
+            {
+                "instructions": "say Добрый день",
+                "input_modality": "audio",
+                "allow_interruptions": False,
+            },
         )
     ]
 
@@ -1883,6 +1914,8 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
     context = runtime_context()
     claimed_call_id = uuid4()
     order: list[str] = []
+    inactivity_instructions: list[str] = []
+    callbacks: dict[str, object] = {}
 
     class FakeBackend:
         async def claim_inbound_sip(self, request):
@@ -1899,11 +1932,18 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         async def runtime_secret(self, execution_id, slot):
             return f"{slot}-secret"
 
-        async def observe(self, call_id, observation_type: str) -> None:
-            return None
+        async def observe(self, call_id, observation_type: str, **kwargs) -> None:
+            if observation_type == "session_started":
+                order.append("call.started")
 
         async def activate(self, call_id) -> None:
-            return None
+            order.append("activate")
+
+        async def start_recording(self, call_id) -> None:
+            order.append("recording-start")
+            callbacks["close"](
+                SimpleNamespace(reason=agents.CloseReason.TASK_COMPLETED)
+            )  # type: ignore[operator]
 
         async def complete(self, call_id, conversation_status: str) -> None:
             order.append("complete")
@@ -1922,6 +1962,7 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
 
         def on(self, event, callback):
             self.callbacks[event] = callback
+            callbacks[event] = callback
 
         def off(self, event, callback):
             return None
@@ -1929,14 +1970,26 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         async def start(self, agent, *, room, record) -> None:
             self.record = record
             order.append("session-start")
+            self.callbacks["user_state_changed"](SimpleNamespace(new_state="away"))  # type: ignore[operator]
 
-        async def generate_reply(self, *, instructions, input_modality) -> None:
-            callback = self.callbacks["close"]
-            callback(SimpleNamespace(reason=agents.CloseReason.TASK_COMPLETED))
+        async def generate_reply(self, *, instructions, input_modality="text") -> None:
+            inactivity_instructions.append(instructions)
 
-        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
-            callback = self.callbacks["close"]
-            callback(SimpleNamespace(reason=agents.CloseReason.TASK_COMPLETED))
+        async def say(
+            self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
+        ):
+            assert allow_interruptions is False
+            order.append("intro-start")
+
+            async def playout() -> None:
+                await asyncio.sleep(0)
+                order.append("intro-playout-complete")
+
+            class Speech:
+                async def wait_for_playout(self) -> None:
+                    await asyncio.create_task(playout())
+
+            return Speech()
 
         async def aclose(self) -> None:
             return None
@@ -1975,14 +2028,202 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
     monkeypatch.setattr("voice_agent.main.create_agent_session", session_factory)
     await run_job(Context(), settings())  # type: ignore[arg-type]
     assert order[:3] == ["claim", "runtime-context", "session-start"]
+    assert order.index("session-start") < order.index("call.started")
+    assert order.index("call.started") < order.index("activate")
+    assert order.index("activate") < order.index("intro-start")
+    assert order.index("intro-playout-complete") < order.index("recording-start")
+    assert order.index("recording-start") < order.index("complete")
     assert order[-1] == "complete"
     assert len(sessions) == 1
+    assert len(inactivity_instructions) == 1
+    assert "caller is still present" in inactivity_instructions[0]
+    assert "Ste tam?" not in inactivity_instructions[0]
     assert sessions[0].record == {
         "audio": False,
         "traces": False,
         "logs": False,
         "transcript": False,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("user_speaks", "handoff_starts"),
+    [(True, False), (False, False), (False, True)],
+)
+async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it(
+    monkeypatch: pytest.MonkeyPatch,
+    user_speaks: bool,
+    handoff_starts: bool,
+) -> None:
+    context = runtime_context()
+    call_id = uuid4()
+    deadline = asyncio.Event()
+    timer_started = asyncio.Event()
+    nudge_started = asyncio.Event()
+    nudge_release = asyncio.Event()
+    deleted_rooms: list[str] = []
+    original_sleep = asyncio.sleep
+
+    async def controlled_sleep(delay: float) -> None:
+        assert delay == 19.0
+        timer_started.set()
+        await deadline.wait()
+
+    monkeypatch.setattr("voice_agent.main.asyncio.sleep", controlled_sleep)
+
+    class Backend:
+        async def runtime_context(self, call_id):
+            return context
+
+        async def runtime_secret(self, execution_id, slot):
+            return f"{slot}-secret"
+
+        async def observe(self, call_id, observation_type: str, **kwargs) -> None:
+            return None
+
+        async def activate(self, call_id) -> None:
+            return None
+
+        async def start_recording(self, call_id) -> None:
+            return None
+
+        async def complete(self, call_id, conversation_status: str) -> None:
+            return None
+
+        async def fail(self, call_id, reason: str, conversation_status: str) -> None:
+            raise AssertionError(f"call unexpectedly failed: {reason}")
+
+        async def aclose(self) -> None:
+            return None
+
+    class Handoff:
+        def __init__(self, backend, call_id, timeout) -> None:
+            self.state: HandoffState | None = None
+            self.listener = None
+            self.attempt_id = uuid4()
+
+        @property
+        def active(self) -> bool:
+            return self.state in {HandoffState.DIALING, HandoffState.ANSWERED}
+
+        @property
+        def completed(self) -> bool:
+            return self.state is HandoffState.COMPLETED
+
+        def set_state_listener(self, listener) -> None:
+            self.listener = listener
+
+        def set_caller_identity(self, identity: str) -> None:
+            return None
+
+        def start(self) -> None:
+            self.state = HandoffState.DIALING
+            self.listener(self.state, "started")
+
+        def complete(self) -> None:
+            self.state = HandoffState.COMPLETED
+            self.listener(self.state, "complete")
+
+        async def cancel(self, reason: str) -> bool:
+            self.state = HandoffState.CANCELED
+            self.listener(self.state, reason)
+            return True
+
+        async def close(self) -> None:
+            return None
+
+    handoff = Handoff(None, call_id, 30.0)
+
+    class Session:
+        def __init__(self) -> None:
+            self.callbacks: dict[str, object] = {}
+            self.tts = object()
+
+        def on(self, event, callback):
+            self.callbacks[event] = callback
+
+        def off(self, event, callback):
+            return None
+
+        async def start(self, agent, *, room, record) -> None:
+            return None
+
+        async def generate_reply(self, *, instructions, input_modality="text") -> None:
+            assert "caller is still present" in instructions
+            nudge_started.set()
+            await nudge_release.wait()
+
+        async def say(
+            self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
+        ):
+            self.callbacks["user_state_changed"](SimpleNamespace(new_state="away"))  # type: ignore[operator]
+            await timer_started.wait()
+            await nudge_started.wait()
+            if user_speaks:
+                self.callbacks["user_state_changed"](
+                    SimpleNamespace(new_state="speaking")
+                )  # type: ignore[operator]
+                nudge_release.set()
+                await original_sleep(0)
+                assert not deleted_rooms
+                self.callbacks["close"](
+                    SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
+                )  # type: ignore[operator]
+            elif handoff_starts:
+                handoff.start()
+                deadline.set()
+                await original_sleep(0)
+                assert not deleted_rooms
+                handoff.complete()
+                self.callbacks["close"](
+                    SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
+                )  # type: ignore[operator]
+            else:
+                # The nudge remains in progress when the 19-second timer expires.
+                deadline.set()
+                await original_sleep(0)
+
+            async def playout() -> None:
+                await original_sleep(0)
+
+            return asyncio.create_task(playout())
+
+        async def aclose(self) -> None:
+            return None
+
+    session = Session()
+
+    class Context:
+        job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
+        room = SimpleNamespace(name="inactivity-test")
+
+        def add_shutdown_callback(self, callback) -> None:
+            return None
+
+        async def wait_for_participant(self, **kwargs):
+            return SimpleNamespace(
+                kind=rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+                identity="caller",
+                attributes={},
+            )
+
+        async def delete_room(self) -> None:
+            deleted_rooms.append(self.room.name)
+            session.callbacks["close"](
+                SimpleNamespace(reason=agents.CloseReason.PARTICIPANT_DISCONNECTED)
+            )  # type: ignore[operator]
+
+    monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: Backend())
+    monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: session)
+    monkeypatch.setattr(
+        "voice_agent.main.HandoffController", lambda *args, **kwargs: handoff
+    )
+    await run_job(Context(), settings())  # type: ignore[arg-type]
+
+    assert deleted_rooms == (
+        ["inactivity-test"] if not user_speaks and not handoff_starts else []
+    )
 
 
 @pytest.mark.asyncio
@@ -2021,6 +2262,9 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         async def activate(self, call_id) -> None:
             return None
 
+        async def start_recording(self, call_id) -> None:
+            return None
+
         async def complete(self, call_id, conversation_status: str) -> None:
             raise AssertionError("handoff must not complete the call")
 
@@ -2055,9 +2299,14 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         async def start(self, agent, *, room, record) -> None:
             return None
 
-        async def generate_reply(self, *, instructions, input_modality) -> None:
+        async def generate_reply(
+            self, *, instructions, input_modality, allow_interruptions=True
+        ):
             callback = self.callbacks["close"]
             callback(SimpleNamespace(reason=agents.CloseReason.USER_INITIATED))
+            speech = asyncio.get_running_loop().create_future()
+            speech.set_result(None)
+            return speech
 
         async def aclose(self) -> None:
             return None
@@ -2070,7 +2319,11 @@ async def test_successful_handoff_relinquishes_without_completing_call(
             return None
 
         async def wait_for_participant(self, **kwargs):
-            return SimpleNamespace(identity="caller")
+            return SimpleNamespace(
+                kind=rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+                identity="caller",
+                attributes={},
+            )
 
     backend = Backend()
     monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: backend)
@@ -2132,6 +2385,9 @@ async def test_session_close_terminalizes_while_session_is_alive(
         async def activate(self, call_id) -> None:
             return None
 
+        async def start_recording(self, call_id) -> None:
+            return None
+
         async def complete(self, call_id, conversation_status: str) -> None:
             self.completed.append(conversation_status)
 
@@ -2157,11 +2413,21 @@ async def test_session_close_terminalizes_while_session_is_alive(
         async def start(self, agent, *, room, record) -> None:
             return None
 
-        async def generate_reply(self, *, instructions, input_modality) -> None:
+        async def generate_reply(
+            self, *, instructions, input_modality, allow_interruptions=True
+        ):
             self.greeted.set()
+            speech = asyncio.get_running_loop().create_future()
+            speech.set_result(None)
+            return speech
 
-        async def say(self, text: str, *, add_to_chat_ctx: bool) -> None:
+        async def say(
+            self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
+        ):
             self.greeted.set()
+            speech = asyncio.get_running_loop().create_future()
+            speech.set_result(None)
+            return speech
 
         async def aclose(self) -> None:
             return None
@@ -2180,7 +2446,11 @@ async def test_session_close_terminalizes_while_session_is_alive(
             self.shutdown = callback
 
         async def wait_for_participant(self, **kwargs):
-            return object()
+            return SimpleNamespace(
+                kind=rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+                identity="caller",
+                attributes={},
+            )
 
     job = Context()
     task = asyncio.create_task(run_job(job, settings()))

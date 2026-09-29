@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -29,6 +30,14 @@ class HandoffController:
         self._attempt: HandoffAttempt | None = None
         self._waiter: asyncio.Task[None] | None = None
         self._caller_identity: str | None = None
+        self._state_listener: Callable[[HandoffState, str], None] | None = None
+
+    def set_state_listener(self, listener: Callable[[HandoffState, str], None]) -> None:
+        self._state_listener = listener
+
+    def _notify_state(self, state: HandoffState, reason: str) -> None:
+        if self._state_listener is not None:
+            self._state_listener(state, reason)
 
     @property
     def attempt_id(self) -> UUID | None:
@@ -72,6 +81,7 @@ class HandoffController:
                 self._waiter = asyncio.create_task(
                     self._watch(session, response.attempt_id)
                 )
+            self._notify_state(response.status, "started")
 
     async def cancel(self, reason: str) -> bool:
         async with self._lock:
@@ -85,6 +95,7 @@ class HandoffController:
                 if self._attempt is not attempt:
                     return False
                 attempt.state = response.state
+                self._notify_state(response.state, reason)
             except Exception:
                 logger.exception(
                     "Handoff cancellation request failed",
@@ -143,6 +154,7 @@ class HandoffController:
             ):
                 return None
             attempt.state = response.state
+            self._notify_state(response.state, event.value)
             return response.state
 
     async def _watch(self, session: agents.AgentSession, attempt_id: UUID) -> None:

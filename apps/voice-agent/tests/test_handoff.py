@@ -174,6 +174,27 @@ async def test_timeout_keeps_agent_owner() -> None:
 
 
 @pytest.mark.asyncio
+async def test_state_listener_tracks_handoff_start_and_timeout() -> None:
+    backend = Backend()
+    session = Session()
+    result = response()
+    backend.states[result.attempt_id] = HandoffState.DIALING
+    controller = HandoffController(backend, uuid4(), 0.001)
+    states: list[tuple[HandoffState, str]] = []
+    controller.set_state_listener(lambda state, reason: states.append((state, reason)))
+
+    await controller.start(result, session)  # type: ignore[arg-type]
+    assert controller.waiter is not None
+    await controller.waiter
+
+    assert states == [
+        (HandoffState.DIALING, "started"),
+        (HandoffState.TIMED_OUT, HandoffEvent.TIME_OUT.value),
+    ]
+    assert session.shutdowns == []
+
+
+@pytest.mark.asyncio
 async def test_destination_disconnect_after_answer_prevents_completion() -> None:
     answer_entered = asyncio.Event()
     release_answer = asyncio.Event()

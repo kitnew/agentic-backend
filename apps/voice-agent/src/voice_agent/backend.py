@@ -245,6 +245,13 @@ class BackendClient:
     async def activate(self, call_id: UUID) -> None:
         await self.observe(call_id, "participant_connected")
 
+    async def start_recording(self, call_id: UUID) -> None:
+        await self.request(
+            "POST",
+            f"/internal/v1/calls/{call_id}/recording",
+            "call-session:observe",
+        )
+
     async def observe(
         self,
         call_id: UUID,
