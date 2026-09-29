@@ -948,9 +948,6 @@ Profile prompt
 [Interaction instructions]
 Interaction prompt
 
-[Phone number handling]
-Capture the caller's phone number as spoken and pass it unchanged to reservation actions. Never construct or guess an E.164 number or add digits. A number with an explicit international prefix such as +420 or 00421 already identifies its country; do not ask for country confirmation. For a local/national number, briefly confirm which country it belongs to and pass that ISO alpha-2 country code as phone_country. If the caller number from SIP is used, preserve it as received.
-
 [Tenant instructions]
 Tenant prompt
 

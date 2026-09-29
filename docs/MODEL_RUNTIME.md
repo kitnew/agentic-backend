@@ -172,7 +172,6 @@ The Voice Agent may also inject runtime-owned instruction or context fragments d
 
 Current runtime-owned additions include behavior related to:
 
-- phone-number handling;
 - localization;
 - recent-transcript usage when that capability is available.
 

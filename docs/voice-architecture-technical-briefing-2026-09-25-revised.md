@@ -416,14 +416,13 @@ How can cascade safely expose an earlier TTS boundary — word/phrase/semantic c
 1. System instructions
 2. Profile instructions
 3. Interaction instructions
-4. hard-coded phone-number handling
-5. Tenant instructions
-6. Agent context / identity
-7. Business context
-8. Localization
-9. Tenant knowledge
-10. Dynamic context (date/time, SIP caller number where present)
-11. Realtime/half-cascade recent-transcript instructions
+4. Tenant instructions
+5. Agent context / identity
+6. Business context
+7. Localization
+8. Tenant knowledge
+9. Dynamic context (date/time, SIP caller number where present)
+10. Realtime/half-cascade recent-transcript instructions
 
 The benchmark-local `production.txt` snapshots are **not proof of the actual published tenant prompt**.
 
