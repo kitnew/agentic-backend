@@ -3,8 +3,14 @@
 ## Data flow
 
 ```text
-call.started -> Backend CallRecording -> LiveKit RoomComposite Egress
-             -> MP3 -> private MinIO call-recordings bucket
+session_started -> call.started (call lifecycle only)
+participant_connected -> backend.activate() (before greeting)
+non-interruptible opening greeting -> wait_for_playout()
+Voice Agent -> POST /internal/v1/calls/{call_id}/recording
+            -> RecordingCoordinator.ensure() -> LiveKit RoomComposite Egress
+            -> MP3 -> private MinIO call-recordings bucket
+call termination (including SIP caller disconnect)
+  -> normal finalization -> RecordingCoordinator.stop() -> LiveKit StopEgress
 LiveKit signed webhook -> Backend recording.ready/recording.failed
                        -> existing post-call scheduler -> Job Worker
 Job Worker -> MinIO read -> streaming base64 -> configured external action
@@ -12,11 +18,22 @@ Job Worker -> MinIO read -> streaming base64 -> configured external action
 
 The Backend owns one canonical `CallRecording` per `CallSession`. LiveKit Egress
 owns mixing, MP3 encoding, and upload. MinIO owns only the object bytes. The
-Voice Agent has no recording code or storage credentials.
+Voice Agent waits for the non-interruptible opening greeting to finish playing,
+then requests recording from the Backend; it does not manage Egress or hold
+storage credentials.
 
-Recording starts from the durable `call.started` event, after the room is known.
-The external Egress request occurs after the recording intent transaction commits.
-Failure marks only the recording as failed; it never fails the live call.
+`session_started` emits `call.started` for call lifecycle only and does not start
+recording. `backend.activate()` reports `participant_connected` before the
+greeting. Once `wait_for_playout()` completes, the Voice Agent calls
+`POST /internal/v1/calls/{call_id}/recording`; the Backend uses
+`RecordingCoordinator.ensure()` to start Egress idempotently, after the recording
+intent transaction commits. Failure marks only the recording as failed; it never
+fails the live call.
+
+Call termination, including SIP caller disconnect, runs the normal call
+finalization path, which calls `RecordingCoordinator.stop()` and LiveKit
+`StopEgress`. Room deletion remains cleanup and a safety net, not the primary
+recording-stop trigger.
 
 The canonical object key is:
 
