@@ -25,7 +25,6 @@ from backend_core.platform.messaging import (
 from backend_core.platform.outbox import OutboxDispatcher
 from backend_core.platform.stream_consumer import RedisStreamConsumer
 from backend_core.runtime.execution_context import ExecutionContextReader
-from backend_core.runtime.finalization.recording import RecordingCoordinator
 from backend_core.runtime.finalization.service import FinalizationService
 
 logger = logging.getLogger(__name__)
@@ -93,18 +92,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         async def handle_event(fields: dict[str, str]) -> None:
             event = MessageEnvelope.model_validate_json(fields["message"])
-            if (
-                event.message_type == "call.started"
-                and app.state.settings.call_recording_enabled
-            ):
-                await RecordingCoordinator(
-                    app.state.database,
-                    app.state.livekit,
-                    event_stream=app.state.settings.domain_event_stream,
-                    command_stream=app.state.settings.command_stream,
-                    tracer=tracer,
-                ).ensure(event.correlation_id)
-                return
             if event.message_type not in {
                 "call.ended",
                 "recording.ready",

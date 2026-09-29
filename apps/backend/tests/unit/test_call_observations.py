@@ -1,9 +1,11 @@
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 from backend_core.modules.calls.models import CallSessionStatus
-from backend_core.modules.calls.router import observe_call
+from backend_core.modules.calls.router import observe_call, start_call_recording
 from contracts import VoiceCallObservation
+from fastapi import FastAPI, Request
 
 
 class Service:
@@ -68,3 +70,50 @@ async def test_agent_relinquish_does_not_end_the_call() -> None:
 
     assert service.observed == [f"relinquished:{attempt_id}:complete"]
     assert response.status.value == "connected"
+
+
+@pytest.mark.asyncio
+async def test_recording_start_operation_uses_existing_coordinator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_id = uuid4()
+    started: list[object] = []
+
+    class Coordinator:
+        def __init__(self, database, livekit, **kwargs) -> None:
+            started.append((database, livekit, kwargs))
+
+        async def ensure(self, requested_call_id) -> None:
+            started.append(requested_call_id)
+
+    monkeypatch.setattr(
+        "backend_core.modules.calls.router.RecordingCoordinator", Coordinator
+    )
+    app = FastAPI()
+    app.state.database = object()
+    app.state.livekit = object()
+    app.state.settings = SimpleNamespace(
+        call_recording_enabled=True,
+        domain_event_stream="events",
+        command_stream="commands",
+    )
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+            "query_string": b"",
+            "app": app,
+        }
+    )
+
+    response = await start_call_recording(call_id, request)
+
+    assert response.status_code == 204
+    assert started[0][2] == {
+        "event_stream": "events",
+        "command_stream": "commands",
+        "tracer": None,
+    }
+    assert started[1] == call_id

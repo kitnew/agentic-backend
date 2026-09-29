@@ -52,6 +52,7 @@ from backend_core.modules.tenants.repository import (
 from backend_core.platform.auth import require_admin, require_internal_scope
 from backend_core.platform.database import Database, DatabaseSession
 from backend_core.platform.messaging import TransactionalOutboxBus
+from backend_core.runtime.finalization.recording import RecordingCoordinator
 
 router = APIRouter(prefix="/internal/v1/call-sessions", tags=["internal:calls"])
 admin_router = APIRouter(
@@ -160,6 +161,23 @@ async def observe_call(
         return lifecycle_response(call)
     except (CallSessionNotFoundError, CallSessionConflictError) as error:
         raise call_http_exception(error) from error
+
+
+@runtime_router.post(
+    "/{call_id}/recording",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal_scope("call-session:observe"))],
+)
+async def start_call_recording(call_id: UUID, request: Request) -> Response:
+    if request.app.state.settings.call_recording_enabled:
+        await RecordingCoordinator(
+            request.app.state.database,
+            request.app.state.livekit,
+            event_stream=request.app.state.settings.domain_event_stream,
+            command_stream=request.app.state.settings.command_stream,
+            tracer=getattr(request.app.state, "outbox_tracer", None),
+        ).ensure(call_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 async def fail_test_call(

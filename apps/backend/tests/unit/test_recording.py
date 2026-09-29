@@ -159,3 +159,32 @@ async def test_coordinator_provider_failure_does_not_raise_or_fail_call() -> Non
     assert session.recording is not None
     assert session.recording.status is RecordingStatus.FAILED
     assert current_call.status is CallSessionStatus.STARTED
+
+
+@pytest.mark.asyncio
+async def test_coordinator_ensure_starts_egress_once() -> None:
+    current_call = call()
+    session = Session(current_call)
+    starts: list[tuple[str, str]] = []
+
+    class Database:
+        @asynccontextmanager
+        async def transaction(self):
+            yield session
+
+    class LiveKit:
+        async def start_call_recording(self, *, room_name: str, storage_key: str):
+            starts.append((room_name, storage_key))
+            return EgressResult("EG_once", room_name, "starting")
+
+    coordinator = RecordingCoordinator(
+        Database(),  # type: ignore[arg-type]
+        LiveKit(),  # type: ignore[arg-type]
+        event_stream="events",
+        command_stream="commands",
+    )
+    await coordinator.ensure(current_call.id)
+    await coordinator.ensure(current_call.id)
+
+    assert len(starts) == 1
+    assert starts[0][0] == current_call.room_name
