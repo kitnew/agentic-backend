@@ -18,6 +18,7 @@ from .cascade_policies import CascadePolicies
 from .cascade_response_scheduling import CascadeResponseScheduling
 from .cascade_speech_activity import CascadeSpeechActivity
 from .cascade_tokenizer import CascadeTokenizer
+from .cascade_tokenizer_strategy import CascadeTokenizerStrategy
 from .catalog_response import CatalogResponse
 from .catalog_response_status import CatalogResponseStatus
 from .catalog_status import CatalogStatus
@@ -264,6 +265,7 @@ __all__ = (
     "CascadeResponseScheduling",
     "CascadeSpeechActivity",
     "CascadeTokenizer",
+    "CascadeTokenizerStrategy",
     "CatalogResponse",
     "CatalogResponseStatus",
     "CatalogStatus",

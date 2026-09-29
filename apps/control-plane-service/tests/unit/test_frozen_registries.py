@@ -432,3 +432,23 @@ async def test_component_service_rejects_invalid_value_before_persistence() -> N
         )
 
     repository.save_draft.assert_not_awaited()
+
+
+def test_cascade_tokenizer_defaults_and_validates_phrase_configuration() -> None:
+    from control_plane.domain.frozen_components import CascadeTokenizer
+
+    assert CascadeTokenizer(min_sentence_chars=20).model_dump() == {
+        "min_sentence_chars": 20,
+        "strategy": "sentence",
+        "min_phrase_chars": 10,
+    }
+    assert (
+        CascadeTokenizer(
+            min_sentence_chars=20, strategy="phrase", min_phrase_chars=10
+        ).strategy
+        == "phrase"
+    )
+    with pytest.raises(ValueError):
+        CascadeTokenizer(min_sentence_chars=20, strategy="regex")
+    with pytest.raises(ValueError):
+        CascadeTokenizer(min_sentence_chars=20, strategy="phrase", min_phrase_chars=2)

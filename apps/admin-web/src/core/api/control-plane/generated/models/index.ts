@@ -23,6 +23,7 @@ export * from './cascadePolicies';
 export * from './cascadeResponseScheduling';
 export * from './cascadeSpeechActivity';
 export * from './cascadeTokenizer';
+export * from './cascadeTokenizerStrategy';
 export * from './catalogResponse';
 export * from './catalogResponseStatus';
 export * from './catalogStatus';

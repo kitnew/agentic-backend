@@ -150,7 +150,11 @@ def target_runtime() -> dict[str, object]:
             "deployment_config": {"model_id": "eleven_flash_v2_5"},
             "connection_config": {},
             "voice": "voice-id",
-            "tokenizer": {"min_sentence_chars": 20},
+            "tokenizer": {
+                "strategy": "sentence",
+                "min_sentence_chars": 20,
+                "min_phrase_chars": 10,
+            },
         },
         "realtime": {},
     }
@@ -218,6 +222,8 @@ def runtime_settings(**overrides: object) -> dict[str, object]:
         )
         tts["voice"] = value.get("voice_id", tts["voice"])
         tts["tokenizer"]["min_sentence_chars"] = value.get("min_sentence_chars", 20)
+        tts["tokenizer"]["strategy"] = value.get("strategy", "sentence")
+        tts["tokenizer"]["min_phrase_chars"] = value.get("min_phrase_chars", 10)
     if isinstance(value := overrides.get("local_vad"), dict):
         stt["speech_activity"] = value
     if isinstance(value := overrides.get("turn"), dict):
@@ -636,6 +642,22 @@ def test_eleven_v3_tts_disables_auto_mode(model: str) -> None:
     )
 
     assert tts._opts.auto_mode is False
+
+
+def test_phrase_tts_uses_phrase_tokenizer_without_changing_v3_auto_mode() -> None:
+    tts = _create_tts(
+        {"deployment_config": {"model_id": "eleven_v3_conversational"}, "voice": "v"},
+        "sk",
+        "key",
+        tokenizer_strategy="phrase",
+        min_phrase_chars=10,
+    )
+
+    assert tts._opts.auto_mode is False
+    assert tts._opts.word_tokenizer.tokenize("Dobrý deň, preverím dostupnosť.") == [
+        "Dobrý deň,",
+        "preverím dostupnosť.",
+    ]
 
 
 @pytest.mark.parametrize("model", ["eleven_flash_v2_5", "eleven_turbo_v2_5"])
@@ -1625,6 +1647,26 @@ async def test_provider_factory_passes_low_latency_tts_and_stt_candidates() -> N
         assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.25
         assert provider_stt._opts.server_vad["min_silence_duration_ms"] == 250
         assert session.tts._opts.word_tokenizer._config.min_sentence_len == 12
+    finally:
+        await session.stt.aclose()
+        await session.llm.aclose()
+        await session.tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_phrase_tokenizer_settings_reach_voice_execution_tts() -> None:
+    runtime = runtime_settings(
+        tts={"strategy": "phrase", "min_phrase_chars": 10},
+    )
+    session = create_agent_session(
+        settings(),
+        runtime,
+        "voice-agent-prompt:test",
+        secrets={"llm": "azure-key", "stt": "eleven-key", "tts": "eleven-key"},
+    )
+    try:
+        assert session.tts._opts.word_tokenizer.tokenize("Dobrý deň,") == ["Dobrý deň,"]
+        assert session.tts._opts.auto_mode is True
     finally:
         await session.stt.aclose()
         await session.llm.aclose()

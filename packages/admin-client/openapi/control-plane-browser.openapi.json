@@ -394,11 +394,27 @@
       "CascadeTokenizer": {
         "additionalProperties": false,
         "properties": {
+          "min_phrase_chars": {
+            "default": 10,
+            "maximum": 200.0,
+            "minimum": 3.0,
+            "title": "Min Phrase Chars",
+            "type": "integer"
+          },
           "min_sentence_chars": {
             "maximum": 200.0,
             "minimum": 3.0,
             "title": "Min Sentence Chars",
             "type": "integer"
+          },
+          "strategy": {
+            "default": "sentence",
+            "enum": [
+              "sentence",
+              "phrase"
+            ],
+            "title": "Strategy",
+            "type": "string"
           }
         },
         "required": [

@@ -614,6 +614,37 @@ async def test_cascade_materializes_current_state_hints_voice_and_provenance() -
 
 
 @pytest.mark.asyncio
+async def test_cascade_phrase_tokenizer_settings_reach_voice_runtime() -> None:
+    value = state(["cascade"])
+    live_components = dict(value.live_components)
+    address = ComponentAddress(ComponentKind("Policies"), SystemScope())
+    policies = live_components[address]
+    cascade = dict(policies.value["cascade"])
+    cascade["tokenizer"] = {
+        "strategy": "phrase",
+        "min_sentence_chars": 20,
+        "min_phrase_chars": 10,
+    }
+    live_components[address] = replace(
+        policies, value={**policies.value, "cascade": cascade}
+    )
+
+    selected = (
+        await resolver(replace(value, live_components=live_components)).resolve_runtime(
+            TENANT
+        )
+    ).selected
+    assert isinstance(selected, ResolvedCascadeRuntime)
+    assert ExecutionMaterializationService._voice_runtime(selected)["tts"][
+        "tokenizer"
+    ] == {
+        "strategy": "phrase",
+        "min_sentence_chars": 20,
+        "min_phrase_chars": 10,
+    }
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("reasoning_effort", [None, "none"])
 async def test_reasoning_effort_survives_execution_snapshot_and_voice_context(
     reasoning_effort: str | None,

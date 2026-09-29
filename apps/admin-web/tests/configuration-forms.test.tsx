@@ -68,7 +68,11 @@ const completeSystemDesired = {
         preemptive_generation: true,
         preemptive_tts: false,
       },
-      tokenizer: { min_sentence_chars: 20 },
+      tokenizer: {
+        min_sentence_chars: 20,
+        strategy: "sentence",
+        min_phrase_chars: 10,
+      },
     },
   },
 } as SystemConfigurationDesired;
@@ -114,6 +118,18 @@ describe("configuration form mappings", () => {
     expect(
       systemDesiredFromForm(systemFormState(completeSystemDesired)),
     ).toEqual(completeSystemDesired);
+  });
+
+  it("preserves the phrase tokenizer strategy and threshold", () => {
+    const form = systemFormState(completeSystemDesired);
+    form.policies.cascade.tokenizer.strategy = "phrase";
+    form.policies.cascade.tokenizer.min_phrase_chars = "10";
+
+    expect(systemDesiredFromForm(form).policies.cascade.tokenizer).toEqual({
+      strategy: "phrase",
+      min_sentence_chars: 20,
+      min_phrase_chars: 10,
+    });
   });
 
   it("offers separate eligible STT deployments for precision and Realtime input", async () => {

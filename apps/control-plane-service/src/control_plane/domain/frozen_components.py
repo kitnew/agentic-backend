@@ -153,6 +153,8 @@ class CascadeResponseScheduling(FrozenValue):
 
 class CascadeTokenizer(FrozenValue):
     min_sentence_chars: int = Field(ge=3, le=200)
+    strategy: Literal["sentence", "phrase"] = "sentence"
+    min_phrase_chars: int = Field(default=10, ge=3, le=200)
 
 
 class CascadePolicies(FrozenValue):

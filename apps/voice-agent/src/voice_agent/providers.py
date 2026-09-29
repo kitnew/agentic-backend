@@ -13,6 +13,7 @@ from livekit.plugins.openai import realtime
 from openai.types import realtime as openai_realtime
 
 from voice_agent.observability import VoiceMetrics
+from voice_agent.phrase_tokenizer import PhraseTokenizer
 from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_endpointing import LocalVadCommitController, LocalVadCommitSTT
 
@@ -151,7 +152,9 @@ def create_agent_session(
         tts_config,
         tts_language,
         secrets["tts"],
+        tokenizer_strategy=tts_config["tokenizer"].get("strategy", "sentence"),
         min_sentence_chars=tts_config["tokenizer"]["min_sentence_chars"],
+        min_phrase_chars=tts_config["tokenizer"].get("min_phrase_chars", 10),
     )
     if metrics is not None:
         for component, name in ((stt, "stt"), (llm_provider, "llm"), (tts, "tts")):
@@ -412,7 +415,9 @@ def _create_tts(
     language: str,
     secret: str,
     *,
+    tokenizer_strategy: str = "sentence",
     min_sentence_chars: int | None = None,
+    min_phrase_chars: int = 10,
 ) -> elevenlabs.TTS:
     model = config["deployment_config"].get(
         "model_id", config["deployment_config"].get("model")
@@ -420,10 +425,15 @@ def _create_tts(
     options: dict[str, Any] = {}
     if model.startswith("eleven_v3"):
         options["auto_mode"] = False
-    if min_sentence_chars is not None:
-        options["word_tokenizer"] = tokenize.blingfire.SentenceTokenizer(
-            min_sentence_len=min_sentence_chars
-        )
+    if tokenizer_strategy == "phrase":
+        options["word_tokenizer"] = PhraseTokenizer(min_phrase_len=min_phrase_chars)
+    elif tokenizer_strategy == "sentence":
+        if min_sentence_chars is not None:
+            options["word_tokenizer"] = tokenize.blingfire.SentenceTokenizer(
+                min_sentence_len=min_sentence_chars
+            )
+    else:
+        raise ValueError(f"unsupported TTS tokenizer strategy: {tokenizer_strategy}")
     return elevenlabs.TTS(
         api_key=secret,
         model=model,

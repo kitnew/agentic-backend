@@ -82,7 +82,11 @@ type SystemFormState = {
         preemptive_generation: boolean;
         preemptive_tts: boolean;
       };
-      tokenizer: { min_sentence_chars: string };
+      tokenizer: {
+        strategy: "sentence" | "phrase";
+        min_sentence_chars: string;
+        min_phrase_chars: string;
+      };
     };
   };
 };
@@ -198,7 +202,11 @@ export function emptySystemFormState(): SystemFormState {
           preemptive_generation: false,
           preemptive_tts: false,
         },
-        tokenizer: { min_sentence_chars: "" },
+        tokenizer: {
+          strategy: "sentence",
+          min_sentence_chars: "20",
+          min_phrase_chars: "10",
+        },
       },
     },
   };
@@ -294,8 +302,12 @@ export function systemFormState(
         },
         response_scheduling: { ...value.policies.cascade.response_scheduling },
         tokenizer: {
+          strategy: value.policies.cascade.tokenizer.strategy ?? "sentence",
           min_sentence_chars: String(
             value.policies.cascade.tokenizer.min_sentence_chars,
+          ),
+          min_phrase_chars: String(
+            value.policies.cascade.tokenizer.min_phrase_chars ?? 10,
           ),
         },
       },
@@ -399,8 +411,12 @@ export function systemDesiredFromForm(
         },
         response_scheduling: { ...form.policies.cascade.response_scheduling },
         tokenizer: {
+          strategy: form.policies.cascade.tokenizer.strategy,
           min_sentence_chars: numberValue(
             form.policies.cascade.tokenizer.min_sentence_chars,
+          ),
+          min_phrase_chars: numberValue(
+            form.policies.cascade.tokenizer.min_phrase_chars,
           ),
         },
       },
@@ -1419,21 +1435,60 @@ export function SystemConfigurationForm({
             </FormGrid>
           </FormSection>
           <FormSection title="Tokenizer" collapsible={false}>
-            <NumericField
-              label="Min sentence characters"
-              min={3}
-              max={200}
-              step={1}
-              required
-              error={errorAt(
-                errors,
-                "policies.cascade.tokenizer.min_sentence_chars",
-              )}
-              value={cascade.tokenizer.min_sentence_chars}
-              onChange={(min_sentence_chars) =>
-                updateCascade({ tokenizer: { min_sentence_chars } })
-              }
-            />
+            <Field label="Tokenizer strategy">
+              <select
+                value={cascade.tokenizer.strategy}
+                onChange={(event) =>
+                  updateCascade({
+                    tokenizer: {
+                      ...cascade.tokenizer,
+                      strategy: event.target.value as "sentence" | "phrase",
+                    },
+                  })
+                }
+              >
+                <option value="sentence">Sentence</option>
+                <option value="phrase">Phrase</option>
+              </select>
+            </Field>
+            {cascade.tokenizer.strategy === "phrase" ? (
+              <NumericField
+                label="Minimum phrase characters"
+                min={3}
+                max={200}
+                step={1}
+                required
+                error={errorAt(
+                  errors,
+                  "policies.cascade.tokenizer.min_phrase_chars",
+                )}
+                value={cascade.tokenizer.min_phrase_chars}
+                onChange={(min_phrase_chars) =>
+                  updateCascade({
+                    tokenizer: { ...cascade.tokenizer, min_phrase_chars },
+                  })
+                }
+              />
+            ) : null}
+            {cascade.tokenizer.strategy === "sentence" ? (
+              <NumericField
+                label="Min sentence characters"
+                min={3}
+                max={200}
+                step={1}
+                required
+                error={errorAt(
+                  errors,
+                  "policies.cascade.tokenizer.min_sentence_chars",
+                )}
+                value={cascade.tokenizer.min_sentence_chars}
+                onChange={(min_sentence_chars) =>
+                  updateCascade({
+                    tokenizer: { ...cascade.tokenizer, min_sentence_chars },
+                  })
+                }
+              />
+            ) : null}
           </FormSection>
         </div>
       </FormSection>

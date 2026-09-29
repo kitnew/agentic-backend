@@ -4,11 +4,18 @@
  * Agentic Backend Control Plane
  * OpenAPI spec version: 0.1.0
  */
+import type { CascadeTokenizerStrategy } from './cascadeTokenizerStrategy';
 
 export interface CascadeTokenizer {
   /**
      * @minimum 3
      * @maximum 200
      */
+  min_phrase_chars?: number;
+  /**
+     * @minimum 3
+     * @maximum 200
+     */
   min_sentence_chars: number;
+  strategy?: CascadeTokenizerStrategy;
 }
