@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from agentic_observability.domain import domain_span
 from contracts import (
@@ -39,6 +40,41 @@ class FinalizationError(ValueError):
 
 
 _BODY_REFERENCE_KEY = "artifact_representation_id"
+_SLOVAK_WEEKDAYS = (
+    "Pondelok",
+    "Utorok",
+    "Streda",
+    "Štvrtok",
+    "Piatok",
+    "Sobota",
+    "Nedeľa",
+)
+_SLOVAK_MONTHS = (
+    "Januára",
+    "Februára",
+    "Marca",
+    "Apríla",
+    "Mája",
+    "Júna",
+    "Júla",
+    "Augusta",
+    "Septembra",
+    "Októbra",
+    "Novembra",
+    "Decembra",
+)
+
+
+def _format_slovak_datetime(value: datetime | None, timezone: str) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    local = value.astimezone(ZoneInfo(timezone))
+    return (
+        f"{_SLOVAK_WEEKDAYS[local.weekday()]}, {local:%H:%M}, "
+        f"{local.day} {_SLOVAK_MONTHS[local.month - 1]}"
+    )
 
 
 class FinalizationService:
@@ -710,6 +746,9 @@ class FinalizationService:
                 "conversation_id": str(conversation.id),
                 "caller_number": call.caller_phone_e164,
                 "started_at": call.started_at.isoformat() if call.started_at else None,
+                "started_at_localized": _format_slovak_datetime(
+                    call.started_at, voice.business.timezone
+                ),
                 "ended_at": call.ended_at.isoformat() if call.ended_at else None,
             },
             "agent": {
