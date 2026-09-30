@@ -213,6 +213,7 @@ async def test_handoff_destination_identity_updates_and_live_state(
                 },
             )
             assert duplicate.status_code == 409
+            assert "key" in duplicate.json()["message"].lower()
             other_tenant = await client.post(
                 path.replace("tenant-a", "tenant-b"),
                 headers={"Idempotency-Key": "other-front-desk"},
@@ -225,15 +226,59 @@ async def test_handoff_destination_identity_updates_and_live_state(
             assert other_tenant.status_code == 201
 
             resource = f"{path}/{created.json()['id']}"
-            updated = await client.put(
+            phone_updated = await client.put(
                 resource,
                 headers={
-                    "Idempotency-Key": "update-front-desk",
+                    "Idempotency-Key": "update-front-desk-phone",
+                    "If-Match": created.headers["etag"],
+                },
+                json={
+                    "description": "Front desk",
+                    "phone_number": "+421 900-888-888",
+                },
+            )
+            assert phone_updated.status_code == 200
+            assert phone_updated.json()["phone_number"] == "+421900888888"
+            assert phone_updated.json()["description"] == "Front desk"
+            assert phone_updated.json()["enabled"] is False
+            assert phone_updated.json()["key"] == "front_desk"
+            assert phone_updated.headers["etag"] != created.headers["etag"]
+
+            stale = await client.put(
+                resource,
+                headers={
+                    "Idempotency-Key": "stale-front-desk",
                     "If-Match": created.headers["etag"],
                 },
                 json={
                     "description": "Reception",
-                    "phone_number": "+421 900-888-888",
+                    "phone_number": "+421900888888",
+                },
+            )
+            assert stale.status_code == 412
+            immutable_key = await client.put(
+                resource,
+                headers={
+                    "Idempotency-Key": "change-front-desk-key",
+                    "If-Match": phone_updated.headers["etag"],
+                },
+                json={
+                    "key": "changed",
+                    "description": "Reception",
+                    "phone_number": "+421900888888",
+                },
+            )
+            assert immutable_key.status_code == 422
+
+            updated = await client.put(
+                resource,
+                headers={
+                    "Idempotency-Key": "update-front-desk",
+                    "If-Match": phone_updated.headers["etag"],
+                },
+                json={
+                    "description": "Reception",
+                    "phone_number": "+421900888888",
                 },
             )
             assert updated.status_code == 200
@@ -245,11 +290,11 @@ async def test_handoff_destination_identity_updates_and_live_state(
                 resource,
                 headers={
                     "Idempotency-Key": "update-front-desk",
-                    "If-Match": created.headers["etag"],
+                    "If-Match": phone_updated.headers["etag"],
                 },
                 json={
                     "description": "Reception",
-                    "phone_number": "+421 900-888-888",
+                    "phone_number": "+421900888888",
                 },
             )
             assert update_replay.json() == updated.json()
@@ -269,6 +314,8 @@ async def test_handoff_destination_identity_updates_and_live_state(
             )
             assert enabled.json()["enabled"] is True
             assert disabled.json()["enabled"] is False
+            assert enabled.json()["phone_number"] == "+421900888888"
+            assert disabled.json()["description"] == "Reception"
             assert (
                 await client.post(
                     f"{resource}/enable",
@@ -289,6 +336,16 @@ async def test_handoff_destination_identity_updates_and_live_state(
             ).json() == disabled.json()
             assert disabled.json()["id"] == created.json()["id"]
             assert (await client.get(resource)).json()["description"] == "Reception"
+            duplicate_disabled = await client.post(
+                path,
+                headers={"Idempotency-Key": "duplicate-disabled-front-desk"},
+                json={
+                    "key": "front_desk",
+                    "description": "Still duplicate",
+                    "phone_number": "+421900999999",
+                },
+            )
+            assert duplicate_disabled.status_code == 409
 
             for column, value in (("tenant_id", "tenant-c"), ("key", "changed")):
                 with pytest.raises(DBAPIError, match="identity is immutable"):

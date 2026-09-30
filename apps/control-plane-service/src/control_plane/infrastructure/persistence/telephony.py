@@ -209,7 +209,7 @@ class SqlAlchemyHandoffDestinationRepository:
             await self._session.flush()
         except IntegrityError as error:
             raise ManagedResourceConflict(
-                "managed resource constraint conflict"
+                "handoff destination key already exists for tenant"
             ) from error
 
     @staticmethod
