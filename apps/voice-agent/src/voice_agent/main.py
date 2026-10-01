@@ -18,9 +18,10 @@ from contracts import (
     LiveKitJobMetadata,
     VoiceExecutionContext,
 )
-from livekit import agents, rtc
+from livekit import agents, api, rtc
 from livekit.agents import llm
 from livekit.agents.beta.tools import EndCallTool
+from livekit.api.twirp_client import TwirpError
 from pydantic import ValidationError
 
 from voice_agent.backend import BackendClient, CallFinalizer
@@ -35,6 +36,7 @@ from voice_agent.observability import (
     shutdown_voice_telemetry,
 )
 from voice_agent.providers import (
+    USER_AWAY_TIMEOUT,
     create_agent_session,
     create_half_cascade_session,
     create_realtime_session,
@@ -44,6 +46,7 @@ from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_role import role_for_architecture
 
 logger = logging.getLogger(__name__)
+INACTIVITY_TOTAL_TIMEOUT = 25.0
 
 
 def log_user_transcript(event: object) -> None:
@@ -595,6 +598,7 @@ async def run_job(
     recent_transcript: RecentTranscriptBuffer | None = None
     inactivity_task: asyncio.Task[None] | None = None
     nudge_task: asyncio.Task[None] | None = None
+    inactivity_resume_task: asyncio.Task[None] | None = None
     sip_disconnect_handler: Callable[[rtc.RemoteParticipant], None] | None = None
     cancelled = False
     try:
@@ -602,7 +606,30 @@ async def run_job(
             ctx, backend, settings.participant_wait_timeout_seconds
         )
         finalizer = CallFinalizer(backend, call_id)
-        handoff = HandoffController(backend, call_id, timeout=30.0)
+
+        async def remove_handoff_participant(identity: str) -> None:
+            async with api.LiveKitAPI(
+                settings.livekit_url,
+                settings.livekit_api_key.get_secret_value(),
+                settings.livekit_api_secret.get_secret_value(),
+            ) as livekit:
+                try:
+                    await livekit.room.remove_participant(
+                        api.RoomParticipantIdentity(
+                            room=ctx.room.name, identity=identity
+                        )
+                    )
+                except TwirpError as error:
+                    if error.code != "not_found":
+                        raise
+
+        handoff = HandoffController(
+            backend,
+            call_id,
+            timeout=30.0,
+            backend_timeout=settings.backend_http_timeout_seconds,
+            remove_participant=remove_handoff_participant,
+        )
         context = await backend.runtime_context(call_id)
         logger.info(
             "Voice runtime context loaded",
@@ -663,7 +690,7 @@ async def run_job(
 
         async def check_inactivity() -> None:
             try:
-                await asyncio.sleep(19.0)
+                await asyncio.sleep(INACTIVITY_TOTAL_TIMEOUT - USER_AWAY_TIMEOUT)
                 assert handoff is not None
                 if not closed.done() and not handoff.active and not handoff.completed:
                     # EndCallTool uses this path to disconnect SIP callers.
@@ -686,10 +713,13 @@ async def run_job(
                 logger.exception("inactivity check-in response failed")
 
         def cancel_inactivity(*, cancel_nudge: bool = False) -> None:
-            nonlocal inactivity_task, nudge_task
+            nonlocal inactivity_task, nudge_task, inactivity_resume_task
             if inactivity_task is not None:
                 inactivity_task.cancel()
                 inactivity_task = None
+            if inactivity_resume_task is not None:
+                inactivity_resume_task.cancel()
+                inactivity_resume_task = None
             if cancel_nudge and nudge_task is not None:
                 nudge_task.cancel()
                 nudge_task = None
@@ -697,7 +727,12 @@ async def run_job(
         def start_inactivity() -> None:
             nonlocal inactivity_task, nudge_task
             assert handoff is not None
-            if closed.done() or handoff.active or handoff.completed:
+            if (
+                closed.done()
+                or handoff.active
+                or handoff.completed
+                or inactivity_resume_task is not None
+            ):
                 return
             if inactivity_task is None or inactivity_task.done():
                 inactivity_task = asyncio.create_task(check_inactivity())
@@ -711,6 +746,7 @@ async def run_job(
                 cancel_inactivity()
 
         def on_handoff_state_changed(state: HandoffState, reason: str) -> None:
+            nonlocal inactivity_resume_task
             if state in {
                 HandoffState.DIALING,
                 HandoffState.ANSWERED,
@@ -727,14 +763,23 @@ async def run_job(
                 and reason
                 not in {
                     "caller_disconnected",
+                    "caller_absent_after_answer",
                     "job_shutdown",
                     "session_closed",
                     "voice_agent_shutdown",
                 }
                 and session is not None
-                and session.user_state == "away"
+                and session.user_state in {"away", "listening"}
             ):
-                start_inactivity()
+
+                async def resume_inactivity() -> None:
+                    nonlocal inactivity_resume_task
+                    await asyncio.sleep(USER_AWAY_TIMEOUT)
+                    inactivity_resume_task = None
+                    if session.user_state == "away":
+                        start_inactivity()
+
+                inactivity_resume_task = asyncio.create_task(resume_inactivity())
 
         assert handoff is not None
         handoff.set_state_listener(on_handoff_state_changed)
@@ -883,7 +928,7 @@ async def run_job(
     finally:
         if sip_disconnect_handler is not None:
             ctx.room.off("participant_disconnected", sip_disconnect_handler)
-        for task in (inactivity_task, nudge_task):
+        for task in (inactivity_task, nudge_task, inactivity_resume_task):
             if task is not None:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)

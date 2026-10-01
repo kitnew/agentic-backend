@@ -18,6 +18,7 @@ from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_endpointing import LocalVadCommitController, LocalVadCommitSTT
 
 logger = logging.getLogger(__name__)
+USER_AWAY_TIMEOUT = 10.0
 
 
 def provider_languages(locale: str) -> tuple[str, str]:
@@ -166,7 +167,7 @@ def create_agent_session(
                 ),
             )
     session: agents.AgentSession = agents.AgentSession(
-        user_away_timeout=6.0,
+        user_away_timeout=USER_AWAY_TIMEOUT,
         stt=stt,
         vad=vad,
         turn_handling={
@@ -230,7 +231,7 @@ def create_realtime_session(
         max_retry=settings.provider_retry_limit,
     )
     return agents.AgentSession(
-        user_away_timeout=6.0,
+        user_away_timeout=USER_AWAY_TIMEOUT,
         stt=standalone_stt,
         llm=realtime_model,
         vad=None,
@@ -275,7 +276,7 @@ def create_half_cascade_session(
         max_retry=settings.provider_retry_limit,
     )
     return agents.AgentSession(
-        user_away_timeout=6.0,
+        user_away_timeout=USER_AWAY_TIMEOUT,
         stt=standalone_stt,
         llm=realtime_model,
         tts=tts,

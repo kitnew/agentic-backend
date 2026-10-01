@@ -1048,7 +1048,7 @@ Recording lifecycle is deterministic runtime behavior and should not be implemen
 All current session factories configure:
 
 ```text
-user_away_timeout = 6 seconds
+user_away_timeout = 10 seconds
 ```
 
 When the LiveKit user state becomes `away`, Voice Agent initiates the inactivity flow.
@@ -1060,7 +1060,7 @@ away detected
         ↓
 check-in behavior
         ↓
-19-second room-deletion timer
+15-second room-deletion timer (25 seconds total silence)
 ```
 
 Returning to a non-away state cancels the pending inactivity timer.
@@ -1084,6 +1084,7 @@ CANCELED
 ```
 
 inactivity may resume when the caller remains away and the call is still eligible for normal inactivity handling.
+The 10-second user wait restarts after an unsuccessful handoff; time spent in handoff does not count toward inactivity.
 
 The timeout logic is runtime behavior.
 
@@ -1111,6 +1112,7 @@ stateDiagram-v2
 ```
 
 Voice Agent's `HandoffController` observes the LiveKit room and SIP participants and requests state transitions.
+Both the LiveKit SIP ring and Voice Agent's answer watchdog use a 30-second timeout. Voice Agent marks an unanswered attempt locally timed out before trying LiveKit cleanup and Backend persistence. The Backend request that starts the dial has a separate HTTP timeout, so these waits can occur consecutively.
 
 Backend validates and serializes those transitions.
 

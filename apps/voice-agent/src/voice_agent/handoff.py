@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -19,16 +19,29 @@ class HandoffAttempt:
     id: UUID
     participant_identity: str
     state: HandoffState
+    events: asyncio.Queue[HandoffEvent] | None = None
 
 
 class HandoffController:
-    def __init__(self, backend: BackendClient, call_id: UUID, timeout: float) -> None:
+    def __init__(
+        self,
+        backend: BackendClient,
+        call_id: UUID,
+        timeout: float,
+        *,
+        backend_timeout: float = 10.0,
+        remove_participant: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
         self._backend = backend
         self._call_id = call_id
         self._timeout = timeout
+        self._backend_timeout = backend_timeout
+        self._remove_participant = remove_participant
         self._lock = asyncio.Lock()
         self._attempt: HandoffAttempt | None = None
         self._waiter: asyncio.Task[None] | None = None
+        self._deadline: asyncio.TimerHandle | None = None
+        self._pending: set[asyncio.Task[None]] = set()
         self._caller_identity: str | None = None
         self._state_listener: Callable[[HandoffState, str], None] | None = None
 
@@ -62,6 +75,78 @@ class HandoffController:
     def set_caller_identity(self, identity: str) -> None:
         self._caller_identity = identity
 
+    def _cancel_deadline(self) -> None:
+        if self._deadline is not None:
+            self._deadline.cancel()
+            self._deadline = None
+
+    def _terminal(
+        self, attempt: HandoffAttempt, state: HandoffState, reason: str
+    ) -> bool:
+        if self._attempt is not attempt or attempt.state not in ACTIVE_STATES:
+            return False
+        attempt.state = state
+        self._cancel_deadline()
+        self._notify_state(state, reason)
+        return True
+
+    def _finish_later(
+        self, attempt: HandoffAttempt, event: HandoffEvent
+    ) -> asyncio.Task[None]:
+        task = asyncio.create_task(self._finish_terminal(attempt, event))
+        self._pending.add(task)
+        task.add_done_callback(self._pending.discard)
+        return task
+
+    async def _finish_terminal(
+        self, attempt: HandoffAttempt, event: HandoffEvent
+    ) -> None:
+        async def cleanup() -> None:
+            if self._remove_participant is None:
+                return
+            try:
+                await asyncio.wait_for(
+                    self._remove_participant(attempt.participant_identity),
+                    self._backend_timeout,
+                )
+            except Exception:
+                logger.exception("Handoff outbound participant cleanup failed")
+
+        async def persist() -> None:
+            try:
+                await asyncio.wait_for(
+                    self._backend.transition_handoff(self._call_id, attempt.id, event),
+                    self._backend_timeout,
+                )
+            except Exception:
+                logger.exception("Handoff terminal state persistence failed")
+
+        await asyncio.gather(cleanup(), persist())
+
+    def _expire(self, attempt_id: UUID) -> None:
+        attempt = self._attempt
+        if (
+            attempt is None
+            or attempt.id != attempt_id
+            or attempt.state is not HandoffState.DIALING
+        ):
+            return
+        if not self._terminal(
+            attempt, HandoffState.TIMED_OUT, HandoffEvent.TIME_OUT.value
+        ):
+            return
+        self._finish_later(attempt, HandoffEvent.TIME_OUT)
+        if attempt.events is not None:
+            attempt.events.put_nowait(HandoffEvent.TIME_OUT)
+
+    def _answer(self, attempt: HandoffAttempt) -> bool:
+        if self._attempt is not attempt or attempt.state is not HandoffState.DIALING:
+            return False
+        attempt.state = HandoffState.ANSWERED
+        self._cancel_deadline()
+        self._notify_state(HandoffState.ANSWERED, HandoffEvent.ANSWER.value)
+        return True
+
     async def start(
         self, response: HumanHandoffResponse, session: agents.AgentSession
     ) -> None:
@@ -72,51 +157,39 @@ class HandoffController:
                 raise RuntimeError("handoff already in progress")
         await self._stop_waiter()
         async with self._lock:
+            self._cancel_deadline()
             self._attempt = HandoffAttempt(
                 response.attempt_id,
                 response.participant_identity,
                 response.status,
             )
             if response.status is HandoffState.DIALING:
+                self._deadline = asyncio.get_running_loop().call_later(
+                    self._timeout, self._expire, response.attempt_id
+                )
                 self._waiter = asyncio.create_task(
                     self._watch(session, response.attempt_id)
                 )
             self._notify_state(response.status, "started")
+            if response.status is HandoffState.FAILED:
+                self._finish_later(self._attempt, HandoffEvent.FAIL)
 
     async def cancel(self, reason: str) -> bool:
-        async with self._lock:
-            attempt = self._attempt
-            if attempt is None or attempt.state not in ACTIVE_STATES:
-                return False
-            try:
-                response = await self._backend.transition_handoff(
-                    self._call_id, attempt.id, HandoffEvent.CANCEL
-                )
-                if self._attempt is not attempt:
-                    return False
-                attempt.state = response.state
-                self._notify_state(response.state, reason)
-            except Exception:
-                logger.exception(
-                    "Handoff cancellation request failed",
-                    extra={
-                        "call_session_id": str(self._call_id),
-                        "handoff_attempt_id": str(attempt.id),
-                        "handoff_state": attempt.state.value,
-                        "participant_identity": attempt.participant_identity,
-                        "reason": reason,
-                    },
-                )
-                return False
-            waiter = self._waiter
-        if waiter is not None and waiter is not asyncio.current_task():
-            waiter.cancel()
-            await asyncio.gather(waiter, return_exceptions=True)
+        attempt = self._attempt
+        if attempt is None or not self._terminal(
+            attempt, HandoffState.CANCELED, reason
+        ):
+            return False
+        finish = self._finish_later(attempt, HandoffEvent.CANCEL)
+        await self._stop_waiter()
+        await finish
         return True
 
     async def close(self) -> None:
         await self.cancel("voice_agent_shutdown")
         await self._stop_waiter()
+        if self._pending:
+            await asyncio.gather(*self._pending, return_exceptions=True)
 
     async def _stop_waiter(self) -> None:
         waiter = self._waiter
@@ -144,30 +217,44 @@ class HandoffController:
                     },
                 )
                 return None
-            response = await self._backend.transition_handoff(
-                self._call_id, attempt_id, event
+            response = await asyncio.wait_for(
+                self._backend.transition_handoff(self._call_id, attempt_id, event),
+                self._backend_timeout,
             )
             if (
                 self._attempt is not attempt
+                or attempt.state not in ACTIVE_STATES
                 or response.attempt_id != attempt_id
                 or response.participant_identity != attempt.participant_identity
             ):
                 return None
-            attempt.state = response.state
-            self._notify_state(response.state, event.value)
+            if response.state is HandoffState.ANSWERED and event is HandoffEvent.ANSWER:
+                return response.state
+            if response.state is HandoffState.COMPLETED:
+                self._terminal(attempt, response.state, event.value)
+            elif response.state not in ACTIVE_STATES and self._terminal(
+                attempt, response.state, event.value
+            ):
+                self._finish_later(attempt, HandoffEvent.FAIL)
             return response.state
 
     async def _watch(self, session: agents.AgentSession, attempt_id: UUID) -> None:
         room = session.room_io.room
         events: asyncio.Queue[HandoffEvent] = asyncio.Queue()
         attempt = self._attempt
-        if attempt is None or attempt.id != attempt_id:
+        if (
+            attempt is None
+            or attempt.id != attempt_id
+            or attempt.state is HandoffState.TIMED_OUT
+        ):
             return
+        attempt.events = events
 
         def participant_connected(participant: rtc.RemoteParticipant) -> None:
             if (
                 participant.identity == attempt.participant_identity
                 and participant.attributes.get("sip.callStatus") == "active"
+                and self._answer(attempt)
             ):
                 events.put_nowait(HandoffEvent.ANSWER)
 
@@ -177,6 +264,7 @@ class HandoffController:
             if (
                 participant.identity == attempt.participant_identity
                 and changed_attributes.get("sip.callStatus") == "active"
+                and self._answer(attempt)
             ):
                 events.put_nowait(HandoffEvent.ANSWER)
 
@@ -193,16 +281,24 @@ class HandoffController:
             participant = room.remote_participants.get(attempt.participant_identity)
             if participant is not None:
                 participant_connected(participant)
-            try:
-                event = await asyncio.wait_for(events.get(), self._timeout)
-            except TimeoutError:
-                event = HandoffEvent.TIME_OUT
+            event = await events.get()
+            if event is HandoffEvent.TIME_OUT:
+                return
             if event is HandoffEvent.CANCEL:
                 await self.cancel("caller_disconnected")
                 session.shutdown(drain=False)
                 return
+            if event is HandoffEvent.FAIL:
+                if self._terminal(attempt, HandoffState.FAILED, event.value):
+                    await self._finish_later(attempt, event)
+                return
             state = await self._transition(attempt_id, event)
+            if state is HandoffState.COMPLETED:
+                session.shutdown(drain=True)
+                return
             if state is not HandoffState.ANSWERED:
+                if self._terminal(attempt, HandoffState.FAILED, "answer_rejected"):
+                    self._finish_later(attempt, HandoffEvent.FAIL)
                 return
             # Room presence closes the event-delivery gap; Backend serialization
             # remains authoritative when cancellation and completion race.
@@ -221,7 +317,8 @@ class HandoffController:
                     await self.cancel("caller_disconnected")
                     session.shutdown(drain=False)
                 elif event is HandoffEvent.FAIL:
-                    await self._transition(attempt_id, event)
+                    if self._terminal(attempt, HandoffState.FAILED, event.value):
+                        await self._finish_later(attempt, event)
                 return
             interrupt = asyncio.create_task(events.get())
             completion = asyncio.create_task(
@@ -235,6 +332,10 @@ class HandoffController:
                     if completion in done:
                         if completion.result() is HandoffState.COMPLETED:
                             session.shutdown(drain=True)
+                        elif self._terminal(
+                            attempt, HandoffState.FAILED, "completion_rejected"
+                        ):
+                            self._finish_later(attempt, HandoffEvent.FAIL)
                         return
                     event = interrupt.result()
                     if event is HandoffEvent.ANSWER:
@@ -244,7 +345,8 @@ class HandoffController:
                         await self.cancel("caller_disconnected")
                         session.shutdown(drain=False)
                     elif event is HandoffEvent.FAIL:
-                        await self._transition(attempt_id, event)
+                        if self._terminal(attempt, HandoffState.FAILED, event.value):
+                            await self._finish_later(attempt, event)
                     return
             finally:
                 for task in (completion, interrupt):
@@ -262,6 +364,8 @@ class HandoffController:
                     "participant_identity": attempt.participant_identity,
                 },
             )
+            if self._terminal(attempt, HandoffState.FAILED, "watcher_error"):
+                self._finish_later(attempt, HandoffEvent.FAIL)
         finally:
             room.off("participant_connected", participant_connected)
             room.off("participant_attributes_changed", participant_attributes_changed)

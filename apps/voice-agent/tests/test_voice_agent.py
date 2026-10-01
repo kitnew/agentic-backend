@@ -39,6 +39,7 @@ from voice_agent.main import (
     send_greeting,
 )
 from voice_agent.providers import (
+    USER_AWAY_TIMEOUT,
     _create_tts,
     azure_endpoint,
     create_agent_session,
@@ -63,6 +64,19 @@ def settings(**overrides: object) -> VoiceAgentSettings:
     }
     values.update(overrides)
     return VoiceAgentSettings.model_validate(values)
+
+
+class FakeSpeechHandle:
+    def __init__(self, playout: asyncio.Future[None]) -> None:
+        self.playout = playout
+
+    async def wait_for_playout(self) -> None:
+        await self.playout
+
+
+def test_inactivity_policy_is_25_seconds_total() -> None:
+    assert USER_AWAY_TIMEOUT == 10.0
+    assert voice_main.INACTIVITY_TOTAL_TIMEOUT - USER_AWAY_TIMEOUT == 15.0
 
 
 def runtime_context() -> VoiceExecutionContext:
@@ -380,7 +394,7 @@ def test_realtime_factory_uses_snapshot_runtime_values(
     assert captured["turn_detection"].type == "semantic_vad"  # type: ignore[union-attr]
     assert captured["turn_detection"].interrupt_response is True  # type: ignore[union-attr]
     assert session["vad"] is None
-    assert session["user_away_timeout"] == 6.0
+    assert session["user_away_timeout"] == 10.0
     assert isinstance(session["stt"], elevenlabs.STT)
     assert session["stt"].model == "transcribe-model"
     assert session["stt"].provider == "ElevenLabs"
@@ -625,7 +639,7 @@ def test_half_cascade_factory_uses_text_realtime_and_configured_tts(
     assert session["vad"] is None
     assert session["llm"] is not None
     assert session["tts"] is not None
-    assert session["user_away_timeout"] == 6.0
+    assert session["user_away_timeout"] == 10.0
     assert session["turn_handling"] == {
         "turn_detection": "realtime_llm",
         "interruption": {"enabled": True},
@@ -1413,7 +1427,7 @@ async def test_provider_factory_uses_pinned_models_and_no_tools(
         assert provider_stt._opts.server_vad["vad_silence_threshold_secs"] == 0.35
         assert provider_stt._opts.server_vad["min_silence_duration_ms"] == 350
         assert session.vad is not None
-        assert session._opts.user_away_timeout == 6.0
+        assert session._opts.user_away_timeout == 10.0
         assert session.vad.model == "silero"
         assert session.vad._opts.min_speech_duration == 0.05
         assert session.vad._opts.min_silence_duration == 0.25
@@ -1766,10 +1780,6 @@ async def test_greeting_uses_configured_tts_and_chat_history() -> None:
     calls: list[tuple[str, object]] = []
     speech = asyncio.get_running_loop().create_future()
 
-    class FakeSpeech:
-        async def wait_for_playout(self) -> None:
-            await speech
-
     class FakeSession:
         def __init__(self) -> None:
             self.tts = object()
@@ -1778,7 +1788,7 @@ async def test_greeting_uses_configured_tts_and_chat_history() -> None:
             self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
         ):
             calls.append(("say", (text, add_to_chat_ctx, allow_interruptions)))
-            return FakeSpeech()
+            return FakeSpeechHandle(speech)
 
         async def generate_reply(self, **kwargs: object):
             calls.append(("generate_reply", kwargs))
@@ -1797,16 +1807,12 @@ async def test_realtime_greeting_falls_back_to_generation() -> None:
     calls: list[tuple[str, object]] = []
     speech = asyncio.get_running_loop().create_future()
 
-    class FakeSpeech:
-        async def wait_for_playout(self) -> None:
-            await speech
-
     class FakeSession:
         tts = None
 
         async def generate_reply(self, **kwargs: object):
             calls.append(("generate_reply", kwargs))
-            return FakeSpeech()
+            return FakeSpeechHandle(speech)
 
         async def say(
             self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
@@ -2058,12 +2064,13 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("user_speaks", "handoff_starts", "caller_disconnects"),
+    ("user_speaks", "handoff_starts", "caller_disconnects", "handoff_times_out"),
     [
-        (True, False, False),
-        (False, False, False),
-        (False, True, False),
-        (False, False, True),
+        (True, False, False, False),
+        (False, False, False, False),
+        (False, True, False, False),
+        (False, False, True, False),
+        (False, True, False, True),
     ],
 )
 async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it(
@@ -2071,10 +2078,13 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
     user_speaks: bool,
     handoff_starts: bool,
     caller_disconnects: bool,
+    handoff_times_out: bool,
 ) -> None:
     context = runtime_context()
     call_id = uuid4()
     deadline = asyncio.Event()
+    resume_deadline = asyncio.Event()
+    resume_started = asyncio.Event()
     timer_started = asyncio.Event()
     timer_cancelled = asyncio.Event()
     nudge_started = asyncio.Event()
@@ -2084,7 +2094,11 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
     original_sleep = asyncio.sleep
 
     async def controlled_sleep(delay: float) -> None:
-        assert delay == 19.0
+        if delay == 10.0:
+            resume_started.set()
+            await resume_deadline.wait()
+            return
+        assert delay == 15.0
         timer_started.set()
         try:
             await deadline.wait()
@@ -2147,6 +2161,10 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
             self.state = HandoffState.COMPLETED
             self.listener(self.state, "complete")
 
+        def time_out(self) -> None:
+            self.state = HandoffState.TIMED_OUT
+            self.listener(self.state, "time_out")
+
         async def cancel(self, reason: str) -> bool:
             self.state = HandoffState.CANCELED
             self.listener(self.state, reason)
@@ -2161,6 +2179,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
         def __init__(self) -> None:
             self.callbacks: dict[str, object] = {}
             self.tts = object()
+            self.user_state = "listening"
 
         def on(self, event, callback):
             self.callbacks[event] = callback
@@ -2179,6 +2198,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
         async def say(
             self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
         ):
+            self.user_state = "away"
             self.callbacks["user_state_changed"](SimpleNamespace(new_state="away"))  # type: ignore[operator]
             await timer_started.wait()
             await nudge_started.wait()
@@ -2197,7 +2217,20 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                 deadline.set()
                 await original_sleep(0)
                 assert not deleted_rooms
-                handoff.complete()
+                nudge_started.clear()
+                self.callbacks["user_state_changed"](SimpleNamespace(new_state="away"))  # type: ignore[operator]
+                await original_sleep(0)
+                assert not nudge_started.is_set()
+                if handoff_times_out:
+                    deadline.clear()
+                    handoff.time_out()
+                    await asyncio.wait_for(resume_started.wait(), 1)
+                    await original_sleep(0)
+                    assert not nudge_started.is_set()
+                    resume_deadline.set()
+                    await asyncio.wait_for(nudge_started.wait(), 1)
+                else:
+                    handoff.complete()
                 self.callbacks["close"](
                     SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
                 )  # type: ignore[operator]
@@ -2209,7 +2242,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                 await original_sleep(0)
                 assert not deleted_rooms
             else:
-                # The nudge remains in progress when the 19-second timer expires.
+                # The nudge remains in progress when the 15-second timer expires.
                 deadline.set()
                 await original_sleep(0)
 
@@ -2454,6 +2487,9 @@ async def test_session_close_terminalizes_while_session_is_alive(
         def __init__(self) -> None:
             self.callbacks: dict[str, object] = {}
             self.greeted = asyncio.Event()
+            self.playout: asyncio.Future[None] = (
+                asyncio.get_running_loop().create_future()
+            )
 
         def on(self, event, callback):
             self.callbacks[event] = callback
@@ -2468,17 +2504,13 @@ async def test_session_close_terminalizes_while_session_is_alive(
             self, *, instructions, input_modality, allow_interruptions=True
         ):
             self.greeted.set()
-            speech = asyncio.get_running_loop().create_future()
-            speech.set_result(None)
-            return speech
+            return FakeSpeechHandle(self.playout)
 
         async def say(
             self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
         ):
             self.greeted.set()
-            speech = asyncio.get_running_loop().create_future()
-            speech.set_result(None)
-            return speech
+            return FakeSpeechHandle(self.playout)
 
         async def aclose(self) -> None:
             return None
@@ -2508,6 +2540,8 @@ async def test_session_close_terminalizes_while_session_is_alive(
     await session.greeted.wait()
     callback = session.callbacks["close"]
     callback(SimpleNamespace(reason=close_reason))
+    assert not task.done()
+    session.playout.set_result(None)
     assert job.shutdown is not None
     await job.shutdown("job_shutdown")
     await task
