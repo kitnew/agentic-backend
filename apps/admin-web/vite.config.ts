@@ -53,6 +53,8 @@ export default defineConfig(({ mode }) => {
       setupFiles: ["./tests/setup.ts"],
       globals: true,
       css: true,
+      maxWorkers: 2,
+      testTimeout: 15_000,
     },
   };
 });

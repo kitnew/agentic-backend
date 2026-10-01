@@ -164,7 +164,9 @@ describe("Admin Web Slice B provider provisioning", () => {
     await user.type(screen.getByLabelText("Connection key"), "openai-main");
     await user.selectOptions(screen.getByLabelText("Provider kind"), "openai");
     await user.selectOptions(screen.getByLabelText("Credential"), credentialId);
-    expect(screen.queryByLabelText("Connection config")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Connection config"),
+    ).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create connection" }));
 
     await waitFor(() => expect(connectionRequest).toBeDefined());
@@ -646,7 +648,9 @@ describe("Admin Web Slice B provider provisioning", () => {
     await user.click(screen.getByRole("button", { name: "Create connection" }));
 
     await waitFor(() => expect(connectionRequest).toBeDefined());
-    expect(await requiredRequest(connectionRequest).clone().json()).toMatchObject({
+    expect(
+      await requiredRequest(connectionRequest).clone().json(),
+    ).toMatchObject({
       provider_kind: "azure_openai",
       connection_config: {
         endpoint: "https://azure.example.test",

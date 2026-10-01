@@ -62,7 +62,12 @@ type ConfigField = {
 
 const connectionFields: Record<string, ConfigField[]> = {
   azure_openai: [
-    { name: "endpoint", label: "Azure OpenAI endpoint", type: "url", required: true },
+    {
+      name: "endpoint",
+      label: "Azure OpenAI endpoint",
+      type: "url",
+      required: true,
+    },
     { name: "api_version", label: "API version" },
   ],
 };
@@ -70,15 +75,27 @@ const connectionFields: Record<string, ConfigField[]> = {
 const deploymentFields: Record<string, Record<string, ConfigField[]>> = {
   azure_openai: {
     llm: [
-      { name: "deployment_name", label: "Azure deployment name", required: true },
+      {
+        name: "deployment_name",
+        label: "Azure deployment name",
+        required: true,
+      },
       { name: "model", label: "Model", required: true },
       { name: "api_version", label: "API version", required: true },
     ],
     realtime: [
-      { name: "deployment_name", label: "Azure deployment name", required: true },
+      {
+        name: "deployment_name",
+        label: "Azure deployment name",
+        required: true,
+      },
     ],
     stt: [
-      { name: "deployment_name", label: "Azure deployment name", required: true },
+      {
+        name: "deployment_name",
+        label: "Azure deployment name",
+        required: true,
+      },
       { name: "model", label: "Model", required: true },
     ],
   },
@@ -156,16 +173,19 @@ function buildConfig(
 ): Record<string, unknown> {
   return Object.fromEntries(
     fields.flatMap((field) => {
-      const value = field.staticValue ?? values[field.name] ?? field.defaultValue ?? "";
+      const value =
+        field.staticValue ?? values[field.name] ?? field.defaultValue ?? "";
       if (value === "" && !field.required && field.type !== "number") return [];
-      return [[
-        field.name,
-        field.type === "number"
-          ? value === ""
-            ? null
-            : Number(value)
-          : value,
-      ]];
+      return [
+        [
+          field.name,
+          field.type === "number"
+            ? value === ""
+              ? null
+              : Number(value)
+            : value,
+        ],
+      ];
     }),
   );
 }
@@ -196,7 +216,9 @@ function buildCapabilities(
 
 function supportedDeploymentKinds(provider: RegistryEntryResponse | undefined) {
   const kinds = provider?.metadata.deployment_kinds;
-  return Array.isArray(kinds) ? kinds.filter((kind): kind is string => typeof kind === "string") : null;
+  return Array.isArray(kinds)
+    ? kinds.filter((kind): kind is string => typeof kind === "string")
+    : null;
 }
 
 function connectionsForKind(
@@ -206,7 +228,9 @@ function connectionsForKind(
 ) {
   if (!deploymentKind) return connections;
   return connections.filter((connection) => {
-    const provider = providers.find(({ key }) => key === connection.provider_kind);
+    const provider = providers.find(
+      ({ key }) => key === connection.provider_kind,
+    );
     const kinds = supportedDeploymentKinds(provider);
     return !kinds || kinds.includes(deploymentKind);
   });
@@ -235,7 +259,12 @@ function ConfigInputs({
             max={field.max}
             step={field.step}
             readOnly={field.staticValue !== undefined}
-            value={field.staticValue ?? values[field.name] ?? field.defaultValue ?? ""}
+            value={
+              field.staticValue ??
+              values[field.name] ??
+              field.defaultValue ??
+              ""
+            }
             onChange={(event) => onChange(field.name, event.target.value)}
           />
         </label>
@@ -251,14 +280,20 @@ export function PlatformProvidersPage() {
   const [connectionKey, setConnectionKey] = useState("");
   const [providerKind, setProviderKind] = useState("");
   const [credentialRef, setCredentialRef] = useState("");
-  const [connectionValues, setConnectionValues] = useState<Record<string, string>>({});
+  const [connectionValues, setConnectionValues] = useState<
+    Record<string, string>
+  >({});
   const [editingConnectionId, setEditingConnectionId] = useState<string>();
   const [deploymentKey, setDeploymentKey] = useState("");
   const [connectionRef, setConnectionRef] = useState("");
   const [deploymentKind, setDeploymentKind] = useState("");
   const [serviceTier, setServiceTier] = useState("default");
-  const [deploymentValues, setDeploymentValues] = useState<Record<string, string>>({});
-  const [capabilityValues, setCapabilityValues] = useState<Record<string, boolean>>({});
+  const [deploymentValues, setDeploymentValues] = useState<
+    Record<string, string>
+  >({});
+  const [capabilityValues, setCapabilityValues] = useState<
+    Record<string, boolean>
+  >({});
   const [editingDeploymentId, setEditingDeploymentId] = useState<string>();
   const [sonioxRegion, setSonioxRegion] = useState("eu");
 
@@ -308,12 +343,15 @@ export function PlatformProvidersPage() {
   );
   const connectionConfigFields = connectionFields[providerKind] ?? [];
   const deploymentConfigFields =
-    deploymentFields[selectedConnection?.provider_kind ?? ""]?.[deploymentKind] ?? [];
-  const deploymentKindsForConnection = supportedDeploymentKinds(selectedProvider);
+    deploymentFields[selectedConnection?.provider_kind ?? ""]?.[
+      deploymentKind
+    ] ?? [];
+  const deploymentKindsForConnection =
+    supportedDeploymentKinds(selectedProvider);
   const availableDeploymentKinds = deploymentKindsForConnection
-    ? query.data?.deploymentKinds.filter(({ key }) =>
+    ? (query.data?.deploymentKinds.filter(({ key }) =>
         deploymentKindsForConnection.includes(key),
-      ) ?? []
+      ) ?? [])
     : (query.data?.deploymentKinds ?? []);
   const availableConnections = connectionsForKind(
     query.data?.connections ?? [],
@@ -375,13 +413,17 @@ export function PlatformProvidersPage() {
             connectionValues,
           ) as ProviderConnectionCreateConnectionConfig);
       if (editingConnectionId) {
-        const current = await getConnectionManagementV1ProvidersConnectionsIdGet(
-          editingConnectionId,
-        );
+        const current =
+          await getConnectionManagementV1ProvidersConnectionsIdGet(
+            editingConnectionId,
+          );
         return responseData(
           await updateConnectionManagementV1ProvidersConnectionsIdPut(
             editingConnectionId,
-            { credential_ref: credentialRef, connection_config: connectionConfig },
+            {
+              credential_ref: credentialRef,
+              connection_config: connectionConfig,
+            },
             managementMutationOptions(current.headers.get("etag")),
           ),
         );
@@ -540,13 +582,7 @@ export function PlatformProvidersPage() {
       />
     );
 
-  const {
-    credentials,
-    connections,
-    deployments,
-    providerKinds,
-    deploymentKinds,
-  } = query.data;
+  const { credentials, connections, deployments, providerKinds } = query.data;
   return (
     <div className="space-y-6">
       <PageHeader
@@ -603,7 +639,9 @@ export function PlatformProvidersPage() {
         }}
       >
         <h2 className="md:col-span-2 text-lg font-semibold">
-          {editingConnectionId ? "Edit provider connection" : "Provider Connections"}
+          {editingConnectionId
+            ? "Edit provider connection"
+            : "Provider Connections"}
         </h2>
         <input
           aria-label="Connection key"
@@ -666,11 +704,13 @@ export function PlatformProvidersPage() {
             </select>
           </label>
         )}
-        {!sonioxConnection && connectionConfigFields.length === 0 && providerKind && (
-          <p className="text-sm text-muted md:col-span-2">
-            This provider has no connection-specific settings.
-          </p>
-        )}
+        {!sonioxConnection &&
+          connectionConfigFields.length === 0 &&
+          providerKind && (
+            <p className="text-sm text-muted md:col-span-2">
+              This provider has no connection-specific settings.
+            </p>
+          )}
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
@@ -792,34 +832,40 @@ export function PlatformProvidersPage() {
             }
           />
         )}
-        {deploymentKind && (sonioxStt ? (
-          <p className="text-sm text-muted md:col-span-2">
-            Soniox capabilities are fixed by the Control Plane schema.
-          </p>
-        ) : (
-          <fieldset className="grid gap-2 md:col-span-2 md:grid-cols-2">
-            <legend className="mb-1 text-sm font-medium">Capabilities</legend>
-            {(capabilityFields[deploymentKind] ?? []).map((field) => (
-              <label className="flex items-center gap-2 text-sm" key={field.name}>
-                <input
-                  aria-label={field.label}
-                  checked={Boolean(capabilityValues[field.name])}
-                  onChange={(event) =>
-                    setCapabilityValues((current) => ({
-                      ...current,
-                      [field.name]: event.target.checked,
-                    }))
-                  }
-                  type="checkbox"
-                />
-                {field.label}
-              </label>
-            ))}
-            {deploymentKind === "tts" && (
-              <p className="text-sm text-muted">No additional TTS capability flags.</p>
-            )}
-          </fieldset>
-        ))}
+        {deploymentKind &&
+          (sonioxStt ? (
+            <p className="text-sm text-muted md:col-span-2">
+              Soniox capabilities are fixed by the Control Plane schema.
+            </p>
+          ) : (
+            <fieldset className="grid gap-2 md:col-span-2 md:grid-cols-2">
+              <legend className="mb-1 text-sm font-medium">Capabilities</legend>
+              {(capabilityFields[deploymentKind] ?? []).map((field) => (
+                <label
+                  className="flex items-center gap-2 text-sm"
+                  key={field.name}
+                >
+                  <input
+                    aria-label={field.label}
+                    checked={Boolean(capabilityValues[field.name])}
+                    onChange={(event) =>
+                      setCapabilityValues((current) => ({
+                        ...current,
+                        [field.name]: event.target.checked,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  {field.label}
+                </label>
+              ))}
+              {deploymentKind === "tts" && (
+                <p className="text-sm text-muted">
+                  No additional TTS capability flags.
+                </p>
+              )}
+            </fieldset>
+          ))}
         <button
           className="rounded bg-slate-950 px-3 py-2 text-sm text-white md:col-span-2"
           disabled={
@@ -861,10 +907,9 @@ export function PlatformProvidersPage() {
           setCredentialRef(connection.credential_ref);
           setConnectionValues(
             Object.fromEntries(
-              (connectionFields[connection.provider_kind] ?? []).map((field) => [
-                field.name,
-                String(config[field.name] ?? ""),
-              ]),
+              (connectionFields[connection.provider_kind] ?? []).map(
+                (field) => [field.name, String(config[field.name] ?? "")],
+              ),
             ),
           );
           setSonioxRegion(String(config.region ?? "global"));
@@ -958,14 +1003,15 @@ export function PlatformProvidersPage() {
                     );
                     setCapabilityValues(
                       Object.fromEntries(
-                        (capabilityFields[deployment.deployment_kind] ?? []).map(
-                          ({ name }) => [name, Boolean(capabilities[name])],
-                        ),
+                        (
+                          capabilityFields[deployment.deployment_kind] ?? []
+                        ).map(({ name }) => [
+                          name,
+                          Boolean(capabilities[name]),
+                        ]),
                       ),
                     );
-                    setServiceTier(
-                      String(config.service_tier ?? "default"),
-                    );
+                    setServiceTier(String(config.service_tier ?? "default"));
                   }}
                   type="button"
                 >

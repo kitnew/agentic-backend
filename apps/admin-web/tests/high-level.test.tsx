@@ -51,6 +51,7 @@ const systemConfiguration = {
   tts_defaults: { deployment_ref: "tts-id", default_voice_id: "voice" },
   realtime_defaults: {
     deployment_ref: "realtime-id",
+    input_transcription: { deployment_ref: "stt-id" },
     default_voice: "marin",
     turn_completion: {
       strategy: "server_vad",

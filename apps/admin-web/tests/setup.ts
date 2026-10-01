@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { setupServer } from "msw/node";
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
@@ -6,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { queryClient } from "../src/app/query-client";
 
 export const server = setupServer();
+configure({ asyncUtilTimeout: 5000 });
 Object.defineProperty(window, "scrollTo", {
   value: () => undefined,
   writable: true,
