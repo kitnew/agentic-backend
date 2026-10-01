@@ -513,6 +513,7 @@ async def test_agent_node_hooks_capture_usable_text_and_provider_dispatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[tuple[object, ...]] = []
+    clock = SimpleNamespace(now=10.0)
     metrics = SimpleNamespace(
         record_llm_request_started=lambda *args: events.append(("llm_started", *args)),
         record_llm_first_nonempty_text=lambda *args: events.append(("llm_text", *args)),
@@ -523,22 +524,24 @@ async def test_agent_node_hooks_capture_usable_text_and_provider_dispatch(
 
     async def fake_llm_node(*_args: object, **_kwargs: object):
         yield " "
+        clock.now = 11.0
         yield "Dobrý deň"
 
     async def fake_tts_node(*_args: object, **_kwargs: object):
+        clock.now = 11.7
         yield SimpleNamespace(userdata={USERDATA_TTS_STARTED_TIME: 11.5})
 
     async def text_input():
         yield "Dobrý deň"
 
-    clock = iter((10.0, 11.0, 11.7))
     monkeypatch.setattr(agents.Agent, "llm_node", fake_llm_node)
     monkeypatch.setattr(agents.Agent, "tts_node", fake_tts_node)
     monkeypatch.setattr(
         "voice_agent.observability._current_speech_id", lambda: "speech-1"
     )
     monkeypatch.setattr(
-        "voice_agent.observability.time.perf_counter", lambda: next(clock)
+        "voice_agent.observability.time",
+        SimpleNamespace(perf_counter=lambda: clock.now),
     )
     agent = LatencyInstrumentedAgent(metrics=metrics, instructions="test")  # type: ignore[arg-type]
 
