@@ -43,7 +43,7 @@ async def test_outbound_sip_participant_joins_existing_room_without_waiting_for_
     assert request.sip_number == "+421551234567"  # type: ignore[union-attr]
     assert request.sip_trunk_id == "ST_outbound"  # type: ignore[union-attr]
     assert request.wait_until_answered is False  # type: ignore[union-attr]
-    assert request.ringing_timeout.seconds == 30  # type: ignore[union-attr]
+    assert request.ringing_timeout.seconds == 25  # type: ignore[union-attr]
     assert request.hide_phone_number is True  # type: ignore[union-attr]
 
 

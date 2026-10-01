@@ -182,7 +182,7 @@ async def test_timeout_keeps_agent_owner() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unanswered_attempt_has_hard_30_second_deadline_and_cleans_outbound() -> (
+async def test_unanswered_attempt_has_hard_25_second_deadline_and_cleans_outbound() -> (
     None
 ):
     removed: list[str] = []
@@ -191,10 +191,10 @@ async def test_unanswered_attempt_has_hard_30_second_deadline_and_cleans_outboun
         removed.append(identity)
 
     controller, backend, session, result = await started_controller(
-        timeout=30.0, remove_participant=remove
+        timeout=25.0, remove_participant=remove
     )
     assert controller._deadline is not None
-    assert 29.9 < controller._deadline.when() - asyncio.get_running_loop().time() <= 30
+    assert 24.9 < controller._deadline.when() - asyncio.get_running_loop().time() <= 25
 
     controller._expire(result.attempt_id)
     assert controller.state is HandoffState.TIMED_OUT
@@ -214,7 +214,7 @@ async def test_deadline_wins_even_before_participant_watcher_starts() -> None:
     session = Session()
     attempt = response()
     backend.states[attempt.attempt_id] = HandoffState.DIALING
-    controller = HandoffController(backend, uuid4(), 30.0)
+    controller = HandoffController(backend, uuid4(), 25.0)
     await controller.start(attempt, session)  # type: ignore[arg-type]
 
     controller._expire(attempt.attempt_id)
@@ -245,7 +245,7 @@ async def test_backend_failure_cannot_keep_expired_attempt_dialing(
         removed.append(identity)
 
     controller, _, _, result = await started_controller(
-        timeout=30.0,
+        timeout=25.0,
         backend=FailingBackend(),
         remove_participant=remove,
         backend_timeout=0.001,
@@ -268,7 +268,7 @@ async def test_backend_failure_cannot_keep_expired_attempt_dialing(
 async def test_answer_before_deadline_wins_and_answer_after_deadline_is_ignored() -> (
     None
 ):
-    before, backend, session, attempt = await started_controller(timeout=30.0)
+    before, backend, session, attempt = await started_controller(timeout=25.0)
     before_states: list[HandoffState] = []
     before.set_state_listener(lambda state, _reason: before_states.append(state))
     participant = SimpleNamespace(
@@ -286,7 +286,7 @@ async def test_answer_before_deadline_wins_and_answer_after_deadline_is_ignored(
     assert before_states == [HandoffState.ANSWERED, HandoffState.COMPLETED]
     assert HandoffEvent.TIME_OUT not in [event for _, event in backend.events]
 
-    after, backend, session, attempt = await started_controller(timeout=30.0)
+    after, backend, session, attempt = await started_controller(timeout=25.0)
     after_states: list[HandoffState] = []
     after.set_state_listener(lambda state, _reason: after_states.append(state))
     after._expire(attempt.attempt_id)
@@ -307,7 +307,7 @@ async def test_answer_before_deadline_wins_and_answer_after_deadline_is_ignored(
 
 @pytest.mark.asyncio
 async def test_stale_deadline_cannot_expire_new_attempt() -> None:
-    controller, backend, session, first = await started_controller(timeout=30.0)
+    controller, backend, session, first = await started_controller(timeout=25.0)
     controller._expire(first.attempt_id)
     assert controller.waiter is not None
     await controller.waiter
@@ -336,7 +336,7 @@ async def test_late_backend_timeout_response_cannot_change_new_attempt() -> None
 
     backend = DelayedBackend()
     controller, _, session, first = await started_controller(
-        timeout=30.0, backend=backend
+        timeout=25.0, backend=backend
     )
     controller._expire(first.attempt_id)
     await entered.wait()
@@ -360,7 +360,7 @@ async def test_cleanup_failure_does_not_restore_dialing() -> None:
         raise RuntimeError("LiveKit unavailable")
 
     controller, _, _, attempt = await started_controller(
-        timeout=30.0, remove_participant=remove
+        timeout=25.0, remove_participant=remove
     )
     controller._expire(attempt.attempt_id)
     assert controller.waiter is not None
@@ -381,7 +381,7 @@ async def test_failed_start_also_cleans_outbound_participant() -> None:
     session = Session()
     attempt = response().model_copy(update={"status": HandoffState.FAILED})
     backend.states[attempt.attempt_id] = HandoffState.FAILED
-    controller = HandoffController(backend, uuid4(), 30.0, remove_participant=remove)
+    controller = HandoffController(backend, uuid4(), 25.0, remove_participant=remove)
     await controller.start(attempt, session)  # type: ignore[arg-type]
     await controller.close()
 

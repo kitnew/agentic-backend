@@ -2064,13 +2064,15 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("user_speaks", "handoff_starts", "caller_disconnects", "handoff_times_out"),
+    ("user_speaks", "handoff_starts", "caller_disconnects", "terminal_state"),
     [
-        (True, False, False, False),
-        (False, False, False, False),
-        (False, True, False, False),
-        (False, False, True, False),
-        (False, True, False, True),
+        (True, False, False, None),
+        (False, False, False, None),
+        (False, True, False, None),
+        (False, False, True, None),
+        (False, True, False, "timed_out"),
+        (False, True, False, "failed"),
+        (False, True, False, "canceled"),
     ],
 )
 async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it(
@@ -2078,7 +2080,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
     user_speaks: bool,
     handoff_starts: bool,
     caller_disconnects: bool,
-    handoff_times_out: bool,
+    terminal_state: str | None,
 ) -> None:
     context = runtime_context()
     call_id = uuid4()
@@ -2091,6 +2093,8 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
     nudge_release = asyncio.Event()
     call_finalized = asyncio.Event()
     deleted_rooms: list[str] = []
+    ringback_events: list[tuple[str, object]] = []
+    permissions: list[dict[str, object]] = []
     original_sleep = asyncio.sleep
 
     async def controlled_sleep(delay: float) -> None:
@@ -2161,9 +2165,17 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
             self.state = HandoffState.COMPLETED
             self.listener(self.state, "complete")
 
+        def answer(self) -> None:
+            self.state = HandoffState.ANSWERED
+            self.listener(self.state, "answer")
+
         def time_out(self) -> None:
             self.state = HandoffState.TIMED_OUT
             self.listener(self.state, "time_out")
+
+        def fail(self) -> None:
+            self.state = HandoffState.FAILED
+            self.listener(self.state, "fail")
 
         async def cancel(self, reason: str) -> bool:
             self.state = HandoffState.CANCELED
@@ -2173,19 +2185,31 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
         async def close(self) -> None:
             return None
 
-    handoff = Handoff(None, call_id, 30.0)
+    handoff = Handoff(None, call_id, 25.0)
 
     class Session:
         def __init__(self) -> None:
             self.callbacks: dict[str, object] = {}
             self.tts = object()
             self.user_state = "listening"
+            self.input_states: list[bool] = []
+            self.output_states: list[bool] = []
+            self.interruptions: list[bool] = []
+            self.input = SimpleNamespace(set_audio_enabled=self.input_states.append)
+            self.output = SimpleNamespace(
+                audio=None,
+                set_audio_enabled=self.output_states.append,
+                set_transcription_enabled=lambda enabled: None,
+            )
 
         def on(self, event, callback):
             self.callbacks[event] = callback
 
         def off(self, event, callback):
             return None
+
+        def interrupt(self, *, force: bool = False):
+            self.interruptions.append(force)
 
         async def start(self, agent, *, room, record) -> None:
             return None
@@ -2214,6 +2238,15 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                 )  # type: ignore[operator]
             elif handoff_starts:
                 handoff.start()
+                assert self.input_states[-1] is False
+                assert self.output_states[-1] is False
+                assert self.interruptions == [True]
+                assert ringback_events[-1] == ("start", handoff.attempt_id)
+                assert permissions[-1]["allow_all_participants"] is False
+                assert {
+                    item.participant_identity
+                    for item in permissions[-1]["participant_permissions"]
+                } == {"caller", "egress"}
                 deadline.set()
                 await original_sleep(0)
                 assert not deleted_rooms
@@ -2221,16 +2254,36 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                 self.callbacks["user_state_changed"](SimpleNamespace(new_state="away"))  # type: ignore[operator]
                 await original_sleep(0)
                 assert not nudge_started.is_set()
-                if handoff_times_out:
+                if terminal_state is not None:
                     deadline.clear()
-                    handoff.time_out()
+                    if terminal_state == "timed_out":
+                        handoff.time_out()
+                    elif terminal_state == "failed":
+                        handoff.fail()
+                    else:
+                        await handoff.cancel("returning_cancel")
+                    assert self.input_states[-1] is True
+                    assert self.output_states[-1] is True
+                    assert ringback_events[-1] == (
+                        "stop",
+                        {
+                            "timed_out": "time_out",
+                            "failed": "fail",
+                            "canceled": "returning_cancel",
+                        }[terminal_state],
+                    )
                     await asyncio.wait_for(resume_started.wait(), 1)
                     await original_sleep(0)
                     assert not nudge_started.is_set()
                     resume_deadline.set()
                     await asyncio.wait_for(nudge_started.wait(), 1)
                 else:
+                    handoff.answer()
+                    assert self.output_states[-1] is False
+                    assert ringback_events[-1] == ("stop", "answer")
                     handoff.complete()
+                    assert self.output_states[-1] is False
+                    assert ringback_events[-1] == ("stop", "complete")
                 self.callbacks["close"](
                     SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
                 )  # type: ignore[operator]
@@ -2260,6 +2313,23 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
 
     class Room:
         name = "inactivity-test"
+        local_participant = SimpleNamespace(
+            set_track_subscription_permissions=lambda **kwargs: permissions.append(
+                kwargs
+            )
+        )
+
+        def __init__(self) -> None:
+            self.remote_participants = {
+                "egress": SimpleNamespace(
+                    identity="egress",
+                    kind=rtc.ParticipantKind.PARTICIPANT_KIND_EGRESS,
+                ),
+                "owner": SimpleNamespace(
+                    identity="owner",
+                    kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
+                ),
+            }
 
         def on(self, event, callback) -> None:
             room_callbacks[event] = callback
@@ -2294,6 +2364,15 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
 
     monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: Backend())
     monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: session)
+    monkeypatch.setattr(
+        "voice_agent.main.RingbackPlayer",
+        lambda *args: SimpleNamespace(
+            caller_identity="caller",
+            start=lambda attempt_id: ringback_events.append(("start", attempt_id)),
+            stop=lambda reason: ringback_events.append(("stop", reason)),
+            aclose=lambda: original_sleep(0),
+        ),
+    )
     monkeypatch.setattr(
         "voice_agent.main.HandoffController", lambda *args, **kwargs: handoff
     )

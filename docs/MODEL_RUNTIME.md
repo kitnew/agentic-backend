@@ -1112,7 +1112,7 @@ stateDiagram-v2
 ```
 
 Voice Agent's `HandoffController` observes the LiveKit room and SIP participants and requests state transitions.
-Both the LiveKit SIP ring and Voice Agent's answer watchdog use a 30-second timeout. Voice Agent marks an unanswered attempt locally timed out before trying LiveKit cleanup and Backend persistence. The Backend request that starts the dial has a separate HTTP timeout, so these waits can occur consecutively.
+Both the LiveKit SIP ring and Voice Agent's answer watchdog use a 25-second timeout. Voice Agent marks an unanswered attempt locally timed out before trying LiveKit cleanup and Backend persistence. The Backend request that starts the dial has a separate HTTP timeout, so these waits can occur consecutively.
 
 Backend validates and serializes those transitions.
 

@@ -42,6 +42,7 @@ from voice_agent.providers import (
     create_realtime_session,
 )
 from voice_agent.recent_transcript import RecentTranscriptBuffer, recent_transcript_tool
+from voice_agent.ringback import RingbackPlayer
 from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_role import role_for_architecture
 
@@ -595,6 +596,7 @@ async def run_job(
     terminalizer: SessionTerminalizer | None = None
     failure_reason: str | None = None
     handoff: HandoffController | None = None
+    ringback: RingbackPlayer | None = None
     recent_transcript: RecentTranscriptBuffer | None = None
     inactivity_task: asyncio.Task[None] | None = None
     nudge_task: asyncio.Task[None] | None = None
@@ -626,7 +628,7 @@ async def run_job(
         handoff = HandoffController(
             backend,
             call_id,
-            timeout=30.0,
+            timeout=25.0,
             backend_timeout=settings.backend_http_timeout_seconds,
             remove_participant=remove_handoff_participant,
         )
@@ -703,6 +705,9 @@ async def run_job(
         async def nudge_caller() -> None:
             try:
                 assert session is not None
+                assert handoff is not None
+                if handoff.active or handoff.completed:
+                    return
                 await session.generate_reply(
                     instructions=(
                         "Briefly ask whether the caller is still present. "
@@ -747,13 +752,57 @@ async def run_job(
 
         def on_handoff_state_changed(state: HandoffState, reason: str) -> None:
             nonlocal inactivity_resume_task
+            assert session is not None
+            assert handoff is not None
             if state in {
                 HandoffState.DIALING,
                 HandoffState.ANSWERED,
                 HandoffState.COMPLETED,
             }:
                 cancel_inactivity(cancel_nudge=True)
-            elif (
+            if state in {HandoffState.DIALING, HandoffState.ANSWERED}:
+                if state is HandoffState.DIALING and session.output.audio is not None:
+                    session.output.audio.clear_buffer()
+                session.input.set_audio_enabled(False)
+                session.output.set_audio_enabled(False)
+                session.output.set_transcription_enabled(False)
+                if state is HandoffState.DIALING:
+                    session.interrupt(force=True)
+                if state is HandoffState.DIALING and ringback is not None:
+                    ctx.room.local_participant.set_track_subscription_permissions(
+                        allow_all_participants=False,
+                        participant_permissions=[
+                            rtc.ParticipantTrackPermission(
+                                participant_identity=ringback.caller_identity,
+                                allow_all=True,
+                            ),
+                            *(
+                                rtc.ParticipantTrackPermission(
+                                    participant_identity=participant.identity,
+                                    allow_all=True,
+                                )
+                                for participant in ctx.room.remote_participants.values()
+                                if participant.kind
+                                == rtc.ParticipantKind.PARTICIPANT_KIND_EGRESS
+                            ),
+                        ],
+                    )
+                    assert handoff.attempt_id is not None
+                    ringback.start(handoff.attempt_id)
+            if state is not HandoffState.DIALING and ringback is not None:
+                ringback.stop(reason)
+            if state in {
+                HandoffState.FAILED,
+                HandoffState.TIMED_OUT,
+                HandoffState.CANCELED,
+            }:
+                ctx.room.local_participant.set_track_subscription_permissions(
+                    allow_all_participants=True
+                )
+                session.input.set_audio_enabled(True)
+                session.output.set_audio_enabled(True)
+                session.output.set_transcription_enabled(True)
+            if (
                 state
                 in {
                     HandoffState.FAILED,
@@ -786,6 +835,8 @@ async def run_job(
 
         async def on_shutdown(_: str) -> None:
             cancel_inactivity(cancel_nudge=True)
+            if ringback is not None:
+                ringback.stop("job_shutdown")
             assert handoff is not None
             if not handoff.completed:
                 await handoff.cancel("job_shutdown")
@@ -797,6 +848,8 @@ async def run_job(
             if closed.done():
                 return
             cancel_inactivity(cancel_nudge=True)
+            if ringback is not None:
+                ringback.stop("session_closed")
             assert handoff is not None
             if not handoff.active:
                 closed.set_result(event)
@@ -841,6 +894,7 @@ async def run_job(
             )
             if identity := getattr(participant, "identity", None):
                 handoff.set_caller_identity(identity)
+                ringback = RingbackPlayer(call_id, ctx.room, identity)
             if participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP:
                 caller_number = participant.attributes.get("sip.phoneNumber") or None
                 caller_identity = participant.identity
@@ -939,6 +993,8 @@ async def run_job(
         try:
             if handoff is not None:
                 await handoff.close()
+            if ringback is not None:
+                await ringback.aclose()
             if (
                 handoff is not None
                 and handoff.completed
