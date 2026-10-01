@@ -32,14 +32,15 @@ class HandoffController:
         *,
         backend_timeout: float = 10.0,
         remove_participant: Callable[[str], Awaitable[None]] | None = None,
-        destination_disconnected: Callable[[UUID, str], None] | None = None,
+        bridge_disconnected: Callable[[UUID, str, str, HandoffState], None]
+        | None = None,
     ) -> None:
         self._backend = backend
         self._call_id = call_id
         self._timeout = timeout
         self._backend_timeout = backend_timeout
         self._remove_participant = remove_participant
-        self._destination_disconnected = destination_disconnected
+        self._bridge_disconnected = bridge_disconnected
         self._lock = asyncio.Lock()
         self._attempt: HandoffAttempt | None = None
         self._waiter: asyncio.Task[None] | None = None
@@ -68,6 +69,10 @@ class HandoffController:
         return self._attempt.participant_identity if self._attempt is not None else None
 
     @property
+    def caller_identity(self) -> str | None:
+        return self._caller_identity
+
+    @property
     def state(self) -> HandoffState | None:
         return self._attempt.state if self._attempt is not None else None
 
@@ -85,6 +90,23 @@ class HandoffController:
 
     def set_caller_identity(self, identity: str) -> None:
         self._caller_identity = identity
+
+    def bridge_peer_disconnected(self, identity: str) -> bool:
+        attempt = self._attempt
+        if attempt is None or attempt.state not in {
+            HandoffState.ANSWERED,
+            HandoffState.COMPLETED,
+        }:
+            return False
+        if identity == self._caller_identity:
+            role = "caller"
+        elif identity == attempt.participant_identity:
+            role = "destination"
+        else:
+            return False
+        if self._bridge_disconnected is not None:
+            self._bridge_disconnected(attempt.id, identity, role, attempt.state)
+        return True
 
     def _cancel_deadline(self) -> None:
         if self._deadline is not None:
@@ -197,8 +219,9 @@ class HandoffController:
         await finish
         return True
 
-    async def close(self) -> None:
-        await self.cancel("voice_agent_shutdown")
+    async def close(self, *, cancel: bool = True) -> None:
+        if cancel:
+            await self.cancel("voice_agent_shutdown")
         await self._stop_waiter()
         if self._pending:
             await asyncio.gather(*self._pending, return_exceptions=True)
@@ -253,7 +276,7 @@ class HandoffController:
     async def _watch(self, session: agents.AgentSession, attempt_id: UUID) -> None:
         room = session.room_io.room
         events: asyncio.Queue[HandoffEvent] = asyncio.Queue()
-        destination_closed = asyncio.Event()
+        bridge_closed = asyncio.Event()
         attempt = self._attempt
         if (
             attempt is None
@@ -282,21 +305,16 @@ class HandoffController:
                 events.put_nowait(HandoffEvent.ANSWER)
 
         def participant_disconnected(participant: rtc.RemoteParticipant) -> None:
-            if participant.identity == attempt.participant_identity:
-                if self._attempt is not attempt:
-                    return
-                if attempt.state is HandoffState.DIALING:
-                    if self._terminal(
-                        attempt, HandoffState.FAILED, HandoffEvent.FAIL.value
-                    ):
-                        self._finish_later(attempt, HandoffEvent.FAIL)
-                        events.put_nowait(HandoffEvent.FAIL)
-                elif (
-                    attempt.state in {HandoffState.ANSWERED, HandoffState.COMPLETED}
-                    and self._destination_disconnected is not None
+            if self._attempt is not attempt:
+                return
+            if self.bridge_peer_disconnected(participant.identity):
+                bridge_closed.set()
+            elif participant.identity == attempt.participant_identity:
+                if self._terminal(
+                    attempt, HandoffState.FAILED, HandoffEvent.FAIL.value
                 ):
-                    self._destination_disconnected(attempt.id, participant.identity)
-                    destination_closed.set()
+                    self._finish_later(attempt, HandoffEvent.FAIL)
+                    events.put_nowait(HandoffEvent.FAIL)
             elif participant.identity == self._caller_identity:
                 events.put_nowait(HandoffEvent.CANCEL)
 
@@ -320,10 +338,10 @@ class HandoffController:
                 return
             state = await self._transition(attempt_id, event)
             if state is HandoffState.COMPLETED:
-                if self._destination_disconnected is None:
+                if self._bridge_disconnected is None:
                     session.shutdown(drain=True)
                 else:
-                    await destination_closed.wait()
+                    await bridge_closed.wait()
                 return
             if state is not HandoffState.ANSWERED:
                 if self._terminal(attempt, HandoffState.FAILED, "answer_rejected"):
@@ -360,10 +378,10 @@ class HandoffController:
                     )
                     if completion in done:
                         if completion.result() is HandoffState.COMPLETED:
-                            if self._destination_disconnected is None:
+                            if self._bridge_disconnected is None:
                                 session.shutdown(drain=True)
                             else:
-                                await destination_closed.wait()
+                                await bridge_closed.wait()
                         elif self._terminal(
                             attempt, HandoffState.FAILED, "completion_rejected"
                         ):

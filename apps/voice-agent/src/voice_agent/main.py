@@ -602,7 +602,7 @@ async def run_job(
     nudge_task: asyncio.Task[None] | None = None
     inactivity_resume_task: asyncio.Task[None] | None = None
     recovery_task: asyncio.Task[None] | None = None
-    destination_close_task: asyncio.Task[None] | None = None
+    bridge_close_task: asyncio.Task[None] | None = None
     sip_disconnect_handler: Callable[[rtc.RemoteParticipant], None] | None = None
     cancelled = False
     try:
@@ -627,24 +627,39 @@ async def run_job(
                     if error.code != "not_found":
                         raise
 
-        def on_destination_disconnected(attempt_id: UUID, identity: str) -> None:
-            nonlocal destination_close_task
+        def on_bridge_disconnected(
+            attempt_id: UUID, identity: str, role: str, state: HandoffState
+        ) -> None:
+            nonlocal bridge_close_task
             assert handoff is not None
             if (
                 handoff.attempt_id == attempt_id
-                and handoff.participant_identity == identity
+                and (
+                    identity == handoff.participant_identity
+                    if role == "destination"
+                    else identity == handoff.caller_identity
+                )
                 and handoff.state in {HandoffState.ANSWERED, HandoffState.COMPLETED}
-                and not closed.done()
-                and destination_close_task is None
+                and bridge_close_task is None
             ):
+                logger.info(
+                    "handoff_bridge_terminated",
+                    extra={
+                        "call_id": str(call_id),
+                        "attempt_id": str(attempt_id),
+                        "disconnected_participant": identity,
+                        "disconnected_role": role,
+                        "handoff_state": state.value,
+                    },
+                )
 
                 async def close_transferred_call() -> None:
                     assert session is not None
                     await ctx.delete_room()
                     session.shutdown(drain=False)
 
-                destination_close_task = asyncio.create_task(close_transferred_call())
-                destination_close_task.add_done_callback(log_terminalization_failure)
+                bridge_close_task = asyncio.create_task(close_transferred_call())
+                bridge_close_task.add_done_callback(log_terminalization_failure)
 
         handoff = HandoffController(
             backend,
@@ -652,7 +667,7 @@ async def run_job(
             timeout=25.0,
             backend_timeout=settings.backend_http_timeout_seconds,
             remove_participant=remove_handoff_participant,
-            destination_disconnected=on_destination_disconnected,
+            bridge_disconnected=on_bridge_disconnected,
         )
         context = await backend.runtime_context(call_id)
         logger.info(
@@ -837,7 +852,7 @@ async def run_job(
                         "voice_agent_shutdown",
                     }
                     and not closed.done()
-                    and destination_close_task is None
+                    and bridge_close_task is None
                 ):
                     attempt_id = handoff.attempt_id
                     destination = handoff.destination
@@ -864,7 +879,7 @@ async def run_job(
                             handoff.attempt_id != attempt_id
                             or handoff.state is not state
                             or closed.done()
-                            or destination_close_task is not None
+                            or bridge_close_task is not None
                         ):
                             return
                         session.generate_reply()
@@ -907,7 +922,7 @@ async def run_job(
             if ringback is not None:
                 ringback.stop("job_shutdown")
             assert handoff is not None
-            if not handoff.completed:
+            if not handoff.completed and bridge_close_task is None:
                 await handoff.cancel("job_shutdown")
                 await terminalizer.terminalize("job_shutdown")
 
@@ -922,14 +937,14 @@ async def run_job(
             if ringback is not None:
                 ringback.stop("session_closed")
             assert handoff is not None
-            if not handoff.active:
+            if not handoff.active or bridge_close_task is not None:
                 closed.set_result(event)
                 task = terminalizer.start(close_failure_reason(event.reason))
                 task.add_done_callback(log_terminalization_failure)
                 return
 
             async def handle_close() -> None:
-                if not handoff.completed:
+                if not handoff.completed and bridge_close_task is None:
                     await handoff.cancel("session_closed")
                 if not closed.done():
                     closed.set_result(event)
@@ -972,6 +987,8 @@ async def run_job(
                     disconnected: rtc.RemoteParticipant,
                 ) -> None:
                     if disconnected.identity == caller_identity:
+                        if handoff.bridge_peer_disconnected(disconnected.identity):
+                            return
                         on_close(
                             agents.CloseEvent(
                                 reason=agents.CloseReason.PARTICIPANT_DISCONNECTED
@@ -1060,10 +1077,10 @@ async def run_job(
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
         try:
-            if destination_close_task is not None:
-                await asyncio.gather(destination_close_task, return_exceptions=True)
+            if bridge_close_task is not None:
+                await asyncio.gather(bridge_close_task, return_exceptions=True)
             if handoff is not None:
-                await handoff.close()
+                await handoff.close(cancel=bridge_close_task is None)
             if ringback is not None:
                 await ringback.aclose()
             if terminalizer is not None:

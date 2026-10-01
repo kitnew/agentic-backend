@@ -2074,6 +2074,8 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         (False, True, False, "failed"),
         (False, True, False, "canceled"),
         (False, True, False, "stale"),
+        (False, True, True, "failed_caller_disconnect"),
+        (False, True, True, "dialing_caller_disconnect"),
     ],
 )
 async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it(
@@ -2159,6 +2161,9 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
         def set_caller_identity(self, identity: str) -> None:
             return None
 
+        def bridge_peer_disconnected(self, identity: str) -> bool:
+            return False
+
         def start(self) -> None:
             self.state = HandoffState.DIALING
             self.listener(self.state, "started")
@@ -2184,7 +2189,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
             self.listener(self.state, reason)
             return True
 
-        async def close(self) -> None:
+        async def close(self, *, cancel: bool = True) -> None:
             return None
 
     handoff = Handoff(None, call_id, 25.0)
@@ -2272,7 +2277,20 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                 self.callbacks["user_state_changed"](SimpleNamespace(new_state="away"))  # type: ignore[operator]
                 await original_sleep(0)
                 assert not nudge_started.is_set()
-                if terminal_state == "stale":
+                if terminal_state == "dialing_caller_disconnect":
+                    room_callbacks["participant_disconnected"](
+                        SimpleNamespace(identity="caller")
+                    )
+                    await original_sleep(0)
+                    assert self.recovery_replies == 0
+                elif terminal_state == "failed_caller_disconnect":
+                    handoff.fail()
+                    room_callbacks["participant_disconnected"](
+                        SimpleNamespace(identity="caller")
+                    )
+                    await original_sleep(0)
+                    assert self.recovery_replies == 0
+                elif terminal_state == "stale":
                     handoff.fail()
                     handoff.attempt_id = uuid4()
                     handoff.start()
@@ -2424,9 +2442,24 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
 
 
 @pytest.mark.asyncio
-async def test_completed_handoff_finalizes_on_session_close(
+@pytest.mark.parametrize(
+    ("state", "first_peer", "close_first"),
+    [
+        (HandoffState.ANSWERED, "caller", False),
+        (HandoffState.ANSWERED, "destination", False),
+        (HandoffState.COMPLETED, "caller", False),
+        (HandoffState.COMPLETED, "destination", False),
+        (HandoffState.ANSWERED, "caller", True),
+    ],
+)
+async def test_bridge_disconnect_deletes_room_and_finalizes_once(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    state: HandoffState,
+    first_peer: str,
+    close_first: bool,
 ) -> None:
+    caplog.set_level("INFO")
     context = runtime_context().model_copy(
         update={
             "handoff": [
@@ -2438,6 +2471,7 @@ async def test_completed_handoff_finalizes_on_session_close(
     controllers: list[object] = []
     deleted_rooms: list[str] = []
     sessions: list[object] = []
+    shutdowns: list[bool] = []
 
     class Backend:
         def __init__(self) -> None:
@@ -2464,21 +2498,23 @@ async def test_completed_handoff_finalizes_on_session_close(
 
         async def start_recording(self, call_id) -> None:
             controller = controllers[0]
-            controller._destination_disconnected(  # type: ignore[attr-defined]
-                uuid4(), "handoff-participant"
+            for identity in ("egress", "agent", "unrelated", f"handoff-{uuid4()}"):
+                assert not controller.bridge_peer_disconnected(identity)
+            assert not deleted_rooms
+            peers = (
+                ("caller", "handoff-participant")
+                if first_peer == "caller"
+                else ("handoff-participant", "caller")
             )
-            controller._destination_disconnected(  # type: ignore[attr-defined]
-                controller.attempt_id,
-                "egress",  # type: ignore[attr-defined]
-            )
-            controller._destination_disconnected(  # type: ignore[attr-defined]
-                controller.attempt_id,
-                "handoff-participant",  # type: ignore[attr-defined]
-            )
-            controller._destination_disconnected(  # type: ignore[attr-defined]
-                controller.attempt_id,
-                "handoff-participant",  # type: ignore[attr-defined]
-            )
+            if close_first:
+                sessions[0].callbacks["close"](  # type: ignore[attr-defined]
+                    SimpleNamespace(reason=agents.CloseReason.PARTICIPANT_DISCONNECTED)
+                )
+            for identity in peers:
+                if identity == "caller":
+                    job.room.emit("participant_disconnected", identity)
+                else:
+                    assert controller.bridge_peer_disconnected(identity)
 
         async def complete(self, call_id, conversation_status: str) -> None:
             self.observations.append(("complete", conversation_status))
@@ -2531,26 +2567,52 @@ async def test_completed_handoff_finalizes_on_session_close(
 
         def shutdown(self, *, drain: bool) -> None:
             assert drain is False
+            shutdowns.append(drain)
             self.callbacks["close"](
                 SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
             )
 
+    class Room:
+        name = "room"
+
+        def __init__(self) -> None:
+            self.remote_participants = {
+                "caller": object(),
+                "handoff-participant": object(),
+            }
+            self.callbacks: dict[str, object] = {}
+
+        def on(self, event, callback) -> None:
+            self.callbacks[event] = callback
+
+        def off(self, event, callback) -> None:
+            self.callbacks.pop(event, None)
+
+        def emit(self, event, identity: str) -> None:
+            self.remote_participants.pop(identity, None)
+            callback = self.callbacks.get(event)
+            if callback is not None:
+                callback(SimpleNamespace(identity=identity))
+
     class Context:
         job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
-        room = SimpleNamespace(name="room")
+
+        def __init__(self) -> None:
+            self.room = Room()
 
         def add_shutdown_callback(self, callback) -> None:
             return None
 
         async def wait_for_participant(self, **kwargs):
             return SimpleNamespace(
-                kind=rtc.ParticipantKind.PARTICIPANT_KIND_STANDARD,
+                kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP,
                 identity="caller",
                 attributes={},
             )
 
         async def delete_room(self) -> None:
             deleted_rooms.append(self.room.name)
+            self.room.remote_participants.clear()
             sessions[0].callbacks["close"](  # type: ignore[attr-defined]
                 SimpleNamespace(reason=agents.CloseReason.PARTICIPANT_DISCONNECTED)
             )
@@ -2575,20 +2637,32 @@ async def test_completed_handoff_finalizes_on_session_close(
         recent_transcript=None,
     ):
         controllers.append(controller)
-        controller._attempt = HandoffAttempt(
-            uuid4(), "handoff-participant", HandoffState.COMPLETED
-        )
+        controller._attempt = HandoffAttempt(uuid4(), "handoff-participant", state)
         return []
 
     monkeypatch.setattr("voice_agent.main.build_agent_tools", tools)
 
-    await run_job(Context(), settings())  # type: ignore[arg-type]
+    job = Context()
+    await run_job(job, settings())  # type: ignore[arg-type]
 
     assert backend.observations == [
         ("session_started", "complete"),
         ("complete", "complete"),
     ]
     assert deleted_rooms == ["room"]
+    assert shutdowns == [False]
+    assert job.room.remote_participants == {}
+    bridge_logs = [
+        record for record in caplog.records if record.msg == "handoff_bridge_terminated"
+    ]
+    assert len(bridge_logs) == 1
+    assert bridge_logs[0].call_id == str(call_id)
+    assert bridge_logs[0].attempt_id == str(controllers[0].attempt_id)
+    assert bridge_logs[0].disconnected_participant == (
+        "caller" if first_peer == "caller" else "handoff-participant"
+    )
+    assert bridge_logs[0].disconnected_role == first_peer
+    assert bridge_logs[0].handoff_state == state.value
 
 
 @pytest.mark.asyncio
