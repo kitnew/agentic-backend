@@ -2073,6 +2073,7 @@ async def test_sip_claim_feeds_the_existing_runtime_and_session_path(
         (False, True, False, "timed_out"),
         (False, True, False, "failed"),
         (False, True, False, "canceled"),
+        (False, True, False, "stale"),
     ],
 )
 async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it(
@@ -2142,6 +2143,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
             self.state: HandoffState | None = None
             self.listener = None
             self.attempt_id = uuid4()
+            self.destination = "reception"
 
         @property
         def active(self) -> bool:
@@ -2195,6 +2197,11 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
             self.input_states: list[bool] = []
             self.output_states: list[bool] = []
             self.interruptions: list[bool] = []
+            self.recovery_contexts: list[list[object]] = []
+            self.recovery_replies = 0
+            self.current_agent = SimpleNamespace(
+                chat_ctx=agents.llm.ChatContext(), update_chat_ctx=self.update_chat_ctx
+            )
             self.input = SimpleNamespace(set_audio_enabled=self.input_states.append)
             self.output = SimpleNamespace(
                 audio=None,
@@ -2214,10 +2221,21 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
         async def start(self, agent, *, room, record) -> None:
             return None
 
-        async def generate_reply(self, *, instructions, input_modality="text") -> None:
-            assert "caller is still present" in instructions
-            nudge_started.set()
-            await nudge_release.wait()
+        async def update_chat_ctx(self, chat_ctx) -> None:
+            self.current_agent.chat_ctx = chat_ctx
+            self.recovery_contexts.append(chat_ctx.messages())
+
+        def generate_reply(self, *, instructions=None, input_modality="text"):
+            if instructions is None:
+                self.recovery_replies += 1
+                return None
+
+            async def nudge() -> None:
+                assert "caller is still present" in instructions
+                nudge_started.set()
+                await nudge_release.wait()
+
+            return asyncio.create_task(nudge())
 
         async def say(
             self, text: str, *, add_to_chat_ctx: bool, allow_interruptions: bool
@@ -2254,7 +2272,14 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                 self.callbacks["user_state_changed"](SimpleNamespace(new_state="away"))  # type: ignore[operator]
                 await original_sleep(0)
                 assert not nudge_started.is_set()
-                if terminal_state is not None:
+                if terminal_state == "stale":
+                    handoff.fail()
+                    handoff.attempt_id = uuid4()
+                    handoff.start()
+                    await original_sleep(0)
+                    assert self.recovery_replies == 0
+                    assert self.recovery_contexts == []
+                elif terminal_state is not None:
                     deadline.clear()
                     if terminal_state == "timed_out":
                         handoff.time_out()
@@ -2275,6 +2300,15 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
                     await asyncio.wait_for(resume_started.wait(), 1)
                     await original_sleep(0)
                     assert not nudge_started.is_set()
+                    assert self.recovery_replies == 1
+                    assert len(self.recovery_contexts) == 1
+                    result_text = self.recovery_contexts[0][-1].raw_text_content
+                    assert f"status={terminal_state}" in result_text
+                    assert "destination=reception" in result_text
+                    assert "Handoff is no longer in progress" in result_text
+                    assert all(
+                        message.role != "user" for message in self.recovery_contexts[0]
+                    )
                     resume_deadline.set()
                     await asyncio.wait_for(nudge_started.wait(), 1)
                 else:
@@ -2390,7 +2424,7 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
 
 
 @pytest.mark.asyncio
-async def test_successful_handoff_relinquishes_without_completing_call(
+async def test_completed_handoff_finalizes_on_session_close(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = runtime_context().model_copy(
@@ -2401,6 +2435,9 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         }
     )
     call_id = uuid4()
+    controllers: list[object] = []
+    deleted_rooms: list[str] = []
+    sessions: list[object] = []
 
     class Backend:
         def __init__(self) -> None:
@@ -2426,10 +2463,25 @@ async def test_successful_handoff_relinquishes_without_completing_call(
             return None
 
         async def start_recording(self, call_id) -> None:
-            return None
+            controller = controllers[0]
+            controller._destination_disconnected(  # type: ignore[attr-defined]
+                uuid4(), "handoff-participant"
+            )
+            controller._destination_disconnected(  # type: ignore[attr-defined]
+                controller.attempt_id,
+                "egress",  # type: ignore[attr-defined]
+            )
+            controller._destination_disconnected(  # type: ignore[attr-defined]
+                controller.attempt_id,
+                "handoff-participant",  # type: ignore[attr-defined]
+            )
+            controller._destination_disconnected(  # type: ignore[attr-defined]
+                controller.attempt_id,
+                "handoff-participant",  # type: ignore[attr-defined]
+            )
 
         async def complete(self, call_id, conversation_status: str) -> None:
-            raise AssertionError("handoff must not complete the call")
+            self.observations.append(("complete", conversation_status))
 
         async def fail(self, call_id, reason: str, conversation_status: str) -> None:
             raise AssertionError("successful handoff must not fail the call")
@@ -2465,14 +2517,23 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         async def generate_reply(
             self, *, instructions, input_modality, allow_interruptions=True
         ):
-            callback = self.callbacks["close"]
-            callback(SimpleNamespace(reason=agents.CloseReason.USER_INITIATED))
             speech = asyncio.get_running_loop().create_future()
             speech.set_result(None)
-            return speech
+            return FakeSpeechHandle(speech)
+
+        async def say(self, text, *, add_to_chat_ctx, allow_interruptions):
+            speech = asyncio.get_running_loop().create_future()
+            speech.set_result(None)
+            return FakeSpeechHandle(speech)
 
         async def aclose(self) -> None:
             return None
+
+        def shutdown(self, *, drain: bool) -> None:
+            assert drain is False
+            self.callbacks["close"](
+                SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
+            )
 
     class Context:
         job = SimpleNamespace(metadata=f'{{"call_session_id":"{call_id}"}}')
@@ -2488,10 +2549,22 @@ async def test_successful_handoff_relinquishes_without_completing_call(
                 attributes={},
             )
 
+        async def delete_room(self) -> None:
+            deleted_rooms.append(self.room.name)
+            sessions[0].callbacks["close"](  # type: ignore[attr-defined]
+                SimpleNamespace(reason=agents.CloseReason.PARTICIPANT_DISCONNECTED)
+            )
+            sessions[0].callbacks["close"](  # type: ignore[attr-defined]
+                SimpleNamespace(reason=agents.CloseReason.PARTICIPANT_DISCONNECTED)
+            )
+
     backend = Backend()
     monkeypatch.setattr("voice_agent.main.BackendClient", lambda _: backend)
     monkeypatch.setattr("voice_agent.main.ConversationPersistence", Persistence)
-    monkeypatch.setattr("voice_agent.main.create_agent_session", lambda *_: Session())
+    monkeypatch.setattr(
+        "voice_agent.main.create_agent_session",
+        lambda *_: sessions.append(Session()) or sessions[0],
+    )
 
     def tools(
         runtime,
@@ -2501,6 +2574,7 @@ async def test_successful_handoff_relinquishes_without_completing_call(
         capability_recorder=None,
         recent_transcript=None,
     ):
+        controllers.append(controller)
         controller._attempt = HandoffAttempt(
             uuid4(), "handoff-participant", HandoffState.COMPLETED
         )
@@ -2512,8 +2586,9 @@ async def test_successful_handoff_relinquishes_without_completing_call(
 
     assert backend.observations == [
         ("session_started", "complete"),
-        ("agent_relinquished", "complete"),
+        ("complete", "complete"),
     ]
+    assert deleted_rooms == ["room"]
 
 
 @pytest.mark.asyncio

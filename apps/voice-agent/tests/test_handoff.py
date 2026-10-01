@@ -407,11 +407,17 @@ async def test_state_listener_tracks_handoff_start_and_timeout() -> None:
         (HandoffState.DIALING, "started"),
         (HandoffState.TIMED_OUT, HandoffEvent.TIME_OUT.value),
     ]
+    controller._expire(result.attempt_id)
+    assert await controller._transition(result.attempt_id, HandoffEvent.ANSWER) is None
+    assert states == [
+        (HandoffState.DIALING, "started"),
+        (HandoffState.TIMED_OUT, HandoffEvent.TIME_OUT.value),
+    ]
     assert session.shutdowns == []
 
 
 @pytest.mark.asyncio
-async def test_destination_disconnect_after_answer_prevents_completion() -> None:
+async def test_destination_disconnect_after_answer_closes_transferred_call() -> None:
     answer_entered = asyncio.Event()
     release_answer = asyncio.Event()
 
@@ -426,7 +432,15 @@ async def test_destination_disconnect_after_answer_prevents_completion() -> None
     session = Session()
     result = response()
     backend.states[result.attempt_id] = HandoffState.DIALING
-    controller = HandoffController(backend, uuid4(), 1.0)
+    disconnected: list[tuple[object, str]] = []
+    controller = HandoffController(
+        backend,
+        uuid4(),
+        1.0,
+        destination_disconnected=lambda attempt_id, identity: disconnected.append(
+            (attempt_id, identity)
+        ),
+    )
     controller.set_caller_identity("caller")
     await controller.start(result, session)  # type: ignore[arg-type]
     await asyncio.sleep(0)
@@ -437,16 +451,109 @@ async def test_destination_disconnect_after_answer_prevents_completion() -> None
     session.room_io.room.emit("participant_connected", participant)
     await answer_entered.wait()
     session.room_io.room.emit("participant_disconnected", participant)
+    assert disconnected == [(result.attempt_id, result.participant_identity)]
     release_answer.set()
-    assert controller.waiter is not None
-    await controller.waiter
-
-    assert controller.state is HandoffState.FAILED
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    assert controller.state is HandoffState.COMPLETED
     assert [event for _, event in backend.events] == [
         HandoffEvent.ANSWER,
-        HandoffEvent.FAIL,
+        HandoffEvent.COMPLETE,
     ]
     assert session.shutdowns == []
+    await controller.close()
+
+
+@pytest.mark.asyncio
+async def test_destination_disconnect_before_answer_wins_over_late_active_event() -> (
+    None
+):
+    disconnected: list[object] = []
+    controller, backend, session, result = await started_controller()
+    controller._destination_disconnected = lambda attempt_id, _identity: (
+        disconnected.append(attempt_id)
+    )
+    participant = SimpleNamespace(
+        identity=result.participant_identity,
+        attributes={"sip.callStatus": "active"},
+    )
+    room = session.room_io.room
+    room.emit("participant_disconnected", participant)
+    room.emit("participant_connected", participant)
+    assert controller.waiter is not None
+    await controller.waiter
+    await controller.close()
+
+    assert controller.state is HandoffState.FAILED
+    assert backend.events == [(result.attempt_id, HandoffEvent.FAIL)]
+    assert disconnected == []
+    assert session.shutdowns == []
+
+
+@pytest.mark.asyncio
+async def test_completed_destination_disconnect_is_current_attempt_only() -> None:
+    disconnected: list[tuple[object, str]] = []
+    backend = Backend()
+    session = Session()
+    result = response()
+    backend.states[result.attempt_id] = HandoffState.DIALING
+    controller = HandoffController(
+        backend,
+        uuid4(),
+        25.0,
+        destination_disconnected=lambda attempt_id, identity: disconnected.append(
+            (attempt_id, identity)
+        ),
+    )
+    await controller.start(result, session)  # type: ignore[arg-type]
+    await asyncio.sleep(0)
+    participant = SimpleNamespace(
+        identity=result.participant_identity,
+        attributes={"sip.callStatus": "active"},
+    )
+    room = session.room_io.room
+    room.emit("participant_connected", participant)
+    for _ in range(10):
+        if controller.state is HandoffState.COMPLETED:
+            break
+        await asyncio.sleep(0)
+    assert controller.state is HandoffState.COMPLETED
+    assert session.shutdowns == []
+
+    for identity in ("caller", "egress", "unrelated", f"handoff-{uuid4()}"):
+        room.emit(
+            "participant_disconnected",
+            SimpleNamespace(identity=identity, attributes={}),
+        )
+    assert disconnected == []
+    room.emit("participant_disconnected", participant)
+    assert disconnected == [(result.attempt_id, result.participant_identity)]
+    await controller.close()
+
+
+@pytest.mark.asyncio
+async def test_stale_destination_disconnect_cannot_close_new_attempt() -> None:
+    disconnected: list[tuple[object, str]] = []
+    controller, backend, session, first = await started_controller()
+    controller._destination_disconnected = lambda attempt_id, identity: (
+        disconnected.append((attempt_id, identity))
+    )
+    old_callback = session.room_io.room.callbacks["participant_disconnected"]
+    await controller.cancel("retry")
+    second = response()
+    backend.states[second.attempt_id] = HandoffState.DIALING
+    await controller.start(second, session)  # type: ignore[arg-type]
+    await asyncio.sleep(0)
+
+    old_callback(SimpleNamespace(identity=first.participant_identity, attributes={}))
+    session.room_io.room.emit(
+        "participant_disconnected",
+        SimpleNamespace(identity=first.participant_identity, attributes={}),
+    )
+    assert disconnected == []
+    assert controller.attempt_id == second.attempt_id
+    assert controller.state is HandoffState.DIALING
+    await controller.cancel("test_cleanup")
 
 
 @pytest.mark.asyncio

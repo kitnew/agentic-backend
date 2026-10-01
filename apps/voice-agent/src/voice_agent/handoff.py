@@ -19,6 +19,7 @@ class HandoffAttempt:
     id: UUID
     participant_identity: str
     state: HandoffState
+    destination: str = ""
     events: asyncio.Queue[HandoffEvent] | None = None
 
 
@@ -31,12 +32,14 @@ class HandoffController:
         *,
         backend_timeout: float = 10.0,
         remove_participant: Callable[[str], Awaitable[None]] | None = None,
+        destination_disconnected: Callable[[UUID, str], None] | None = None,
     ) -> None:
         self._backend = backend
         self._call_id = call_id
         self._timeout = timeout
         self._backend_timeout = backend_timeout
         self._remove_participant = remove_participant
+        self._destination_disconnected = destination_disconnected
         self._lock = asyncio.Lock()
         self._attempt: HandoffAttempt | None = None
         self._waiter: asyncio.Task[None] | None = None
@@ -55,6 +58,14 @@ class HandoffController:
     @property
     def attempt_id(self) -> UUID | None:
         return self._attempt.id if self._attempt is not None else None
+
+    @property
+    def destination(self) -> str | None:
+        return self._attempt.destination if self._attempt is not None else None
+
+    @property
+    def participant_identity(self) -> str | None:
+        return self._attempt.participant_identity if self._attempt is not None else None
 
     @property
     def state(self) -> HandoffState | None:
@@ -162,6 +173,7 @@ class HandoffController:
                 response.attempt_id,
                 response.participant_identity,
                 response.status,
+                response.destination,
             )
             if response.status is HandoffState.DIALING:
                 self._deadline = asyncio.get_running_loop().call_later(
@@ -241,6 +253,7 @@ class HandoffController:
     async def _watch(self, session: agents.AgentSession, attempt_id: UUID) -> None:
         room = session.room_io.room
         events: asyncio.Queue[HandoffEvent] = asyncio.Queue()
+        destination_closed = asyncio.Event()
         attempt = self._attempt
         if (
             attempt is None
@@ -270,7 +283,20 @@ class HandoffController:
 
         def participant_disconnected(participant: rtc.RemoteParticipant) -> None:
             if participant.identity == attempt.participant_identity:
-                events.put_nowait(HandoffEvent.FAIL)
+                if self._attempt is not attempt:
+                    return
+                if attempt.state is HandoffState.DIALING:
+                    if self._terminal(
+                        attempt, HandoffState.FAILED, HandoffEvent.FAIL.value
+                    ):
+                        self._finish_later(attempt, HandoffEvent.FAIL)
+                        events.put_nowait(HandoffEvent.FAIL)
+                elif (
+                    attempt.state in {HandoffState.ANSWERED, HandoffState.COMPLETED}
+                    and self._destination_disconnected is not None
+                ):
+                    self._destination_disconnected(attempt.id, participant.identity)
+                    destination_closed.set()
             elif participant.identity == self._caller_identity:
                 events.put_nowait(HandoffEvent.CANCEL)
 
@@ -294,7 +320,10 @@ class HandoffController:
                 return
             state = await self._transition(attempt_id, event)
             if state is HandoffState.COMPLETED:
-                session.shutdown(drain=True)
+                if self._destination_disconnected is None:
+                    session.shutdown(drain=True)
+                else:
+                    await destination_closed.wait()
                 return
             if state is not HandoffState.ANSWERED:
                 if self._terminal(attempt, HandoffState.FAILED, "answer_rejected"):
@@ -331,7 +360,10 @@ class HandoffController:
                     )
                     if completion in done:
                         if completion.result() is HandoffState.COMPLETED:
-                            session.shutdown(drain=True)
+                            if self._destination_disconnected is None:
+                                session.shutdown(drain=True)
+                            else:
+                                await destination_closed.wait()
                         elif self._terminal(
                             attempt, HandoffState.FAILED, "completion_rejected"
                         ):

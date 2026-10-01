@@ -601,6 +601,8 @@ async def run_job(
     inactivity_task: asyncio.Task[None] | None = None
     nudge_task: asyncio.Task[None] | None = None
     inactivity_resume_task: asyncio.Task[None] | None = None
+    recovery_task: asyncio.Task[None] | None = None
+    destination_close_task: asyncio.Task[None] | None = None
     sip_disconnect_handler: Callable[[rtc.RemoteParticipant], None] | None = None
     cancelled = False
     try:
@@ -625,12 +627,32 @@ async def run_job(
                     if error.code != "not_found":
                         raise
 
+        def on_destination_disconnected(attempt_id: UUID, identity: str) -> None:
+            nonlocal destination_close_task
+            assert handoff is not None
+            if (
+                handoff.attempt_id == attempt_id
+                and handoff.participant_identity == identity
+                and handoff.state in {HandoffState.ANSWERED, HandoffState.COMPLETED}
+                and not closed.done()
+                and destination_close_task is None
+            ):
+
+                async def close_transferred_call() -> None:
+                    assert session is not None
+                    await ctx.delete_room()
+                    session.shutdown(drain=False)
+
+                destination_close_task = asyncio.create_task(close_transferred_call())
+                destination_close_task.add_done_callback(log_terminalization_failure)
+
         handoff = HandoffController(
             backend,
             call_id,
             timeout=25.0,
             backend_timeout=settings.backend_http_timeout_seconds,
             remove_participant=remove_handoff_participant,
+            destination_disconnected=on_destination_disconnected,
         )
         context = await backend.runtime_context(call_id)
         logger.info(
@@ -751,7 +773,7 @@ async def run_job(
                 cancel_inactivity()
 
         def on_handoff_state_changed(state: HandoffState, reason: str) -> None:
-            nonlocal inactivity_resume_task
+            nonlocal inactivity_resume_task, recovery_task
             assert session is not None
             assert handoff is not None
             if state in {
@@ -759,6 +781,9 @@ async def run_job(
                 HandoffState.ANSWERED,
                 HandoffState.COMPLETED,
             }:
+                if recovery_task is not None:
+                    recovery_task.cancel()
+                    recovery_task = None
                 cancel_inactivity(cancel_nudge=True)
             if state in {HandoffState.DIALING, HandoffState.ANSWERED}:
                 if state is HandoffState.DIALING and session.output.audio is not None:
@@ -802,6 +827,50 @@ async def run_job(
                 session.input.set_audio_enabled(True)
                 session.output.set_audio_enabled(True)
                 session.output.set_transcription_enabled(True)
+                if (
+                    reason
+                    not in {
+                        "caller_disconnected",
+                        "caller_absent_after_answer",
+                        "job_shutdown",
+                        "session_closed",
+                        "voice_agent_shutdown",
+                    }
+                    and not closed.done()
+                    and destination_close_task is None
+                ):
+                    attempt_id = handoff.attempt_id
+                    destination = handoff.destination
+
+                    async def recover() -> None:
+                        assert session is not None
+                        assert handoff is not None
+                        if (
+                            handoff.attempt_id != attempt_id
+                            or handoff.state is not state
+                        ):
+                            return
+                        chat_ctx = session.current_agent.chat_ctx.copy()
+                        chat_ctx.add_message(
+                            role="system",
+                            content=(
+                                f"Handoff attempt {attempt_id} finished: status={state.value}; "
+                                f"destination={destination}. The caller is back with the agent. "
+                                "Handoff is no longer in progress."
+                            ),
+                        )
+                        await session.current_agent.update_chat_ctx(chat_ctx)
+                        if (
+                            handoff.attempt_id != attempt_id
+                            or handoff.state is not state
+                            or closed.done()
+                            or destination_close_task is not None
+                        ):
+                            return
+                        session.generate_reply()
+
+                    recovery_task = asyncio.create_task(recover())
+                    recovery_task.add_done_callback(log_terminalization_failure)
             if (
                 state
                 in {
@@ -848,14 +917,15 @@ async def run_job(
             if closed.done():
                 return
             cancel_inactivity(cancel_nudge=True)
+            if recovery_task is not None:
+                recovery_task.cancel()
             if ringback is not None:
                 ringback.stop("session_closed")
             assert handoff is not None
             if not handoff.active:
                 closed.set_result(event)
-                if not handoff.completed:
-                    task = terminalizer.start(close_failure_reason(event.reason))
-                    task.add_done_callback(log_terminalization_failure)
+                task = terminalizer.start(close_failure_reason(event.reason))
+                task.add_done_callback(log_terminalization_failure)
                 return
 
             async def handle_close() -> None:
@@ -863,8 +933,7 @@ async def run_job(
                     await handoff.cancel("session_closed")
                 if not closed.done():
                     closed.set_result(event)
-                if not handoff.completed:
-                    await terminalizer.terminalize(close_failure_reason(event.reason))
+                await terminalizer.terminalize(close_failure_reason(event.reason))
 
             task = asyncio.create_task(handle_close())
             task.add_done_callback(log_terminalization_failure)
@@ -991,31 +1060,13 @@ async def run_job(
             if off is not None:
                 off("conversation_item_added", persistence.on_conversation_item_added)
         try:
+            if destination_close_task is not None:
+                await asyncio.gather(destination_close_task, return_exceptions=True)
             if handoff is not None:
                 await handoff.close()
             if ringback is not None:
                 await ringback.aclose()
-            if (
-                handoff is not None
-                and handoff.completed
-                and handoff.attempt_id is not None
-                and persistence is not None
-                and call_id is not None
-            ):
-                conversation_complete = False
-                try:
-                    conversation_complete = await persistence.finish()
-                except Exception:
-                    logger.exception("conversation persistence drain failed")
-                await backend.observe(
-                    call_id,
-                    "agent_relinquished",
-                    conversation_status=(
-                        "complete" if conversation_complete else "incomplete"
-                    ),
-                    handoff_attempt_id=handoff.attempt_id,
-                )
-            elif terminalizer is not None:
+            if terminalizer is not None:
                 await terminalizer.terminalize(failure_reason)
             elif finalizer is not None and failure_reason is None:
                 await finalizer.complete("incomplete")
