@@ -744,6 +744,10 @@ Runtime search must use that scope exactly.
 It is not an operational result merely because the transport operation is called a
 tool.
 
+It is also not an instruction-bearing schema. Retrieved `text` remains data supplied
+by the tenant source document; its contents cannot redefine trusted runtime scope,
+authorization, system/tool policy, or authority ordering.
+
 ## Static versus operational information
 
 Knowledge search must not be used to establish:

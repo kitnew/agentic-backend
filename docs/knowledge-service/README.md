@@ -36,8 +36,10 @@ Read in this order:
    - non-negotiable architectural, security, lifecycle, and retrieval rules
 
 5. [CUTOVER.md](./CUTOVER.md)
-   - one-time migration from the current inline Knowledge implementation
-   - execution snapshot schema cutover
+   - production-safe migration from the current inline Knowledge implementation
+   - tenant-by-tenant backfill and cutover
+   - execution snapshot schema compatibility window
+   - rollback and compatibility-removal gates
    - deployment migration requirements
 
 ## Status
@@ -48,8 +50,13 @@ Knowledge Service v1.
 The existing implementation is evidence of current behavior and migration
 constraints. It is not authoritative when it conflicts with this specification.
 
-Implementation must converge directly on this target unless this specification is
-explicitly revised first.
+The system is already in production. Implementation must therefore converge on this
+target without destructive reset of production semantic state or loss of in-flight
+execution compatibility. Temporary migration compatibility is permitted only as
+specified in `CUTOVER.md` and must not become part of the permanent target model.
+
+Implementation must converge on this target unless this specification is explicitly
+revised first.
 
 ## Change discipline
 

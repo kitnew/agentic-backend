@@ -173,16 +173,24 @@ ExecutionSnapshot schema_version = 4
 ```
 
 Legacy inline Knowledge schema version 1 and execution snapshot schema version 3
-are cutover concerns, not supported runtime variants of the target architecture.
+are cutover concerns, not permanent runtime variants of the target architecture.
 
-The target does not require:
+Because the system is already in production, the migration may temporarily require:
 
-- multi-version Knowledge decoding;
-- a dual `content + document_refs` Knowledge representation;
-- a schema-3 execution compatibility reader;
-- permanent legacy adapters.
+- read compatibility for legacy Knowledge schema version 1 while a tenant has not
+  yet been cut over;
+- schema-3 execution compatibility for executions created before the v4 cutover;
+- explicit migration metadata needed to verify backfill and support rollback.
 
-The one-time transition is defined in `CUTOVER.md`.
+These mechanisms are migration-only. The permanent target does not retain:
+
+- a dual semantic `content + document_refs` Knowledge representation;
+- schema-1 writes after a tenant has been cut over;
+- schema-3 creation after the execution cutover;
+- permanent legacy adapters or compatibility readers.
+
+The production transition, rollback boundary, and compatibility-removal gates are
+defined in `CUTOVER.md`.
 
 ---
 
@@ -614,12 +622,14 @@ V1 retrieval:
 ```text
 query
 → query embedding
-→ exact cosine/vector search
-→ tenant filter
-→ allowed-document filter
+→ restrict eligibility to trusted tenant + allowed document scope
+→ exact cosine/vector ranking within that eligible set
 → small fixed top-k
 → passages with provenance
 ```
+
+Tenant and document constraints are part of search eligibility. Implementations must
+not rank globally and then apply tenant/document filtering afterward.
 
 The initial implementation uses PostgreSQL + pgvector exact nearest-neighbor search.
 
@@ -645,6 +655,31 @@ The runtime contract supports an empty match set.
 
 A relevance threshold may be calibrated from retrieval evaluations, but a specific
 threshold is not part of the semantic architecture.
+
+### 9.1 Retrieval evaluation baseline
+
+Retrieval changes that may affect production answer quality must be evaluated against
+an explicit tenant-knowledge retrieval dataset rather than tuned from isolated
+examples.
+
+The v1 baseline should contain representative business questions with expected:
+
+```text
+relevant document/passage
+or
+no relevant match
+```
+
+At minimum evaluation should track:
+
+- retrieval recall at the service top-k (`Recall@4` for the initial profile);
+- false-positive behavior on no-relevant-match queries;
+- representative end-to-end retrieval latency, including query embedding;
+- regressions by source type and tenant/document scope size where meaningful.
+
+Chunking constants, embedding-profile changes, top-k changes, and relevance-threshold
+changes remain implementation details, but production changes to them should be
+supported by evaluation evidence and an observable rollout.
 
 ---
 
@@ -774,7 +809,14 @@ model query
 
 The retrieved passages are returned to the model as tenant knowledge.
 
-They do not become operational truth merely because they arrived through a tool.
+Retrieved document text is authoritative only as tenant-provided static knowledge.
+It is data, not a new instruction channel. Text inside a document must not be allowed
+to override system/developer instructions, tool policy, authority ordering, tenant
+scope, execution scope, or authorization decisions. Tool-result rendering should
+preserve that distinction explicitly.
+
+Retrieved passages do not become operational truth merely because they arrived
+through a tool.
 
 In particular, knowledge retrieval must not establish:
 
@@ -962,3 +1004,14 @@ These exclusions are intentional.
 
 They may be reconsidered only when a concrete product, scale, or evaluation need
 justifies the additional complexity.
+
+### Production data suitability
+
+Knowledge Service v1 is intended for relatively static tenant business knowledge.
+It is not the system of record for guest/customer records, secrets, credentials, or
+other mutable operational data.
+
+Because v1 deliberately has no hard-delete workflow, data that has a known product or
+legal requirement for per-record erasure must not be introduced into this store
+without an explicit architecture revision that defines deletion and retention
+semantics.

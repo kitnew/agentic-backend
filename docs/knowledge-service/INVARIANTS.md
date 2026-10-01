@@ -79,9 +79,14 @@
    tenant identity type.
 
 9. Knowledge Service v1 management principals are globally trusted platform
-   operators; per-operator tenant grants are outside the v1 authorization model.
+   principals; per-operator tenant grants are outside the v1 authorization model.
 
-10. Global management trust does not weaken tenant isolation for document
+10. A browser/client application must never possess a globally trusted Knowledge
+    Service credential. Browser-based Admin Web access must terminate at a trusted
+    server-side/platform authorization boundary before privileged Knowledge Service
+    management access is performed.
+
+11. Global management trust does not weaken tenant isolation for document
     addressing, Control Plane reference validation, runtime execution scope, or
     Voice Agent retrieval.
 
@@ -301,6 +306,16 @@
 5. Operational facts must come from the capability/runtime source responsible for
    those facts.
 
+6. Retrieved document text is data, not executable policy or a higher-priority
+   instruction channel.
+
+7. Instructions embedded in tenant documents must not override system/developer
+   instructions, tool policy, authority ordering, tenant identity, allowed document
+   scope, capability authorization, or execution-scoped state.
+
+8. Retrieval/tool-result rendering must preserve the distinction between tenant
+   knowledge content and trusted runtime instructions.
+
 ---
 
 ## 11. Provenance
@@ -340,6 +355,12 @@
 7. Replacing pgvector search with another retrieval backend must not require changing
    Control Plane `Knowledge` semantics or the model-facing `knowledge.search`
    contract.
+
+8. V1 Knowledge storage is not a system of record for guest/customer operational
+   records, secrets, or credentials.
+
+9. Data with a known requirement for per-record erasure must not be ingested into v1
+   unless deletion/retention semantics are explicitly added to the architecture.
 
 ---
 
@@ -382,3 +403,8 @@
 7. A change that alters domain ownership, Control Plane lifecycle ownership, tenant
    isolation, runtime scope, or document immutability requires an explicit update to
    this architecture and invariant set.
+
+8. Production migration must not destructively reset valid tenant Knowledge state or
+   invalidate in-flight executions merely to simplify implementation. Temporary
+   compatibility required by `CUTOVER.md` is allowed only within its documented
+   migration window and removal gates.
