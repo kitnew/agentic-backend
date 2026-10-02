@@ -1,5 +1,79 @@
 # LiveKit voice deployment notes
 
+## Per-call AI usage
+
+LiveKit Agents 1.8.2 emits `session_usage_updated` cumulative snapshots. The Voice
+Agent sends the latest snapshot at most once every five seconds and flushes it
+before call terminalization. All three session modes use the same collector:
+cascade LLM/STT/TTS; realtime model and its standalone transcript STT; and
+half-cascade realtime model, standalone transcript STT, and ElevenLabs TTS.
+The standalone STT is the session's `stt` instance even when its transcript is
+only a sidecar, so its plugin metrics enter LiveKit's session usage collector.
+No plugin usage event is counted a second time for persistence. Soniox STT
+streams include the call UUID as `client_reference_id` through the pinned
+plugin's supported option.
+
+Backend owns `call_ai_usage`: one row per call, provider, service, model, and
+LiveKit source, with raw cumulative counters in JSONB. The authenticated
+`PUT /internal/v1/calls/{call_id}/ai-usage` checks the call exists, derives its
+tenant from the call, and replaces only older observations. Voice reporting is
+best effort and has a two-second HTTP timeout; failures never fail the call.
+The call terminalizer makes a final attempt before its existing completion
+observation. A process crash can lose up to the pending debounce interval;
+the last persisted snapshot remains available. PostgreSQL is authoritative.
+
+`estimated_cost_usd` is a local **estimate**, and `provider_cost_usd` is reserved
+for **provider-reconciled** money. Both are nullable NUMERIC. Raw usage remains
+available when prices are unknown. Set Backend `AI_USAGE_PRICES` to an explicit
+JSON object keyed `provider/service/model`, for example:
+
+```json
+{"openai/llm/example-model":{"source":"provider-rate-sheet-YYYY-MM-DD","rates":{"input_tokens":"<USD per uncached token>","input_cached_tokens":"<USD per cached token>","output_tokens":"<USD per output token>"}}}
+```
+
+Replace placeholders with verified rates before enabling an estimate. Rates
+are USD **per one unit**, Decimal strings. For LLM, `input_tokens` includes
+cached tokens; the calculator subtracts cached input before applying the
+regular input rate. Any nonzero unpriced billed dimension leaves the estimate
+NULL. For STT, keys can include `audio_duration`, `input_tokens`, and
+`output_tokens`; for TTS, `characters_count`, `audio_duration`, `input_tokens`,
+and `output_tokens`. Explicit zero rates are required for measured dimensions
+that a provider does not bill. No prices are configured by default.
+
+The Backend publishes `voice_ai_usage_tokens_total`,
+`voice_ai_usage_seconds_total`, `voice_ai_usage_characters_total`, and
+`voice_ai_usage_estimated_cost_usd_total` from accepted increases. The Voice
+Agent publishes `voice_usage_persistence_failures_total`. Provider, service,
+model, and usage kind are permitted metric labels; call IDs, tenant IDs,
+request IDs, transcripts, and phone numbers are not. Grafana's Voice Agent
+dashboard shows these aggregates and existing call counts. A metrics export
+loss can make Prometheus totals incomplete; reconcile against PostgreSQL.
+
+For a day's per-call comparison, query `call_sessions` joined to
+`call_ai_usage`, grouping by `call_id`, tenant, provider, service, and model;
+use `counters` for raw usage and keep the two monetary columns separate.
+For example, with UTC window parameters:
+
+```sql
+SELECT c.id AS call_id, c.tenant_id, c.started_at, u.provider, u.service,
+       u.model, u.source, u.counters, u.estimated_cost_usd,
+       u.estimated_cost_source, u.provider_cost_usd, u.reconciled_at
+FROM call_sessions AS c
+LEFT JOIN call_ai_usage AS u ON u.call_id = c.id
+WHERE c.started_at >= :from_utc AND c.started_at < :to_utc
+ORDER BY c.started_at, c.id, u.service, u.provider, u.model;
+```
+
+Count distinct `call_id` values, including rows with no usage. Sum monetary
+columns only after checking how many rows are NULL; a partial sum is not a
+complete cost total.
+Provider reconciliation can later update `provider_cost_usd` and
+`reconciled_at` without modifying raw counters or estimates. Soniox's
+`client_reference_id` supports direct matching. OpenAI/Azure and ElevenLabs
+provider-side request IDs or billing entries are not captured by the pinned
+streaming integrations; matching those bills remains follow-up work. The
+LiveKit counters are SDK-reported usage, not provider-invoice evidence.
+
 ## Local Compose
 
 Backend and Voice Agent use the Docker service URL:

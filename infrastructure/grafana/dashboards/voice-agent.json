@@ -1137,5 +1137,362 @@
         "h": 8
       }
     }
+,
+    {
+      "id": 29,
+      "type": "row",
+      "title": "AI Usage / Cost",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 76,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 30,
+      "type": "stat",
+      "title": "Calls handled",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(call_started_total{deployment_environment_name=~\"$environment\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 77,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 31,
+      "type": "stat",
+      "title": "LLM input tokens",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_ai_usage_tokens_total{deployment_environment_name=~\"$environment\",voice_service=\"llm\",voice_usage_kind=\"input_tokens\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 77,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 32,
+      "type": "stat",
+      "title": "LLM cached input tokens",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_ai_usage_tokens_total{deployment_environment_name=~\"$environment\",voice_service=\"llm\",voice_usage_kind=\"input_cached_tokens\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 77,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 33,
+      "type": "stat",
+      "title": "LLM output tokens",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_ai_usage_tokens_total{deployment_environment_name=~\"$environment\",voice_service=\"llm\",voice_usage_kind=\"output_tokens\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 77,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 34,
+      "type": "stat",
+      "title": "STT audio seconds",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_ai_usage_seconds_total{deployment_environment_name=~\"$environment\",voice_service=\"stt\",voice_usage_kind=\"audio_duration\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 81,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 35,
+      "type": "stat",
+      "title": "TTS characters",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_ai_usage_characters_total{deployment_environment_name=~\"$environment\",voice_service=\"tts\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 81,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 36,
+      "type": "stat",
+      "title": "TTS audio seconds",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_ai_usage_seconds_total{deployment_environment_name=~\"$environment\",voice_service=\"tts\",voice_usage_kind=\"audio_duration\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 81,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 37,
+      "type": "stat",
+      "title": "Estimated AI cost USD",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_ai_usage_estimated_cost_usd_total{deployment_environment_name=~\"$environment\"}[$__range]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 81,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 38,
+      "type": "stat",
+      "title": "Usage persistence failures",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(voice_usage_persistence_failures_total{deployment_environment_name=~\"$environment\"}[$__range])) or vector(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 85,
+        "w": 6,
+        "h": 4
+      }
+    },
+    {
+      "id": 39,
+      "type": "timeseries",
+      "title": "Usage by provider / service",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (voice_provider, voice_service, voice_usage_kind) (increase(voice_ai_usage_tokens_total{deployment_environment_name=~\"$environment\"}[$__range]))",
+          "legendFormat": "{{voice_provider}} {{voice_service}} {{voice_usage_kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 85,
+        "w": 9,
+        "h": 8
+      }
+    },
+    {
+      "id": 40,
+      "type": "timeseries",
+      "title": "Usage by model",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (voice_provider, voice_model, voice_usage_kind) (increase(voice_ai_usage_tokens_total{deployment_environment_name=~\"$environment\"}[$__range]))",
+          "legendFormat": "{{voice_provider}} {{voice_model}} {{voice_usage_kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 85,
+        "w": 9,
+        "h": 8
+      }
+    }
+,
+    {
+      "id": 41,
+      "type": "timeseries",
+      "title": "STT audio by provider / model",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (voice_provider, voice_model) (increase(voice_ai_usage_seconds_total{deployment_environment_name=~\"$environment\",voice_service=\"stt\",voice_usage_kind=\"audio_duration\"}[$__range]))",
+          "legendFormat": "{{voice_provider}} {{voice_model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 93,
+        "w": 12,
+        "h": 8
+      }
+    },
+    {
+      "id": 42,
+      "type": "timeseries",
+      "title": "TTS characters by provider / model",
+      "datasource": {
+        "uid": "prometheus",
+        "type": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (voice_provider, voice_model) (increase(voice_ai_usage_characters_total{deployment_environment_name=~\"$environment\",voice_service=\"tts\"}[$__range]))",
+          "legendFormat": "{{voice_provider}} {{voice_model}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 93,
+        "w": 12,
+        "h": 8
+      }
+    }
   ]
 }
