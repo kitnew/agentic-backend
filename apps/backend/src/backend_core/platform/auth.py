@@ -22,6 +22,7 @@ SERVICE_SCOPES = {
             "call-session:complete",
             "call-session:fail",
             "call-session:observe",
+            "call-session:usage:write",
             "call-session:handoff",
             "conversation-message:append",
             "capability-invocation:create",

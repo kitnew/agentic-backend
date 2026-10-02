@@ -58,12 +58,14 @@ class BackendClient:
         scope: str,
         *,
         json: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> httpx.Response:
         response = await self._client.request(
             method,
             path,
             headers={"Authorization": f"Bearer {self.service_token(scope)}"},
             json=json,
+            timeout=timeout or self._settings.backend_http_timeout_seconds,
         )
         response.raise_for_status()
         return response
@@ -254,13 +256,13 @@ class BackendClient:
         )
 
     async def report_ai_usage(self, call_id: UUID, report: CallUsageReport) -> None:
-        response = await self._client.put(
+        await self.request(
+            "PUT",
             f"/internal/v1/calls/{call_id}/ai-usage",
-            headers={"Authorization": f"Bearer {self.service_token('call-session:usage:write')}"},
+            "call-session:usage:write",
             json=report.model_dump(mode="json"),
             timeout=2.0,
         )
-        response.raise_for_status()
 
     async def observe(
         self,
