@@ -7,6 +7,7 @@ import httpx
 import jwt
 from contracts import (
     AppendConversationMessage,
+    CallUsageReport,
     CapabilityConfirmationConfirmRequest,
     CapabilityConfirmationResponse,
     CapabilityInvocationRequest,
@@ -251,6 +252,15 @@ class BackendClient:
             f"/internal/v1/calls/{call_id}/recording",
             "call-session:observe",
         )
+
+    async def report_ai_usage(self, call_id: UUID, report: CallUsageReport) -> None:
+        response = await self._client.put(
+            f"/internal/v1/calls/{call_id}/ai-usage",
+            headers={"Authorization": f"Bearer {self.service_token('call-session:usage:write')}"},
+            json=report.model_dump(mode="json"),
+            timeout=2.0,
+        )
+        response.raise_for_status()
 
     async def observe(
         self,

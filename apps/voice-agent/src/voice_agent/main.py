@@ -45,6 +45,7 @@ from voice_agent.recent_transcript import RecentTranscriptBuffer, recent_transcr
 from voice_agent.ringback import RingbackPlayer
 from voice_agent.settings import VoiceAgentSettings
 from voice_agent.stt_role import role_for_architecture
+from voice_agent.usage import CallUsageReporter
 
 logger = logging.getLogger(__name__)
 INACTIVITY_TOTAL_TIMEOUT = 25.0
@@ -547,9 +548,11 @@ class SessionTerminalizer:
         self,
         finalizer: CallFinalizer,
         persistence: ConversationPersistence,
+        usage: CallUsageReporter | None = None,
     ) -> None:
         self._finalizer = finalizer
         self._persistence = persistence
+        self._usage = usage
         self._task: asyncio.Task[None] | None = None
 
     def start(self, failure_reason: str | None) -> asyncio.Task[None]:
@@ -568,6 +571,8 @@ class SessionTerminalizer:
         except Exception:
             logger.exception("conversation persistence drain failed")
         conversation_status = "complete" if conversation_complete else "incomplete"
+        if self._usage is not None:
+            await self._usage.flush()
         if failure_reason is None:
             await self._finalizer.complete(conversation_status)
         else:
@@ -594,6 +599,7 @@ async def run_job(
     session: agents.AgentSession | None = None
     persistence: ConversationPersistence | None = None
     terminalizer: SessionTerminalizer | None = None
+    usage_reporter: CallUsageReporter | None = None
     failure_reason: str | None = None
     handoff: HandoffController | None = None
     ringback: RingbackPlayer | None = None
@@ -711,20 +717,58 @@ async def run_job(
                     prompt_cache_key,
                     telemetry.metrics if telemetry is not None else None,
                     secrets,
+                    call_id,
                 )
             case "realtime":
                 runtime = cast(dict[str, Any], context.runtime["realtime"])
-                session = create_realtime_session(settings, runtime, secrets)
+                session = create_realtime_session(settings, runtime, secrets, call_id)
             case "half-cascade":
                 runtime = {
                     **cast(dict[str, Any], context.runtime["half_cascade"]),
                     "locale": context.business.default_locale,
                 }
-                session = create_half_cascade_session(settings, runtime, secrets)
+                session = create_half_cascade_session(
+                    settings, runtime, secrets, call_id
+                )
+        usage_runtime = cast(dict[str, dict[str, Any]], runtime)
+        provider_hints = {
+            "llm": usage_runtime[
+                "llm" if context.architecture == "cascade" else "model"
+            ]["provider_kind"],
+            "stt": usage_runtime["stt"]["provider_kind"],
+            "tts": usage_runtime["tts"]["provider_kind"]
+            if "tts" in usage_runtime
+            else "",
+        }
+        configured_models = {
+            "llm": usage_runtime[
+                "llm" if context.architecture == "cascade" else "model"
+            ],
+            "stt": usage_runtime["stt"],
+        }
+        if "tts" in usage_runtime:
+            configured_models["tts"] = usage_runtime["tts"]
+        model_hints = {
+            service: str(
+                config["deployment_config"].get("model")
+                or config["deployment_config"].get("model_id")
+                or config["deployment_config"].get("deployment_name")
+                or "unknown"
+            )
+            for service, config in configured_models.items()
+        }
+        usage_reporter = CallUsageReporter(
+            backend,
+            call_id,
+            session,
+            provider_hints,
+            telemetry.metrics if telemetry is not None else None,
+            model_hints,
+        )
         persistence = ConversationPersistence(backend, call_id)
         if context.architecture in ("realtime", "half-cascade"):
             recent_transcript = RecentTranscriptBuffer()
-        terminalizer = SessionTerminalizer(finalizer, persistence)
+        terminalizer = SessionTerminalizer(finalizer, persistence, usage_reporter)
         closed = asyncio.get_running_loop().create_future()
 
         async def check_inactivity() -> None:

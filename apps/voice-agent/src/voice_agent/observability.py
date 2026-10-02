@@ -216,6 +216,9 @@ class VoiceMetrics:
             "voice.speculative_generation.lead_time", unit="s"
         )
         self._errors = self._meter.create_counter("voice.component.errors")
+        self._usage_persistence_failures = self._meter.create_counter(
+            "voice.usage.persistence.failures"
+        )
         self._capability_executions = self._meter.create_counter(
             "capability.executions"
         )
@@ -617,6 +620,9 @@ class VoiceMetrics:
             tts_first_audio - tts_first_text_sent,
             {},
         )
+
+    def record_usage_persistence_failure(self) -> None:
+        self._add(self._usage_persistence_failures, 1, {})
 
     def record_component_error(self, component: str, error: object) -> None:
         self._add(

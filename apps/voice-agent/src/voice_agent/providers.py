@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from uuid import UUID
 
 import httpx
 from livekit import agents
@@ -58,6 +59,7 @@ def create_agent_session(
     prompt_cache_key: str,
     metrics: VoiceMetrics | None = None,
     secrets: dict[str, str] | None = None,
+    call_id: UUID | None = None,
 ) -> agents.AgentSession:
     secrets = secrets or {}
     llm = runtime["llm"]
@@ -102,6 +104,7 @@ def create_agent_session(
         secrets["stt"],
         keyterms=keyterms,
         server_vad=server_vad,
+        call_id=call_id,
     )
     stt: livekit_stt.STT = provider_stt
     commit_controller: LocalVadCommitController | None = None
@@ -211,6 +214,7 @@ def create_realtime_session(
     settings: VoiceAgentSettings,
     runtime: dict[str, Any],
     secrets: dict[str, str],
+    call_id: UUID | None = None,
 ) -> agents.AgentSession:
     stt_config = runtime["stt"]
     standalone_stt = _create_stt(
@@ -221,6 +225,7 @@ def create_realtime_session(
         .get("keyterms", {})
         .get("values", [])
         or NOT_GIVEN,
+        call_id=call_id,
     )
     realtime_model = realtime.RealtimeModel(  # type: ignore[call-overload]
         **_realtime_options(settings, runtime, secrets["model"]),
@@ -248,6 +253,7 @@ def create_half_cascade_session(
     settings: VoiceAgentSettings,
     runtime: dict[str, Any],
     secrets: dict[str, str],
+    call_id: UUID | None = None,
 ) -> agents.AgentSession:
     tts_config = runtime["tts"]
     if tts_config["provider_kind"] != "elevenlabs":
@@ -262,6 +268,7 @@ def create_half_cascade_session(
         .get("keyterms", {})
         .get("values", [])
         or NOT_GIVEN,
+        call_id=call_id,
     )
     # LiveKit streams text-only Realtime output through session TTS and cancels
     # both the generation and synthesis when the caller interrupts.
@@ -301,6 +308,7 @@ def _create_stt(
     *,
     keyterms: NotGivenOr[list[str]] = NOT_GIVEN,
     server_vad: NotGivenOr[VADOptions] = NOT_GIVEN,
+    call_id: UUID | None = None,
 ) -> livekit_stt.STT:
     deployment = config["deployment_config"]
     elevenlabs_language, openai_language = provider_languages(locale)
@@ -322,6 +330,7 @@ def _create_stt(
             api_key=secret,
             base_url=base_url,
             params=soniox.STTOptions(
+                client_reference_id=str(call_id) if call_id is not None else None,
                 model=_required_string(deployment, "model"),
                 language_hints=[openai_language],
                 max_endpoint_delay_ms=deployment.get("max_endpoint_delay_ms", 2000),
