@@ -237,10 +237,14 @@ class ExecutionResolver:
         tenant_id: str, key: str, state: RuntimeResolutionState
     ) -> Mapping[str, object]:
         value = next(
-            (item for item in state.integrations.values() if item.get("key") == key),
+            (
+                item
+                for item in state.integrations.values()
+                if item.get("key") == key and item["tenant_id"] == tenant_id
+            ),
             None,
         )
-        if value is None or value["tenant_id"] != tenant_id:
+        if value is None:
             raise RuntimeResolutionError(
                 ResolutionFailureReason.MISSING_RESOURCE,
                 {"resource_type": "integration_connection", "integration_key": key},
