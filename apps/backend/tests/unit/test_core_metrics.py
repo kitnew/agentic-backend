@@ -39,6 +39,13 @@ def test_core_metrics_have_authoritative_units_and_no_identifier_dimensions() ->
     metrics.telephony_reconciliation("ready", 0.5)
     metrics.telephony_routing_failure("unknown_did")
     metrics.telephony_handoff_failure("outbound_unavailable")
+    metrics.ai_usage_delta(
+        "openai",
+        "llm",
+        "gpt-test",
+        {"input_tokens": 12, "input_cached_tokens": 3, "output_tokens": 4},
+        0.125,
+    )
     provider.force_flush()
 
     points = _points(reader)
@@ -50,6 +57,11 @@ def test_core_metrics_have_authoritative_units_and_no_identifier_dimensions() ->
     assert points["telephony.reconciliation.duration"][0].sum == 0.5
     assert points["telephony.inbound_routing.failures"][0].value == 1
     assert points["telephony.handoff_setup.failures"][0].value == 1
+    assert points["voice.ai_usage.estimated_cost_usd"][0].value == 0.125
+    assert {
+        point.attributes["voice.usage_kind"]
+        for point in points["voice.ai_usage.tokens"]
+    } == {"input_tokens", "input_cached_tokens", "output_tokens"}
     assert all(
         not {"call.id", "conversation.id", "operation.id", "message.id"}
         & set(point.attributes)

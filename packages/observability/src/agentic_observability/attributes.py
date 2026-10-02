@@ -48,6 +48,8 @@ METRIC_ATTRIBUTE_ALLOWLIST = frozenset(
         "voice.component",
         "voice.model",
         "voice.provider",
+        "voice.service",
+        "voice.usage_kind",
         "operation.type",
     }
 )

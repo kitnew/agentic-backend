@@ -67,6 +67,7 @@ from contracts.messaging import (
     command_envelope,
     parse_command,
 )
+from contracts.usage import CallModelUsage, CallUsageReport
 from contracts.voice import (
     CallLifecycleResponse,
     CallLifecycleStatus,
@@ -91,6 +92,8 @@ __all__ = [
     "CallEventPayload",
     "CallLifecycleResponse",
     "CallLifecycleStatus",
+    "CallModelUsage",
+    "CallUsageReport",
     "CapabilityConfirmationConfirmRequest",
     "CapabilityConfirmationResponse",
     "CapabilityDiscoveryResponse",

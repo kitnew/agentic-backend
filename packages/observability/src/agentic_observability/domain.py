@@ -47,6 +47,14 @@ class CoreMetrics:
 
     def __post_init__(self) -> None:
         self._calls_started = self.meter.create_counter("call.started")
+        self._ai_usage_tokens = self.meter.create_counter("voice.ai_usage.tokens")
+        self._ai_usage_seconds = self.meter.create_counter("voice.ai_usage.seconds")
+        self._ai_usage_characters = self.meter.create_counter(
+            "voice.ai_usage.characters"
+        )
+        self._ai_estimated_cost = self.meter.create_counter(
+            "voice.ai_usage.estimated_cost_usd"
+        )
         self._calls_completed = self.meter.create_counter("call.completed")
         self._calls_failed = self.meter.create_counter("call.failed")
         self._calls_active = self.meter.create_up_down_counter("call.active")
@@ -99,6 +107,34 @@ class CoreMetrics:
     def call_started(self) -> None:
         self._calls_started.add(1)
         self._calls_active.add(1)
+
+    def ai_usage_delta(
+        self,
+        provider: str,
+        service: str,
+        model: str,
+        counters: dict[str, float],
+        estimated_cost_usd: float,
+    ) -> None:
+        dimensions = {
+            "voice.provider": provider,
+            "voice.service": service,
+            "voice.model": model,
+        }
+        for name, value in counters.items():
+            if value <= 0:
+                continue
+            attrs = metric_attributes({**dimensions, "voice.usage_kind": name})
+            if name.endswith("tokens"):
+                self._ai_usage_tokens.add(int(value), attrs)
+            elif name in {"audio_duration", "session_duration"}:
+                self._ai_usage_seconds.add(value, attrs)
+            elif name == "characters_count":
+                self._ai_usage_characters.add(int(value), attrs)
+        if estimated_cost_usd > 0:
+            self._ai_estimated_cost.add(
+                estimated_cost_usd, metric_attributes(dimensions)
+            )
 
     def set_active_calls(self, count: int) -> None:
         if count > 0:

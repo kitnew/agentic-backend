@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import sys
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -11,8 +12,6 @@ import asyncpg  # type: ignore[import-untyped]
 import jwt
 import pytest
 import pytest_asyncio
-from alembic import command
-from alembic.config import Config
 from backend_core.bootstrap.settings import Settings
 from dotenv import dotenv_values
 from sqlalchemy.engine import URL, make_url
@@ -70,15 +69,40 @@ def assert_safe_test_database(
         raise RuntimeError(f"refusing unsafe test database target: {database_name}")
 
 
-async def upgrade_database(database_url: str, revision: str) -> None:
-    alembic = Config(str(BACKEND_ROOT / "alembic.ini"))
-    alembic.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
-    await asyncio.to_thread(command.upgrade, alembic, revision)
+async def run_database_migration(
+    database_url: str, action: str, revision: str
+) -> None:
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "alembic",
+        "-c",
+        str(BACKEND_ROOT / "alembic.ini"),
+        action,
+        revision,
+        env={**os.environ, "DATABASE_URL": database_url},
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, errors = await process.communicate()
+    if process.returncode:
+        raise RuntimeError(errors.decode())
 
 
 @pytest.fixture
 def migrate_database():
-    return upgrade_database
+    async def migrate(database_url: str, revision: str) -> None:
+        await run_database_migration(database_url, "upgrade", revision)
+
+    return migrate
+
+
+@pytest.fixture
+def downgrade_database():
+    async def downgrade(database_url: str, revision: str) -> None:
+        await run_database_migration(database_url, "downgrade", revision)
+
+    return downgrade
 
 
 @pytest_asyncio.fixture
@@ -113,7 +137,7 @@ async def isolated_database_url() -> AsyncIterator[str]:
 async def migrated_database_url(
     isolated_database_url: str,
 ) -> AsyncIterator[str]:
-    await upgrade_database(isolated_database_url, "head")
+    await run_database_migration(isolated_database_url, "upgrade", "head")
     # The component cutover is intentionally destructive; isolated databases
     # are dropped by the outer fixture instead of exercising a fake downgrade.
     yield isolated_database_url

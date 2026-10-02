@@ -1,5 +1,7 @@
+import json
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -48,9 +50,187 @@ async def test_migrations_and_transaction_round_trip(
             )
 
         assert values == ["committed"]
-        assert revision == "0002_handoff_lifecycle"
+        assert revision == "0003_call_ai_usage"
     finally:
         await database.close()
+
+
+@pytest.mark.asyncio
+async def test_call_ai_usage_round_trip(migrated_database_url: str) -> None:
+    database = Database(migrated_database_url)
+    tenant_id, call_id = uuid4(), uuid4()
+    observed_at = datetime.now(UTC)
+    try:
+        async with database.transaction() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO tenants (id, slug, display_name, business_type, status) "
+                    "VALUES (:id, 'usage-test', 'Usage test', 'hotel', 'active')"
+                ),
+                {"id": tenant_id},
+            )
+            await session.execute(
+                text(
+                    "INSERT INTO call_sessions (id, tenant_id, execution_id, backend_execution_context, "
+                    "channel, direction, provider, provider_call_id, room_name, status) "
+                    "VALUES (:id, :tenant_id, :execution_id, '{}'::jsonb, 'sip', 'inbound', "
+                    "'livekit', 'usage-test-call', 'usage-test-room', 'created')"
+                ),
+                {"id": call_id, "tenant_id": tenant_id, "execution_id": uuid4()},
+            )
+        async with database.transaction() as session:
+            await session.execute(
+                text(
+                    "INSERT INTO call_ai_usage (call_id, tenant_id, provider, service, model, "
+                    "source, counters, first_observed_at, last_observed_at, estimated_cost_usd, "
+                    "estimated_cost_source) VALUES (:call_id, :tenant_id, 'openai', 'llm', "
+                    "'model-a', 'livekit_session_1_8_2', CAST(:counters AS jsonb), "
+                    ":observed_at, :observed_at, :cost, 'test-rate-v1')"
+                ),
+                {
+                    "call_id": call_id,
+                    "tenant_id": tenant_id,
+                    "observed_at": observed_at,
+                    "cost": Decimal("1.14"),
+                    "counters": json.dumps(
+                        {
+                            "input_tokens": 100,
+                            "input_cached_tokens": 20,
+                            "output_tokens": 10,
+                        }
+                    ),
+                },
+            )
+        async with database.transaction() as session:
+            row = (
+                await session.execute(
+                    text(
+                        "SELECT tenant_id, counters, estimated_cost_usd, estimated_cost_source, "
+                        "provider_cost_usd FROM call_ai_usage WHERE call_id = :call_id"
+                    ),
+                    {"call_id": call_id},
+                )
+            ).one()
+        assert row.tenant_id == tenant_id
+        assert row.counters["input_cached_tokens"] == 20
+        assert row.estimated_cost_usd == Decimal("1.14")
+        assert row.estimated_cost_source == "test-rate-v1"
+        assert row.provider_cost_usd is None
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_call_ai_usage_upgrade_downgrade_and_reupgrade(
+    isolated_database_url: str,
+    migrate_database: Callable[[str, str], Awaitable[None]],
+    downgrade_database: Callable[[str, str], Awaitable[None]],
+) -> None:
+    await migrate_database(isolated_database_url, "0002_handoff_lifecycle")
+    engine = create_async_engine(isolated_database_url)
+    tenant_id, call_id = uuid4(), uuid4()
+    try:
+        async with engine.begin() as connection:
+            assert await connection.scalar(
+                text("SELECT to_regclass('public.call_ai_usage')")
+            ) is None
+            await connection.execute(
+                text(
+                    "INSERT INTO tenants (id, slug, display_name, business_type, status) "
+                    "VALUES (:id, 'before-usage', 'Existing tenant', 'hotel', 'active')"
+                ),
+                {"id": tenant_id},
+            )
+            await connection.execute(
+                text(
+                    "INSERT INTO call_sessions (id, tenant_id, execution_id, "
+                    "backend_execution_context, channel, direction, provider, "
+                    "provider_call_id, room_name, status) VALUES "
+                    "(:id, :tenant_id, :execution_id, '{}'::jsonb, 'sip', "
+                    "'inbound', 'livekit', 'before-usage-call', 'before-usage-room', 'created')"
+                ),
+                {"id": call_id, "tenant_id": tenant_id, "execution_id": uuid4()},
+            )
+
+        async def assert_existing_call(revision: str) -> None:
+            async with engine.connect() as connection:
+                assert await connection.scalar(
+                    text("SELECT version_num FROM alembic_version")
+                ) == revision
+                assert (
+                    await connection.execute(
+                        text(
+                            "SELECT tenant_id, provider_call_id, room_name, status::text "
+                            "FROM call_sessions WHERE id = :id"
+                        ),
+                        {"id": call_id},
+                    )
+                ).one() == (
+                    tenant_id,
+                    "before-usage-call",
+                    "before-usage-room",
+                    "created",
+                )
+
+        await migrate_database(isolated_database_url, "head")
+        await assert_existing_call("0003_call_ai_usage")
+        async with engine.begin() as connection:
+            constraints = (
+                await connection.execute(
+                    text(
+                        "SELECT conname, contype::text, confdeltype::text "
+                        "FROM pg_constraint WHERE conrelid = 'call_ai_usage'::regclass "
+                        "AND contype IN ('p', 'f')"
+                    )
+                )
+            ).all()
+            assert set(constraints) == {
+                ("call_ai_usage_pkey", "p", " "),
+                ("call_ai_usage_tenant_id_fkey", "f", "a"),
+                ("fk_call_ai_usage_tenant_call", "f", "a"),
+            }
+            indexes = (
+                await connection.execute(
+                    text("SELECT indexname FROM pg_indexes WHERE tablename = 'call_ai_usage'")
+                )
+            ).scalars().all()
+            assert set(indexes) == {
+                "call_ai_usage_pkey",
+                "ix_call_ai_usage_tenant_observed",
+            }
+            await connection.execute(
+                text(
+                    "INSERT INTO call_ai_usage "
+                    "(call_id, tenant_id, provider, service, model, source, "
+                    "counters, first_observed_at, last_observed_at) VALUES "
+                    "(:call_id, :tenant_id, 'openai', 'llm', 'model-a', 'session', "
+                    "'{}'::jsonb, now(), now())"
+                ),
+                {"call_id": call_id, "tenant_id": tenant_id},
+            )
+
+        await downgrade_database(isolated_database_url, "0002_handoff_lifecycle")
+        await assert_existing_call("0002_handoff_lifecycle")
+        async with engine.connect() as connection:
+            assert await connection.scalar(
+                text("SELECT to_regclass('public.call_ai_usage')")
+            ) is None
+
+        await migrate_database(isolated_database_url, "head")
+        await assert_existing_call("0003_call_ai_usage")
+        async with engine.begin() as connection:
+            await connection.execute(
+                text(
+                    "INSERT INTO call_ai_usage "
+                    "(call_id, tenant_id, provider, service, model, source, "
+                    "counters, first_observed_at, last_observed_at) VALUES "
+                    "(:call_id, :tenant_id, 'openai', 'llm', 'model-a', 'session', "
+                    "'{}'::jsonb, now(), now())"
+                ),
+                {"call_id": call_id, "tenant_id": tenant_id},
+            )
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -181,7 +361,7 @@ async def test_handoff_migration_preserves_existing_call_rows(
             ) in enumerate(rows)
         }
         assert set(preserved) == expected
-        assert revision == "0002_handoff_lifecycle"
+        assert revision == "0003_call_ai_usage"
         assert set(nullable) == {
             ("handoff_attempt_id", "YES"),
             ("handoff_state", "YES"),

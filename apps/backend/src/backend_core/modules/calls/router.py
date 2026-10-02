@@ -8,6 +8,7 @@ from agentic_observability.domain import CoreMetrics
 from contracts import (
     CallLifecycleResponse,
     CallLifecycleStatus,
+    CallUsageReport,
     ConversationPersistenceStatus,
     HandoffAttemptResponse,
     HandoffEvent,
@@ -42,6 +43,7 @@ from backend_core.modules.calls.schemas import (
     FailCallSessionRequest,
 )
 from backend_core.modules.calls.service import CallSessionService
+from backend_core.modules.calls.usage_service import upsert_call_usage
 from backend_core.modules.conversations.router import build_conversation_service
 from backend_core.modules.integrations.crypto import derive_observability_key
 from backend_core.modules.tenants.errors import TenantNotFoundError
@@ -68,6 +70,39 @@ call_admin_router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_router.put(
+    "/{call_id}/ai-usage",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal_scope("call-session:usage:write"))],
+)
+async def report_call_ai_usage(
+    call_id: UUID,
+    report: CallUsageReport,
+    request: Request,
+) -> Response:
+    try:
+        async with request.app.state.database.transaction() as session:
+            found, changes = await upsert_call_usage(
+                session, call_id, report, request.app.state.settings.ai_usage_prices
+            )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if not found:
+        raise HTTPException(status_code=404, detail="call session not found")
+    metrics = request.app.state.core_metrics
+    if metrics is not None:
+        for provider, service, model, counters, cost_delta in changes:
+            try:
+                metrics.ai_usage_delta(
+                    provider, service, model, counters, float(cost_delta)
+                )
+            except Exception:
+                logger.exception(
+                    "AI usage metric emission failed", extra={"call_id": str(call_id)}
+                )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def build_call_session_service(

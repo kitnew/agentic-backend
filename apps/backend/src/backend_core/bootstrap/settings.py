@@ -7,6 +7,8 @@ Secret = Annotated[SecretStr, Field(min_length=32)]
 
 
 class Settings(BaseSettings):
+    # JSON object keyed by provider/service/model. No rate means unknown cost.
+    ai_usage_prices: dict[str, dict[str, object]] = Field(default_factory=dict)
     model_config = SettingsConfigDict(extra="ignore")
 
     database_url: PostgresDsn
