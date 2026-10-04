@@ -10,7 +10,12 @@ from backend_core.modules.calls.errors import (
 from backend_core.modules.calls.models import CallChannel, CallSessionStatus
 from backend_core.modules.calls.service import CallSessionService
 from backend_core.modules.tenants.models import TenantStatus
-from contracts import HandoffEvent, HandoffState, HumanHandoffRequest
+from contracts import (
+    HandoffEvent,
+    HandoffState,
+    HumanHandoffRequest,
+    VoiceExecutionContext,
+)
 
 
 class ControlPlane:
@@ -35,6 +40,32 @@ async def test_execution_resolution_422_becomes_configuration_unavailable() -> N
 
     with pytest.raises(CallSessionConfigUnavailableError):
         await service._execution(uuid4(), "test-execution")
+
+
+@pytest.mark.asyncio
+async def test_runtime_context_includes_callers_persisted_phone() -> None:
+    call = SimpleNamespace(id=uuid4(), caller_phone_e164="+15555550100")
+    context = VoiceExecutionContext.model_construct(
+        execution_id=uuid4(), metadata={}
+    )
+
+    class Calls:
+        async def get(self, call_id):
+            assert call_id == call.id
+            return call
+
+    class ContextReader:
+        async def read(self, _call):
+            return context
+
+    service = CallSessionService(
+        Calls(), None, None, None, None, None  # type: ignore[arg-type]
+    )
+    service._execution_context = ContextReader()  # type: ignore[assignment]
+
+    result = await service.get_runtime_context(call.id)
+
+    assert result.metadata["caller_phone"] == "+15555550100"
 
 
 @pytest.mark.asyncio

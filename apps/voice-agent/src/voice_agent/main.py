@@ -204,6 +204,9 @@ async def resolve_call_session_id(
 def assemble_instructions(
     context: VoiceExecutionContext, caller_number: str | None = None
 ) -> str:
+    if caller_number is None:
+        metadata_number = context.metadata.get("caller_phone")
+        caller_number = metadata_number if isinstance(metadata_number, str) else None
     timezone = context.business.timezone
     local_now = datetime.now(ZoneInfo(timezone))
     agent = [

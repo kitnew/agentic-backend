@@ -441,9 +441,19 @@ class CallSessionService:
     ) -> VoiceExecutionContext:
         call = await self.get(call_id)
         try:
-            return await self._execution_context.read(call)
+            context = await self._execution_context.read(call)
         except RuntimeContextUnavailableError as error:
             raise CallSessionConfigUnavailableError from error
+        if call.caller_phone_e164 is None:
+            return context
+        return context.model_copy(
+            update={
+                "metadata": {
+                    **context.metadata,
+                    "caller_phone": call.caller_phone_e164,
+                }
+            }
+        )
 
     async def transfer_to_human(
         self,

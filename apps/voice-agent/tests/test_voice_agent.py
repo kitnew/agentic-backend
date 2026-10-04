@@ -997,6 +997,16 @@ Current local time: 14:05"""
     assert "Use the calculator" not in instructions
 
 
+def test_prompt_assembly_includes_caller_phone_from_runtime_metadata() -> None:
+    context = runtime_context().model_copy(
+        update={"metadata": {"caller_phone": "+15555550100"}}
+    )
+
+    instructions = assemble_instructions(context)
+
+    assert "Caller phone number: +15555550100" in instructions
+
+
 def test_capability_tool_exposes_raw_phone_and_optional_country() -> None:
     action = {
         "key": "reservation.create",

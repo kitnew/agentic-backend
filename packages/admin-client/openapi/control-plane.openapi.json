@@ -4601,6 +4601,11 @@
             "title": "Handoff",
             "type": "array"
           },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          },
           "prompts": {
             "$ref": "#/components/schemas/VoicePrompts"
           },

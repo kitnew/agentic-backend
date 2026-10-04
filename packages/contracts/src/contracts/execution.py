@@ -75,6 +75,7 @@ class VoicePrompts(_ExecutionContract):
 
 class VoiceExecutionContext(_ExecutionContract):
     execution_id: UUID
+    metadata: dict[str, object] = Field(default_factory=dict)
     agent: VoiceAgentIdentity
     business: VoiceBusinessIdentity
     architecture: str = Field(min_length=1)
