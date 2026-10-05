@@ -34,3 +34,7 @@ Repository architecture and design documents live under `docs/`.
 
 When a subsystem has dedicated architecture documentation, treat those documents
 as the target design unless the user explicitly asks to revise that design.
+
+# Developer Access
+
+You are allowed to acquire and use /infrastracture/compose/.env.dev environmental variables. There are no valuable data's or keys in this file and database.
