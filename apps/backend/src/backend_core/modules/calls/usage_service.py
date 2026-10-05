@@ -28,7 +28,7 @@ COUNTERS = {
         "output_reasoning_tokens",
         "session_duration",
     },
-    "stt": {"input_tokens", "output_tokens", "audio_duration"},
+    "stt": {"input_tokens", "input_audio_tokens", "output_tokens", "audio_duration"},
     "tts": {"input_tokens", "output_tokens", "characters_count", "audio_duration"},
 }
 

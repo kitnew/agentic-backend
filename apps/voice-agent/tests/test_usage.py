@@ -59,7 +59,13 @@ def test_snapshot_collects_models_cached_tokens_and_standalone_stt():
             output_tokens=20,
         ),
         LLMModelUsage(provider="openai", model="gpt-b", input_tokens=7),
-        STTModelUsage(provider="soniox", model="stt-rt-v5", audio_duration=12.5),
+        STTModelUsage(
+            provider="soniox",
+            model="stt-rt-v5",
+            input_tokens=7,
+            input_audio_tokens=5,
+            audio_duration=12.5,
+        ),
         TTSModelUsage(
             provider="elevenlabs",
             model="eleven_v3",
@@ -74,6 +80,8 @@ def test_snapshot_collects_models_cached_tokens_and_standalone_stt():
     assert rows[0].counters["input_cached_tokens"] == 30
     assert rows[1].model == "gpt-b"
     assert rows[2].counters["audio_duration"] == 12.5
+    assert rows[2].counters["input_audio_tokens"] == 5
+    assert rows[2].source == "livekit_session_1_8_4"
     assert rows[3].counters["characters_count"] == 80
 
 

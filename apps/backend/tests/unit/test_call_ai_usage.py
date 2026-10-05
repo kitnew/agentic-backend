@@ -142,3 +142,18 @@ async def test_multiple_providers_and_models_have_separate_rows():
         session, call_id, CallUsageReport(usage=rows), {}
     )
     assert found and len(changes) == len(session.rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_livekit_1_8_4_stt_audio_tokens_are_accepted():
+    call_id = uuid4()
+    session = FakeSession(call_id)
+    usage = item(
+        service="stt",
+        counters={"input_tokens": 7, "input_audio_tokens": 5, "audio_duration": 3.0},
+    )
+    found, _ = await upsert_call_usage(
+        session, call_id, CallUsageReport(usage=[usage]), {}
+    )
+    assert found
+    assert next(iter(session.rows.values())).counters["input_audio_tokens"] == 5
