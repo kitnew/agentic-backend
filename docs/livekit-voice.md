@@ -2,7 +2,7 @@
 
 ## Per-call AI usage
 
-LiveKit Agents 1.8.2 emits `session_usage_updated` cumulative snapshots. The Voice
+LiveKit Agents 1.8.4 emits `session_usage_updated` cumulative snapshots. The Voice
 Agent sends the latest snapshot at most once every five seconds and flushes it
 before call terminalization. All three session modes use the same collector:
 cascade LLM/STT/TTS; realtime model and its standalone transcript STT; and
@@ -21,6 +21,9 @@ best effort and has a two-second HTTP timeout; failures never fail the call.
 The call terminalizer makes a final attempt before its existing completion
 observation. A process crash can lose up to the pending debounce interval;
 the last persisted snapshot remains available. PostgreSQL is authoritative.
+The source value records the SDK version; Backend accepts the previous 1.8.2
+source during rollout. LiveKit 1.8.4 also reports STT `input_audio_tokens`, a
+subset of `input_tokens`, and Backend stores both raw counters.
 
 `estimated_cost_usd` is a local **estimate**, and `provider_cost_usd` is reserved
 for **provider-reconciled** money. Both are nullable NUMERIC. Raw usage remains
@@ -166,6 +169,16 @@ delays. Compare a real smoke test before tuning the values. Candidate variants:
 
 For barge-in, test a long agent utterance and interrupt it after the second
 word. TTS should stop and the new user turn should be transcribed.
+
+### Known issue: interrupted capability response
+
+In cascade mode, ask Amélia to check room availability. After she says
+`Moment, pozriem sa` and the capability starts, say `Ďakujem` or `Mhm` before
+she reports the result. LiveKit may interrupt the original `SpeechHandle` and
+store the tool result in `chat_ctx` without scheduling its spoken response;
+the next turn may answer only the short user utterance. This is an accepted
+limitation until the planned Voice Agent refactor. Reproduce it in a live call;
+the mandatory test suite does not assert recovery behavior.
 
 ## Failure consistency
 
