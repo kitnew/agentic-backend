@@ -1880,6 +1880,9 @@ async def test_participant_timeout_fails_once(monkeypatch: pytest.MonkeyPatch) -
         async def aclose(self) -> None:
             return None
 
+        def shutdown(self, *, drain: bool) -> None:
+            assert drain is False
+
     class FakeSession:
         tts = None
 
@@ -2364,10 +2367,16 @@ async def test_inactivity_nudge_does_not_extend_deadline_and_activity_cancels_it
             async def playout() -> None:
                 await original_sleep(0)
 
-            return asyncio.create_task(playout())
+            return FakeSpeechHandle(asyncio.create_task(playout()))
 
         async def aclose(self) -> None:
             return None
+
+        def shutdown(self, *, drain: bool) -> None:
+            assert drain is False
+            self.callbacks["close"](
+                SimpleNamespace(reason=agents.CloseReason.USER_INITIATED)
+            )
 
     session = Session()
 
@@ -2752,6 +2761,9 @@ async def test_session_close_terminalizes_while_session_is_alive(
 
         async def aclose(self) -> None:
             return None
+
+        def shutdown(self, *, drain: bool) -> None:
+            assert drain is False
 
     backend = FakeBackend()
     session = FakeSession()

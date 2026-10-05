@@ -62,6 +62,9 @@ class ConversationPersistence:
     def incomplete(self) -> bool:
         return self._incomplete
 
+    def mark_incomplete(self) -> None:
+        self._incomplete = True
+
     def on_conversation_item_added(self, event: object) -> None:
         self._enqueue(message_from_event(self._call_id, event))
 

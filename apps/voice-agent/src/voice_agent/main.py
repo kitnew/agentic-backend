@@ -612,6 +612,8 @@ async def run_job(
     inactivity_resume_task: asyncio.Task[None] | None = None
     recovery_task: asyncio.Task[None] | None = None
     bridge_close_task: asyncio.Task[None] | None = None
+    session_close_task: asyncio.Task[None] | None = None
+    session_close_failed = False
     sip_disconnect_handler: Callable[[rtc.RemoteParticipant], None] | None = None
     cancelled = False
     try:
@@ -664,8 +666,13 @@ async def run_job(
 
                 async def close_transferred_call() -> None:
                     assert session is not None
-                    await ctx.delete_room()
-                    session.shutdown(drain=False)
+                    try:
+                        await asyncio.wait_for(
+                            ctx.delete_room(),
+                            timeout=settings.backend_http_timeout_seconds,
+                        )
+                    finally:
+                        request_session_close()
 
                 bridge_close_task = asyncio.create_task(close_transferred_call())
                 bridge_close_task.add_done_callback(log_terminalization_failure)
@@ -773,6 +780,43 @@ async def run_job(
             recent_transcript = RecentTranscriptBuffer()
         terminalizer = SessionTerminalizer(finalizer, persistence, usage_reporter)
         closed = asyncio.get_running_loop().create_future()
+
+        def request_session_close() -> None:
+            nonlocal session_close_task, session_close_failed
+            if session_close_task is not None:
+                return
+            assert session is not None
+            try:
+                session.shutdown(drain=False)
+            except Exception:
+                logger.exception("AgentSession shutdown failed")
+                session_close_failed = True
+                if not closed.done():
+                    closed.set_result(
+                        agents.CloseEvent(reason=agents.CloseReason.ERROR)
+                    )
+                return
+
+            async def wait_for_close() -> None:
+                nonlocal session_close_failed
+                try:
+                    await asyncio.wait_for(
+                        session.aclose(), timeout=settings.backend_http_timeout_seconds
+                    )
+                    if not closed.done():
+                        session_close_failed = True
+                        closed.set_result(
+                            agents.CloseEvent(reason=agents.CloseReason.ERROR)
+                        )
+                except Exception:
+                    logger.exception("AgentSession close failed")
+                    session_close_failed = True
+                    if not closed.done():
+                        closed.set_result(
+                            agents.CloseEvent(reason=agents.CloseReason.ERROR)
+                        )
+
+            session_close_task = asyncio.create_task(wait_for_close())
 
         async def check_inactivity() -> None:
             try:
@@ -971,7 +1015,8 @@ async def run_job(
             assert handoff is not None
             if not handoff.completed and bridge_close_task is None:
                 await handoff.cancel("job_shutdown")
-                await terminalizer.terminalize("job_shutdown")
+            if session is not None:
+                request_session_close()
 
         ctx.add_shutdown_callback(on_shutdown)
 
@@ -986,8 +1031,6 @@ async def run_job(
             assert handoff is not None
             if not handoff.active or bridge_close_task is not None:
                 closed.set_result(event)
-                task = terminalizer.start(close_failure_reason(event.reason))
-                task.add_done_callback(log_terminalization_failure)
                 return
 
             async def handle_close() -> None:
@@ -995,7 +1038,6 @@ async def run_job(
                     await handoff.cancel("session_closed")
                 if not closed.done():
                     closed.set_result(event)
-                await terminalizer.terminalize(close_failure_reason(event.reason))
 
             task = asyncio.create_task(handle_close())
             task.add_done_callback(log_terminalization_failure)
@@ -1036,11 +1078,7 @@ async def run_job(
                     if disconnected.identity == caller_identity:
                         if handoff.bridge_peer_disconnected(disconnected.identity):
                             return
-                        on_close(
-                            agents.CloseEvent(
-                                reason=agents.CloseReason.PARTICIPANT_DISCONNECTED
-                            )
-                        )
+                        request_session_close()
 
                 sip_disconnect_handler = on_participant_disconnected
                 ctx.room.on("participant_disconnected", sip_disconnect_handler)
@@ -1099,8 +1137,6 @@ async def run_job(
     except asyncio.CancelledError:
         failure_reason = "job_shutdown"
         cancelled = True
-        if session is not None:
-            await session.aclose()
     except Exception:
         logger.exception(
             "Voice Agent job failed",
@@ -1110,8 +1146,6 @@ async def run_job(
             },
         )
         failure_reason = "provider_session_error"
-        if session is not None:
-            await session.aclose()
     finally:
         if sip_disconnect_handler is not None:
             ctx.room.off("participant_disconnected", sip_disconnect_handler)
@@ -1119,17 +1153,59 @@ async def run_job(
             if task is not None:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
-        if session is not None and persistence is not None:
-            off = getattr(session, "off", None)
-            if off is not None:
-                off("conversation_item_added", persistence.on_conversation_item_added)
         try:
             if bridge_close_task is not None:
-                await asyncio.gather(bridge_close_task, return_exceptions=True)
+                try:
+                    bridge_results = await asyncio.wait_for(
+                        asyncio.gather(bridge_close_task, return_exceptions=True),
+                        timeout=settings.backend_http_timeout_seconds,
+                    )
+                    if isinstance(bridge_results[0], BaseException):
+                        failure_reason = "provider_session_error"
+                except Exception:
+                    logger.exception("Bridged call teardown failed")
+                    failure_reason = "provider_session_error"
+            if session_close_task is not None:
+                await session_close_task
+            if session_close_failed:
+                failure_reason = "provider_session_error"
+                if persistence is not None:
+                    persistence.mark_incomplete()
+            if session is not None:
+                try:
+                    await asyncio.wait_for(
+                        session.aclose(), timeout=settings.backend_http_timeout_seconds
+                    )
+                except Exception:
+                    logger.exception("AgentSession close failed")
+                    failure_reason = "provider_session_error"
+                    if persistence is not None:
+                        persistence.mark_incomplete()
+            if session is not None and persistence is not None:
+                off = getattr(session, "off", None)
+                if off is not None:
+                    off(
+                        "conversation_item_added",
+                        persistence.on_conversation_item_added,
+                    )
             if handoff is not None:
-                await handoff.close(cancel=bridge_close_task is None)
+                try:
+                    await asyncio.wait_for(
+                        handoff.close(cancel=bridge_close_task is None),
+                        timeout=2 * settings.backend_http_timeout_seconds,
+                    )
+                except Exception:
+                    logger.exception("Handoff cleanup failed")
+                    failure_reason = "provider_session_error"
             if ringback is not None:
-                await ringback.aclose()
+                try:
+                    await asyncio.wait_for(
+                        ringback.aclose(),
+                        timeout=settings.backend_http_timeout_seconds,
+                    )
+                except Exception:
+                    logger.exception("Ringback cleanup failed")
+                    failure_reason = "provider_session_error"
             if terminalizer is not None:
                 await terminalizer.terminalize(failure_reason)
             elif finalizer is not None and failure_reason is None:
