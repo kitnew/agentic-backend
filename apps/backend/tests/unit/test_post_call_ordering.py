@@ -90,6 +90,11 @@ async def test_post_call_transcript_uses_canonical_conversation_sequence() -> No
                     interrupted=False,
                 ),
                 SimpleNamespace(
+                    role=ConversationMessageRole.ASSISTANT,
+                    content="Vaša izba je pri",
+                    interrupted=True,
+                ),
+                SimpleNamespace(
                     role=ConversationMessageRole.USER, content="draft", interrupted=True
                 ),
             ]
@@ -98,4 +103,5 @@ async def test_post_call_transcript_uses_canonical_conversation_sequence() -> No
     assert await service._transcript(uuid4()) == [
         {"role": "user", "message": "Dobrý deň"},
         {"role": "agent", "message": "Vitajte"},
+        {"role": "agent", "message": "Vaša izba je pri"},
     ]

@@ -22,6 +22,33 @@ def event(item_id: str, content: str, role: str = "user") -> object:
 
 
 @pytest.mark.asyncio
+async def test_ordinary_interruption_persists_only_the_played_assistant_text() -> None:
+    class Backend:
+        def __init__(self) -> None:
+            self.messages = []
+
+        async def append_conversation_message(self, call_id, payload) -> None:
+            self.messages.append(payload)
+
+    backend = Backend()
+    persistence = ConversationPersistence(backend, uuid4())  # type: ignore[arg-type]
+    persistence.on_conversation_item_added(
+        SimpleNamespace(
+            item=llm.ChatMessage(
+                id="interrupted-reply",
+                role="assistant",
+                content=["Izba je dostup"],
+                interrupted=True,
+            )
+        )
+    )
+    assert await persistence.finish()
+    assert [(item.content, item.interrupted) for item in backend.messages] == [
+        ("Izba je dostup", True)
+    ]
+
+
+@pytest.mark.asyncio
 async def test_persistence_writes_committed_items_in_queue_order() -> None:
     class Backend:
         def __init__(self) -> None:
