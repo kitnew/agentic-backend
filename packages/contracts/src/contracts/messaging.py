@@ -11,7 +11,9 @@ class _Message(BaseModel):
 
 class CallEventPayload(_Message):
     call_id: UUID
-    status: Literal["created", "started", "connected", "ended", "failed"]
+    status: Literal[
+        "created", "started", "connected", "agent_relinquished", "ended", "failed"
+    ]
     failure_reason: str | None = None
 
 

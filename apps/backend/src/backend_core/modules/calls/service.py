@@ -680,7 +680,12 @@ class CallSessionService:
     ) -> CallSession:
         call = await self._get_for_update(call_id)
         if (
-            call.status is not CallSessionStatus.CONNECTED
+            call.status
+            not in {
+                CallSessionStatus.CONNECTED,
+                CallSessionStatus.ENDED,
+                CallSessionStatus.FAILED,
+            }
             or call.handoff_attempt_id != attempt_id
             or call.handoff_state is not HandoffState.COMPLETED
         ):
@@ -689,6 +694,9 @@ class CallSessionService:
             await self._conversations.close_for_call(call_id, conversation_status)
         except (ConversationConflictError, ConversationNotFoundError) as error:
             raise CallSessionConflictError from error
+        await self._events.publish(
+            call_event(call.id, call.tenant_id, "agent_relinquished")
+        )
         return call
 
     async def mark_started(self, call_id: UUID) -> CallSession:

@@ -93,6 +93,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         async def handle_event(fields: dict[str, str]) -> None:
             event = MessageEnvelope.model_validate_json(fields["message"])
             if event.message_type not in {
+                "call.agent_relinquished",
                 "call.ended",
                 "recording.ready",
                 "recording.failed",
@@ -111,7 +112,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     ExecutionContextReader(app.state.control_plane),
                     app.state.control_plane,
                 )
-                if event.message_type == "call.ended":
+                if event.message_type in {"call.agent_relinquished", "call.ended"}:
                     await finalization.start(event)
                 else:
                     await finalization.recording_changed(event)

@@ -10,6 +10,7 @@ from contracts import (
     CommandResult,
     ExecutePostCallAction,
     GenerateCallSummary,
+    HandoffState,
     MaterializeArtifactRepresentation,
     MessageEnvelope,
     WorkerExecutionContext,
@@ -116,11 +117,17 @@ class FinalizationService:
             return finalization
 
     async def _start(self, event: MessageEnvelope) -> CallFinalization:
-        if event.message_kind != "event" or event.message_type != "call.ended":
-            raise FinalizationError("finalization requires call.ended")
+        if event.message_kind != "event" or event.message_type not in {
+            "call.ended",
+            "call.agent_relinquished",
+        }:
+            raise FinalizationError("finalization requires a completed AI conversation")
         payload = CallEventPayload.model_validate(event.payload)
-        if payload.status != "ended":
-            raise FinalizationError("call.ended payload is invalid")
+        if event.message_type != f"call.{payload.status}" or payload.status not in {
+            "ended",
+            "agent_relinquished",
+        }:
+            raise FinalizationError("finalization event is invalid")
         existing = await self._session.scalar(
             select(CallFinalization)
             .where(CallFinalization.call_id == payload.call_id)
@@ -129,8 +136,18 @@ class FinalizationService:
         if existing is not None:
             return existing
         call = await self._session.get(CallSession, payload.call_id)
-        if call is None or call.status.value != "ended":
-            raise FinalizationError("ended call not found")
+        if (
+            call is None
+            or (payload.status == "ended" and call.status.value != "ended")
+            or (
+                payload.status == "agent_relinquished"
+                and (
+                    call.status.value not in {"connected", "ended", "failed"}
+                    or call.handoff_state is not HandoffState.COMPLETED
+                )
+            )
+        ):
+            raise FinalizationError("completed AI conversation not found")
         actions = await self._actions(call)
         finalization = CallFinalization(
             id=uuid4(),

@@ -2,7 +2,7 @@ import logging
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from contracts import MessageEnvelope
+from contracts import HandoffState, MessageEnvelope
 from opentelemetry.trace import Tracer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -184,6 +184,11 @@ class RecordingCoordinator:
     async def ensure(self, call_id: UUID) -> None:
         async with self._database.transaction() as session:
             call = await session.get(CallSession, call_id)
+            if call is not None and (
+                call.handoff_state is HandoffState.COMPLETED
+                or call.status in {CallSessionStatus.ENDED, CallSessionStatus.FAILED}
+            ):
+                return
             recording, claimed = await self._service(session).claim(call_id)
             room_name = call.room_name if call is not None else ""
             recording_id = recording.id
@@ -198,6 +203,14 @@ class RecordingCoordinator:
                 service = self._service(session)
                 await service.started(recording_id, result)
                 await service.apply(result)
+                call = await session.get(CallSession, call_id)
+                should_stop = call is not None and (
+                    call.handoff_state is HandoffState.COMPLETED
+                    or call.status
+                    in {CallSessionStatus.ENDED, CallSessionStatus.FAILED}
+                )
+            if should_stop:
+                await self.stop(call_id)
             logger.info(
                 "LiveKit call recording started",
                 extra={"call_session_id": str(call_id), "egress_id": result.egress_id},
@@ -245,6 +258,7 @@ class RecordingCoordinator:
                 await session.execute(
                     select(
                         CallRecording.id,
+                        CallRecording.call_id,
                         CallRecording.egress_id,
                         CallRecording.storage_key,
                         CallSession.room_name,
@@ -255,14 +269,17 @@ class RecordingCoordinator:
                             [RecordingStatus.PENDING, RecordingStatus.RECORDING]
                         ),
                         CallRecording.updated_at < cutoff,
-                        CallSession.status.in_(
-                            [CallSessionStatus.ENDED, CallSessionStatus.FAILED]
+                        (
+                            CallSession.status.in_(
+                                [CallSessionStatus.ENDED, CallSessionStatus.FAILED]
+                            )
+                            | (CallSession.handoff_state == HandoffState.COMPLETED)
                         ),
                     )
                     .limit(batch_size)
                 )
             )
-        for recording_id, egress_id, storage_key, room_name in candidates:
+        for recording_id, call_id, egress_id, storage_key, room_name in candidates:
             try:
                 result = (
                     await self._livekit.get_egress(egress_id)
@@ -283,6 +300,8 @@ class RecordingCoordinator:
                     if egress_id is None:
                         await service.started(recording_id, result)
                     await service.apply(result)
+                if result.status in {"starting", "active", "ending"}:
+                    await self.stop(call_id)
             except Exception:  # recording recovery must not affect call reconciliation
                 logger.exception(
                     "Could not reconcile stale LiveKit recording",

@@ -12,6 +12,7 @@ from contracts import (
     ConversationPersistenceStatus,
     HandoffAttemptResponse,
     HandoffEvent,
+    HandoffState,
     HumanHandoffRequest,
     HumanHandoffResponse,
     InboundSipClaimRequest,
@@ -195,7 +196,8 @@ async def observe_call(
                 ConversationPersistenceStatus(data.conversation_status),
             )
         if (
-            data.observation_type in {"session_finished", "session_failed"}
+            data.observation_type
+            in {"agent_relinquished", "session_finished", "session_failed"}
             and request.app.state.settings.call_recording_enabled
         ):
             await RecordingCoordinator(
@@ -224,6 +226,27 @@ async def start_call_recording(call_id: UUID, request: Request) -> Response:
             command_stream=request.app.state.settings.command_stream,
             tracer=getattr(request.app.state, "outbox_tracer", None),
         ).ensure(call_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@runtime_router.post(
+    "/{call_id}/recording/stop",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_internal_scope("call-session:observe"))],
+)
+async def stop_call_recording(call_id: UUID, request: Request) -> Response:
+    async with request.app.state.database.transaction() as session:
+        call = await session.get(CallSession, call_id)
+        if call is None or call.handoff_state is not HandoffState.COMPLETED:
+            raise HTTPException(status_code=409, detail="handoff is not completed")
+    if request.app.state.settings.call_recording_enabled:
+        await RecordingCoordinator(
+            request.app.state.database,
+            request.app.state.livekit,
+            event_stream=request.app.state.settings.domain_event_stream,
+            command_stream=request.app.state.settings.command_stream,
+            tracer=getattr(request.app.state, "outbox_tracer", None),
+        ).stop(call_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

@@ -3,9 +3,14 @@ from uuid import uuid4
 
 import pytest
 from backend_core.modules.calls.models import CallSessionStatus
-from backend_core.modules.calls.router import observe_call, start_call_recording
-from contracts import VoiceCallObservation
-from fastapi import FastAPI, Request
+from backend_core.modules.calls.router import (
+    observe_call,
+    start_call_recording,
+    stop_call_recording,
+)
+from backend_core.modules.calls.service import CallSessionService
+from contracts import ConversationPersistenceStatus, HandoffState, VoiceCallObservation
+from fastapi import FastAPI, HTTPException, Request
 
 
 class Service:
@@ -55,10 +60,24 @@ async def test_runtime_observation_routes_to_authoritative_call_service() -> Non
 
 
 @pytest.mark.asyncio
-async def test_agent_relinquish_does_not_end_the_call() -> None:
+async def test_agent_relinquish_stops_recording_without_ending_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     service = Service()
     service.call.status = CallSessionStatus.CONNECTED
     attempt_id = uuid4()
+    stopped: list[object] = []
+
+    class Coordinator:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def stop(self, call_id) -> None:
+            stopped.append(call_id)
+
+    monkeypatch.setattr(
+        "backend_core.modules.calls.router.RecordingCoordinator", Coordinator
+    )
 
     response = await observe_call(
         service.call.id,
@@ -67,11 +86,68 @@ async def test_agent_relinquish_does_not_end_the_call() -> None:
             handoff_attempt_id=attempt_id,
         ),
         service,  # type: ignore[arg-type]
-        SimpleNamespace(),  # type: ignore[arg-type]
+        SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    settings=SimpleNamespace(
+                        call_recording_enabled=True,
+                        domain_event_stream="events",
+                        command_stream="commands",
+                    ),
+                    database=object(),
+                    livekit=object(),
+                )
+            )
+        ),  # type: ignore[arg-type]
     )
 
     assert service.observed == [f"relinquished:{attempt_id}:complete"]
     assert response.status.value == "connected"
+    assert stopped == [service.call.id]
+
+
+@pytest.mark.asyncio
+async def test_repeated_relinquish_after_sip_disconnect_is_idempotent() -> None:
+    attempt_id = uuid4()
+    call = SimpleNamespace(
+        id=uuid4(),
+        tenant_id=uuid4(),
+        status=CallSessionStatus.CONNECTED,
+        handoff_attempt_id=attempt_id,
+        handoff_state=HandoffState.COMPLETED,
+    )
+    closed: list[object] = []
+    events: list[object] = []
+
+    class Conversations:
+        async def close_for_call(self, call_id, status):
+            closed.append((call_id, status))
+
+    class Events:
+        async def publish(self, event):
+            events.append(event)
+
+    service = object.__new__(CallSessionService)
+
+    async def get_for_update(call_id):
+        return call
+
+    service._get_for_update = get_for_update  # type: ignore[method-assign]
+    service._conversations = Conversations()  # type: ignore[assignment]
+    service._events = Events()  # type: ignore[assignment]
+    await service.relinquish_agent(
+        call.id, attempt_id, ConversationPersistenceStatus.COMPLETE
+    )
+    assert call.status is CallSessionStatus.CONNECTED
+    call.status = CallSessionStatus.ENDED
+    await service.relinquish_agent(
+        call.id, attempt_id, ConversationPersistenceStatus.COMPLETE
+    )
+    assert len(closed) == 2
+    assert [event.message_type for event in events] == [
+        "call.agent_relinquished",
+        "call.agent_relinquished",
+    ]
 
 
 @pytest.mark.asyncio
@@ -119,6 +195,61 @@ async def test_recording_start_operation_uses_existing_coordinator(
         "tracer": None,
     }
     assert started[1] == call_id
+
+
+@pytest.mark.asyncio
+async def test_early_recording_stop_requires_confirmed_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_id = uuid4()
+    stopped: list[object] = []
+    call = SimpleNamespace(handoff_state=HandoffState.ANSWERED)
+
+    class Database:
+        async def get(self, model, key):
+            return call
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        def transaction(self):
+            return self
+
+    class Coordinator:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def stop(self, requested_call_id) -> None:
+            stopped.append(requested_call_id)
+
+    monkeypatch.setattr(
+        "backend_core.modules.calls.router.RecordingCoordinator", Coordinator
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                database=Database(),
+                livekit=object(),
+                settings=SimpleNamespace(
+                    call_recording_enabled=True,
+                    domain_event_stream="events",
+                    command_stream="commands",
+                ),
+            )
+        )
+    )
+    with pytest.raises(HTTPException) as error:
+        await stop_call_recording(call_id, request)  # type: ignore[arg-type]
+    assert error.value.status_code == 409
+    assert stopped == []
+
+    call.handoff_state = HandoffState.COMPLETED
+    await stop_call_recording(call_id, request)  # type: ignore[arg-type]
+    await stop_call_recording(call_id, request)  # type: ignore[arg-type]
+    assert stopped == [call_id, call_id]
 
 
 @pytest.mark.asyncio
