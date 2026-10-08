@@ -9,7 +9,11 @@ non-interruptible opening greeting -> wait_for_playout()
 Voice Agent -> POST /internal/v1/calls/{call_id}/recording
             -> RecordingCoordinator.ensure() -> LiveKit RoomComposite Egress
             -> MP3 -> private MinIO call-recordings bucket
-call termination (including SIP caller disconnect)
+confirmed handoff COMPLETED -> RecordingCoordinator.stop() -> LiveKit StopEgress
+  -> close AI session and persist final transcript/usage
+  -> agent_relinquished -> idempotent recording stop
+  -> call.agent_relinquished -> post-call finalization
+call termination (including SIP caller disconnect without handoff)
   -> normal finalization -> RecordingCoordinator.stop() -> LiveKit StopEgress
 LiveKit signed webhook -> Backend recording.ready/recording.failed
                        -> existing post-call scheduler -> Job Worker
@@ -30,10 +34,11 @@ greeting. Once `wait_for_playout()` completes, the Voice Agent calls
 intent transaction commits. Failure marks only the recording as failed; it never
 fails the live call.
 
-Call termination, including SIP caller disconnect, runs the normal call
-finalization path, which calls `RecordingCoordinator.stop()` and LiveKit
-`StopEgress`. Room deletion remains cleanup and a safety net, not the primary
-recording-stop trigger.
+Confirmed successful handoff stops recording when the AI conversation is
+relinquished, while the caller and destination remain bridged in the LiveKit
+room. Calls without successful handoff stop recording on normal termination.
+Room deletion remains cleanup and a safety net, not the primary recording-stop
+trigger. Post-call work waits for the final Egress result when it needs audio.
 
 The canonical object key is:
 
@@ -93,9 +98,9 @@ before accepting `egress_started`, `egress_updated`, or `egress_ended`.
    `failed`, and a recording-dependent finalization becomes terminal rather than
    waiting forever.
 
-For cold SIP handoff the MP3 contains only media that passed through the LiveKit
-room. It ends when the caller leaves LiveKit; the later PSTN-only conversation is
-not recorded.
+For SIP handoff the MP3 ends after confirmed transfer and AI-session closure.
+The subsequent caller/destination conversation in the LiveKit room is not
+recorded by this Egress.
 
 ## Operational notes
 

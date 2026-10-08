@@ -2491,6 +2491,7 @@ async def test_bridge_disconnect_deletes_room_and_finalizes_once(
     deleted_rooms: list[str] = []
     sessions: list[object] = []
     shutdowns: list[bool] = []
+    relinquished = asyncio.Event()
 
     class Backend:
         def __init__(self) -> None:
@@ -2511,12 +2512,18 @@ async def test_bridge_disconnect_deletes_room_and_finalizes_once(
             handoff_attempt_id=None,
         ) -> None:
             self.observations.append((observation_type, conversation_status))
+            if observation_type == "agent_relinquished":
+                relinquished.set()
 
         async def activate(self, call_id) -> None:
             return None
 
         async def start_recording(self, call_id) -> None:
             controller = controllers[0]
+            if state is HandoffState.COMPLETED:
+                controller._on_completed(controller.attempt_id)
+                await asyncio.wait_for(relinquished.wait(), 1)
+                assert not deleted_rooms
             for identity in ("egress", "agent", "unrelated", f"handoff-{uuid4()}"):
                 assert not controller.bridge_peer_disconnected(identity)
             assert not deleted_rooms
@@ -2534,6 +2541,9 @@ async def test_bridge_disconnect_deletes_room_and_finalizes_once(
                     job.room.emit("participant_disconnected", identity)
                 else:
                     assert controller.bridge_peer_disconnected(identity)
+
+        async def stop_recording(self, call_id) -> None:
+            self.observations.append(("recording_stop", "complete"))
 
         async def complete(self, call_id, conversation_status: str) -> None:
             self.observations.append(("complete", conversation_status))
@@ -2666,6 +2676,12 @@ async def test_bridge_disconnect_deletes_room_and_finalizes_once(
 
     assert backend.observations == [
         ("session_started", "complete"),
+        *([("recording_stop", "complete")] if state is HandoffState.COMPLETED else []),
+        *(
+            [("agent_relinquished", "complete")]
+            if state is HandoffState.COMPLETED
+            else []
+        ),
         ("complete", "complete"),
     ]
     assert deleted_rooms == ["room"]
@@ -2827,3 +2843,37 @@ async def test_terminalizer_uses_the_first_terminal_signal_only() -> None:
 
     assert finalizer.completed == 1
     assert finalizer.failed == []
+
+
+@pytest.mark.asyncio
+async def test_relinquished_conversation_drains_before_post_call_and_only_once() -> (
+    None
+):
+    order: list[str] = []
+
+    class Persistence:
+        async def finish(self) -> bool:
+            order.append("transcript")
+            return True
+
+    class Usage:
+        async def flush(self) -> None:
+            order.append("usage")
+
+    class Finalizer:
+        async def complete(self, conversation_status: str) -> None:
+            assert conversation_status == "complete"
+            order.append("call-ended")
+
+        async def fail(self, reason: str, conversation_status: str) -> None:
+            raise AssertionError(reason)
+
+    terminalizer = SessionTerminalizer(
+        Finalizer(),  # type: ignore[arg-type]
+        Persistence(),  # type: ignore[arg-type]
+        Usage(),  # type: ignore[arg-type]
+    )
+    assert await terminalizer.finish_conversation() == "complete"
+    assert order == ["transcript", "usage"]
+    await terminalizer.terminalize(None)
+    assert order == ["transcript", "usage", "call-ended"]

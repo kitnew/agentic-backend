@@ -557,6 +557,7 @@ class SessionTerminalizer:
         self._persistence = persistence
         self._usage = usage
         self._task: asyncio.Task[None] | None = None
+        self._conversation_task: asyncio.Task[str] | None = None
 
     def start(self, failure_reason: str | None) -> asyncio.Task[None]:
         if self._task is None:
@@ -568,6 +569,18 @@ class SessionTerminalizer:
         await asyncio.shield(task)
 
     async def _deliver(self, failure_reason: str | None) -> None:
+        conversation_status = await self.finish_conversation()
+        if failure_reason is None:
+            await self._finalizer.complete(conversation_status)
+        else:
+            await self._finalizer.fail(failure_reason, conversation_status)
+
+    async def finish_conversation(self) -> str:
+        if self._conversation_task is None:
+            self._conversation_task = asyncio.create_task(self._finish_conversation())
+        return await asyncio.shield(self._conversation_task)
+
+    async def _finish_conversation(self) -> str:
         conversation_complete = False
         try:
             conversation_complete = await self._persistence.finish()
@@ -576,10 +589,7 @@ class SessionTerminalizer:
         conversation_status = "complete" if conversation_complete else "incomplete"
         if self._usage is not None:
             await self._usage.flush()
-        if failure_reason is None:
-            await self._finalizer.complete(conversation_status)
-        else:
-            await self._finalizer.fail(failure_reason, conversation_status)
+        return conversation_status
 
 
 async def on_request(request: agents.JobRequest) -> None:
@@ -612,6 +622,7 @@ async def run_job(
     inactivity_resume_task: asyncio.Task[None] | None = None
     recovery_task: asyncio.Task[None] | None = None
     bridge_close_task: asyncio.Task[None] | None = None
+    relinquish_task: asyncio.Task[None] | None = None
     session_close_task: asyncio.Task[None] | None = None
     session_close_failed = False
     sip_disconnect_handler: Callable[[rtc.RemoteParticipant], None] | None = None
@@ -673,9 +684,47 @@ async def run_job(
                         )
                     finally:
                         request_session_close()
+                        assert handoff is not None
+                        if handoff.completed and not closed.done():
+                            closed.set_result(
+                                agents.CloseEvent(
+                                    reason=agents.CloseReason.TASK_COMPLETED
+                                )
+                            )
 
                 bridge_close_task = asyncio.create_task(close_transferred_call())
                 bridge_close_task.add_done_callback(log_terminalization_failure)
+
+        async def relinquish_ai(attempt_id: UUID) -> None:
+            assert session is not None
+            assert persistence is not None
+            assert terminalizer is not None
+            assert call_id is not None
+            try:
+                await backend.stop_recording(call_id)
+            except Exception:
+                logger.exception("Recording stop after handoff failed")
+            request_session_close()
+            if session_close_task is not None:
+                await session_close_task
+            if session_close_failed:
+                persistence.mark_incomplete()
+            off = getattr(session, "off", None)
+            if off is not None:
+                off("conversation_item_added", persistence.on_conversation_item_added)
+            conversation_status = await terminalizer.finish_conversation()
+            await backend.observe(
+                call_id,
+                "agent_relinquished",
+                conversation_status=conversation_status,
+                handoff_attempt_id=attempt_id,
+            )
+
+        def on_handoff_completed(attempt_id: UUID) -> None:
+            nonlocal relinquish_task
+            if relinquish_task is None:
+                relinquish_task = asyncio.create_task(relinquish_ai(attempt_id))
+                relinquish_task.add_done_callback(log_terminalization_failure)
 
         handoff = HandoffController(
             backend,
@@ -684,6 +733,7 @@ async def run_job(
             backend_timeout=settings.backend_http_timeout_seconds,
             remove_participant=remove_handoff_participant,
             bridge_disconnected=on_bridge_disconnected,
+            on_completed=on_handoff_completed,
         )
         context = await backend.runtime_context(call_id)
         logger.info(
@@ -791,7 +841,7 @@ async def run_job(
             except Exception:
                 logger.exception("AgentSession shutdown failed")
                 session_close_failed = True
-                if not closed.done():
+                if not closed.done() and relinquish_task is None:
                     closed.set_result(
                         agents.CloseEvent(reason=agents.CloseReason.ERROR)
                     )
@@ -803,7 +853,7 @@ async def run_job(
                     await asyncio.wait_for(
                         session.aclose(), timeout=settings.backend_http_timeout_seconds
                     )
-                    if not closed.done():
+                    if not closed.done() and relinquish_task is None:
                         session_close_failed = True
                         closed.set_result(
                             agents.CloseEvent(reason=agents.CloseReason.ERROR)
@@ -811,7 +861,7 @@ async def run_job(
                 except Exception:
                     logger.exception("AgentSession close failed")
                     session_close_failed = True
-                    if not closed.done():
+                    if not closed.done() and relinquish_task is None:
                         closed.set_result(
                             agents.CloseEvent(reason=agents.CloseReason.ERROR)
                         )
@@ -1023,12 +1073,18 @@ async def run_job(
         def on_close(event: agents.CloseEvent) -> None:
             if closed.done():
                 return
+            assert handoff is not None
+            if (
+                relinquish_task is not None
+                and bridge_close_task is None
+                and event.reason is agents.CloseReason.USER_INITIATED
+            ):
+                return
             cancel_inactivity(cancel_nudge=True)
             if recovery_task is not None:
                 recovery_task.cancel()
             if ringback is not None:
                 ringback.stop("session_closed")
-            assert handoff is not None
             if not handoff.active or bridge_close_task is not None:
                 closed.set_result(event)
                 return
@@ -1154,6 +1210,8 @@ async def run_job(
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
         try:
+            if relinquish_task is not None:
+                await asyncio.gather(relinquish_task, return_exceptions=True)
             if bridge_close_task is not None:
                 try:
                     bridge_results = await asyncio.wait_for(

@@ -255,6 +255,13 @@ class BackendClient:
             "call-session:observe",
         )
 
+    async def stop_recording(self, call_id: UUID) -> None:
+        await self.request(
+            "POST",
+            f"/internal/v1/calls/{call_id}/recording/stop",
+            "call-session:observe",
+        )
+
     async def report_ai_usage(self, call_id: UUID, report: CallUsageReport) -> None:
         await self.request(
             "PUT",

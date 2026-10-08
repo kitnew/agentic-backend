@@ -34,6 +34,7 @@ class HandoffController:
         remove_participant: Callable[[str], Awaitable[None]] | None = None,
         bridge_disconnected: Callable[[UUID, str, str, HandoffState], None]
         | None = None,
+        on_completed: Callable[[UUID], None] | None = None,
     ) -> None:
         self._backend = backend
         self._call_id = call_id
@@ -41,6 +42,7 @@ class HandoffController:
         self._backend_timeout = backend_timeout
         self._remove_participant = remove_participant
         self._bridge_disconnected = bridge_disconnected
+        self._on_completed = on_completed
         self._lock = asyncio.Lock()
         self._attempt: HandoffAttempt | None = None
         self._waiter: asyncio.Task[None] | None = None
@@ -338,6 +340,8 @@ class HandoffController:
                 return
             state = await self._transition(attempt_id, event)
             if state is HandoffState.COMPLETED:
+                if self._on_completed is not None:
+                    self._on_completed(attempt_id)
                 if self._bridge_disconnected is None:
                     session.shutdown(drain=True)
                 else:
@@ -378,6 +382,8 @@ class HandoffController:
                     )
                     if completion in done:
                         if completion.result() is HandoffState.COMPLETED:
+                            if self._on_completed is not None:
+                                self._on_completed(attempt_id)
                             if self._bridge_disconnected is None:
                                 session.shutdown(drain=True)
                             else:

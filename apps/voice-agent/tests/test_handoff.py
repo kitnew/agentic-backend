@@ -433,6 +433,13 @@ async def test_destination_disconnect_after_answer_closes_transferred_call() -> 
     result = response()
     backend.states[result.attempt_id] = HandoffState.DIALING
     disconnected: list[tuple[object, str, str, HandoffState]] = []
+    completed: list[object] = []
+    completed_event = asyncio.Event()
+
+    def on_completed(attempt_id):
+        completed.append(attempt_id)
+        completed_event.set()
+
     controller = HandoffController(
         backend,
         uuid4(),
@@ -440,6 +447,7 @@ async def test_destination_disconnect_after_answer_closes_transferred_call() -> 
         bridge_disconnected=lambda attempt_id, identity, role, state: (
             disconnected.append((attempt_id, identity, role, state))
         ),
+        on_completed=on_completed,
     )
     controller.set_caller_identity("caller")
     await controller.start(result, session)  # type: ignore[arg-type]
@@ -459,10 +467,13 @@ async def test_destination_disconnect_after_answer_closes_transferred_call() -> 
             HandoffState.ANSWERED,
         )
     ]
+    assert completed == []
     release_answer.set()
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     assert controller.state is HandoffState.COMPLETED
+    await asyncio.wait_for(completed_event.wait(), 1)
+    assert completed == [result.attempt_id]
     assert [event for _, event in backend.events] == [
         HandoffEvent.ANSWER,
         HandoffEvent.COMPLETE,
@@ -476,7 +487,9 @@ async def test_destination_disconnect_before_answer_wins_over_late_active_event(
     None
 ):
     disconnected: list[object] = []
+    completed: list[object] = []
     controller, backend, session, result = await started_controller()
+    controller._on_completed = completed.append
     controller._bridge_disconnected = lambda attempt_id, _identity, _role, _state: (
         disconnected.append(attempt_id)
     )
@@ -494,12 +507,20 @@ async def test_destination_disconnect_before_answer_wins_over_late_active_event(
     assert controller.state is HandoffState.FAILED
     assert backend.events == [(result.attempt_id, HandoffEvent.FAIL)]
     assert disconnected == []
+    assert completed == []
     assert session.shutdowns == []
 
 
 @pytest.mark.asyncio
 async def test_completed_destination_disconnect_is_current_attempt_only() -> None:
     disconnected: list[tuple[object, str, str, HandoffState]] = []
+    completed: list[object] = []
+    completed_event = asyncio.Event()
+
+    def on_completed(attempt_id):
+        completed.append(attempt_id)
+        completed_event.set()
+
     backend = Backend()
     session = Session()
     result = response()
@@ -511,6 +532,7 @@ async def test_completed_destination_disconnect_is_current_attempt_only() -> Non
         bridge_disconnected=lambda attempt_id, identity, role, state: (
             disconnected.append((attempt_id, identity, role, state))
         ),
+        on_completed=on_completed,
     )
     await controller.start(result, session)  # type: ignore[arg-type]
     await asyncio.sleep(0)
@@ -525,6 +547,8 @@ async def test_completed_destination_disconnect_is_current_attempt_only() -> Non
             break
         await asyncio.sleep(0)
     assert controller.state is HandoffState.COMPLETED
+    await asyncio.wait_for(completed_event.wait(), 1)
+    assert completed == [result.attempt_id]
     assert session.shutdowns == []
 
     for identity in ("egress", "agent", "unrelated", f"handoff-{uuid4()}"):
@@ -543,6 +567,7 @@ async def test_completed_destination_disconnect_is_current_attempt_only() -> Non
         )
     ]
     await controller.close()
+    assert completed == [result.attempt_id]
 
 
 @pytest.mark.asyncio
